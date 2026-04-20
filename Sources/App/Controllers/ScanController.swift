@@ -15,7 +15,8 @@ struct ScanController: RouteCollection {
     let plugins: [FootprintPlugin] = [
         GravatarPlugin(),
         UsernamePlugin(),
-        BulkUsernamePlugin() // Added Bulk OSINT Plugin
+        BulkUsernamePlugin(), // Added Bulk OSINT Plugin
+        BulkEmailPlugin() // Added Bulk Email OSINT Plugin
     ]
     
     func boot(routes: RoutesBuilder) throws {
