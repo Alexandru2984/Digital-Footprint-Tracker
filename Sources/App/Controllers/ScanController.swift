@@ -13,8 +13,9 @@ struct ScanResponse: Content {
 }
 
 struct ScanController: RouteCollection {
-    let plugins: [FootprintPlugin] = [
+    let plugins: [any FootprintPlugin] = [
         GravatarPlugin(),
+        HaveIBeenPwnedPlugin(),
         UsernamePlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin()
@@ -45,6 +46,13 @@ struct ScanController: RouteCollection {
         guard input.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
             throw Abort(.badRequest, reason: "Input contains invalid characters.")
         }
+
+        // Audit log: record every scan request with client IP for later review.
+        let clientIP = req.headers.first(name: "CF-Connecting-IP")
+            ?? req.headers.first(name: "X-Real-IP")
+            ?? req.remoteAddress?.description
+            ?? "unknown"
+        req.logger.info("Scan requested: input=\(input) ip=\(clientIP)")
 
         // Reuse the most recent non-failed scan; re-run only if the last attempt failed.
         if let existingScan = try await Scan.query(on: req.db)
@@ -87,16 +95,19 @@ struct ScanController: RouteCollection {
             var failureCount = 0
             var timedOut = false
 
-            await withTaskGroup(of: Void.self) { group in
-                // Timeout sentinel: cancels the group after 120 s.
+            enum PluginOutcome { case success, failure, timeout }
+
+            await withTaskGroup(of: PluginOutcome.self) { group in
+                // Timeout sentinel: cancels all plugins if 120 s elapse.
                 group.addTask {
                     try? await Task.sleep(for: .seconds(120))
-                    timedOut = true
+                    return .timeout
                 }
 
-                group.addTask {
-                    for plugin in activePlugins {
-                        guard !Task.isCancelled else { break }
+                // Each plugin runs concurrently in its own child task.
+                for plugin in activePlugins {
+                    group.addTask {
+                        guard !Task.isCancelled else { return .failure }
                         do {
                             let pluginResults = try await plugin.scan(input: input, on: app)
                             for pr in pluginResults {
@@ -109,17 +120,32 @@ struct ScanController: RouteCollection {
                                 )
                                 try await result.save(on: db)
                             }
-                            successCount += 1
+                            return .success
                         } catch {
-                            failureCount += 1
                             app.logger.error("Plugin \(plugin.name) failed: \(error)")
+                            return .failure
                         }
                     }
                 }
 
-                // Whichever task finishes first (plugins or timeout) cancels the other.
-                await group.next()
-                group.cancelAll()
+                // Drain results. Cancel remaining tasks as soon as all plugins
+                // have responded (killing the timeout sentinel) or on timeout.
+                var pluginsDone = 0
+                var allPluginsCompleted = false
+                for await outcome in group {
+                    switch outcome {
+                    case .timeout:
+                        if !allPluginsCompleted { timedOut = true; group.cancelAll() }
+                    case .success:
+                        successCount += 1; pluginsDone += 1
+                    case .failure:
+                        failureCount += 1; pluginsDone += 1
+                    }
+                    if !allPluginsCompleted && pluginsDone == activePlugins.count {
+                        allPluginsCompleted = true
+                        group.cancelAll()
+                    }
+                }
             }
 
             do {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Footprint Tracker</title>
     <link rel="stylesheet" href="/tailwind.css"
-          integrity="sha384-IKlUyzvRfnR8Y0kjuchWSr8JVGBH49TvNdDT6rT9RdbN0g51LSustvDRVtKTXE+e"
+          integrity="sha384-/FDiYHclalmLBee7NtkJs55xr1oAlWsYiK9xDXVCdvxeSBcuOvQEVOMZg9eWm0a7"
           crossorigin="anonymous">
     <style>
         body {
@@ -73,7 +73,10 @@
                         <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-brand-500">
                             <span class="">&gt;_</span>
                         </div>
-                        <input type="text" id="target-input" class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 p-3 outline-none transition-all placeholder-slate-500" placeholder="Enter target email or username..." required autocomplete="off">
+                        <input type="text" id="target-input" class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 pr-28 p-3 outline-none transition-all placeholder-slate-500" placeholder="Enter target email or username..." required autocomplete="off">
+                        <span id="input-type-badge" class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none hidden">
+                            <span id="input-type-label" class="text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide"></span>
+                        </span>
                     </div>
                     <button type="submit" id="scan-btn" class="text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:outline-none focus:ring-brand-500/50 font-medium rounded-lg text-sm px-8 py-3 text-center transition-colors flex items-center justify-center gap-2 whitespace-nowrap shadow-[0_0_10px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]">
                         <span id="btn-text">INITIATE SCAN</span>
@@ -104,8 +107,11 @@
                     </svg>
                     ANALYSIS REPORT
                 </h2>
-                <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner">
+                <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner flex items-center gap-2">
                     SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500"></span>
+                    <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    </button>
                 </div>
             </div>
 
@@ -144,11 +150,28 @@
         const resultsGrid = document.getElementById('results-grid');
         const emptyState = document.getElementById('empty-state');
         const scanIdDisplay = document.getElementById('scan-id-display');
+        const copyScanIdBtn = document.getElementById('copy-scan-id');
+        const inputTypeBadge = document.getElementById('input-type-badge');
+        const inputTypeLabel = document.getElementById('input-type-label');
 
         // Polling configuration: 40 attempts × 3 s = 2 min total window.
         const POLL_INTERVAL_MS = 3000;
         const MAX_POLLS = 40;
         let pollCount = 0;
+
+        // Live input-type badge: shows EMAIL or USERNAME as the user types.
+        input.addEventListener('input', () => {
+            const val = input.value.trim();
+            if (!val) { inputTypeBadge.classList.add('hidden'); return; }
+            inputTypeBadge.classList.remove('hidden');
+            if (val.includes('@')) {
+                inputTypeLabel.textContent = 'EMAIL';
+                inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-blue-900/60 text-blue-300 border border-blue-700';
+            } else {
+                inputTypeLabel.textContent = 'USERNAME';
+                inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-brand-900/60 text-brand-400 border border-brand-700';
+            }
+        });
 
         function escapeHtml(str) {
             return String(str)
@@ -184,6 +207,20 @@
             statusTerminal.appendChild(line);
             statusTerminal.scrollTop = statusTerminal.scrollHeight;
         }
+
+        // Copy text to clipboard with visual feedback on the trigger element.
+        function copyToClipboard(text, triggerEl) {
+            navigator.clipboard.writeText(text).then(() => {
+                const prev = triggerEl.innerHTML;
+                triggerEl.innerHTML = '✓';
+                triggerEl.style.color = '#10b981';
+                setTimeout(() => { triggerEl.innerHTML = prev; triggerEl.style.color = ''; }, 1500);
+            }).catch(() => {});
+        }
+
+        copyScanIdBtn.addEventListener('click', () => {
+            copyToClipboard(scanIdDisplay.textContent, copyScanIdBtn);
+        });
 
         function setScanningState(isScanning) {
             if (isScanning) {
@@ -232,11 +269,16 @@
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-slate-500 mb-1">MATCH DATA</p>
-                            <p class="js-raw-data text-sm text-white"></p>
+                            <p class="js-raw-data text-sm text-white break-all"></p>
                         </div>
                     </div>
                     <div class="mt-4">
-                        <p class="text-xs text-slate-500 mb-2">RAW JSON OUTPUT</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-xs text-slate-500">RAW JSON OUTPUT</p>
+                            <button class="js-copy-json text-xs text-slate-500 hover:text-brand-500 transition-colors" title="Copy JSON">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            </button>
+                        </div>
                         <div class="bg-[#0b1120] rounded p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
                             <pre><code class="js-json"></code></pre>
                         </div>
@@ -247,10 +289,48 @@
             // Assign all API-sourced values via textContent to prevent XSS.
             card.querySelector('.js-source').textContent = result.source;
             card.querySelector('.js-type').textContent = result.type;
-            card.querySelector('.js-raw-data').textContent = result.rawData;
-            card.querySelector('.js-json').textContent = JSON.stringify(result, null, 2);
+
+            // Render rawData: linkify any URLs found in the text safely.
+            renderRawData(card.querySelector('.js-raw-data'), result.rawData);
+
+            const jsonStr = JSON.stringify(result, null, 2);
+            card.querySelector('.js-json').textContent = jsonStr;
+            card.querySelector('.js-copy-json').addEventListener('click', function() {
+                copyToClipboard(jsonStr, this);
+            });
 
             return card;
+        }
+
+        // Splits rawData text on URLs and renders them as safe <a> elements.
+        // All text nodes are assigned via textContent; href is validated to
+        // only allow http/https before being set via setAttribute.
+        function renderRawData(container, text) {
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            let lastIndex = 0;
+            let match;
+            while ((match = urlRegex.exec(text)) !== null) {
+                if (match.index > lastIndex) {
+                    container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+                const href = match[1];
+                // Only linkify http/https URLs to prevent javascript: injection.
+                if (/^https?:\/\//i.test(href)) {
+                    const a = document.createElement('a');
+                    a.setAttribute('href', href);
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                    a.className = 'text-brand-400 underline hover:text-brand-300';
+                    a.textContent = href;
+                    container.appendChild(a);
+                } else {
+                    container.appendChild(document.createTextNode(href));
+                }
+                lastIndex = urlRegex.lastIndex;
+            }
+            if (lastIndex < text.length) {
+                container.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
         }
 
         function displayResults(data) {

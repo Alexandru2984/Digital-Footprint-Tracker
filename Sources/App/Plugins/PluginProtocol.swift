@@ -1,12 +1,12 @@
 import Vapor
 
-protocol FootprintPlugin {
+protocol FootprintPlugin: Sendable {
     var name: String { get }
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
 
-struct PluginResult {
+struct PluginResult: Sendable {
     let source: String
     let type: String
     let confidenceScore: Double

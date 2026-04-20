@@ -56,4 +56,9 @@ public func configure(_ app: Application) async throws {
 
     // Register routes
     try routes(app)
+
+    // Periodic cleanup: delete scans older than 30 days.
+    // Runs daily using a detached background task with a sleep loop.
+    // The task is tied to app lifetime via a lifecycle handler.
+    app.lifecycle.use(ScanCleanupLifecycle())
 }
