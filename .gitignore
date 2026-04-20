@@ -1,0 +1,40 @@
+# Swift PM
+.build/
+Packages/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+
+# Vapor & Environment
+.env
+.env.*
+*.log
+
+# OS & Environment
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.directory
+
+# Core Dumps
+core
+core.*
+
+# Archives
+*.tar.gz
+*.zip
