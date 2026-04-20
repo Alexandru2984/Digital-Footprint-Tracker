@@ -38,3 +38,10 @@ core.*
 # Archives
 *.tar.gz
 *.zip
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.cache/
+*.sqlite
+*.db
