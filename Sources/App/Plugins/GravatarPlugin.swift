@@ -4,7 +4,7 @@ import Crypto
 struct GravatarPlugin: FootprintPlugin {
     let name = "GravatarCheck"
     
-    func scan(input: String, on req: Request) async throws -> [PluginResult] {
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] } // Only process emails
         
         let cleanedEmail = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -14,7 +14,7 @@ struct GravatarPlugin: FootprintPlugin {
         let url = "https://en.gravatar.com/avatar/\(hashString)?d=404"
         
         do {
-            let response = try await req.client.get(URI(string: url))
+            let response = try await app.client.get(URI(string: url))
             
             if response.status == .ok {
                 return [

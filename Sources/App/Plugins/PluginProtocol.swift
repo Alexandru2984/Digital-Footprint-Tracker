@@ -2,7 +2,8 @@ import Vapor
 
 protocol FootprintPlugin {
     var name: String { get }
-    func scan(input: String, on req: Request) async throws -> [PluginResult]
+    // Using Application instead of Request allows safe background execution
+    func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
 
 struct PluginResult {

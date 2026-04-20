@@ -3,7 +3,7 @@ import Vapor
 struct UsernamePlugin: FootprintPlugin {
     let name = "GitHubAccountCheck"
     
-    func scan(input: String, on req: Request) async throws -> [PluginResult] {
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] } // Only process usernames
         
         let cleanedUsername = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -21,7 +21,7 @@ struct UsernamePlugin: FootprintPlugin {
         let url = "https://api.github.com/users/\(cleanedUsername)"
         
         do {
-            let response = try await req.client.get(URI(string: url), headers: ["User-Agent": "Digital-Footprint-Tracker/1.0"])
+            let response = try await app.client.get(URI(string: url), headers: ["User-Agent": "Digital-Footprint-Tracker/1.0"])
             
             if response.status == .ok {
                 // Return found!

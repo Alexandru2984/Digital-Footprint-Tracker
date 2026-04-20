@@ -14,7 +14,8 @@ struct ScanResponse: Content {
 struct ScanController: RouteCollection {
     let plugins: [FootprintPlugin] = [
         GravatarPlugin(),
-        UsernamePlugin()
+        UsernamePlugin(),
+        BulkUsernamePlugin() // Added Bulk OSINT Plugin
     ]
     
     func boot(routes: RoutesBuilder) throws {
@@ -40,23 +41,32 @@ struct ScanController: RouteCollection {
             throw Abort(.internalServerError)
         }
         
-        var allResults: [Result] = []
-        for plugin in plugins {
-            let pluginResults = try await plugin.scan(input: scanReq.input, on: req)
-            for pr in pluginResults {
-                let result = Result(
-                    scanID: scanID,
-                    source: pr.source,
-                    type: pr.type,
-                    confidenceScore: pr.confidenceScore,
-                    rawData: pr.rawData
-                )
-                try await result.save(on: req.db)
-                allResults.append(result)
+        let app = req.application
+        let inputString = scanReq.input
+        let activePlugins = self.plugins
+        
+        // Run actual plugins asynchronously in the background so the HTTP request completes immediately
+        Task {
+            for plugin in activePlugins {
+                do {
+                    let pluginResults = try await plugin.scan(input: inputString, on: app)
+                    for pr in pluginResults {
+                        let result = Result(
+                            scanID: scanID,
+                            source: pr.source,
+                            type: pr.type,
+                            confidenceScore: pr.confidenceScore,
+                            rawData: pr.rawData
+                        )
+                        try await result.save(on: app.db)
+                    }
+                } catch {
+                    app.logger.error("Plugin \(plugin.name) failed: \(error)")
+                }
             }
         }
-        
-        return ScanResponse(scanID: scanID, input: scanReq.input, results: allResults)
+
+        return ScanResponse(scanID: scanID, input: scanReq.input, results: [])
     }
     
     @Sendable
