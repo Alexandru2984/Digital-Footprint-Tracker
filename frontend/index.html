@@ -4,30 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Footprint Tracker</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            500: '#10b981', // emerald-500
-                            600: '#059669', // emerald-600
-                        },
-                        dark: {
-                            900: '#0f172a', // slate-900
-                            800: '#1e293b', // slate-800
-                            700: '#334155', // slate-700
-                        }
-                    },
-                    fontFamily: {
-                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="/tailwind.css"
+          integrity="sha384-IKlUyzvRfnR8Y0kjuchWSr8JVGBH49TvNdDT6rT9RdbN0g51LSustvDRVtKTXE+e"
+          crossorigin="anonymous">
     <style>
         body {
             background-color: #0f172a;
@@ -180,13 +159,28 @@
                 .replace(/'/g, '&#039;');
         }
 
-        // logStatus accepts a pre-built HTML string for coloured messages.
-        // Always pass user-controlled values through escapeHtml() before calling this.
-        function logStatus(msg) {
+        // logStatus(text, cssClass) — always uses textContent so no caller
+        // needs to sanitise values before passing them here.
+        function logStatus(text, cssClass = null) {
             statusTerminal.classList.remove('hidden');
             const time = new Date().toISOString().split('T')[1].split('.')[0];
             const line = document.createElement('div');
-            line.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'text-slate-500';
+            timeSpan.textContent = `[${time}]`;
+            line.appendChild(timeSpan);
+            line.appendChild(document.createTextNode(' '));
+
+            if (cssClass) {
+                const msgSpan = document.createElement('span');
+                msgSpan.className = cssClass;
+                msgSpan.textContent = text;
+                line.appendChild(msgSpan);
+            } else {
+                line.appendChild(document.createTextNode(text));
+            }
+
             statusTerminal.appendChild(line);
             statusTerminal.scrollTop = statusTerminal.scrollHeight;
         }
@@ -280,16 +274,16 @@
             logStatus(`Polling... (attempt ${pollCount}/${MAX_POLLS})`);
 
             try {
-                const response = await fetch(`/api/results/${escapeHtml(scanID)}`);
+                const response = await fetch(`/api/results/${encodeURIComponent(scanID)}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 const data = await response.json();
-                logStatus(`Status: ${escapeHtml(data.status)} | ${data.results.length} result(s) found.`);
+                logStatus(`Status: ${data.status} | ${data.results.length} result(s) found.`);
 
                 if (data.status === 'completed' || data.status === 'failed') {
                     displayResults(data);
                     if (data.status === 'failed') {
-                        logStatus('<span class="text-red-500">Scan finished with errors. Partial results may be shown.</span>');
+                        logStatus('Scan finished with errors. Partial results may be shown.', 'text-red-500');
                     } else {
                         logStatus('Scan completed successfully.');
                     }
@@ -297,15 +291,15 @@
                     setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
                 } else {
                     setScanningState(false);
-                    logStatus('<span class="text-yellow-500">Scan is taking longer than expected. Refresh the page to check again.</span>');
+                    logStatus('Scan is taking longer than expected. Refresh the page to check again.', 'text-yellow-500');
                 }
             } catch (error) {
-                logStatus(`<span class="text-red-500">Poll error: ${escapeHtml(error.message)}</span>`);
+                logStatus('Poll error: ' + error.message, 'text-red-500');
                 if (pollCount < MAX_POLLS) {
                     setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
                 } else {
                     setScanningState(false);
-                    logStatus('<span class="text-red-500">Scan timed out.</span>');
+                    logStatus('Scan timed out.', 'text-red-500');
                 }
             }
         }
@@ -316,7 +310,7 @@
             if (!target) return;
 
             setScanningState(true);
-            logStatus(`Initiating scan against target: ${escapeHtml(target)}`);
+            logStatus('Initiating scan against target: ' + target);
             pollCount = 0;
 
             try {
@@ -332,13 +326,13 @@
                 }
 
                 const data = await response.json();
-                logStatus(`Scan queued with ID: ${escapeHtml(data.scanID)}`);
+                logStatus('Scan queued with ID: ' + data.scanID);
 
                 // Start polling after first interval so backend has time to begin processing.
                 setTimeout(() => pollResults(data.scanID), POLL_INTERVAL_MS);
 
             } catch (error) {
-                logStatus(`<span class="text-red-500">Error initiating scan: ${escapeHtml(error.message)}</span>`);
+                logStatus('Error initiating scan: ' + error.message, 'text-red-500');
                 setScanningState(false);
             }
         });

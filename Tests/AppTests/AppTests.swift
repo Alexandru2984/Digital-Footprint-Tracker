@@ -66,6 +66,29 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testTooLongInputReturns400() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let longInput = String(repeating: "a", count: 256)
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": longInput], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+    }
+
+    func testInvalidCharactersInInputReturn400() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "user<script>"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+    }
+
     // MARK: - Scan creation
 
     func testScanCreationReturnsPendingStatus() async throws {

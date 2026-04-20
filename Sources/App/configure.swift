@@ -23,11 +23,20 @@ public func configure(_ app: Application) async throws {
     clientConfig.timeout = .init(connect: .seconds(5), read: .seconds(15))
     app.http.client.configuration = clientConfig
 
-    // Configure Database
+    // Crash early in production if the password secret is missing — never fall
+    // back to a hardcoded credential in a live environment.
     let databaseHostname = Environment.get("DATABASE_HOST") ?? "localhost"
-    let databaseUser = Environment.get("DATABASE_USERNAME") ?? "footprint_user"
-    let databasePassword = Environment.get("DATABASE_PASSWORD") ?? "footprint_pass"
-    let databaseName = Environment.get("DATABASE_NAME") ?? "footprint_db"
+    let databaseUser     = Environment.get("DATABASE_USERNAME") ?? "footprint_user"
+    let databaseName     = Environment.get("DATABASE_NAME") ?? "footprint_db"
+    let databasePassword: String
+    if let pw = Environment.get("DATABASE_PASSWORD") {
+        databasePassword = pw
+    } else if app.environment == .production {
+        fatalError("DATABASE_PASSWORD environment variable must be set in production.")
+    } else {
+        app.logger.warning("DATABASE_PASSWORD not set — using insecure default (development only)")
+        databasePassword = "footprint_pass"
+    }
 
     app.databases.use(.postgres(
         hostname: databaseHostname,

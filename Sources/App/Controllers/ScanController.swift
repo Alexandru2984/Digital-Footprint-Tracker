@@ -22,7 +22,8 @@ struct ScanController: RouteCollection {
 
     func boot(routes: RoutesBuilder) throws {
         routes.grouped(ScanRateLimiter()).post("scan", use: scan)
-        routes.get("results", ":id", use: getResults)
+        // Results can be polled frequently but still need protection against abuse.
+        routes.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("results", ":id", use: getResults)
     }
 
     @Sendable
@@ -32,6 +33,17 @@ struct ScanController: RouteCollection {
         let input = scanReq.input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else {
             throw Abort(.badRequest, reason: "Input cannot be empty.")
+        }
+        guard input.count <= 255 else {
+            throw Abort(.badRequest, reason: "Input must be 255 characters or fewer.")
+        }
+        // Allow only printable ASCII that makes sense for an email or username.
+        // This blocks control characters, null bytes, and anything that could
+        // manipulate URLs in BulkUsernamePlugin or shell args in BulkEmailPlugin.
+        let allowedCharacters = CharacterSet.alphanumerics
+            .union(.init(charactersIn: "@._+-"))
+        guard input.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+            throw Abort(.badRequest, reason: "Input contains invalid characters.")
         }
 
         // Reuse the most recent non-failed scan; re-run only if the last attempt failed.
@@ -59,6 +71,8 @@ struct ScanController: RouteCollection {
         let activePlugins = self.plugins
 
         // Run plugins in the background so the HTTP request returns immediately.
+        // A 120-second deadline prevents scans from hanging in "pending" forever
+        // if a plugin stalls or a remote server never responds.
         Task {
             // Use the optional-returning API so we exit gracefully if the app
             // shuts down (e.g., during tests) before this Task gets a chance to run.
@@ -71,30 +85,52 @@ struct ScanController: RouteCollection {
 
             var successCount = 0
             var failureCount = 0
-            for plugin in activePlugins {
-                do {
-                    let pluginResults = try await plugin.scan(input: input, on: app)
-                    for pr in pluginResults {
-                        let result = Result(
-                            scanID: scanID,
-                            source: pr.source,
-                            type: pr.type,
-                            confidenceScore: pr.confidenceScore,
-                            rawData: pr.rawData
-                        )
-                        try await result.save(on: db)
-                    }
-                    successCount += 1
-                } catch {
-                    failureCount += 1
-                    app.logger.error("Plugin \(plugin.name) failed: \(error)")
+            var timedOut = false
+
+            await withTaskGroup(of: Void.self) { group in
+                // Timeout sentinel: cancels the group after 120 s.
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(120))
+                    timedOut = true
                 }
+
+                group.addTask {
+                    for plugin in activePlugins {
+                        guard !Task.isCancelled else { break }
+                        do {
+                            let pluginResults = try await plugin.scan(input: input, on: app)
+                            for pr in pluginResults {
+                                let result = Result(
+                                    scanID: scanID,
+                                    source: pr.source,
+                                    type: pr.type,
+                                    confidenceScore: pr.confidenceScore,
+                                    rawData: pr.rawData
+                                )
+                                try await result.save(on: db)
+                            }
+                            successCount += 1
+                        } catch {
+                            failureCount += 1
+                            app.logger.error("Plugin \(plugin.name) failed: \(error)")
+                        }
+                    }
+                }
+
+                // Whichever task finishes first (plugins or timeout) cancels the other.
+                await group.next()
+                group.cancelAll()
             }
 
             do {
                 if let scan = try await Scan.find(scanID, on: db) {
-                    // Mark failed only when every plugin threw — partial success is still completed.
-                    scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
+                    if timedOut {
+                        app.logger.warning("Scan \(scanID) exceeded 120-second deadline; marking failed")
+                        scan.status = .failed
+                    } else {
+                        // Mark failed only when every plugin threw — partial success is still completed.
+                        scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
+                    }
                     scan.completedAt = Date()
                     try await scan.save(on: db)
                 }

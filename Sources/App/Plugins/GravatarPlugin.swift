@@ -43,7 +43,7 @@ struct GravatarPlugin: FootprintPlugin {
                     source: name,
                     type: "error",
                     confidenceScore: 0.0,
-                    rawData: "Failed to query Gravatar: \(error.localizedDescription)"
+                    rawData: "Gravatar query failed."
                 )
             ]
         }

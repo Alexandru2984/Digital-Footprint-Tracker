@@ -23,16 +23,23 @@ struct BulkEmailPlugin: FootprintPlugin {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: holehePath)
         process.arguments = [cleanedEmail, "--only-used", "--no-color"]
-        
+
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe() // Ignore stderr (tqdm progress bars go to stderr usually)
-        
+
         do {
             try process.run()
-            // In a detached task, waitUntilExit() is acceptable as it doesn't block the NIO EventLoop
-            process.waitUntilExit()
-            
+            // waitUntilExit() is a blocking call. Running it inside
+            // withCheckedContinuation on a detached task avoids blocking
+            // a thread from the Swift concurrency cooperative thread pool.
+            await withCheckedContinuation { continuation in
+                Task.detached(priority: .utility) {
+                    process.waitUntilExit()
+                    continuation.resume()
+                }
+            }
+
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             guard let output = String(data: data, encoding: .utf8) else {
                 return []
