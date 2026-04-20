@@ -26,6 +26,14 @@ struct ScanController: RouteCollection {
     func scan(req: Request) async throws -> ScanResponse {
         let scanReq = try req.content.decode(ScanRequest.self)
         
+        // Check if scan already exists
+        if let existingScan = try await Scan.query(on: req.db)
+            .filter(\.$input == scanReq.input)
+            .with(\.$results)
+            .first() {
+            return ScanResponse(scanID: existingScan.id!, input: existingScan.input, results: existingScan.results)
+        }
+        
         let newScan = Scan(input: scanReq.input)
         try await newScan.save(on: req.db)
         guard let scanID = newScan.id else {
