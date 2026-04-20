@@ -59,19 +59,21 @@ struct SherlockData: Decodable {
 
 struct BulkUsernamePlugin: FootprintPlugin {
     let name = "BulkOSINT"
-    
+
     // Load JSON into memory
     private let sites: [String: SherlockSite]
-    
+
     init() {
-        let filePath = "/home/micu/swift+vapor/Sources/App/Plugins/sherlock_data.json"
+        let envPath = Environment.get("SHERLOCK_DATA_PATH")
+        let cwdPath = FileManager.default.currentDirectoryPath + "/Sources/App/Plugins/sherlock_data.json"
+        let filePath = envPath ?? cwdPath
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             let decoded = try JSONDecoder().decode(SherlockData.self, from: data)
             self.sites = decoded.sites
-            print("Loaded \(self.sites.count) OSINT sites from Sherlock data.")
+            print("Loaded \(self.sites.count) OSINT sites from Sherlock data at \(filePath).")
         } catch {
-            print("Failed to load Sherlock data: \(error)")
+            print("Failed to load Sherlock data from \(filePath): \(error)")
             self.sites = [:]
         }
     }

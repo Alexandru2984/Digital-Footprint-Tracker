@@ -15,8 +15,13 @@ struct BulkEmailPlugin: FootprintPlugin {
         }
         
         // Execute holehe CLI
+        let holehePath = Environment.get("HOLEHE_PATH") ?? "/usr/local/bin/holehe"
+        guard FileManager.default.isExecutableFile(atPath: holehePath) else {
+            app.logger.warning("holehe binary not found at \(holehePath); set HOLEHE_PATH env var")
+            return []
+        }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/home/micu/.local/bin/holehe")
+        process.executableURL = URL(fileURLWithPath: holehePath)
         process.arguments = [cleanedEmail, "--only-used", "--no-color"]
         
         let pipe = Pipe()
