@@ -3,13 +3,25 @@ import Fluent
 import FluentPostgresDriver
 
 public func configure(_ app: Application) async throws {
-    // CORS — allow frontend dev from other origins.
+    // CORS — in production restrict to the real origin; allow all only during development.
+    let allowedOrigin: CORSMiddleware.AllowOriginSetting
+    if app.environment == .production {
+        let origin = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
+        allowedOrigin = .custom(origin)
+    } else {
+        allowedOrigin = .all
+    }
     let corsConfig = CORSMiddleware.Configuration(
-        allowedOrigin: .all,
+        allowedOrigin: allowedOrigin,
         allowedMethods: [.GET, .POST, .OPTIONS],
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
+
+    // Global HTTP client timeout — applies to all outbound requests (all plugins).
+    var clientConfig = app.http.client.configuration
+    clientConfig.timeout = .init(connect: .seconds(5), read: .seconds(15))
+    app.http.client.configuration = clientConfig
 
     // Configure Database
     let databaseHostname = Environment.get("DATABASE_HOST") ?? "localhost"
@@ -28,6 +40,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
+    app.migrations.add(AddInputIndex())
 
     // Run migrations automatically
     try await app.autoMigrate()

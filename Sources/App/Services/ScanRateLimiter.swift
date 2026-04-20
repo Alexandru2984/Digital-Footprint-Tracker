@@ -21,11 +21,19 @@ final class ScanRateLimiter: AsyncMiddleware {
     }
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        let key = request.headers.first(name: "X-Forwarded-For")?
-            .split(separator: ",").first.map(String.init)?
-            .trimmingCharacters(in: .whitespaces)
-            ?? request.remoteAddress?.ipAddress
-            ?? "unknown"
+        // Trust Cloudflare's real-client header first, then nginx's X-Real-IP,
+        // then fall back to the socket address. Never take the first X-Forwarded-For
+        // entry directly — it is trivially spoofable by clients.
+        let key: String
+        if let cf = request.headers.first(name: "CF-Connecting-IP")?
+            .trimmingCharacters(in: .whitespaces), !cf.isEmpty {
+            key = cf
+        } else if let realIP = request.headers.first(name: "X-Real-IP")?
+            .trimmingCharacters(in: .whitespaces), !realIP.isEmpty {
+            key = realIP
+        } else {
+            key = request.remoteAddress?.ipAddress ?? "unknown"
+        }
 
         let now = Date()
         let allowed: Bool = lock.withLock {
@@ -35,6 +43,14 @@ final class ScanRateLimiter: AsyncMiddleware {
             }
             entry.count += 1
             entries[key] = entry
+
+            // Lazily prune expired entries to prevent unbounded growth.
+            if entries.count > 500 {
+                entries = entries.filter {
+                    now.timeIntervalSince($0.value.windowStart) < windowSeconds
+                }
+            }
+
             return entry.count <= maxRequests
         }
 

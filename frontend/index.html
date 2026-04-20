@@ -166,11 +166,22 @@
         const emptyState = document.getElementById('empty-state');
         const scanIdDisplay = document.getElementById('scan-id-display');
 
-        // Polling configuration
-        let pollInterval;
-        const MAX_POLLS = 10;
+        // Polling configuration: 40 attempts × 3 s = 2 min total window.
+        const POLL_INTERVAL_MS = 3000;
+        const MAX_POLLS = 40;
         let pollCount = 0;
 
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // logStatus accepts a pre-built HTML string for coloured messages.
+        // Always pass user-controlled values through escapeHtml() before calling this.
         function logStatus(msg) {
             statusTerminal.classList.remove('hidden');
             const time = new Date().toISOString().split('T')[1].split('.')[0];
@@ -201,42 +212,51 @@
             }
         }
 
+        // Returns a DOM element (not an HTML string) so untrusted values are
+        // always assigned via textContent — never injected into innerHTML.
         function createResultCard(result) {
             let scoreColor = 'text-green-500';
             if (result.confidenceScore < 0.5) scoreColor = 'text-red-500';
             else if (result.confidenceScore < 0.8) scoreColor = 'text-yellow-500';
 
-            const formattedJson = JSON.stringify(result, null, 2);
+            const card = document.createElement('div');
+            card.className = 'bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-lg transition-transform hover:scale-[1.01] hover:border-brand-500/50';
 
-            return `
-                <div class="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-lg transition-transform hover:scale-[1.01] hover:border-brand-500/50">
-                    <div class="px-4 py-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span>
-                            <span class="font-bold text-slate-200">${result.source}</span>
-                        </div>
-                        <span class="text-xs px-2 py-0.5 rounded bg-dark-700 text-slate-300 border border-dark-600">${result.type}</span>
+            card.innerHTML = `
+                <div class="px-4 py-3 bg-dark-900 border-b border-dark-700 flex justify-between items-center">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span>
+                        <span class="js-source font-bold text-slate-200"></span>
                     </div>
-                    <div class="p-4">
-                        <div class="flex justify-between items-end mb-4">
-                            <div>
-                                <p class="text-xs text-slate-500 mb-1">CONFIDENCE SCORE</p>
-                                <p class="text-xl font-bold ${scoreColor}">${(result.confidenceScore * 100).toFixed(0)}%</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-xs text-slate-500 mb-1">MATCH DATA</p>
-                                <p class="text-sm text-white">${result.rawData}</p>
-                            </div>
+                    <span class="js-type text-xs px-2 py-0.5 rounded bg-dark-700 text-slate-300 border border-dark-600"></span>
+                </div>
+                <div class="p-4">
+                    <div class="flex justify-between items-end mb-4">
+                        <div>
+                            <p class="text-xs text-slate-500 mb-1">CONFIDENCE SCORE</p>
+                            <p class="text-xl font-bold ${scoreColor}">${(result.confidenceScore * 100).toFixed(0)}%</p>
                         </div>
-                        <div class="mt-4">
-                            <p class="text-xs text-slate-500 mb-2">RAW JSON OUTPUT</p>
-                            <div class="bg-[#0b1120] rounded p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
-                                <pre><code>${formattedJson}</code></pre>
-                            </div>
+                        <div class="text-right">
+                            <p class="text-xs text-slate-500 mb-1">MATCH DATA</p>
+                            <p class="js-raw-data text-sm text-white"></p>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <p class="text-xs text-slate-500 mb-2">RAW JSON OUTPUT</p>
+                        <div class="bg-[#0b1120] rounded p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
+                            <pre><code class="js-json"></code></pre>
                         </div>
                     </div>
                 </div>
             `;
+
+            // Assign all API-sourced values via textContent to prevent XSS.
+            card.querySelector('.js-source').textContent = result.source;
+            card.querySelector('.js-type').textContent = result.type;
+            card.querySelector('.js-raw-data').textContent = result.rawData;
+            card.querySelector('.js-json').textContent = JSON.stringify(result, null, 2);
+
+            return card;
         }
 
         function displayResults(data) {
@@ -250,35 +270,40 @@
             } else {
                 emptyState.classList.add('hidden');
                 resultsGrid.classList.remove('hidden');
-                data.results.forEach(res => {
-                    resultsGrid.insertAdjacentHTML('beforeend', createResultCard(res));
-                });
+                data.results.forEach(res => resultsGrid.appendChild(createResultCard(res)));
             }
         }
 
+        // Recursive setTimeout avoids overlapping polls if a request is slow.
         async function pollResults(scanID) {
-            try {
-                logStatus(`Polling results for scan ${scanID}... (Attempt ${pollCount + 1}/${MAX_POLLS})`);
-                const response = await fetch(`/api/results/${scanID}`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                logStatus(`Retrieved ${data.results.length} result records.`);
-                
-                // Assuming Vapor processes synchronously in our MVP, we can render immediately.
-                // In a real async job queue, we'd check a status flag in 'data'.
-                clearInterval(pollInterval);
-                displayResults(data);
-                logStatus('Scan completed successfully.');
+            pollCount++;
+            logStatus(`Polling... (attempt ${pollCount}/${MAX_POLLS})`);
 
+            try {
+                const response = await fetch(`/api/results/${escapeHtml(scanID)}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                logStatus(`Status: ${escapeHtml(data.status)} | ${data.results.length} result(s) found.`);
+
+                if (data.status === 'completed' || data.status === 'failed') {
+                    displayResults(data);
+                    if (data.status === 'failed') {
+                        logStatus('<span class="text-red-500">Scan finished with errors. Partial results may be shown.</span>');
+                    } else {
+                        logStatus('Scan completed successfully.');
+                    }
+                } else if (pollCount < MAX_POLLS) {
+                    setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
+                } else {
+                    setScanningState(false);
+                    logStatus('<span class="text-yellow-500">Scan is taking longer than expected. Refresh the page to check again.</span>');
+                }
             } catch (error) {
-                logStatus(`<span class="text-red-500">Error polling results: ${error.message}</span>`);
-                pollCount++;
-                if (pollCount >= MAX_POLLS) {
-                    clearInterval(pollInterval);
+                logStatus(`<span class="text-red-500">Poll error: ${escapeHtml(error.message)}</span>`);
+                if (pollCount < MAX_POLLS) {
+                    setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
+                } else {
                     setScanningState(false);
                     logStatus('<span class="text-red-500">Scan timed out.</span>');
                 }
@@ -291,7 +316,7 @@
             if (!target) return;
 
             setScanningState(true);
-            logStatus(`Initiating scan against target: ${target}`);
+            logStatus(`Initiating scan against target: ${escapeHtml(target)}`);
             pollCount = 0;
 
             try {
@@ -302,18 +327,18 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errText = await response.text().catch(() => response.status);
+                    throw new Error(String(errText));
                 }
 
                 const data = await response.json();
-                logStatus(`Scan queued with ID: ${data.scanID}`);
-                
-                // For MVP, Vapor saves results immediately in the POST handler.
-                // But we requested polling behavior in frontend UI rules.
-                pollInterval = setInterval(() => pollResults(data.scanID), 1500);
+                logStatus(`Scan queued with ID: ${escapeHtml(data.scanID)}`);
+
+                // Start polling after first interval so backend has time to begin processing.
+                setTimeout(() => pollResults(data.scanID), POLL_INTERVAL_MS);
 
             } catch (error) {
-                logStatus(`<span class="text-red-500">Error initiating scan: ${error.message}</span>`);
+                logStatus(`<span class="text-red-500">Error initiating scan: ${escapeHtml(error.message)}</span>`);
                 setScanningState(false);
             }
         });

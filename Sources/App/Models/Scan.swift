@@ -27,7 +27,7 @@ final class Scan: Model, Content {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
-    @Field(key: "completed_at")
+    @OptionalField(key: "completed_at")
     var completedAt: Date?
 
     @Children(for: \.$scan)

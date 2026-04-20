@@ -29,11 +29,17 @@ struct ScanController: RouteCollection {
     func scan(req: Request) async throws -> ScanResponse {
         let scanReq = try req.content.decode(ScanRequest.self)
 
-        // Reuse prior non-failed scans; re-run if the last attempt failed.
+        let input = scanReq.input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else {
+            throw Abort(.badRequest, reason: "Input cannot be empty.")
+        }
+
+        // Reuse the most recent non-failed scan; re-run only if the last attempt failed.
         if let existingScan = try await Scan.query(on: req.db)
-            .filter(\.$input == scanReq.input)
+            .filter(\.$input == input)
             .filter(\.$statusRaw != ScanStatus.failed.rawValue)
             .with(\.$results)
+            .sort(\.$createdAt, .descending)
             .first() {
             return ScanResponse(
                 scanID: existingScan.id!,
@@ -43,22 +49,31 @@ struct ScanController: RouteCollection {
             )
         }
 
-        let newScan = Scan(input: scanReq.input)
+        let newScan = Scan(input: input)
         try await newScan.save(on: req.db)
         guard let scanID = newScan.id else {
             throw Abort(.internalServerError)
         }
 
         let app = req.application
-        let inputString = scanReq.input
         let activePlugins = self.plugins
 
         // Run plugins in the background so the HTTP request returns immediately.
         Task {
-            var anyFailure = false
+            // Use the optional-returning API so we exit gracefully if the app
+            // shuts down (e.g., during tests) before this Task gets a chance to run.
+            guard let db = app.databases.database(
+                nil, logger: app.logger, on: app.eventLoopGroup.any()
+            ) else {
+                app.logger.warning("Scan \(scanID): database unavailable, skipping plugin execution")
+                return
+            }
+
+            var successCount = 0
+            var failureCount = 0
             for plugin in activePlugins {
                 do {
-                    let pluginResults = try await plugin.scan(input: inputString, on: app)
+                    let pluginResults = try await plugin.scan(input: input, on: app)
                     for pr in pluginResults {
                         let result = Result(
                             scanID: scanID,
@@ -67,26 +82,28 @@ struct ScanController: RouteCollection {
                             confidenceScore: pr.confidenceScore,
                             rawData: pr.rawData
                         )
-                        try await result.save(on: app.db)
+                        try await result.save(on: db)
                     }
+                    successCount += 1
                 } catch {
-                    anyFailure = true
+                    failureCount += 1
                     app.logger.error("Plugin \(plugin.name) failed: \(error)")
                 }
             }
 
             do {
-                if let scan = try await Scan.find(scanID, on: app.db) {
-                    scan.status = anyFailure ? .failed : .completed
+                if let scan = try await Scan.find(scanID, on: db) {
+                    // Mark failed only when every plugin threw — partial success is still completed.
+                    scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
                     scan.completedAt = Date()
-                    try await scan.save(on: app.db)
+                    try await scan.save(on: db)
                 }
             } catch {
                 app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
             }
         }
 
-        return ScanResponse(scanID: scanID, input: scanReq.input, status: newScan.status.rawValue, results: [])
+        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [])
     }
 
     @Sendable
