@@ -1,10 +1,15 @@
 import Vapor
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 struct SherlockSite: Decodable {
     let errorType: String
     let url: String
     let urlMain: String
     let errorMsg: StringOrArray?
+    let errorUrl: String?
     let regexCheck: String?
 
     // Custom decodable to handle errorMsg which can be a String or Array of Strings in the Sherlock data
@@ -81,83 +86,90 @@ struct BulkUsernamePlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }
         let username = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        var validSites: [(String, SherlockSite)] = []
-        for (siteName, siteData) in sites {
-            validSites.append((siteName, siteData))
-        }
-        
-        let concurrencyLimit = 30 // 30 concurrent requests
+
+        let validSites = Array(sites)
+        let concurrencyLimit = 30
         var results: [PluginResult] = []
-        
-        // Setup shared HTTP client configs (like User-Agent)
         let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-        
-        // Chunk processing to avoid overwhelming memory/connections
+        // URLSession for response_url sites: follows redirects and exposes the
+        // final URL, which is what Sherlock's response_url errorType checks.
+        // Using Foundation's URLSession keeps this independent of the Vapor/NIO
+        // lifecycle — avoids crashes when the test app shuts down mid-scan.
+        let urlSession: URLSession = {
+            let cfg = URLSessionConfiguration.ephemeral
+            cfg.timeoutIntervalForRequest = 10
+            cfg.timeoutIntervalForResource = 12
+            return URLSession(configuration: cfg)
+        }()
+
         for chunk in validSites.chunked(into: concurrencyLimit) {
             let chunkResults = await withTaskGroup(of: PluginResult?.self) { group in
                 for (siteName, siteData) in chunk {
                     group.addTask {
                         let targetURL = siteData.url.replacingOccurrences(of: "{}", with: username)
-                        let uri = URI(string: targetURL)
-                        
+
                         do {
-                            // Some sites block without proper headers
-                            var headers = HTTPHeaders()
-                            headers.add(name: .userAgent, value: userAgent)
-                            headers.add(name: .accept, value: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                            headers.add(name: .acceptLanguage, value: "en-US,en;q=0.5")
-                            
-                            let response = try await app.client.get(uri, headers: headers)
-                            
+                            if siteData.errorType == "response_url" {
+                                guard let errorURL = siteData.errorUrl, !errorURL.isEmpty,
+                                      let url = URL(string: targetURL) else { return nil }
+                                var req = URLRequest(url: url, timeoutInterval: 10)
+                                req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                                let (_, resp) = try await urlSession.data(for: req)
+                                guard let http = resp as? HTTPURLResponse else { return nil }
+                                let finalURL = http.url?.absoluteString ?? targetURL
+                                let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                                let finalTrim = finalURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                                if finalTrim.hasPrefix(errTrim) { return nil }
+                                return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.8, rawData: "Account found (redirect-based). Profile: \(targetURL)")
+                            }
+
+                            guard let url = URL(string: targetURL) else { return nil }
+                            var urlReq = URLRequest(url: url, timeoutInterval: 10)
+                            urlReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                            urlReq.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
+                            urlReq.setValue("en-US,en;q=0.5", forHTTPHeaderField: "Accept-Language")
+
+                            let (data, resp) = try await urlSession.data(for: urlReq)
+                            guard let http = resp as? HTTPURLResponse else { return nil }
+
                             if siteData.errorType == "status_code" {
-                                if response.status == .ok || response.status.code == 200 {
-                                    // status_code detection is inherently unreliable: many sites return HTTP 200
-                                    // for non-existent profiles. Flag as low confidence (0.5).
+                                if http.statusCode == 200 {
                                     return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5, rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)")
                                 }
                             } else if siteData.errorType == "message" {
-                                if response.status == .ok {
-                                    if let body = response.body {
-                                        // Guard against oversized responses (malicious/honeypot servers).
-                                        guard body.readableBytes <= 512 * 1024 else { return nil }
-                                        let html = String(buffer: body)
-                                        var notFound = false
-                                        if let errorMsg = siteData.errorMsg {
-                                            switch errorMsg {
-                                            case .string(let s):
-                                                if html.contains(s) { notFound = true }
-                                            case .array(let a):
-                                                for s in a {
-                                                    if html.contains(s) { notFound = true; break }
-                                                }
-                                            }
+                                if http.statusCode == 200 {
+                                    guard data.count <= 512 * 1024 else { return nil }
+                                    let html = String(decoding: data, as: UTF8.self)
+                                    var notFound = false
+                                    if let errorMsg = siteData.errorMsg {
+                                        switch errorMsg {
+                                        case .string(let s):
+                                            if html.contains(s) { notFound = true }
+                                        case .array(let a):
+                                            for s in a where html.contains(s) { notFound = true; break }
                                         }
-                                        if !notFound {
-                                            return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.9, rawData: "Account found (message-based)! Profile: \(targetURL)")
-                                        }
+                                    }
+                                    if !notFound {
+                                        return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.9, rawData: "Account found (message-based)! Profile: \(targetURL)")
                                     }
                                 }
                             }
-                            // response_url not implemented for simplicity
                             return nil
                         } catch {
                             return nil
                         }
                     }
                 }
-                
+
                 var collected: [PluginResult] = []
                 for await res in group {
-                    if let validRes = res {
-                        collected.append(validRes)
-                    }
+                    if let r = res { collected.append(r) }
                 }
                 return collected
             }
             results.append(contentsOf: chunkResults)
         }
-        
+
         return results
     }
 }

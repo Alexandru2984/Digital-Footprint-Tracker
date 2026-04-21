@@ -20,14 +20,17 @@ struct ScanController: RouteCollection {
         GravatarPlugin(),
         HaveIBeenPwnedPlugin(),
         UsernamePlugin(),
+        RedditPlugin(),
+        PhonePlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin()
     ]
 
     func boot(routes: RoutesBuilder) throws {
-        routes.grouped(ScanRateLimiter()).post("scan", use: scan)
-        routes.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("results", ":id", use: getResults)
-        routes.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("stream", ":id", use: streamResults)
+        let noCache = routes.grouped(NoCacheMiddleware())
+        noCache.grouped(ScanRateLimiter()).post("scan", use: scan)
+        noCache.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("results", ":id", use: getResults)
+        noCache.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("stream", ":id", use: streamResults)
     }
 
     @Sendable

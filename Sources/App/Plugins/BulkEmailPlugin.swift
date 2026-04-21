@@ -39,12 +39,29 @@ struct BulkEmailPlugin: FootprintPlugin {
 
         do {
             try process.run()
-            // waitUntilExit() is a blocking call. Running it inside
-            // withCheckedContinuation on a detached task avoids blocking
-            // a thread from the Swift concurrency cooperative thread pool.
-            await withCheckedContinuation { continuation in
-                Task.detached(priority: .utility) {
-                    process.waitUntilExit()
+            // waitUntilExit() is a blocking call; wrap it on a dedicated OS thread
+            // so we never block a Swift cooperative-pool thread.
+            // A 60-second hard kill ensures the process cannot hang indefinitely:
+            // the terminationHandler fires the semaphore whether it exits normally
+            // or is killed by the timer.
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let sema = DispatchSemaphore(value: 0)
+                process.terminationHandler = { _ in sema.signal() }
+
+                // Kill after 60 s on a background queue — independent of Swift concurrency.
+                let killTimer = DispatchWorkItem {
+                    if process.isRunning {
+                        process.terminate()
+                    }
+                }
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + 60,
+                    execute: killTimer
+                )
+
+                DispatchQueue.global(qos: .utility).async {
+                    sema.wait()
+                    killTimer.cancel()
                     continuation.resume()
                 }
             }
