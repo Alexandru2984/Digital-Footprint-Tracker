@@ -25,15 +25,6 @@ struct GravatarPlugin: FootprintPlugin {
                         rawData: "Gravatar found! URL: \(url)"
                     )
                 ]
-            } else if response.status == .notFound {
-                return [
-                    PluginResult(
-                        source: name,
-                        type: "avatar_presence",
-                        confidenceScore: 0.0,
-                        rawData: "No Gravatar found for this email."
-                    )
-                ]
             } else {
                 return []
             }

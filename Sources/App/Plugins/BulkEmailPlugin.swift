@@ -23,13 +23,19 @@ struct BulkEmailPlugin: FootprintPlugin {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: holehePath)
         process.arguments = [cleanedEmail, "--only-used", "--no-color"]
-        // Explicitly clear the environment so holehe cannot access app secrets
-        // (DATABASE_PASSWORD, HIBP_API_KEY, etc.) inherited from the parent process.
-        process.environment = ["PATH": "/usr/bin:/usr/local/bin:/home/micu/.local/bin", "HOME": "/tmp"]
+        // Explicitly clear the environment so holehe cannot access app secrets.
+        // PYTHONPATH must point to the user-site dir because HOME=/tmp disables it.
+        let pythonPath = Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages"
+        process.environment = [
+            "PATH": "/usr/bin:/usr/local/bin:/home/micu/.local/bin",
+            "HOME": "/tmp",
+            "PYTHONPATH": pythonPath
+        ]
 
         let pipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe() // Ignore stderr (tqdm progress bars go to stderr usually)
+        // Discard tqdm/progress output; never read this pipe to avoid a buffer-full hang.
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()

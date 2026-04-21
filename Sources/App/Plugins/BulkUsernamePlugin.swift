@@ -112,8 +112,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
                             
                             if siteData.errorType == "status_code" {
                                 if response.status == .ok || response.status.code == 200 {
-                                    // Found!
-                                    return PluginResult(source: siteName, type: "account_presence", confidenceScore: 1.0, rawData: "Account found! Profile: \(targetURL)")
+                                    // status_code detection is inherently unreliable: many sites return HTTP 200
+                                    // for non-existent profiles. Flag as low confidence (0.5).
+                                    return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5, rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)")
                                 }
                             } else if siteData.errorType == "message" {
                                 if response.status == .ok {

@@ -3,6 +3,7 @@ import Fluent
 
 struct ScanRequest: Content {
     let input: String
+    let force: Bool?
 }
 
 struct ScanResponse: Content {
@@ -10,6 +11,8 @@ struct ScanResponse: Content {
     let input: String
     let status: String
     let results: [Result]
+    let completedAt: Double?  // Unix timestamp (seconds since 1970), nil if not yet finished
+    let scannedAt: Double?    // Unix timestamp of scan creation
 }
 
 struct ScanController: RouteCollection {
@@ -65,18 +68,43 @@ struct ScanController: RouteCollection {
         }
         req.logger.info("Scan requested: input=\(logSafe) ip=\(clientIP)")
 
-        // Reuse the most recent non-failed scan; re-run only if the last attempt failed.
-        if let existingScan = try await Scan.query(on: req.db)
+        let forceScan = scanReq.force == true
+        // A scan older than 7 days is considered stale; a fresh scan will be started.
+        let staleThreshold = Date().addingTimeInterval(-7 * 24 * 3600)
+
+        // Dedupe: if a pending scan already exists for this input, return it immediately
+        // so we don't spin up redundant parallel plugin tasks.
+        if let pendingScan = try await Scan.query(on: req.db)
             .filter(\.$input == input)
-            .filter(\.$statusRaw != ScanStatus.failed.rawValue)
-            .with(\.$results)
-            .sort(\.$createdAt, .descending)
+            .filter(\.$statusRaw == ScanStatus.pending.rawValue)
             .first() {
+            return ScanResponse(
+                scanID: pendingScan.id!,
+                input: pendingScan.input,
+                status: pendingScan.status.rawValue,
+                results: [],
+                completedAt: nil,
+                scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
+            )
+        }
+
+        // Reuse a recent completed scan unless force=true or the data is stale.
+        if !forceScan,
+           let existingScan = try await Scan.query(on: req.db)
+               .filter(\.$input == input)
+               .filter(\.$statusRaw != ScanStatus.failed.rawValue)
+               .with(\.$results)
+               .sort(\.$createdAt, .descending)
+               .first(),
+           let createdAt = existingScan.createdAt,
+           createdAt > staleThreshold {
             return ScanResponse(
                 scanID: existingScan.id!,
                 input: existingScan.input,
                 status: existingScan.status.rawValue,
-                results: existingScan.results
+                results: existingScan.results,
+                completedAt: existingScan.completedAt.map { $0.timeIntervalSince1970 },
+                scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 }
             )
         }
 
@@ -176,7 +204,7 @@ struct ScanController: RouteCollection {
             }
         }
 
-        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [])
+        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil, scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 })
     }
 
     @Sendable
@@ -196,7 +224,9 @@ struct ScanController: RouteCollection {
             scanID: scan.id!,
             input: scan.input,
             status: scan.status.rawValue,
-            results: scan.results
+            results: scan.results,
+            completedAt: scan.completedAt.map { $0.timeIntervalSince1970 },
+            scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 }
         )
     }
 

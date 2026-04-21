@@ -45,14 +45,7 @@ struct UsernamePlugin: FootprintPlugin {
                     )
                 ]
             } else if response.status == .notFound {
-                return [
-                    PluginResult(
-                        source: name,
-                        type: "account_presence",
-                        confidenceScore: 0.0,
-                        rawData: "No GitHub account found for this username."
-                    )
-                ]
+                return []
             } else {
                 return [
                     PluginResult(

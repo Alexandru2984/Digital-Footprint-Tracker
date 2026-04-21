@@ -121,18 +121,28 @@
         <section id="status-terminal" class="bg-dark-900 border border-dark-700 rounded-xl p-4 mb-8 hidden shadow-inner h-32 overflow-y-auto text-xs text-brand-500 leading-relaxed">
         </section>
 
-        <!-- Results Panel -->
         <section id="results-panel" class="hidden flex-col gap-6">
-            <div class="flex items-center justify-between border-b border-dark-700 pb-2">
-                <h2 class="text-xl font-bold flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500">
-                        <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-                        <path d="M3 9h18"></path>
-                        <path d="M9 21V9"></path>
-                    </svg>
-                    ANALYSIS REPORT
-                </h2>
+            <div class="flex items-center justify-between border-b border-dark-700 pb-2 gap-4">
+                <div>
+                    <h2 class="text-xl font-bold flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500">
+                            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                            <path d="M3 9h18"></path>
+                            <path d="M9 21V9"></path>
+                        </svg>
+                        ANALYSIS REPORT
+                    </h2>
+                    <p id="scan-age-display" class="text-xs text-slate-500 mt-1 hidden"></p>
+                </div>
                 <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button id="force-rescan-btn" title="Force a fresh scan, ignoring cache" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                        RESCAN
+                    </button>
+                    <button id="confidence-filter-btn" title="Toggle: show only high-confidence results (≥70%)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-green-400 hover:border-green-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                        <span id="conf-filter-label">HIGH CONF</span>
+                    </button>
                     <button id="share-btn" title="Copy share link" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         SHARE
@@ -201,6 +211,8 @@
         // Symbol token — each new scan/load gets a fresh token; stale poll callbacks check
         // this and abort if they no longer own the UI.
         let activeScanToken = null;
+        // When true, only results with confidenceScore >= 0.7 are shown.
+        let confidenceFilterActive = false;
 
         // Live input-type badge: shows EMAIL or USERNAME as the user types.
         input.addEventListener('input', () => {
@@ -356,20 +368,52 @@
             }
         }
 
-        function displayResults(data) {
-            setScanningState(false);
-            lastScanData = data;
-            resultsPanel.classList.remove('hidden');
+        // Returns a relative date string ("today", "2 days ago", "Apr 20").
+        function formatRelativeDate(date) {
+            const diffDays = Math.floor((Date.now() - date) / 86400000);
+            if (diffDays === 0) return 'today';
+            if (diffDays === 1) return 'yesterday';
+            if (diffDays < 30) return diffDays + ' days ago';
+            return date.toLocaleDateString();
+        }
+
+        // Returns results filtered by the current confidence threshold.
+        function filterResults(results) {
+            if (!confidenceFilterActive) return results;
+            return results.filter(r => r.confidenceScore >= 0.7);
+        }
+
+        // Re-renders the results grid from lastScanData using the current filter.
+        function reRenderGrid() {
+            if (!lastScanData) return;
+            const filtered = filterResults(lastScanData.results || []);
             resultsGrid.innerHTML = '';
-            scanIdDisplay.textContent = data.scanID;
-            if (!data.results || data.results.length === 0) {
+            if (filtered.length === 0) {
                 emptyState.classList.remove('hidden');
                 resultsGrid.classList.add('hidden');
             } else {
                 emptyState.classList.add('hidden');
                 resultsGrid.classList.remove('hidden');
-                data.results.forEach(res => resultsGrid.appendChild(createResultCard(res)));
+                filtered.forEach(r => resultsGrid.appendChild(createResultCard(r)));
             }
+        }
+
+        function displayResults(data) {
+            setScanningState(false);
+            lastScanData = data;
+            resultsPanel.classList.remove('hidden');
+            scanIdDisplay.textContent = data.scanID;
+
+            // Scan age indicator
+            const ageEl = document.getElementById('scan-age-display');
+            if (data.completedAt) {
+                ageEl.textContent = 'Scanned ' + formatRelativeDate(new Date(data.completedAt * 1000));
+                ageEl.classList.remove('hidden');
+            } else {
+                ageEl.classList.add('hidden');
+            }
+
+            reRenderGrid();
             saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
         }
 
@@ -397,7 +441,10 @@
                 if (token !== activeScanToken) { evSource.close(); return; }
                 try {
                     const result = JSON.parse(e.data);
-                    resultsGrid.appendChild(createResultCard(result));
+                    // Apply live confidence filter during streaming.
+                    if (!confidenceFilterActive || result.confidenceScore >= 0.7) {
+                        resultsGrid.appendChild(createResultCard(result));
+                    }
                     receivedResults++;
                 } catch (_) {}
             };
@@ -592,6 +639,50 @@
         document.getElementById('clear-history-btn').addEventListener('click', () => {
             try { localStorage.removeItem(HISTORY_KEY); } catch (_) {}
             renderHistory();
+        });
+
+        // ─── CONFIDENCE FILTER ────────────────────────────────────────────────────
+        const confidenceFilterBtn = document.getElementById('confidence-filter-btn');
+        const confFilterLabel = document.getElementById('conf-filter-label');
+        confidenceFilterBtn.addEventListener('click', () => {
+            confidenceFilterActive = !confidenceFilterActive;
+            if (confidenceFilterActive) {
+                confidenceFilterBtn.classList.add('border-green-500/50', 'text-green-400');
+                confidenceFilterBtn.classList.remove('text-slate-400');
+                confFilterLabel.textContent = 'ALL RESULTS';
+            } else {
+                confidenceFilterBtn.classList.remove('border-green-500/50', 'text-green-400');
+                confidenceFilterBtn.classList.add('text-slate-400');
+                confFilterLabel.textContent = 'HIGH CONF';
+            }
+            reRenderGrid();
+        });
+
+        // ─── FORCE RESCAN ─────────────────────────────────────────────────────────
+        document.getElementById('force-rescan-btn').addEventListener('click', async () => {
+            const target = input.value.trim();
+            if (!target) return;
+            activeScanToken = Symbol();
+            resetResultsView();
+            setScanningState(true);
+            logStatus('Force rescanning: ' + target);
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: target, force: true })
+                });
+                if (!response.ok) {
+                    const errText = await response.text().catch(() => String(response.status));
+                    throw new Error(errText);
+                }
+                const data = await response.json();
+                logStatus('New scan queued: ' + data.scanID);
+                startStreaming(data.scanID);
+            } catch (error) {
+                logStatus('Error: ' + error.message, 'text-red-500');
+                setScanningState(false);
+            }
         });
 
         // ─── EXPORT JSON ──────────────────────────────────────────────────────────
