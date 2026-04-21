@@ -42,6 +42,19 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #475569;
         }
+        @media print {
+            .scan-line, #search-panel, #history-panel, #status-terminal,
+            footer, .js-copy-json, #copy-scan-id, #export-json-btn,
+            #export-pdf-btn, #share-btn, #clear-history-btn { display: none !important; }
+            #results-panel { display: flex !important; }
+            body { background-color: #fff !important; color: #000 !important; }
+            .bg-dark-800, .bg-dark-900, .bg-\[#0b1120\] { background: #f4f4f4 !important; }
+            .text-white, .text-slate-200, .text-slate-300,
+            .text-brand-500, .text-brand-400 { color: #111 !important; }
+            pre, code { background: #f0f0f0 !important; color: #333 !important; }
+            .border-dark-700, .border-dark-600 { border-color: #ccc !important; }
+            a { color: #2563eb !important; }
+        }
     </style>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
@@ -92,6 +105,18 @@
             </form>
         </section>
 
+        <!-- Scan History -->
+        <section id="history-panel" class="hidden bg-dark-800 border border-dark-700 rounded-xl p-4 mb-8 shadow-xl">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                    RECENT SCANS
+                </h3>
+                <button id="clear-history-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLEAR</button>
+            </div>
+            <div id="history-list" class="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1"></div>
+        </section>
+
         <!-- Status Terminal (Optional, hidden initially) -->
         <section id="status-terminal" class="bg-dark-900 border border-dark-700 rounded-xl p-4 mb-8 hidden shadow-inner h-32 overflow-y-auto text-xs text-brand-500 leading-relaxed">
         </section>
@@ -107,11 +132,25 @@
                     </svg>
                     ANALYSIS REPORT
                 </h2>
-                <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner flex items-center gap-2">
-                    SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500"></span>
-                    <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button id="share-btn" title="Copy share link" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                        SHARE
                     </button>
+                    <button id="export-json-btn" title="Export results as JSON" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                        JSON
+                    </button>
+                    <button id="export-pdf-btn" title="Print / Save as PDF" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                        PDF
+                    </button>
+                    <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner flex items-center gap-2">
+                        SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500"></span>
+                        <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -154,10 +193,14 @@
         const inputTypeBadge = document.getElementById('input-type-badge');
         const inputTypeLabel = document.getElementById('input-type-label');
 
-        // Polling configuration: 40 attempts × 3 s = 2 min total window.
         const POLL_INTERVAL_MS = 3000;
         const MAX_POLLS = 40;
-        let pollCount = 0;
+
+        // Stores the most recently displayed scan data for export/share.
+        let lastScanData = null;
+        // Symbol token — each new scan/load gets a fresh token; stale poll callbacks check
+        // this and abort if they no longer own the UI.
+        let activeScanToken = null;
 
         // Live input-type badge: shows EMAIL or USERNAME as the user types.
         input.addEventListener('input', () => {
@@ -173,28 +216,15 @@
             }
         });
 
-        function escapeHtml(str) {
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-        }
-
-        // logStatus(text, cssClass) — always uses textContent so no caller
-        // needs to sanitise values before passing them here.
         function logStatus(text, cssClass = null) {
             statusTerminal.classList.remove('hidden');
             const time = new Date().toISOString().split('T')[1].split('.')[0];
             const line = document.createElement('div');
-
             const timeSpan = document.createElement('span');
             timeSpan.className = 'text-slate-500';
             timeSpan.textContent = `[${time}]`;
             line.appendChild(timeSpan);
             line.appendChild(document.createTextNode(' '));
-
             if (cssClass) {
                 const msgSpan = document.createElement('span');
                 msgSpan.className = cssClass;
@@ -203,7 +233,6 @@
             } else {
                 line.appendChild(document.createTextNode(text));
             }
-
             statusTerminal.appendChild(line);
             statusTerminal.scrollTop = statusTerminal.scrollHeight;
         }
@@ -212,15 +241,13 @@
         function copyToClipboard(text, triggerEl) {
             navigator.clipboard.writeText(text).then(() => {
                 const prev = triggerEl.innerHTML;
-                triggerEl.innerHTML = '✓';
+                triggerEl.innerHTML = '&#10003;';
                 triggerEl.style.color = '#10b981';
                 setTimeout(() => { triggerEl.innerHTML = prev; triggerEl.style.color = ''; }, 1500);
             }).catch(() => {});
         }
 
-        copyScanIdBtn.addEventListener('click', () => {
-            copyToClipboard(scanIdDisplay.textContent, copyScanIdBtn);
-        });
+        copyScanIdBtn.addEventListener('click', () => copyToClipboard(scanIdDisplay.textContent, copyScanIdBtn));
 
         function setScanningState(isScanning) {
             if (isScanning) {
@@ -230,9 +257,6 @@
                 btnIcon.classList.add('hidden');
                 loadingIcon.classList.remove('hidden');
                 searchPanel.classList.add('is-scanning');
-                statusTerminal.innerHTML = '';
-                resultsPanel.classList.add('hidden');
-                resultsGrid.innerHTML = '';
             } else {
                 scanBtn.disabled = false;
                 input.disabled = false;
@@ -243,8 +267,15 @@
             }
         }
 
-        // Returns a DOM element (not an HTML string) so untrusted values are
-        // always assigned via textContent — never injected into innerHTML.
+        function resetResultsView() {
+            lastScanData = null;
+            statusTerminal.innerHTML = '';
+            resultsPanel.classList.add('hidden');
+            resultsGrid.innerHTML = '';
+            emptyState.classList.add('hidden');
+        }
+
+        // Returns a DOM element; all API values set via textContent — never innerHTML.
         function createResultCard(result) {
             let scoreColor = 'text-green-500';
             if (result.confidenceScore < 0.5) scoreColor = 'text-red-500';
@@ -286,25 +317,18 @@
                 </div>
             `;
 
-            // Assign all API-sourced values via textContent to prevent XSS.
             card.querySelector('.js-source').textContent = result.source;
             card.querySelector('.js-type').textContent = result.type;
-
-            // Render rawData: linkify any URLs found in the text safely.
             renderRawData(card.querySelector('.js-raw-data'), result.rawData);
-
             const jsonStr = JSON.stringify(result, null, 2);
             card.querySelector('.js-json').textContent = jsonStr;
             card.querySelector('.js-copy-json').addEventListener('click', function() {
                 copyToClipboard(jsonStr, this);
             });
-
             return card;
         }
 
         // Splits rawData text on URLs and renders them as safe <a> elements.
-        // All text nodes are assigned via textContent; href is validated to
-        // only allow http/https before being set via setAttribute.
         function renderRawData(container, text) {
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             let lastIndex = 0;
@@ -314,7 +338,6 @@
                     container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
                 }
                 const href = match[1];
-                // Only linkify http/https URLs to prevent javascript: injection.
                 if (/^https?:\/\//i.test(href)) {
                     const a = document.createElement('a');
                     a.setAttribute('href', href);
@@ -335,9 +358,10 @@
 
         function displayResults(data) {
             setScanningState(false);
+            lastScanData = data;
             resultsPanel.classList.remove('hidden');
+            resultsGrid.innerHTML = '';
             scanIdDisplay.textContent = data.scanID;
-
             if (!data.results || data.results.length === 0) {
                 emptyState.classList.remove('hidden');
                 resultsGrid.classList.add('hidden');
@@ -346,41 +370,138 @@
                 resultsGrid.classList.remove('hidden');
                 data.results.forEach(res => resultsGrid.appendChild(createResultCard(res)));
             }
+            saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
         }
 
-        // Recursive setTimeout avoids overlapping polls if a request is slow.
-        async function pollResults(scanID) {
-            pollCount++;
-            logStatus(`Polling... (attempt ${pollCount}/${MAX_POLLS})`);
+        // Per-session SSE streaming: streams results as they arrive from the server.
+        // Falls back automatically to polling if EventSource is unavailable or errors.
+        function startStreaming(scanID) {
+            const token = Symbol();
+            activeScanToken = token;
 
+            // Show results panel early so cards appear live.
+            resultsPanel.classList.remove('hidden');
+            scanIdDisplay.textContent = scanID;
+            emptyState.classList.add('hidden');
+            resultsGrid.classList.remove('hidden');
+
+            if (typeof EventSource === 'undefined') {
+                startPolling(scanID);
+                return;
+            }
+
+            let receivedResults = 0;
+            const evSource = new EventSource('/api/stream/' + encodeURIComponent(scanID));
+
+            evSource.onmessage = (e) => {
+                if (token !== activeScanToken) { evSource.close(); return; }
+                try {
+                    const result = JSON.parse(e.data);
+                    resultsGrid.appendChild(createResultCard(result));
+                    receivedResults++;
+                } catch (_) {}
+            };
+
+            evSource.addEventListener('done', (e) => {
+                evSource.close();
+                if (token !== activeScanToken) return;
+                try {
+                    const info = JSON.parse(e.data);
+                    setScanningState(false);
+                    if (info.status === 'failed') {
+                        logStatus('Scan finished with errors. Partial results shown.', 'text-red-500');
+                    } else if (info.status === 'timeout') {
+                        logStatus('Scan timed out. Partial results shown.', 'text-yellow-500');
+                    } else {
+                        logStatus('Scan completed: ' + info.count + ' result(s).');
+                    }
+                    if (receivedResults === 0) {
+                        emptyState.classList.remove('hidden');
+                        resultsGrid.classList.add('hidden');
+                    }
+                    // Fetch full scan data for export/share/history.
+                    fetch('/api/results/' + encodeURIComponent(scanID))
+                        .then(r => r.json())
+                        .then(d => {
+                            lastScanData = d;
+                            saveToHistory(d.scanID, d.input, d.results ? d.results.length : 0);
+                        })
+                        .catch(() => {});
+                } catch (_) {}
+            });
+
+            evSource.onerror = () => {
+                evSource.close();
+                if (token !== activeScanToken) return;
+                logStatus('Streaming unavailable — switching to polling.');
+                startPolling(scanID);
+            };
+        }
+
+        // Per-session polling: each call returns a unique token; callbacks discard themselves
+        // if the token no longer matches (i.e. a newer scan has taken over the UI).
+        function startPolling(scanID) {
+            const token = Symbol();
+            activeScanToken = token;
+            let count = 0;
+
+            async function doPoll() {
+                if (token !== activeScanToken) return;
+                count++;
+                logStatus(`Polling... (attempt ${count}/${MAX_POLLS})`);
+                try {
+                    const response = await fetch(`/api/results/${encodeURIComponent(scanID)}`);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    if (token !== activeScanToken) return;
+                    logStatus(`Status: ${data.status} | ${data.results.length} result(s) found.`);
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        displayResults(data);
+                        if (data.status === 'failed') {
+                            logStatus('Scan finished with errors. Partial results may be shown.', 'text-red-500');
+                        } else {
+                            logStatus('Scan completed successfully.');
+                        }
+                    } else if (count < MAX_POLLS) {
+                        setTimeout(doPoll, POLL_INTERVAL_MS);
+                    } else {
+                        setScanningState(false);
+                        logStatus('Scan taking longer than expected. Refresh to check.', 'text-yellow-500');
+                    }
+                } catch (error) {
+                    if (token !== activeScanToken) return;
+                    logStatus('Poll error: ' + error.message, 'text-red-500');
+                    if (count < MAX_POLLS) {
+                        setTimeout(doPoll, POLL_INTERVAL_MS);
+                    } else {
+                        setScanningState(false);
+                        logStatus('Scan timed out.', 'text-red-500');
+                    }
+                }
+            }
+            setTimeout(doPoll, POLL_INTERVAL_MS);
+        }
+
+        // Load an existing scan by ID — only GETs results, never POSTs a new scan.
+        async function loadScanByID(scanID) {
+            activeScanToken = Symbol();
+            resetResultsView();
+            setScanningState(true);
+            logStatus('Loading scan ' + scanID + '...');
             try {
-                const response = await fetch(`/api/results/${encodeURIComponent(scanID)}`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+                const response = await fetch('/api/results/' + encodeURIComponent(scanID));
+                if (!response.ok) throw new Error('HTTP ' + response.status);
                 const data = await response.json();
-                logStatus(`Status: ${data.status} | ${data.results.length} result(s) found.`);
-
+                if (data.input) input.value = data.input;
                 if (data.status === 'completed' || data.status === 'failed') {
                     displayResults(data);
-                    if (data.status === 'failed') {
-                        logStatus('Scan finished with errors. Partial results may be shown.', 'text-red-500');
-                    } else {
-                        logStatus('Scan completed successfully.');
-                    }
-                } else if (pollCount < MAX_POLLS) {
-                    setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
                 } else {
-                    setScanningState(false);
-                    logStatus('Scan is taking longer than expected. Refresh the page to check again.', 'text-yellow-500');
+                    logStatus('Scan still running — streaming live updates...');
+                    startStreaming(scanID);
                 }
-            } catch (error) {
-                logStatus('Poll error: ' + error.message, 'text-red-500');
-                if (pollCount < MAX_POLLS) {
-                    setTimeout(() => pollResults(scanID), POLL_INTERVAL_MS);
-                } else {
-                    setScanningState(false);
-                    logStatus('Scan timed out.', 'text-red-500');
-                }
+            } catch (err) {
+                setScanningState(false);
+                logStatus('Failed to load scan: ' + err.message, 'text-red-500');
             }
         }
 
@@ -388,34 +509,127 @@
             e.preventDefault();
             const target = input.value.trim();
             if (!target) return;
-
+            activeScanToken = Symbol();
+            resetResultsView();
             setScanningState(true);
             logStatus('Initiating scan against target: ' + target);
-            pollCount = 0;
-
             try {
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ input: target })
                 });
-
                 if (!response.ok) {
                     const errText = await response.text().catch(() => response.status);
                     throw new Error(String(errText));
                 }
-
                 const data = await response.json();
                 logStatus('Scan queued with ID: ' + data.scanID);
-
-                // Start polling after first interval so backend has time to begin processing.
-                setTimeout(() => pollResults(data.scanID), POLL_INTERVAL_MS);
-
+                startStreaming(data.scanID);
             } catch (error) {
                 logStatus('Error initiating scan: ' + error.message, 'text-red-500');
                 setScanningState(false);
             }
         });
+
+        // ─── SCAN HISTORY ─────────────────────────────────────────────────────────
+        const HISTORY_KEY = 'dft_history';
+        const MAX_HISTORY = 20;
+
+        function saveToHistory(scanID, target, resultCount) {
+            try {
+                let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+                if (!Array.isArray(history)) history = [];
+                history = history.filter(h => h && h.scanID !== scanID);
+                history.unshift({ scanID, target: String(target || ''), resultCount: Number(resultCount) || 0, ts: Date.now() });
+                if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+            } catch (_) {}
+            renderHistory();
+        }
+
+        function renderHistory() {
+            let history = [];
+            try {
+                history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+                if (!Array.isArray(history)) history = [];
+            } catch (_) { history = []; }
+            const panel = document.getElementById('history-panel');
+            const list = document.getElementById('history-list');
+            if (!history.length) { panel.classList.add('hidden'); return; }
+            panel.classList.remove('hidden');
+            list.innerHTML = '';
+            history.forEach(h => {
+                if (!h || typeof h.scanID !== 'string') return;
+                const btn = document.createElement('button');
+                btn.className = 'flex items-center justify-between w-full text-left px-3 py-2 rounded-lg hover:bg-dark-700 transition-colors';
+                const left = document.createElement('span');
+                left.className = 'flex items-center gap-2 min-w-0';
+                const dot = document.createElement('span');
+                dot.className = 'w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0';
+                const targetEl = document.createElement('span');
+                targetEl.className = 'text-white text-sm truncate max-w-[160px] sm:max-w-xs';
+                targetEl.textContent = String(h.target || '');
+                left.appendChild(dot);
+                left.appendChild(targetEl);
+                const right = document.createElement('span');
+                right.className = 'flex items-center gap-3 flex-shrink-0 ml-2';
+                const badge = document.createElement('span');
+                badge.className = 'text-xs text-brand-500';
+                badge.textContent = (h.resultCount || 0) + ' hit' + (h.resultCount !== 1 ? 's' : '');
+                const time = document.createElement('span');
+                time.className = 'text-xs text-slate-500';
+                time.textContent = new Date(h.ts || 0).toLocaleDateString();
+                right.appendChild(badge);
+                right.appendChild(time);
+                btn.appendChild(left);
+                btn.appendChild(right);
+                btn.addEventListener('click', () => loadScanByID(String(h.scanID)));
+                list.appendChild(btn);
+            });
+        }
+
+        document.getElementById('clear-history-btn').addEventListener('click', () => {
+            try { localStorage.removeItem(HISTORY_KEY); } catch (_) {}
+            renderHistory();
+        });
+
+        // ─── EXPORT JSON ──────────────────────────────────────────────────────────
+        document.getElementById('export-json-btn').addEventListener('click', () => {
+            if (!lastScanData) return;
+            const blob = new Blob([JSON.stringify(lastScanData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'footprint-' + lastScanData.scanID + '.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // ─── EXPORT PDF ───────────────────────────────────────────────────────────
+        document.getElementById('export-pdf-btn').addEventListener('click', () => window.print());
+
+        // ─── SHARE LINK ───────────────────────────────────────────────────────────
+        document.getElementById('share-btn').addEventListener('click', () => {
+            if (!lastScanData) return;
+            const url = location.origin + '/?scan=' + encodeURIComponent(lastScanData.scanID);
+            copyToClipboard(url, document.getElementById('share-btn'));
+        });
+
+        // ─── URL AUTO-LOAD ────────────────────────────────────────────────────────
+        // Validate UUID format client-side to avoid pointless API calls.
+        (function checkURLScan() {
+            const params = new URLSearchParams(location.search);
+            const scanID = params.get('scan');
+            if (scanID && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scanID)) {
+                loadScanByID(scanID);
+            }
+        })();
+
+        // Render history panel on page load.
+        renderHistory();
     </script>
 </body>
 </html>

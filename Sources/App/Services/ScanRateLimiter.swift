@@ -55,7 +55,9 @@ final class ScanRateLimiter: AsyncMiddleware {
         }
 
         guard allowed else {
-            throw Abort(.tooManyRequests, reason: "Rate limit exceeded; try again later.")
+            var headers = HTTPHeaders()
+            headers.add(name: "Retry-After", value: "\(Int(windowSeconds))")
+            throw Abort(.tooManyRequests, headers: headers, reason: "Rate limit exceeded; try again later.")
         }
         return try await next.respond(to: request)
     }

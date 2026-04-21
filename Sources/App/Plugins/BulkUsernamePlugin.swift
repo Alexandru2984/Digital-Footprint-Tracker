@@ -118,6 +118,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
                             } else if siteData.errorType == "message" {
                                 if response.status == .ok {
                                     if let body = response.body {
+                                        // Guard against oversized responses (malicious/honeypot servers).
+                                        guard body.readableBytes <= 512 * 1024 else { return nil }
                                         let html = String(buffer: body)
                                         var notFound = false
                                         if let errorMsg = siteData.errorMsg {

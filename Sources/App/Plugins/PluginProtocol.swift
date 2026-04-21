@@ -6,7 +6,7 @@ protocol FootprintPlugin: Sendable {
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
 
-struct PluginResult: Sendable {
+struct PluginResult: Sendable, Codable {
     let source: String
     let type: String
     let confidenceScore: Double

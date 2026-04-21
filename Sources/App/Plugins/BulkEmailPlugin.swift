@@ -23,6 +23,9 @@ struct BulkEmailPlugin: FootprintPlugin {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: holehePath)
         process.arguments = [cleanedEmail, "--only-used", "--no-color"]
+        // Explicitly clear the environment so holehe cannot access app secrets
+        // (DATABASE_PASSWORD, HIBP_API_KEY, etc.) inherited from the parent process.
+        process.environment = ["PATH": "/usr/bin:/usr/local/bin:/home/micu/.local/bin", "HOME": "/tmp"]
 
         let pipe = Pipe()
         process.standardOutput = pipe

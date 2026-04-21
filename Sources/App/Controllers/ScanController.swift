@@ -23,15 +23,18 @@ struct ScanController: RouteCollection {
 
     func boot(routes: RoutesBuilder) throws {
         routes.grouped(ScanRateLimiter()).post("scan", use: scan)
-        // Results can be polled frequently but still need protection against abuse.
         routes.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("results", ":id", use: getResults)
+        routes.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("stream", ":id", use: streamResults)
     }
 
     @Sendable
     func scan(req: Request) async throws -> ScanResponse {
         let scanReq = try req.content.decode(ScanRequest.self)
 
-        let input = scanReq.input.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Trim whitespace and normalise emails to lowercase so "User@Example.com"
+        // reuses the same cache entry as "user@example.com".
+        let trimmed = scanReq.input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let input   = trimmed.contains("@") ? trimmed.lowercased() : trimmed
         guard !input.isEmpty else {
             throw Abort(.badRequest, reason: "Input cannot be empty.")
         }
@@ -52,7 +55,15 @@ struct ScanController: RouteCollection {
             ?? req.headers.first(name: "X-Real-IP")
             ?? req.remoteAddress?.description
             ?? "unknown"
-        req.logger.info("Scan requested: input=\(input) ip=\(clientIP)")
+
+        // Mask PII in logs: show only domain part for emails, first 3 chars for usernames.
+        let logSafe: String
+        if let atIdx = input.firstIndex(of: "@") {
+            logSafe = "***@" + String(input[input.index(after: atIdx)...])
+        } else {
+            logSafe = String(input.prefix(3)) + "***"
+        }
+        req.logger.info("Scan requested: input=\(logSafe) ip=\(clientIP)")
 
         // Reuse the most recent non-failed scan; re-run only if the last attempt failed.
         if let existingScan = try await Scan.query(on: req.db)
@@ -187,5 +198,73 @@ struct ScanController: RouteCollection {
             status: scan.status.rawValue,
             results: scan.results
         )
+    }
+
+    // SSE stream: pushes each plugin result to the client as it is saved to the DB.
+    // Polls the database every second for up to 90 seconds (safely under Cloudflare's
+    // 100-second origin-read timeout). Sends "event: done" when the scan reaches a
+    // terminal state or the deadline expires; the client should then fall back to
+    // a final GET /results/:id for export/history metadata.
+    @Sendable
+    func streamResults(req: Request) async throws -> Response {
+        guard let idString = req.parameters.get("id"), let scanID = UUID(uuidString: idString) else {
+            throw Abort(.badRequest, reason: "Invalid scan ID format.")
+        }
+        guard try await Scan.find(scanID, on: req.db) != nil else {
+            throw Abort(.notFound, reason: "Scan not found.")
+        }
+
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/event-stream")
+        headers.add(name: "Cache-Control", value: "no-cache")
+        // Tell nginx (and Cloudflare) not to buffer the SSE stream.
+        headers.add(name: "X-Accel-Buffering", value: "no")
+
+        let db = req.db
+        let logger = req.logger
+        let encoder = JSONEncoder()
+
+        let body = Response.Body(managedAsyncStream: { writer in
+            var lastCount = 0
+
+            for _ in 0..<90 {
+                guard let scan = try? await Scan.find(scanID, on: db) else { break }
+
+                let results = (try? await Result.query(on: db)
+                    .filter(\Result.$scan.$id == scanID)
+                    .all()) ?? []
+
+                // Stream any results added since the last poll.
+                for result in results.dropFirst(lastCount) {
+                    let pr = PluginResult(
+                        source: result.source,
+                        type: result.type,
+                        confidenceScore: result.confidenceScore,
+                        rawData: result.rawData
+                    )
+                    if let data = try? encoder.encode(pr),
+                       let json = String(data: data, encoding: .utf8) {
+                        try await writer.writeBuffer(ByteBuffer(string: "data: \(json)\n\n"))
+                    }
+                }
+                lastCount = results.count
+
+                if scan.status == .completed || scan.status == .failed {
+                    let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count)}"
+                    try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
+                    return
+                }
+
+                // Keepalive comment — resets Cloudflare's 100-second origin timeout.
+                try await writer.writeBuffer(ByteBuffer(string: ": ka\n\n"))
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+
+            // Deadline exceeded.
+            logger.warning("SSE stream for scan \(scanID) exceeded 90-second deadline.")
+            try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: {\"status\":\"timeout\",\"count\":0}\n\n"))
+        })
+
+        return Response(status: .ok, headers: headers, body: body)
     }
 }
