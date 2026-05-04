@@ -16,16 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Install system deps
-        run: |
-          apt-get update -qq || true
-          apt-get install -y -qq --fix-missing libcurl4-openssl-dev || true
+        run: apt-get update -qq || true && apt-get install -y -qq --fix-missing libcurl4-openssl-dev || true
 
-      - name: Resolve dependencies
-        run: swift package resolve
-
-      - name: Build (debug)
-        run: swift build
-
-      - name: Run tests
+      - name: Build & Test
         run: swift test --enable-xctest
