@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import NIOConcurrencyHelpers
 
 struct ScanRequest: Content {
     let input: String
@@ -14,6 +15,11 @@ struct ScanResponse: Content {
     let completedAt: Double?  // Unix timestamp (seconds since 1970), nil if not yet finished
     let scannedAt: Double?    // Unix timestamp of scan creation
 }
+
+/// Global counter of active SSE connections. Prevents a burst of open streams
+/// from exhausting the PostgreSQL connection pool (default max: 100 connections).
+private let activeSSEConnections = NIOAtomic<Int>.makeAtomic(value: 0)
+private let maxSSEConnections = 30
 
 struct ScanController: RouteCollection {
     let plugins: [any FootprintPlugin] = [
@@ -153,12 +159,17 @@ struct ScanController: RouteCollection {
                         do {
                             let pluginResults = try await plugin.scan(input: input, on: app)
                             for pr in pluginResults {
+                                // Cap rawData to 8 KB — prevents bloated rows from misbehaving
+                                // upstream servers or unusually large API responses.
+                                let cappedRawData = pr.rawData.count > 8192
+                                    ? String(pr.rawData.prefix(8192)) + "… [truncated]"
+                                    : pr.rawData
                                 let result = Result(
                                     scanID: scanID,
-                                    source: pr.source,
-                                    type: pr.type,
-                                    confidenceScore: pr.confidenceScore,
-                                    rawData: pr.rawData
+                                    source: String(pr.source.prefix(64)),
+                                    type: String(pr.type.prefix(64)),
+                                    confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
+                                    rawData: cappedRawData
                                 )
                                 try await result.save(on: db)
                             }
@@ -247,6 +258,13 @@ struct ScanController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
 
+        // Enforce a global cap on concurrent SSE connections to protect the DB pool.
+        let current = activeSSEConnections.add(1)
+        guard current <= maxSSEConnections else {
+            activeSSEConnections.sub(1)
+            throw Abort(.serviceUnavailable, reason: "Too many active streams; please retry shortly.")
+        }
+
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/event-stream")
         headers.add(name: "Cache-Control", value: "no-cache")
@@ -258,6 +276,7 @@ struct ScanController: RouteCollection {
         let encoder = JSONEncoder()
 
         let body = Response.Body(managedAsyncStream: { writer in
+            defer { activeSSEConnections.sub(1) }
             var lastCount = 0
 
             for _ in 0..<90 {
@@ -266,6 +285,7 @@ struct ScanController: RouteCollection {
                 let results = (try? await Result.query(on: db)
                     .filter(\Result.$scan.$id == scanID)
                     .all()) ?? []
+
 
                 // Stream any results added since the last poll.
                 for result in results.dropFirst(lastCount) {

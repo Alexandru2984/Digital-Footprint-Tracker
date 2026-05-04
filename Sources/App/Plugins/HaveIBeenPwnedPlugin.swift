@@ -1,5 +1,11 @@
 import Vapor
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
+/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle
+/// and safe to call from background tasks that may outlive the app in tests.
 struct HaveIBeenPwnedPlugin: FootprintPlugin {
     let name = "HaveIBeenPwned"
 
@@ -12,16 +18,19 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
         }
 
         let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? input
-        let url = "https://haveibeenpwned.com/api/v3/breachedaccount/\(encoded)?truncateResponse=false"
+        let urlString = "https://haveibeenpwned.com/api/v3/breachedaccount/\(encoded)?truncateResponse=false"
+        guard let url = URL(string: urlString) else { return [] }
 
-        var headers = HTTPHeaders()
-        headers.add(name: "hibp-api-key", value: apiKey)
-        headers.add(name: .userAgent, value: "Digital-Footprint-Tracker/1.0")
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue(apiKey, forHTTPHeaderField: "hibp-api-key")
+        req.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let response = try await app.client.get(URI(string: url), headers: headers)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse else { return [] }
 
-            if response.status == .notFound {
+            if http.statusCode == 404 {
                 return [PluginResult(
                     source: name,
                     type: "breach_check",
@@ -29,10 +38,7 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
                     rawData: "No breaches found for this email address."
                 )]
             }
-
-            guard response.status == .ok else {
-                return []
-            }
+            guard http.statusCode == 200 else { return [] }
 
             struct Breach: Decodable {
                 let Name: String
@@ -42,7 +48,7 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
                 let DataClasses: [String]
             }
 
-            let breaches = try response.content.decode([Breach].self)
+            let breaches = try JSONDecoder().decode([Breach].self, from: data)
             guard !breaches.isEmpty else {
                 return [PluginResult(
                     source: name,

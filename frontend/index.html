@@ -56,6 +56,7 @@
             a { color: #2563eb !important; }
         }
     </style>
+    <script defer src="https://analytics.micutu.com/script.js" data-website-id="b0d15108-e2f4-4c8b-bea6-b627acb8fa48"></script>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
     <!-- Grid Background Pattern -->
@@ -287,12 +288,8 @@
             emptyState.classList.add('hidden');
         }
 
-        // Returns a DOM element; all API values set via textContent — never innerHTML.
+        // Returns a DOM element; all API values set via textContent/classList — never innerHTML.
         function createResultCard(result) {
-            let scoreColor = 'text-green-500';
-            if (result.confidenceScore < 0.5) scoreColor = 'text-red-500';
-            else if (result.confidenceScore < 0.8) scoreColor = 'text-yellow-500';
-
             const card = document.createElement('div');
             card.className = 'bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-lg transition-transform hover:scale-[1.01] hover:border-brand-500/50';
 
@@ -308,7 +305,7 @@
                     <div class="flex justify-between items-end mb-4">
                         <div>
                             <p class="text-xs text-slate-500 mb-1">CONFIDENCE SCORE</p>
-                            <p class="text-xl font-bold ${scoreColor}">${(result.confidenceScore * 100).toFixed(0)}%</p>
+                            <p class="js-score text-xl font-bold"></p>
                         </div>
                         <div class="text-right">
                             <p class="text-xs text-slate-500 mb-1">MATCH DATA</p>
@@ -329,8 +326,15 @@
                 </div>
             `;
 
+            // Set all user-controlled values via DOM APIs — never via innerHTML interpolation.
             card.querySelector('.js-source').textContent = result.source;
             card.querySelector('.js-type').textContent = result.type;
+
+            const scoreEl = card.querySelector('.js-score');
+            const score = typeof result.confidenceScore === 'number' ? result.confidenceScore : 0;
+            scoreEl.textContent = (score * 100).toFixed(0) + '%';
+            scoreEl.classList.add(score < 0.5 ? 'text-red-500' : score < 0.8 ? 'text-yellow-500' : 'text-green-500');
+
             renderRawData(card.querySelector('.js-raw-data'), result.rawData);
             const jsonStr = JSON.stringify(result, null, 2);
             card.querySelector('.js-json').textContent = jsonStr;
