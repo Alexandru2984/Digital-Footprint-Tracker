@@ -32,6 +32,10 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateTags())
     app.migrations.add(CreateScanTags())
     app.migrations.add(CreateScheduledScans())
+    app.migrations.add(CreateScanNotifications())
+    app.migrations.add(CreateAPIKeys())
+    app.migrations.add(CreateAuditLogs())
+    app.migrations.add(AddRetentionDaysToUsers())
     try await app.autoMigrate()
 
     try routes(app)
