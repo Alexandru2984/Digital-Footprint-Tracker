@@ -57,6 +57,7 @@
         }
     </style>
     <script defer src="https://analytics.micutu.com/script.js" data-website-id="b0d15108-e2f4-4c8b-bea6-b627acb8fa48"></script>
+    <script src="/d3.min.js"></script>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
     <!-- Grid Background Pattern -->
@@ -118,6 +119,42 @@
             <div id="history-list" class="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1"></div>
         </section>
 
+        <!-- Stats Dashboard -->
+        <section id="stats-panel" class="bg-dark-800 border border-dark-700 rounded-xl p-4 mb-8 shadow-xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                    PLATFORM STATS
+                </h3>
+                <button id="refresh-stats-btn" class="text-xs text-slate-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    REFRESH
+                </button>
+            </div>
+            <div id="stats-counters" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div class="bg-dark-900 rounded-lg p-3 border border-dark-700">
+                    <p class="text-xs text-slate-500 mb-1">TOTAL SCANS</p>
+                    <p id="stat-total" class="text-2xl font-bold text-white">—</p>
+                </div>
+                <div class="bg-dark-900 rounded-lg p-3 border border-dark-700">
+                    <p class="text-xs text-slate-500 mb-1">LAST 24H</p>
+                    <p id="stat-24h" class="text-2xl font-bold text-brand-400">—</p>
+                </div>
+                <div class="bg-dark-900 rounded-lg p-3 border border-dark-700">
+                    <p class="text-xs text-slate-500 mb-1">LAST 7 DAYS</p>
+                    <p id="stat-7d" class="text-2xl font-bold text-brand-400">—</p>
+                </div>
+                <div class="bg-dark-900 rounded-lg p-3 border border-dark-700">
+                    <p class="text-xs text-slate-500 mb-1">TOTAL HITS</p>
+                    <p id="stat-results" class="text-2xl font-bold text-green-400">—</p>
+                </div>
+            </div>
+            <div id="stats-sources" class="hidden">
+                <p class="text-xs text-slate-500 uppercase tracking-widest mb-2">TOP SOURCES</p>
+                <div id="stats-bar-chart" class="flex flex-col gap-1.5"></div>
+            </div>
+        </section>
+
         <!-- Status Terminal (Optional, hidden initially) -->
         <section id="status-terminal" class="bg-dark-900 border border-dark-700 rounded-xl p-4 mb-8 hidden shadow-inner h-32 overflow-y-auto text-xs text-brand-500 leading-relaxed">
         </section>
@@ -136,6 +173,10 @@
                     <p id="scan-age-display" class="text-xs text-slate-500 mt-1 hidden"></p>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button id="toggle-graph-btn" title="Toggle identity graph visualization" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                        GRAPH
+                    </button>
                     <button id="force-rescan-btn" title="Force a fresh scan, ignoring cache" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
                         RESCAN
@@ -179,6 +220,21 @@
             <div id="results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <!-- Result Cards will be injected here -->
             </div>
+
+            <!-- Social Graph Visualization -->
+            <div id="graph-section" class="hidden mt-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                        IDENTITY GRAPH
+                    </h3>
+                    <button id="close-graph-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
+                </div>
+                <div class="bg-dark-900 border border-dark-700 rounded-xl overflow-hidden" style="height:400px">
+                    <svg id="social-graph-svg" width="100%" height="100%"></svg>
+                </div>
+                <p class="text-xs text-slate-600 mt-1 text-center">Drag nodes to explore. Node size = confidence. Green edges = high confidence.</p>
+            </div>
         </section>
 
     </main>
@@ -215,7 +271,7 @@
         // When true, only results with confidenceScore >= 0.7 are shown.
         let confidenceFilterActive = false;
 
-        // Live input-type badge: shows EMAIL or USERNAME as the user types.
+        // Live input-type badge: shows EMAIL, USERNAME, DOMAIN, or PHONE as the user types.
         input.addEventListener('input', () => {
             const val = input.value.trim();
             if (!val) { inputTypeBadge.classList.add('hidden'); return; }
@@ -223,6 +279,12 @@
             if (val.includes('@')) {
                 inputTypeLabel.textContent = 'EMAIL';
                 inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-blue-900/60 text-blue-300 border border-blue-700';
+            } else if (/^\+?[0-9]{7,15}$/.test(val)) {
+                inputTypeLabel.textContent = 'PHONE';
+                inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-purple-900/60 text-purple-300 border border-purple-700';
+            } else if (/^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(val) || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(val)) {
+                inputTypeLabel.textContent = 'DOMAIN';
+                inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-yellow-900/60 text-yellow-300 border border-yellow-700';
             } else {
                 inputTypeLabel.textContent = 'USERNAME';
                 inputTypeLabel.className = 'text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide bg-brand-900/60 text-brand-400 border border-brand-700';
@@ -713,6 +775,180 @@
             copyToClipboard(url, document.getElementById('share-btn'));
         });
 
+        // ─── STATS DASHBOARD ──────────────────────────────────────────────────────
+        async function loadStats() {
+            try {
+                const resp = await fetch('/api/stats');
+                if (!resp.ok) return;
+                const s = await resp.json();
+                document.getElementById('stat-total').textContent   = s.totalScans   ?? '—';
+                document.getElementById('stat-24h').textContent     = s.scansLast24h ?? '—';
+                document.getElementById('stat-7d').textContent      = s.scansLast7d  ?? '—';
+                document.getElementById('stat-results').textContent = s.totalResults ?? '—';
+
+                const chartEl = document.getElementById('stats-bar-chart');
+                const sourcesSection = document.getElementById('stats-sources');
+                chartEl.innerHTML = '';
+                if (s.topSources && s.topSources.length > 0) {
+                    sourcesSection.classList.remove('hidden');
+                    const max = s.topSources[0].hitCount || 1;
+                    s.topSources.forEach(src => {
+                        const pct = Math.max(4, Math.round((src.hitCount / max) * 100));
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-2';
+                        const label = document.createElement('span');
+                        label.className = 'text-xs text-slate-400 w-28 flex-shrink-0 truncate';
+                        label.textContent = String(src.source || '');
+                        const bar = document.createElement('div');
+                        bar.className = 'flex-grow bg-dark-900 rounded overflow-hidden h-4 relative border border-dark-700';
+                        const fill = document.createElement('div');
+                        fill.className = 'h-full bg-brand-600/70 rounded transition-all duration-700';
+                        fill.style.width = pct + '%';
+                        const count = document.createElement('span');
+                        count.className = 'text-xs text-slate-300 w-8 text-right flex-shrink-0';
+                        count.textContent = src.hitCount;
+                        bar.appendChild(fill);
+                        row.appendChild(label);
+                        row.appendChild(bar);
+                        row.appendChild(count);
+                        chartEl.appendChild(row);
+                    });
+                }
+            } catch (_) {}
+        }
+
+        document.getElementById('refresh-stats-btn').addEventListener('click', loadStats);
+
+        // ─── SOCIAL GRAPH (D3) ────────────────────────────────────────────────────
+        let simulation = null;
+
+        function renderSocialGraph(scanData) {
+            if (!window.d3 || !scanData || !scanData.results) return;
+            const results = scanData.results;
+            if (results.length === 0) return;
+
+            const svgEl = document.getElementById('social-graph-svg');
+            const container = svgEl.parentElement;
+            const W = container.offsetWidth || 800;
+            const H = 400;
+            svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+            const d3 = window.d3;
+            const svg = d3.select(svgEl);
+            svg.selectAll('*').remove();
+            if (simulation) simulation.stop();
+
+            // Build nodes: one center (identity) + one per unique source
+            const target = scanData.input || 'Target';
+            const sourceMap = {};
+            results.forEach(r => {
+                const src = r.source || 'Unknown';
+                if (!sourceMap[src]) {
+                    sourceMap[src] = { id: src, confidence: r.confidenceScore, count: 1 };
+                } else {
+                    sourceMap[src].confidence = Math.max(sourceMap[src].confidence, r.confidenceScore);
+                    sourceMap[src].count++;
+                }
+            });
+
+            const nodes = [{ id: target, isCenter: true, count: 1 }];
+            Object.values(sourceMap).forEach(s => nodes.push({ ...s, isCenter: false }));
+
+            const links = Object.values(sourceMap).map(s => ({
+                source: target,
+                target: s.id,
+                confidence: s.confidence
+            }));
+
+            const defs = svg.append('defs');
+            defs.append('radialGradient').attr('id', 'centerGlow')
+                .call(g => {
+                    g.append('stop').attr('offset', '0%').attr('stop-color', '#10b981').attr('stop-opacity', 0.8);
+                    g.append('stop').attr('offset', '100%').attr('stop-color', '#059669').attr('stop-opacity', 0.2);
+                });
+
+            const linkGroup = svg.append('g');
+            const nodeGroup = svg.append('g');
+
+            const link = linkGroup.selectAll('line').data(links).enter().append('line')
+                .attr('stroke-width', d => 1 + d.confidence * 2)
+                .attr('stroke', d => d.confidence >= 0.8 ? '#10b981' : d.confidence >= 0.5 ? '#f59e0b' : '#64748b')
+                .attr('stroke-opacity', d => 0.3 + d.confidence * 0.5);
+
+            const nodeEl = nodeGroup.selectAll('g').data(nodes).enter().append('g')
+                .attr('cursor', 'grab')
+                .call(d3.drag()
+                    .on('start', (event, d) => {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x; d.fy = d.y;
+                    })
+                    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+                    .on('end', (event, d) => {
+                        if (!event.active) simulation.alphaTarget(0);
+                        d.fx = null; d.fy = null;
+                    })
+                );
+
+            nodeEl.append('circle')
+                .attr('r', d => d.isCenter ? 22 : 8 + (d.count || 1) * 2)
+                .attr('fill', d => d.isCenter ? 'url(#centerGlow)' : '#1e293b')
+                .attr('stroke', d => d.isCenter ? '#10b981' : (d.confidence >= 0.8 ? '#10b981' : d.confidence >= 0.5 ? '#f59e0b' : '#475569'))
+                .attr('stroke-width', d => d.isCenter ? 2.5 : 1.5);
+
+            nodeEl.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dy', d => d.isCenter ? 5 : -14)
+                .attr('fill', d => d.isCenter ? '#10b981' : '#94a3b8')
+                .attr('font-size', d => d.isCenter ? '10px' : '9px')
+                .attr('font-family', 'monospace')
+                .attr('pointer-events', 'none')
+                .text(d => d.isCenter
+                    ? (d.id.length > 14 ? d.id.slice(0, 13) + '…' : d.id)
+                    : (d.id.length > 12 ? d.id.slice(0, 11) + '…' : d.id));
+
+            simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-180))
+                .force('center', d3.forceCenter(W / 2, H / 2))
+                .force('collision', d3.forceCollide(35))
+                .on('tick', () => {
+                    link
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+                    nodeEl.attr('transform', d => `translate(${
+                        Math.max(25, Math.min(W - 25, d.x))
+                    },${
+                        Math.max(25, Math.min(H - 25, d.y))
+                    })`);
+                });
+        }
+
+        document.getElementById('toggle-graph-btn').addEventListener('click', () => {
+            const section = document.getElementById('graph-section');
+            if (section.classList.contains('hidden')) {
+                section.classList.remove('hidden');
+                if (lastScanData) renderSocialGraph(lastScanData);
+            } else {
+                section.classList.add('hidden');
+                if (simulation) { simulation.stop(); simulation = null; }
+            }
+        });
+
+        document.getElementById('close-graph-btn').addEventListener('click', () => {
+            document.getElementById('graph-section').classList.add('hidden');
+            if (simulation) { simulation.stop(); simulation = null; }
+        });
+
+        // Re-render graph after scan completes (if visible).
+        const _origDisplayResults = displayResults;
+        function displayResults(data) {
+            _origDisplayResults(data);
+            const section = document.getElementById('graph-section');
+            if (!section.classList.contains('hidden')) renderSocialGraph(data);
+        }
+
         // ─── URL AUTO-LOAD ────────────────────────────────────────────────────────
         // Validate UUID format client-side to avoid pointless API calls.
         (function checkURLScan() {
@@ -725,6 +961,8 @@
 
         // Render history panel on page load.
         renderHistory();
+        // Load platform stats on page load.
+        loadStats();
     </script>
 </body>
 </html>

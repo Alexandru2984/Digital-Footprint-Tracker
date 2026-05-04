@@ -27,7 +27,10 @@ struct ScanController: RouteCollection {
         HaveIBeenPwnedPlugin(),
         UsernamePlugin(),
         RedditPlugin(),
+        TwitterPlugin(),
+        PastebinPlugin(),
         PhonePlugin(),
+        DomainPlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin()
     ]

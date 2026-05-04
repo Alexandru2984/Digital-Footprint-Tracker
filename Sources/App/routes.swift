@@ -7,4 +7,7 @@ func routes(_ app: Application) throws {
 
     let scanController = ScanController()
     try app.register(collection: scanController)
+
+    let statsController = StatsController()
+    try app.register(collection: statsController)
 }
