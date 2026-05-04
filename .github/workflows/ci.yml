@@ -24,8 +24,5 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Install system deps
-        run: apt-get update -qq || true && apt-get install -y -qq --fix-missing libcurl4-openssl-dev || true
-
       - name: Build & Test
-        run: swift test --enable-xctest
+        run: swift test
