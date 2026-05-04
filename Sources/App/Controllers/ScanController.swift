@@ -154,6 +154,11 @@ struct ScanController: RouteCollection {
         // A 120-second deadline prevents scans from hanging in "pending" forever
         // if a plugin stalls or a remote server never responds.
         Task {
+            // In the test environment there are no external services to reach,
+            // and the background URLSession calls generate SIGPIPE when the app
+            // shuts down immediately after the test.  Skip execution entirely.
+            guard app.environment != .testing else { return }
+
             // Use the optional-returning API so we exit gracefully if the app
             // shuts down (e.g., during tests) before this Task gets a chance to run.
             guard let db = app.databases.database(

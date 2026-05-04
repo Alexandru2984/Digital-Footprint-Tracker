@@ -1,8 +1,14 @@
 import Vapor
 import Fluent
 import FluentPostgresDriver
+#if canImport(Glibc)
+import Glibc
+#endif
 
 public func configure(_ app: Application) async throws {
+    // Prevent SIGPIPE from crashing the server when a client disconnects
+    // mid-write (common on Linux with long-lived connections).
+    signal(SIGPIPE, SIG_IGN)
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment == .production {
