@@ -28,6 +28,10 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddInputIndex())
     app.migrations.add(CreateUser())
     app.migrations.add(AddUserIDToScans())
+    app.migrations.add(AddWebhookURLToUsers())
+    app.migrations.add(CreateTags())
+    app.migrations.add(CreateScanTags())
+    app.migrations.add(CreateScheduledScans())
     try await app.autoMigrate()
 
     try routes(app)

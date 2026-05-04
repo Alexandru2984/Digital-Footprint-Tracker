@@ -19,6 +19,9 @@ final class User: Model, Content {
     @Field(key: "is_admin")
     var isAdmin: Bool
 
+    @OptionalField(key: "webhook_url")
+    var webhookURL: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -27,12 +30,13 @@ final class User: Model, Content {
 
     init() { }
 
-    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false) {
+    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil) {
         self.id = id
         self.username = username
         self.email = email
         self.passwordHash = passwordHash
         self.isAdmin = isAdmin
+        self.webhookURL = webhookURL
     }
 }
 
@@ -43,10 +47,11 @@ extension User {
         let username: String
         let email: String
         let isAdmin: Bool
+        let webhookURL: String?
         let createdAt: Date?
     }
 
     func toPublic() -> Public {
-        Public(id: id, username: username, email: email, isAdmin: isAdmin, createdAt: createdAt)
+        Public(id: id, username: username, email: email, isAdmin: isAdmin, webhookURL: webhookURL, createdAt: createdAt)
     }
 }

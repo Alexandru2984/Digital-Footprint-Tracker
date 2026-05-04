@@ -35,4 +35,13 @@ func routes(_ app: Application) throws {
 
     let adminController = AdminController()
     try app.register(collection: adminController)
+
+    let exportController = ExportController()
+    try app.register(collection: exportController)
+
+    let tagController = TagController()
+    try app.register(collection: tagController)
+
+    let scheduledScanController = ScheduledScanController()
+    try app.register(collection: scheduledScanController)
 }

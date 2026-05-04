@@ -19,6 +19,7 @@ struct AuthController: RouteCollection {
         auth.post("login", use: login)
         auth.post("logout", use: logout)
         auth.get("me", use: me)
+        auth.post("webhook", use: setWebhook)
     }
 
     @Sendable
@@ -97,6 +98,22 @@ struct AuthController: RouteCollection {
         else {
             throw Abort(.unauthorized, reason: "Not authenticated.")
         }
+        return user.toPublic()
+    }
+
+    @Sendable
+    func setWebhook(req: Request) async throws -> User.Public {
+        struct Body: Content { var webhookURL: String? }
+        guard let userIDString = req.session.data["userID"],
+              let userID = UUID(userIDString),
+              let user = try await User.find(userID, on: req.db)
+        else {
+            throw Abort(.unauthorized, reason: "Not authenticated.")
+        }
+        let body = try req.content.decode(Body.self)
+        let url = body.webhookURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        user.webhookURL = (url?.isEmpty == false) ? url : nil
+        try await user.save(on: req.db)
         return user.toPublic()
     }
 }

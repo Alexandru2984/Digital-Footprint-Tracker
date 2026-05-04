@@ -36,6 +36,9 @@ final class Scan: Model, Content {
     @OptionalParent(key: "user_id")
     var user: User?
 
+    @Siblings(through: ScanTag.self, from: \.$scan, to: \.$tag)
+    var tags: [Tag]
+
     init() { }
 
     init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {

@@ -1,6 +1,10 @@
 import Vapor
 import Fluent
 import NIOConcurrencyHelpers
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 struct ScanRequest: Content {
     let input: String
@@ -235,6 +239,14 @@ struct ScanController: RouteCollection {
                     scan.completedAt = Date()
                     try await scan.save(on: db)
                     await ScanProgressTracker.shared.remove(for: scanID)
+                    // Fire webhook if user has one set.
+                    if let userID = scan.$user.id,
+                       let user = try? await User.find(userID, on: db),
+                       let hookURL = user.webhookURL {
+                        let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
+                        let risk = RiskScorer.compute(results: allResults)
+                        await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
+                    }
                 }
             } catch {
                 app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
@@ -351,5 +363,30 @@ struct ScanController: RouteCollection {
         })
 
         return Response(status: .ok, headers: headers, body: body)
+    }
+}
+
+private func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
+    guard let hookURL = URL(string: url) else { return }
+    let payload: [String: Any] = [
+        "event": "scan.completed",
+        "scanID": scanID.uuidString,
+        "input": scan.input,
+        "status": scan.status.rawValue,
+        "riskScore": risk.value,
+        "riskLevel": risk.level.rawValue,
+        "resultCount": resultCount,
+        "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
+    ]
+    guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
+    var request = URLRequest(url: hookURL)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = body
+    request.timeoutInterval = 10
+    do {
+        _ = try await URLSession.shared.data(for: request)
+    } catch {
+        logger.warning("Webhook delivery to \(url) failed: \(error)")
     }
 }

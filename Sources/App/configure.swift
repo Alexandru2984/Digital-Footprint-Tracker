@@ -63,6 +63,10 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddInputIndex())
     app.migrations.add(CreateUser())
     app.migrations.add(AddUserIDToScans())
+    app.migrations.add(AddWebhookURLToUsers())
+    app.migrations.add(CreateTags())
+    app.migrations.add(CreateScanTags())
+    app.migrations.add(CreateScheduledScans())
 
     // Run migrations automatically
     try await app.autoMigrate()
@@ -89,4 +93,5 @@ public func configure(_ app: Application) async throws {
     // Runs daily using a detached background task with a sleep loop.
     // The task is tied to app lifetime via a lifecycle handler.
     app.lifecycle.use(ScanCleanupLifecycle())
+    app.lifecycle.use(ScheduledScanRunner())
 }

@@ -98,6 +98,7 @@
                     <button id="logout-btn" title="Logout" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-500 hover:text-red-400 hover:border-red-500/50 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
                     </button>
+                    <button id="settings-toggle-btn" title="Settings" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">⚙</button>
                 </div>
             </div>
         </header>
@@ -114,8 +115,11 @@
                     <button id="close-my-scans-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
                 </div>
             </div>
-            <div class="mb-2">
-                <input type="text" id="my-scans-search" placeholder="Search…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+            <div class="mb-2 flex gap-2">
+                <input type="text" id="my-scans-search" placeholder="Search…" class="flex-grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                <select id="tag-filter" class="bg-dark-900 border border-dark-700 text-slate-400 text-xs rounded px-2 py-1.5 outline-none focus:border-brand-500">
+                    <option value="">All tags</option>
+                </select>
             </div>
             <div id="my-scans-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1 text-sm">
                 <p class="text-slate-500 text-xs">Loading...</p>
@@ -124,6 +128,40 @@
                 <button id="my-scans-prev" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
                 <span id="my-scans-page-info">Page 1 of 1</span>
                 <button id="my-scans-next" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
+            </div>
+            <!-- Scheduled Scans sub-section -->
+            <div class="mt-4 pt-3 border-t border-dark-700">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scheduled Scans</span>
+                    <button id="refresh-scheduled-btn" class="text-[10px] text-slate-500 hover:text-brand-400 transition-colors">↻ Refresh</button>
+                </div>
+                <div id="scheduled-scans-list" class="flex flex-col gap-1 text-xs text-slate-500">Loading…</div>
+            </div>
+        </section>
+
+        <!-- Settings Panel -->
+        <section id="settings-panel" class="hidden bg-dark-800 border border-dark-700 rounded-xl p-4 mb-8 shadow-xl">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">⚙ Settings</h3>
+                <button id="close-settings-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
+            </div>
+            <div class="mb-3">
+                <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Webhook URL (POST on scan completion)</label>
+                <div class="flex gap-2">
+                    <input type="url" id="webhook-url-input" placeholder="https://example.com/hook" class="flex-grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                    <button id="save-webhook-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Save</button>
+                </div>
+                <p id="webhook-save-msg" class="text-[10px] mt-1 hidden"></p>
+            </div>
+            <!-- Tags management -->
+            <div>
+                <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Tags</label>
+                <div class="flex gap-2 mb-2">
+                    <input type="text" id="new-tag-name" placeholder="Tag name" maxlength="32" class="flex-grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                    <input type="color" id="new-tag-colour" value="#10b981" class="w-8 h-7 rounded border-0 cursor-pointer bg-dark-900">
+                    <button id="create-tag-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">+ Add</button>
+                </div>
+                <div id="tags-list" class="flex flex-wrap gap-1.5 text-xs"></div>
             </div>
         </section>
 
@@ -162,6 +200,17 @@
               <div class="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden">
                 <div id="progress-bar-fill" class="bg-brand-500 h-1.5 rounded-full transition-all duration-500 ease-out" style="width:0%"></div>
               </div>
+            </div>
+            <!-- Schedule repeat scan (shown only when logged in) -->
+            <div id="repeat-section" class="hidden mt-3 pt-3 border-t border-dark-700 flex items-center gap-3 text-xs text-slate-400">
+                <label class="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input type="checkbox" id="schedule-check" class="accent-brand-500">
+                    Schedule this scan
+                </label>
+                <select id="schedule-interval" class="bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded px-2 py-1 outline-none focus:border-brand-500">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                </select>
             </div>
         </section>
 
@@ -932,6 +981,18 @@
                 }
                 const data = await response.json();
                 logStatus('Scan queued with ID: ' + data.scanID);
+                // Optionally schedule repeat scans.
+                const scheduleCheck = document.getElementById('schedule-check');
+                if (scheduleCheck && scheduleCheck.checked && currentUser) {
+                    const interval = document.getElementById('schedule-interval').value;
+                    await fetch('/api/scheduled-scans', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ input: target, interval })
+                    }).catch(() => {});
+                    logStatus('Scheduled ' + interval + ' scan created.');
+                }
                 startStreaming(data.scanID);
             } catch (error) {
                 logStatus('Error initiating scan: ' + error.message, 'text-red-500');
@@ -1363,6 +1424,14 @@
                         document.getElementById('auth-admin-badge').classList.remove('hidden');
                         document.getElementById('admin-scans-btn').classList.remove('hidden');
                     }
+                    // Show scheduled-scan option in search form.
+                    document.getElementById('repeat-section').classList.remove('hidden');
+                    // Pre-fill webhook URL in settings.
+                    if (currentUser.webhookURL) {
+                        document.getElementById('webhook-url-input').value = currentUser.webhookURL;
+                    }
+                    // Load user tags.
+                    loadUserTags();
                 } else {
                     currentUser = null;
                     document.getElementById('auth-logged-out').classList.remove('hidden');
@@ -1376,9 +1445,12 @@
         document.getElementById('logout-btn').addEventListener('click', async () => {
             await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
             currentUser = null;
+            userTags = [];
             document.getElementById('auth-logged-out').classList.remove('hidden');
             document.getElementById('auth-logged-in').classList.add('hidden');
             document.getElementById('my-scans-panel').classList.add('hidden');
+            document.getElementById('settings-panel').classList.add('hidden');
+            document.getElementById('repeat-section').classList.add('hidden');
         });
 
         document.getElementById('my-scans-toggle-btn').addEventListener('click', async () => {
@@ -1391,11 +1463,64 @@
             myScansCurrentURL = '/api/my-scans';
             myScansCurrentPage = 1;
             await loadMyScans(myScansCurrentURL, 'MY SCANS');
+            loadScheduledScans();
         });
 
         document.getElementById('close-my-scans-btn').addEventListener('click', () => {
             document.getElementById('my-scans-panel').classList.add('hidden');
         });
+
+        document.getElementById('settings-toggle-btn').addEventListener('click', () => {
+            const panel = document.getElementById('settings-panel');
+            panel.classList.toggle('hidden');
+        });
+
+        document.getElementById('close-settings-btn').addEventListener('click', () => {
+            document.getElementById('settings-panel').classList.add('hidden');
+        });
+
+        document.getElementById('save-webhook-btn').addEventListener('click', async () => {
+            const url = document.getElementById('webhook-url-input').value.trim();
+            const msg = document.getElementById('webhook-save-msg');
+            try {
+                const res = await fetch('/api/auth/webhook', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ webhookURL: url || null })
+                });
+                if (res.ok) {
+                    msg.textContent = '✓ Saved';
+                    msg.className = 'text-[10px] mt-1 text-green-400';
+                } else {
+                    msg.textContent = '✗ Failed';
+                    msg.className = 'text-[10px] mt-1 text-red-400';
+                }
+            } catch {
+                msg.textContent = '✗ Error';
+                msg.className = 'text-[10px] mt-1 text-red-400';
+            }
+            msg.classList.remove('hidden');
+            setTimeout(() => msg.classList.add('hidden'), 3000);
+        });
+
+        document.getElementById('create-tag-btn').addEventListener('click', async () => {
+            const name = document.getElementById('new-tag-name').value.trim();
+            const colour = document.getElementById('new-tag-colour').value;
+            if (!name) return;
+            const res = await fetch('/api/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ name, colour })
+            });
+            if (res.ok) {
+                document.getElementById('new-tag-name').value = '';
+                loadUserTags();
+            }
+        });
+
+        document.getElementById('refresh-scheduled-btn').addEventListener('click', loadScheduledScans);
 
         document.getElementById('admin-scans-btn').addEventListener('click', async () => {
             myScansCurrentURL = '/api/admin/scans';
@@ -1407,8 +1532,15 @@
         let myScansCurrentPage = 1;
         let myScansCurrentPages = 1;
         let myScansCurrentTitle = 'MY SCANS';
+        let userTags = [];
+        let scanTagsData = {};
 
         document.getElementById('my-scans-search').addEventListener('input', () => {
+            myScansCurrentPage = 1;
+            loadMyScans(myScansCurrentURL, myScansCurrentTitle);
+        });
+
+        document.getElementById('tag-filter').addEventListener('change', () => {
             myScansCurrentPage = 1;
             loadMyScans(myScansCurrentURL, myScansCurrentTitle);
         });
@@ -1434,12 +1566,25 @@
             const list = document.getElementById('my-scans-list');
             list.innerHTML = '<p class="text-slate-500 text-xs">Loading...</p>';
             const q = document.getElementById('my-scans-search').value.trim();
-            const fetchURL = url + '?page=' + myScansCurrentPage + '&limit=20' + (q ? '&q=' + encodeURIComponent(q) : '');
+            const tagFilter = document.getElementById('tag-filter').value;
+            let fetchURL = url + '?page=' + myScansCurrentPage + '&limit=20' + (q ? '&q=' + encodeURIComponent(q) : '');
+            // Apply client-side tag filter by fetching tags per scan after render.
             try {
                 const res = await fetch(fetchURL, { credentials: 'include' });
                 if (!res.ok) { list.innerHTML = '<p class="text-red-400 text-xs">Failed to load.</p>'; return; }
                 const data = await res.json();
-                const items = data.items || [];
+                let items = data.items || [];
+
+                // Apply tag filter client-side (only for own scans).
+                if (tagFilter && url === '/api/my-scans') {
+                    const taggedScanIDs = new Set();
+                    try {
+                        const tRes = await fetch('/api/tags/' + encodeURIComponent(tagFilter) + '/scans', { credentials: 'include' });
+                        if (tRes.ok) { const ids = await tRes.json(); ids.forEach(id => taggedScanIDs.add(id)); }
+                    } catch {}
+                    items = items.filter(s => taggedScanIDs.has(s.scanID));
+                }
+
                 myScansCurrentPages = data.pages || 1;
 
                 // Update pagination
@@ -1463,8 +1608,11 @@
                     const statusColor = s.status === 'completed' ? 'text-green-400' : s.status === 'failed' ? 'text-red-400' : 'text-yellow-400';
                     const riskColors = { Low: 'text-green-400 border-green-800', Medium: 'text-yellow-400 border-yellow-800', High: 'text-orange-400 border-orange-800', Critical: 'text-red-500 border-red-800' };
                     const riskCls = (s.status === 'completed' && s.riskLevel) ? (riskColors[s.riskLevel] || 'text-slate-400 border-slate-700') : null;
+                    const wrapper = document.createElement('div');
+                    wrapper.id = 'scan-card-' + s.scanID;
+                    wrapper.className = 'bg-dark-900 rounded border border-dark-700';
                     const div = document.createElement('div');
-                    div.className = 'flex items-center justify-between bg-dark-900 rounded px-3 py-2 border border-dark-700 gap-2';
+                    div.className = 'flex items-center justify-between px-3 py-2 gap-2';
                     const inputEl = document.createElement('span');
                     inputEl.className = 'text-slate-300 font-mono text-xs flex-grow truncate';
                     inputEl.textContent = s.input || '';
@@ -1500,13 +1648,192 @@
                             pdfBtn.href = '/api/report/' + s.scanID;
                             pdfBtn.target = '_blank';
                             div.appendChild(pdfBtn);
+                            const jsonBtn = document.createElement('a');
+                            jsonBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 flex-shrink-0 underline';
+                            jsonBtn.textContent = 'JSON';
+                            jsonBtn.href = '/api/export/' + s.scanID;
+                            jsonBtn.download = '';
+                            div.appendChild(jsonBtn);
+                            if (currentUser) {
+                                const tagBtn = document.createElement('button');
+                                tagBtn.className = 'text-[10px] text-slate-400 hover:text-brand-400 flex-shrink-0';
+                                tagBtn.textContent = '🏷';
+                                tagBtn.title = 'Manage tags';
+                                tagBtn.addEventListener('click', () => openTagDropdown(s.scanID, tagBtn));
+                                div.appendChild(tagBtn);
+                            }
                         }
                     }
-                    list.appendChild(div);
+                    wrapper.appendChild(div);
+                    // Tag display row
+                    const tagContainer = document.createElement('div');
+                    tagContainer.id = 'tags-' + s.scanID;
+                    tagContainer.className = 'tag-container flex gap-1 flex-wrap px-3 pb-2';
+                    wrapper.appendChild(tagContainer);
+                    list.appendChild(wrapper);
+                    // Load tags for this scan.
+                    if (s.scanID && currentUser) loadScanTags(s.scanID);
                 });
             } catch(e) {
                 list.innerHTML = '<p class="text-red-400 text-xs">Error loading scans.</p>';
             }
+        }
+
+        // ─── TAGS ─────────────────────────────────────────────────────────────────
+        async function loadUserTags() {
+            try {
+                const res = await fetch('/api/tags', { credentials: 'include' });
+                if (!res.ok) return;
+                userTags = await res.json();
+                const sel = document.getElementById('tag-filter');
+                sel.innerHTML = '<option value="">All tags</option>';
+                userTags.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = t.name;
+                    sel.appendChild(opt);
+                });
+                renderTagsList();
+            } catch {}
+        }
+
+        function renderTagsList() {
+            const container = document.getElementById('tags-list');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!userTags.length) { container.textContent = 'No tags yet.'; return; }
+            userTags.forEach(t => {
+                const chip = document.createElement('span');
+                chip.className = 'flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-white';
+                chip.style.background = t.colour;
+                chip.textContent = t.name;
+                const del = document.createElement('button');
+                del.textContent = '×';
+                del.className = 'ml-1 opacity-70 hover:opacity-100';
+                del.addEventListener('click', async () => {
+                    await fetch('/api/tags/' + t.id, { method: 'DELETE', credentials: 'include' });
+                    loadUserTags();
+                });
+                chip.appendChild(del);
+                container.appendChild(chip);
+            });
+        }
+
+        async function loadScanTags(scanID) {
+            try {
+                const res = await fetch('/api/scans/' + scanID + '/tags', { credentials: 'include' });
+                if (!res.ok) return;
+                const tags = await res.json();
+                scanTagsData[scanID] = tags;
+                renderScanTags(scanID);
+            } catch {}
+        }
+
+        function renderScanTags(scanID) {
+            const container = document.getElementById('tags-' + scanID);
+            if (!container) return;
+            container.innerHTML = '';
+            (scanTagsData[scanID] || []).forEach(t => {
+                const chip = document.createElement('span');
+                chip.className = 'px-1.5 py-0.5 rounded text-[9px] text-white';
+                chip.style.background = t.colour;
+                chip.textContent = t.name;
+                container.appendChild(chip);
+            });
+        }
+
+        function openTagDropdown(scanID, anchor) {
+            closeAllTagDropdowns();
+            const dropdown = document.createElement('div');
+            dropdown.id = 'tag-dropdown';
+            dropdown.className = 'absolute z-50 bg-dark-800 border border-dark-700 rounded shadow-xl p-2 min-w-[140px] text-xs';
+            dropdown.style.cssText = 'position:fixed;';
+            const rect = anchor.getBoundingClientRect();
+            dropdown.style.top = (rect.bottom + 4) + 'px';
+            dropdown.style.left = rect.left + 'px';
+            const applied = new Set((scanTagsData[scanID] || []).map(t => t.id));
+            if (!userTags.length) {
+                dropdown.innerHTML = '<p class="text-slate-500">No tags. Create in Settings.</p>';
+            } else {
+                userTags.forEach(t => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-1.5 cursor-pointer hover:bg-dark-700 rounded px-1 py-0.5 select-none';
+                    const dot = document.createElement('span');
+                    dot.className = 'w-2 h-2 rounded-full flex-shrink-0';
+                    dot.style.background = t.colour;
+                    const lbl = document.createElement('span');
+                    lbl.textContent = t.name;
+                    lbl.className = applied.has(t.id) ? 'text-white font-bold' : 'text-slate-300';
+                    row.appendChild(dot);
+                    row.appendChild(lbl);
+                    if (applied.has(t.id)) {
+                        const check = document.createElement('span');
+                        check.textContent = '✓';
+                        check.className = 'ml-auto text-green-400';
+                        row.appendChild(check);
+                    }
+                    row.addEventListener('click', async () => {
+                        if (applied.has(t.id)) {
+                            await fetch('/api/scans/' + scanID + '/tags/' + t.id, { method: 'DELETE', credentials: 'include' });
+                        } else {
+                            await fetch('/api/scans/' + scanID + '/tags/' + t.id, { method: 'POST', credentials: 'include' });
+                        }
+                        await loadScanTags(scanID);
+                        closeAllTagDropdowns();
+                    });
+                    dropdown.appendChild(row);
+                });
+            }
+            document.body.appendChild(dropdown);
+            setTimeout(() => document.addEventListener('click', closeAllTagDropdowns, { once: true }), 0);
+        }
+
+        function closeAllTagDropdowns() {
+            const d = document.getElementById('tag-dropdown');
+            if (d) d.remove();
+        }
+
+        // ─── SCHEDULED SCANS ──────────────────────────────────────────────────────
+        async function loadScheduledScans() {
+            const el = document.getElementById('scheduled-scans-list');
+            if (!el || !currentUser) return;
+            el.innerHTML = '<span class="text-slate-600">Loading…</span>';
+            try {
+                const res = await fetch('/api/scheduled-scans', { credentials: 'include' });
+                if (!res.ok) { el.textContent = 'Failed to load.'; return; }
+                const items = await res.json();
+                if (!items.length) { el.textContent = 'No scheduled scans.'; return; }
+                el.innerHTML = '';
+                items.forEach(ss => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 bg-dark-900 rounded px-2 py-1 border border-dark-700 text-[10px]';
+                    const input = document.createElement('span');
+                    input.className = 'font-mono text-slate-300 flex-grow truncate';
+                    input.textContent = ss.input;
+                    const intv = document.createElement('span');
+                    intv.className = 'text-slate-500';
+                    intv.textContent = ss.interval;
+                    const toggle = document.createElement('button');
+                    toggle.className = ss.isActive ? 'text-green-400 hover:text-yellow-400' : 'text-slate-600 hover:text-green-400';
+                    toggle.textContent = ss.isActive ? '● ON' : '○ OFF';
+                    toggle.addEventListener('click', async () => {
+                        await fetch('/api/scheduled-scans/' + ss.id + '/toggle', { method: 'PATCH', credentials: 'include' });
+                        loadScheduledScans();
+                    });
+                    const del = document.createElement('button');
+                    del.className = 'text-slate-600 hover:text-red-400';
+                    del.textContent = '✕';
+                    del.addEventListener('click', async () => {
+                        await fetch('/api/scheduled-scans/' + ss.id, { method: 'DELETE', credentials: 'include' });
+                        loadScheduledScans();
+                    });
+                    row.appendChild(input);
+                    row.appendChild(intv);
+                    row.appendChild(toggle);
+                    row.appendChild(del);
+                    el.appendChild(row);
+                });
+            } catch { el.textContent = 'Error loading.'; }
         }
 
         // ─── URL AUTO-LOAD ────────────────────────────────────────────────────────
