@@ -44,9 +44,12 @@ Vapor 4 (async/await, Swift concurrency)
         ├── UsernamePlugin          (username — GitHub, npm, PyPI, Crates.io, Docker Hub)
         ├── RedditPlugin            (username)
         ├── TwitterPlugin           (username — public CDN endpoint, no key needed)
+        ├── KeybasePlugin           (username — identity proofs + crypto wallets)
+        ├── TelegramPlugin          (username — t.me profile scrape)
+        ├── MastodonPlugin          (username — mastodon.social public API)
         ├── PhonePlugin             (phone — AbstractAPI validation)
         ├── DomainPlugin            (domain/IP — dig A/MX/TXT/PTR + whois)
-        └── BulkUsernamePlugin      (username — Sherlock data: 478 sites)
+        └── BulkUsernamePlugin      (username — Sherlock data: 482 sites)
   │
   ▼
 PostgreSQL
@@ -59,9 +62,9 @@ PostgreSQL
 ## Features
 
 ### OSINT Engine
-- **500+ sources** checked per scan (478 Sherlock sites + 10 dedicated plugins)
+- **500+ sources** checked per scan (482 Sherlock sites + 13 dedicated plugins)
 - **Email OSINT**: Gravatar, HaveIBeenPwned breaches + pastes, holehe (400+ sites), Pastebin
-- **Username OSINT**: GitHub, npm, PyPI, Docker Hub, Crates.io, Reddit, Twitter/X, Pastebin, 478 Sherlock sites
+- **Username OSINT**: GitHub, npm, PyPI, Docker Hub, Crates.io, Reddit, Twitter/X, Keybase, Telegram, Mastodon, Pastebin, 482 Sherlock sites
 - **Domain / IP OSINT**: DNS A/MX/TXT/SPF records, reverse PTR, WHOIS registrar + expiry
 - **Phone OSINT**: E.164 format detection, carrier + country lookup via AbstractAPI
 - **Parallel execution**: all plugins run concurrently in a Swift `TaskGroup` with a 120s hard timeout
@@ -74,6 +77,7 @@ PostgreSQL
 ### Frontend
 - **Stats Dashboard**: total scans, last 24h/7d activity, top sources bar chart
 - **Identity Graph**: D3.js v7 force-directed graph — centre node = target, leaf nodes = found sources, edge colour = confidence
+- **Type filter**: dropdown to filter results by category (social_media, breach_data, dns_record, account_presence, etc.)
 - Scan history (localStorage, last 20 scans)
 - JSON export, PDF via browser print (`@media print` CSS)
 - Share link (UUID-based, copyable)
@@ -188,12 +192,15 @@ Sources/App/
 │   ├── DomainPlugin.swift
 │   ├── GravatarPlugin.swift
 │   ├── HaveIBeenPwnedPlugin.swift
+│   ├── KeybasePlugin.swift
+│   ├── MastodonPlugin.swift
 │   ├── PastebinPlugin.swift
 │   ├── PhonePlugin.swift
 │   ├── RedditPlugin.swift
+│   ├── TelegramPlugin.swift
 │   ├── TwitterPlugin.swift
 │   ├── UsernamePlugin.swift
-│   └── sherlock_data.json     — 478 Sherlock site definitions
+│   └── sherlock_data.json     — 482 Sherlock site definitions
 ├── Services/
 │   ├── NoCacheMiddleware.swift
 │   └── ScanRateLimiter.swift
