@@ -1,10 +1,33 @@
 import Vapor
 import Fluent
+import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 struct HealthController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.get("health", use: health)
         routes.get("metrics", use: metrics)
+        routes.post("api", "geolocate", use: geolocate)
+    }
+
+    // Proxy for ip-api.com/batch — keeps third-party calls off the browser
+    @Sendable func geolocate(req: Request) async throws -> Response {
+        guard let bodyData = req.body.data else {
+            throw Abort(.badRequest)
+        }
+        var urlReq = URLRequest(url: URL(string: "http://ip-api.com/batch?fields=status,country,countryCode,regionName,city,isp,org,query")!)
+        urlReq.httpMethod = "POST"
+        urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlReq.httpBody = Data(bodyData.readableBytesView)
+
+        let (data, _) = try await URLSession.shared.data(for: urlReq)
+        return Response(
+            status: .ok,
+            headers: HTTPHeaders([("Content-Type", "application/json")]),
+            body: .init(data: data)
+        )
     }
 
     @Sendable func health(req: Request) async throws -> Response {
