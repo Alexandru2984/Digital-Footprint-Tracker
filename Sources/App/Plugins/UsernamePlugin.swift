@@ -32,13 +32,39 @@ struct UsernamePlugin: FootprintPlugin {
             guard let http = response as? HTTPURLResponse else { return [] }
 
             if http.statusCode == 200 {
-                struct GitHubUser: Decodable { let public_repos: Int? }
-                let repos = (try? JSONDecoder().decode(GitHubUser.self, from: data))?.public_repos ?? 0
+                struct GitHubUser: Decodable {
+                    let public_repos: Int?
+                    let followers: Int?
+                    let following: Int?
+                    let name: String?
+                    let company: String?
+                    let blog: String?
+                    let location: String?
+                    let bio: String?
+                    let twitter_username: String?
+                    let created_at: String?
+                    let type: String?
+                }
+                let user = try? JSONDecoder().decode(GitHubUser.self, from: data)
+
+                var parts: [String] = [
+                    "GitHub profile: https://github.com/\(cleanedUsername)"
+                ]
+                if let n = user?.name, !n.isEmpty         { parts.append("Name: \(n)") }
+                if let b = user?.bio, !b.isEmpty           { parts.append("Bio: \(b.prefix(120))") }
+                if let loc = user?.location, !loc.isEmpty  { parts.append("Location: \(loc)") }
+                if let co = user?.company, !co.isEmpty     { parts.append("Company: \(co)") }
+                if let blog = user?.blog, !blog.isEmpty    { parts.append("Blog: \(blog)") }
+                if let tw = user?.twitter_username, !tw.isEmpty { parts.append("Twitter: @\(tw)") }
+                parts.append("Repos: \(user?.public_repos ?? 0)")
+                parts.append("Followers: \(user?.followers ?? 0)")
+                if let created = user?.created_at?.prefix(4) { parts.append("Joined: \(created)") }
+
                 return [PluginResult(
                     source: name,
                     type: "account_presence",
                     confidenceScore: 1.0,
-                    rawData: "Account found on GitHub! Profile: https://github.com/\(cleanedUsername) | Repos: \(repos)"
+                    rawData: parts.joined(separator: " | ")
                 )]
             } else if http.statusCode == 404 {
                 return []

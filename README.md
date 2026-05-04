@@ -47,9 +47,10 @@ Vapor 4 (async/await, Swift concurrency)
         ├── KeybasePlugin           (username — identity proofs + crypto wallets)
         ├── TelegramPlugin          (username — t.me profile scrape)
         ├── MastodonPlugin          (username — mastodon.social public API)
+        ├── HackerNewsPlugin        (username — karma, submissions, member since)
         ├── PhonePlugin             (phone — AbstractAPI validation)
         ├── DomainPlugin            (domain/IP — dig A/MX/TXT/PTR + whois)
-        └── BulkUsernamePlugin      (username — Sherlock data: 482 sites)
+        └── BulkUsernamePlugin      (username — Sherlock data: 481 sites)
   │
   ▼
 PostgreSQL
@@ -62,9 +63,9 @@ PostgreSQL
 ## Features
 
 ### OSINT Engine
-- **500+ sources** checked per scan (482 Sherlock sites + 13 dedicated plugins)
+- **500+ sources** checked per scan (481 Sherlock sites + 14 dedicated plugins)
 - **Email OSINT**: Gravatar, HaveIBeenPwned breaches + pastes, holehe (400+ sites), Pastebin
-- **Username OSINT**: GitHub, npm, PyPI, Docker Hub, Crates.io, Reddit, Twitter/X, Keybase, Telegram, Mastodon, Pastebin, 482 Sherlock sites
+- **Username OSINT**: GitHub, npm, PyPI, Docker Hub, Crates.io, Reddit, Twitter/X, Keybase, Telegram, Mastodon, HackerNews, Pastebin, 481 Sherlock sites
 - **Domain / IP OSINT**: DNS A/MX/TXT/SPF records, reverse PTR, WHOIS registrar + expiry
 - **Phone OSINT**: E.164 format detection, carrier + country lookup via AbstractAPI
 - **Parallel execution**: all plugins run concurrently in a Swift `TaskGroup` with a 120s hard timeout
@@ -192,6 +193,7 @@ Sources/App/
 │   ├── DomainPlugin.swift
 │   ├── GravatarPlugin.swift
 │   ├── HaveIBeenPwnedPlugin.swift
+│   ├── HackerNewsPlugin.swift
 │   ├── KeybasePlugin.swift
 │   ├── MastodonPlugin.swift
 │   ├── PastebinPlugin.swift
@@ -200,7 +202,7 @@ Sources/App/
 │   ├── TelegramPlugin.swift
 │   ├── TwitterPlugin.swift
 │   ├── UsernamePlugin.swift
-│   └── sherlock_data.json     — 482 Sherlock site definitions
+│   └── sherlock_data.json     — 481 Sherlock site definitions
 ├── Services/
 │   ├── NoCacheMiddleware.swift
 │   └── ScanRateLimiter.swift
