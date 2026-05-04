@@ -16,4 +16,10 @@ func routes(_ app: Application) throws {
 
     let userController = UserController()
     try app.register(collection: userController)
+
+    let reportController = ReportController()
+    try app.register(collection: reportController)
+
+    let adminController = AdminController()
+    try app.register(collection: adminController)
 }

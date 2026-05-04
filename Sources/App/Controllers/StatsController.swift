@@ -18,7 +18,7 @@ struct StatsResponse: Content {
 struct StatsController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
-        noCache.grouped(ScanRateLimiter(maxRequests: 30, windowSeconds: 60)).get("stats", use: getStats)
+        noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60)).get("stats", use: getStats)
     }
 
     @Sendable

@@ -114,8 +114,16 @@
                     <button id="close-my-scans-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
                 </div>
             </div>
+            <div class="mb-2">
+                <input type="text" id="my-scans-search" placeholder="Search…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+            </div>
             <div id="my-scans-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1 text-sm">
                 <p class="text-slate-500 text-xs">Loading...</p>
+            </div>
+            <div id="my-scans-pagination" class="hidden flex items-center justify-between mt-2 text-xs text-slate-500">
+                <button id="my-scans-prev" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
+                <span id="my-scans-page-info">Page 1 of 1</span>
+                <button id="my-scans-next" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
             </div>
         </section>
 
@@ -145,6 +153,16 @@
                     </button>
                 </div>
             </form>
+            <!-- Scan progress bar — shown during live SSE streaming -->
+            <div id="scan-progress" class="hidden mt-3 space-y-1.5 px-1">
+              <div class="flex justify-between items-center text-xs text-slate-500">
+                <span id="progress-plugin-label" class="truncate max-w-[70%]">Starting scan…</span>
+                <span id="progress-count-label" class="flex-shrink-0 font-mono">0 / 18</span>
+              </div>
+              <div class="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden">
+                <div id="progress-bar-fill" class="bg-brand-500 h-1.5 rounded-full transition-all duration-500 ease-out" style="width:0%"></div>
+              </div>
+            </div>
         </section>
 
         <!-- Scan History -->
@@ -522,6 +540,7 @@
                 loadingIcon.classList.add('hidden');
                 btnIcon.classList.remove('hidden');
                 searchPanel.classList.remove('is-scanning');
+                document.getElementById('scan-progress').classList.add('hidden');
             }
         }
 
@@ -690,6 +709,12 @@
             emptyState.classList.add('hidden');
             resultsGrid.classList.remove('hidden');
 
+            // Show and reset the progress bar
+            document.getElementById('scan-progress').classList.remove('hidden');
+            document.getElementById('progress-bar-fill').style.width = '0%';
+            document.getElementById('progress-count-label').textContent = '0 / 18';
+            document.getElementById('progress-plugin-label').textContent = 'Starting scan…';
+
             if (typeof EventSource === 'undefined') {
                 startPolling(scanID);
                 return;
@@ -711,6 +736,18 @@
                     receivedResults++;
                 } catch (_) {}
             };
+
+            evSource.addEventListener('progress', (e) => {
+                try {
+                    const p = JSON.parse(e.data);
+                    const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+                    document.getElementById('progress-bar-fill').style.width = pct + '%';
+                    document.getElementById('progress-count-label').textContent = p.done + ' / ' + p.total;
+                    if (p.lastPlugin) {
+                        document.getElementById('progress-plugin-label').textContent = '✓ ' + p.lastPlugin;
+                    }
+                } catch (_) {}
+            });
 
             evSource.addEventListener('done', (e) => {
                 evSource.close();
@@ -1186,7 +1223,9 @@
                 return;
             }
             panel.classList.remove('hidden');
-            await loadMyScans('/api/my-scans', 'MY SCANS');
+            myScansCurrentURL = '/api/my-scans';
+            myScansCurrentPage = 1;
+            await loadMyScans(myScansCurrentURL, 'MY SCANS');
         });
 
         document.getElementById('close-my-scans-btn').addEventListener('click', () => {
@@ -1194,28 +1233,96 @@
         });
 
         document.getElementById('admin-scans-btn').addEventListener('click', async () => {
-            await loadMyScans('/api/admin/scans', 'ALL SCANS (ADMIN)');
+            myScansCurrentURL = '/api/admin/scans';
+            myScansCurrentPage = 1;
+            await loadMyScans(myScansCurrentURL, 'ALL SCANS (ADMIN)');
+        });
+
+        let myScansCurrentURL = '/api/my-scans';
+        let myScansCurrentPage = 1;
+        let myScansCurrentPages = 1;
+        let myScansCurrentTitle = 'MY SCANS';
+
+        document.getElementById('my-scans-search').addEventListener('input', () => {
+            myScansCurrentPage = 1;
+            loadMyScans(myScansCurrentURL, myScansCurrentTitle);
+        });
+
+        document.getElementById('my-scans-prev').addEventListener('click', () => {
+            if (myScansCurrentPage > 1) {
+                myScansCurrentPage--;
+                loadMyScans(myScansCurrentURL, myScansCurrentTitle);
+            }
+        });
+
+        document.getElementById('my-scans-next').addEventListener('click', () => {
+            if (myScansCurrentPage < myScansCurrentPages) {
+                myScansCurrentPage++;
+                loadMyScans(myScansCurrentURL, myScansCurrentTitle);
+            }
         });
 
         async function loadMyScans(url, title) {
+            myScansCurrentURL = url;
+            myScansCurrentTitle = title;
             document.getElementById('my-scans-title').textContent = title;
             const list = document.getElementById('my-scans-list');
             list.innerHTML = '<p class="text-slate-500 text-xs">Loading...</p>';
+            const q = document.getElementById('my-scans-search').value.trim();
+            const fetchURL = url + '?page=' + myScansCurrentPage + '&limit=20' + (q ? '&q=' + encodeURIComponent(q) : '');
             try {
-                const res = await fetch(url, { credentials: 'include' });
+                const res = await fetch(fetchURL, { credentials: 'include' });
                 if (!res.ok) { list.innerHTML = '<p class="text-red-400 text-xs">Failed to load.</p>'; return; }
-                const scans = await res.json();
-                if (!scans.length) { list.innerHTML = '<p class="text-slate-500 text-xs">No scans yet.</p>'; return; }
-                list.innerHTML = scans.map(s => {
+                const data = await res.json();
+                const items = data.items || [];
+                myScansCurrentPages = data.pages || 1;
+
+                // Update pagination
+                const paginationEl = document.getElementById('my-scans-pagination');
+                const pageInfo = document.getElementById('my-scans-page-info');
+                const prevBtn = document.getElementById('my-scans-prev');
+                const nextBtn = document.getElementById('my-scans-next');
+                if (data.pages > 1 || data.total > 0) {
+                    paginationEl.classList.remove('hidden');
+                    pageInfo.textContent = 'Page ' + myScansCurrentPage + ' of ' + myScansCurrentPages + ' (' + data.total + ' total)';
+                    prevBtn.disabled = myScansCurrentPage <= 1;
+                    nextBtn.disabled = myScansCurrentPage >= myScansCurrentPages;
+                } else {
+                    paginationEl.classList.add('hidden');
+                }
+
+                if (!items.length) { list.innerHTML = '<p class="text-slate-500 text-xs">No scans yet.</p>'; return; }
+                list.innerHTML = '';
+                items.forEach(s => {
                     const date = s.createdAt ? new Date(s.createdAt * 1000).toLocaleString() : '—';
                     const statusColor = s.status === 'completed' ? 'text-green-400' : s.status === 'failed' ? 'text-red-400' : 'text-yellow-400';
-                    return `<div class="flex items-center justify-between bg-dark-900 rounded px-3 py-2 border border-dark-700 gap-2">
-                        <span class="text-slate-300 font-mono text-xs flex-grow truncate">${s.inputMasked}</span>
-                        <span class="text-[10px] ${statusColor} uppercase flex-shrink-0">${s.status}</span>
-                        <span class="text-[10px] text-slate-600 flex-shrink-0">${date}</span>
-                        ${s.scanID ? `<button onclick="loadScanByID('${s.scanID}')" class="text-[10px] text-brand-400 hover:text-brand-300 flex-shrink-0 underline">VIEW</button>` : ''}
-                    </div>`;
-                }).join('');
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between bg-dark-900 rounded px-3 py-2 border border-dark-700 gap-2';
+                    const inputEl = document.createElement('span');
+                    inputEl.className = 'text-slate-300 font-mono text-xs flex-grow truncate';
+                    inputEl.textContent = s.input || '';
+                    const statusEl = document.createElement('span');
+                    statusEl.className = 'text-[10px] ' + statusColor + ' uppercase flex-shrink-0';
+                    statusEl.textContent = s.status;
+                    const hitsEl = document.createElement('span');
+                    hitsEl.className = 'text-[10px] text-brand-500 flex-shrink-0';
+                    hitsEl.textContent = (s.resultCount || 0) + ' hit' + (s.resultCount !== 1 ? 's' : '');
+                    const dateEl = document.createElement('span');
+                    dateEl.className = 'text-[10px] text-slate-600 flex-shrink-0';
+                    dateEl.textContent = date;
+                    div.appendChild(inputEl);
+                    div.appendChild(statusEl);
+                    div.appendChild(hitsEl);
+                    div.appendChild(dateEl);
+                    if (s.scanID) {
+                        const viewBtn = document.createElement('button');
+                        viewBtn.className = 'text-[10px] text-brand-400 hover:text-brand-300 flex-shrink-0 underline';
+                        viewBtn.textContent = 'VIEW';
+                        viewBtn.addEventListener('click', () => loadScanByID(s.scanID));
+                        div.appendChild(viewBtn);
+                    }
+                    list.appendChild(div);
+                });
             } catch(e) {
                 list.innerHTML = '<p class="text-red-400 text-xs">Error loading scans.</p>';
             }

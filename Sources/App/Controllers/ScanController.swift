@@ -46,8 +46,8 @@ struct ScanController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.grouped(ScanRateLimiter()).post("scan", use: scan)
-        noCache.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("results", ":id", use: getResults)
-        noCache.grouped(ScanRateLimiter(maxRequests: 60, windowSeconds: 60)).get("stream", ":id", use: streamResults)
+        noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("results", ":id", use: getResults)
+        noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("stream", ":id", use: streamResults)
     }
 
     @Sendable
@@ -139,6 +139,8 @@ struct ScanController: RouteCollection {
         let app = req.application
         let activePlugins = self.plugins
 
+        await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
+
         // Run plugins in the background so the HTTP request returns immediately.
         // A 120-second deadline prevents scans from hanging in "pending" forever
         // if a plugin stalls or a remote server never responds.
@@ -156,7 +158,11 @@ struct ScanController: RouteCollection {
             var failureCount = 0
             var timedOut = false
 
-            enum PluginOutcome { case success, failure, timeout }
+            enum PluginOutcome {
+                case success(pluginName: String)
+                case failure(pluginName: String)
+                case timeout
+            }
 
             await withTaskGroup(of: PluginOutcome.self) { group in
                 // Timeout sentinel: cancels all plugins if 120 s elapse.
@@ -167,8 +173,9 @@ struct ScanController: RouteCollection {
 
                 // Each plugin runs concurrently in its own child task.
                 for plugin in activePlugins {
+                    let pName = plugin.name
                     group.addTask {
-                        guard !Task.isCancelled else { return .failure }
+                        guard !Task.isCancelled else { return .failure(pluginName: pName) }
                         do {
                             let pluginResults = try await plugin.scan(input: input, on: app)
                             for pr in pluginResults {
@@ -186,10 +193,10 @@ struct ScanController: RouteCollection {
                                 )
                                 try await result.save(on: db)
                             }
-                            return .success
+                            return .success(pluginName: pName)
                         } catch {
-                            app.logger.error("Plugin \(plugin.name) failed: \(error)")
-                            return .failure
+                            app.logger.error("Plugin \(pName) failed: \(error)")
+                            return .failure(pluginName: pName)
                         }
                     }
                 }
@@ -202,10 +209,12 @@ struct ScanController: RouteCollection {
                     switch outcome {
                     case .timeout:
                         if !allPluginsCompleted { timedOut = true; group.cancelAll() }
-                    case .success:
+                    case .success(let name):
                         successCount += 1; pluginsDone += 1
-                    case .failure:
+                        await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
+                    case .failure(let name):
                         failureCount += 1; pluginsDone += 1
+                        await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
                     }
                     if !allPluginsCompleted && pluginsDone == activePlugins.count {
                         allPluginsCompleted = true
@@ -225,6 +234,7 @@ struct ScanController: RouteCollection {
                     }
                     scan.completedAt = Date()
                     try await scan.save(on: db)
+                    await ScanProgressTracker.shared.remove(for: scanID)
                 }
             } catch {
                 app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
@@ -319,6 +329,14 @@ struct ScanController: RouteCollection {
                     let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count)}"
                     try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
                     return
+                }
+
+                // Emit progress event
+                if let prog = await ScanProgressTracker.shared.get(for: scanID) {
+                    let escaped = prog.lastName.replacingOccurrences(of: "\\", with: "\\\\")
+                                               .replacingOccurrences(of: "\"", with: "\\\"")
+                    let progressPayload = "{\"done\":\(prog.done),\"total\":\(prog.total),\"lastPlugin\":\"\(escaped)\"}"
+                    try await writer.writeBuffer(ByteBuffer(string: "event: progress\ndata: \(progressPayload)\n\n"))
                 }
 
                 // Keepalive comment — resets Cloudflare's 100-second origin timeout.

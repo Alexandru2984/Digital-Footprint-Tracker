@@ -1,22 +1,24 @@
 import Vapor
 import NIOConcurrencyHelpers
 
-// Per-IP token-bucket-ish limiter: caps how many /scan requests a single client
-// can trigger within a rolling window. Prevents one user from fanning out
-// thousands of outbound HTTP requests via the bulk plugins.
+// Per-IP / per-user token-bucket-ish limiter: caps how many /scan requests a single
+// client can trigger within a rolling window. Authenticated users get a higher quota.
+// Prevents one user from fanning out thousands of outbound HTTP requests via bulk plugins.
 final class ScanRateLimiter: AsyncMiddleware {
     private struct Entry {
         var count: Int
         var windowStart: Date
     }
 
-    private let maxRequests: Int
+    private let anonMax: Int
+    private let authedMax: Int
     private let windowSeconds: TimeInterval
     private let lock = NIOLock()
     private var entries: [String: Entry] = [:]
 
-    init(maxRequests: Int = 5, windowSeconds: TimeInterval = 60) {
-        self.maxRequests = maxRequests
+    init(anonMax: Int = 3, authedMax: Int = 10, windowSeconds: TimeInterval = 60) {
+        self.anonMax = anonMax
+        self.authedMax = authedMax
         self.windowSeconds = windowSeconds
     }
 
@@ -24,16 +26,21 @@ final class ScanRateLimiter: AsyncMiddleware {
         // Trust Cloudflare's real-client header first, then nginx's X-Real-IP,
         // then fall back to the socket address. Never take the first X-Forwarded-For
         // entry directly — it is trivially spoofable by clients.
-        let key: String
+        let ipKey: String
         if let cf = request.headers.first(name: "CF-Connecting-IP")?
             .trimmingCharacters(in: .whitespaces), !cf.isEmpty {
-            key = cf
+            ipKey = cf
         } else if let realIP = request.headers.first(name: "X-Real-IP")?
             .trimmingCharacters(in: .whitespaces), !realIP.isEmpty {
-            key = realIP
+            ipKey = realIP
         } else {
-            key = request.remoteAddress?.ipAddress ?? "unknown"
+            ipKey = request.remoteAddress?.ipAddress ?? "unknown"
         }
+
+        let userIDStr = request.session.data["userID"]
+        let isAuthed = userIDStr != nil && !userIDStr!.isEmpty
+        let key = isAuthed ? "user:\(userIDStr!)" : "ip:\(ipKey)"
+        let maxForKey = isAuthed ? authedMax : anonMax
 
         let now = Date()
         let allowed: Bool = lock.withLock {
@@ -51,7 +58,7 @@ final class ScanRateLimiter: AsyncMiddleware {
                 }
             }
 
-            return entry.count <= maxRequests
+            return entry.count <= maxForKey
         }
 
         guard allowed else {
