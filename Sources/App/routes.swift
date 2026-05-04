@@ -57,6 +57,9 @@ func routes(_ app: Application) throws {
     let healthController = HealthController()
     try app.register(collection: healthController)
 
-    let diffController = DiffController()
-    try app.register(collection: diffController)
+    let shareController = ShareController()
+    try app.register(collection: shareController)
+
+    let bulkScanController = BulkScanController()
+    try app.register(collection: bulkScanController)
 }

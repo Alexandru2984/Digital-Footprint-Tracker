@@ -110,65 +110,33 @@ private func runDueScans(app: Application) async {
                         )
                         try? await notification.save(on: db)
 
-                        if let monitorUser = try? await User.find(userID, on: db), let hookURL = monitorUser.webhookURL {
+                        if let monitorUser = try? await User.find(userID, on: db) {
                             let risk = RiskScorer.compute(results: allResults)
-                            let newResultDTOs = newResults.prefix(10).map { r -> [String: Any] in
-                                ["source": r.source, "type": r.type, "confidenceScore": r.confidenceScore, "rawData": String(r.rawData.prefix(500))]
-                            }
-                            let monitorPayload: [String: Any] = [
-                                "event": "scan.new_findings",
-                                "scanID": scanID.uuidString,
-                                "input": input,
-                                "newResultsCount": newResults.count,
-                                "totalResultsCount": allResults.count,
-                                "riskScore": risk.value,
-                                "riskLevel": risk.level.rawValue,
-                                "newResults": Array(newResultDTOs),
-                                "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
-                            ]
-                            if let body = try? JSONSerialization.data(withJSONObject: monitorPayload),
-                               let url = URL(string: hookURL) {
-                                var hookReq = URLRequest(url: url)
-                                hookReq.httpMethod = "POST"
-                                hookReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                                hookReq.httpBody = body
-                                hookReq.timeoutInterval = 10
-                                _ = try? await URLSession.shared.data(for: hookReq)
-                            }
+                            await NotificationDispatcher.notify(
+                                user: monitorUser,
+                                title: "Monitor Alert: New results for \(String(input.prefix(30)))",
+                                message: "Your monitored target '\(input)' has \(newResults.count) new result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
+                                scanID: scanID,
+                                app: app
+                            )
                         }
                         app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)'")
                     }
                 }
 
-                if let user = try? await User.find(userID, on: db), let hookURL = user.webhookURL {
+                if let user = try? await User.find(userID, on: db) {
                     let risk = RiskScorer.compute(results: allResults)
-                    await fireWebhookScheduled(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
+                    await NotificationDispatcher.notify(
+                        user: user,
+                        title: "Scheduled Scan Complete: \(String(input.prefix(30)))",
+                        message: "Scheduled scan for '\(input)' completed with \(allResults.count) result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
+                        scanID: scanID,
+                        app: app
+                    )
                 }
             } catch {
                 app.logger.error("[ScheduledScanRunner] Post-scan save error: \(error)")
             }
         }
     }
-}
-
-private func fireWebhookScheduled(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
-    guard let hookURL = URL(string: url) else { return }
-    let payload: [String: Any] = [
-        "event": "scheduled_scan.completed",
-        "scanID": scanID.uuidString,
-        "input": scan.input,
-        "status": scan.status.rawValue,
-        "riskScore": risk.value,
-        "riskLevel": risk.level.rawValue,
-        "resultCount": resultCount,
-        "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
-    ]
-    guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-    var request = URLRequest(url: hookURL)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = body
-    request.timeoutInterval = 10
-    do { _ = try await URLSession.shared.data(for: request) }
-    catch { logger.warning("Scheduled webhook to \(url) failed: \(error)") }
 }

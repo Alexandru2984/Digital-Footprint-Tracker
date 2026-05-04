@@ -25,6 +25,18 @@ final class User: Model, Content {
     @OptionalField(key: "retention_days")
     var retentionDays: Int?
 
+    @OptionalField(key: "discord_webhook_url")
+    var discordWebhookURL: String?
+
+    @OptionalField(key: "telegram_bot_token")
+    var telegramBotToken: String?
+
+    @OptionalField(key: "telegram_chat_id")
+    var telegramChatID: String?
+
+    @OptionalField(key: "slack_webhook_url")
+    var slackWebhookURL: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -33,7 +45,7 @@ final class User: Model, Content {
 
     init() { }
 
-    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil) {
+    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil) {
         self.id = id
         self.username = username
         self.email = email
@@ -41,6 +53,10 @@ final class User: Model, Content {
         self.isAdmin = isAdmin
         self.webhookURL = webhookURL
         self.retentionDays = retentionDays
+        self.discordWebhookURL = discordWebhookURL
+        self.telegramBotToken = telegramBotToken
+        self.telegramChatID = telegramChatID
+        self.slackWebhookURL = slackWebhookURL
     }
 }
 
@@ -54,9 +70,13 @@ extension User {
         let webhookURL: String?
         let retentionDays: Int?
         let createdAt: Date?
+        let discordWebhookURL: String?
+        let telegramBotToken: String?
+        let telegramChatID: String?
+        let slackWebhookURL: String?
     }
 
     func toPublic() -> Public {
-        Public(id: id, username: username, email: email, isAdmin: isAdmin, webhookURL: webhookURL, retentionDays: retentionDays, createdAt: createdAt)
+        Public(id: id, username: username, email: email, isAdmin: isAdmin, webhookURL: webhookURL, retentionDays: retentionDays, createdAt: createdAt, discordWebhookURL: discordWebhookURL, telegramBotToken: telegramBotToken, telegramChatID: telegramChatID, slackWebhookURL: slackWebhookURL)
     }
 }

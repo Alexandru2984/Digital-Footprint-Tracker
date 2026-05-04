@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Footprint Tracker</title>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-ZlCOvzq8ngBUJEPuW1O6E/Aw3vLx/BqlGdjCp3NsBxw=' https://analytics.micutu.com https://static.cloudflareinsights.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://analytics.micutu.com https://cloudflareinsights.com; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-x4auX4z1jTM4MGD8YmgN60upNyCbUoWd5qSEMGFnJ9A=' https://analytics.micutu.com https://static.cloudflareinsights.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' https://analytics.micutu.com https://cloudflareinsights.com; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
     <link rel="stylesheet" href="/tailwind.css?v=2">
     <style>
         /* ── Theme custom properties (dark default) ───────────────────────── */
@@ -175,6 +175,10 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                         MY SCANS
                     </button>
+                    <button id="bulk-scan-open-btn" title="Bulk scan multiple targets" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="2" y="2" rx="1"/><rect width="8" height="8" x="14" y="2" rx="1"/><rect width="8" height="8" x="14" y="14" rx="1"/><rect width="8" height="8" x="2" y="14" rx="1"/></svg>
+                        BULK
+                    </button>
                     <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded text-brand-400 font-bold flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         <span id="auth-username-text">—</span>
@@ -300,6 +304,34 @@
               </div>
               <p id="retention-status" class="text-[10px] mt-1 hidden"></p>
             </div>
+            <!-- D3: Notification Channels -->
+            <div class="mt-3 border-t border-dark-700 pt-3">
+              <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🔔 Notification Channels</p>
+              <p class="text-[10px] text-slate-500 mb-2">Configure where to receive scan alerts.</p>
+              <div class="space-y-2">
+                <div>
+                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Discord Webhook URL</label>
+                  <input type="url" id="discord-webhook-input" placeholder="https://discord.com/api/webhooks/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Bot Token</label>
+                  <input type="text" id="telegram-token-input" placeholder="123456:ABC-DEF…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Chat ID</label>
+                  <input type="text" id="telegram-chatid-input" placeholder="-100123456789" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Slack Webhook URL</label>
+                  <input type="url" id="slack-webhook-input" placeholder="https://hooks.slack.com/services/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                </div>
+              </div>
+              <div class="flex gap-2 mt-2">
+                <button id="save-notification-settings-btn" class="flex-grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Save Channels</button>
+                <button id="test-notification-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">Test</button>
+              </div>
+              <p id="notif-settings-msg" class="text-[10px] mt-1 hidden"></p>
+            </div>
         </section>
 
         <!-- Search Panel -->
@@ -328,6 +360,17 @@
                     </button>
                 </div>
             </form>
+            <!-- E2: Advanced Plugin Selector -->
+            <div id="advanced-section" class="mt-3 relative z-10">
+                <button id="advanced-toggle-btn" type="button" class="text-[10px] text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1">
+                    <svg id="advanced-chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform"><polyline points="6 9 12 15 18 9"/></svg>
+                    ADVANCED
+                </button>
+                <div id="advanced-panel" class="hidden mt-2 p-3 bg-dark-900 border border-dark-700 rounded-lg">
+                    <p class="text-[10px] text-slate-500 mb-2 uppercase tracking-wide">Select plugins (leave all unchecked = run all)</p>
+                    <div id="plugin-checkboxes" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
             <!-- Scan progress bar — shown during live SSE streaming -->
             <div id="scan-progress" class="hidden mt-3 space-y-1.5 px-1">
               <div class="flex justify-between items-center text-xs text-slate-500">
@@ -560,6 +603,62 @@
                 </div>
             </div>
         </section>
+
+        <!-- D1: Share Report Modal -->
+        <div id="share-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 w-full max-w-md shadow-2xl mx-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-bold text-white uppercase tracking-widest">Share Report</h3>
+                    <button id="share-modal-close" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Expires In</label>
+                        <select id="share-expires-select" class="w-full bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
+                            <option value="">Never</option>
+                            <option value="3600">1 hour</option>
+                            <option value="86400">24 hours</option>
+                            <option value="604800">7 days</option>
+                            <option value="2592000">30 days</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Password (optional)</label>
+                        <input type="password" id="share-password-input" placeholder="Leave blank for no password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                    </div>
+                    <button id="share-create-btn" class="w-full text-xs py-2 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors font-bold">Generate Share Link</button>
+                    <div id="share-result" class="hidden">
+                        <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Share URL</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="share-url-output" readonly class="flex-grow bg-dark-900 border border-dark-700 text-brand-400 text-xs rounded px-3 py-1.5 focus:outline-none select-all">
+                            <button id="share-copy-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- E1: Bulk Scan Modal -->
+        <div id="bulk-scan-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 w-full max-w-lg shadow-2xl mx-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-bold text-white uppercase tracking-widest">Bulk Scan</h3>
+                    <button id="bulk-modal-close" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
+                </div>
+                <p class="text-xs text-slate-500 mb-3">Enter one target per line (max 50). Scans run in parallel.</p>
+                <textarea id="bulk-targets-textarea" rows="8" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-2 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
+                <div id="bulk-progress-section" class="hidden mt-2">
+                    <div id="bulk-progress-bar" class="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden mb-1">
+                        <div id="bulk-progress-fill" class="bg-purple-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
+                    </div>
+                    <p id="bulk-status-text" class="text-[10px] text-slate-500 text-center">Starting…</p>
+                </div>
+                <div id="bulk-results-list" class="mt-2 space-y-1 max-h-40 overflow-y-auto text-xs"></div>
+                <div class="flex gap-2 mt-4">
+                    <button id="bulk-scan-submit-btn" class="flex-grow text-xs py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors font-bold">START BULK SCAN</button>
+                </div>
+            </div>
+        </div>
 
     </main>
 
@@ -1160,10 +1259,13 @@
             setScanningState(true);
             logStatus('Initiating scan against target: ' + target);
             try {
+                const selectedPlugins = getSelectedPlugins();
+                const scanBody = { input: target };
+                if (selectedPlugins) scanBody.plugins = selectedPlugins;
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ input: target })
+                    body: JSON.stringify(scanBody)
                 });
                 if (!response.ok) {
                     const errText = await response.text().catch(() => response.status);
@@ -1278,10 +1380,13 @@
             setScanningState(true);
             logStatus('Force rescanning: ' + target);
             try {
+                const selectedPlugins = getSelectedPlugins();
+                const rescanBody = { input: target, force: true };
+                if (selectedPlugins) rescanBody.plugins = selectedPlugins;
                 const response = await fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ input: target, force: true })
+                    body: JSON.stringify(rescanBody)
                 });
                 if (!response.ok) {
                     const errText = await response.text().catch(() => String(response.status));
@@ -1316,8 +1421,80 @@
         // ─── SHARE LINK ───────────────────────────────────────────────────────────
         document.getElementById('share-btn').addEventListener('click', () => {
             if (!lastScanData) return;
-            const url = location.origin + '/?scan=' + encodeURIComponent(lastScanData.scanID);
-            copyToClipboard(url, document.getElementById('share-btn'));
+            document.getElementById('share-result').classList.add('hidden');
+            document.getElementById('share-url-output').value = '';
+            document.getElementById('share-password-input').value = '';
+            document.getElementById('share-expires-select').value = '';
+            document.getElementById('share-modal').classList.remove('hidden');
+        });
+        document.getElementById('share-modal-close').addEventListener('click', () => {
+            document.getElementById('share-modal').classList.add('hidden');
+        });
+        document.getElementById('share-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('share-modal')) document.getElementById('share-modal').classList.add('hidden');
+        });
+        document.getElementById('share-create-btn').addEventListener('click', async () => {
+            if (!lastScanData) return;
+            const expiresIn = document.getElementById('share-expires-select').value;
+            const password = document.getElementById('share-password-input').value.trim();
+            const btn = document.getElementById('share-create-btn');
+            btn.textContent = 'Creating…';
+            btn.disabled = true;
+            try {
+                const body = {};
+                if (expiresIn) body.expiresIn = parseInt(expiresIn);
+                if (password) body.password = password;
+                const resp = await fetch('/api/scans/' + lastScanData.scanID + '/share', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                document.getElementById('share-url-output').value = data.url;
+                document.getElementById('share-result').classList.remove('hidden');
+            } catch(err) {
+                alert('Failed to create share link: ' + err.message);
+            } finally {
+                btn.textContent = 'Generate Share Link';
+                btn.disabled = false;
+            }
+        });
+        document.getElementById('share-copy-btn').addEventListener('click', () => {
+            const urlOut = document.getElementById('share-url-output');
+            urlOut.select();
+            document.execCommand('copy');
+            copyToClipboard(urlOut.value, document.getElementById('share-copy-btn'));
+        });
+
+        // ─── E2: PLUGIN SELECTOR ─────────────────────────────────────────────────
+        let availablePlugins = [];
+        async function loadPlugins() {
+            try {
+                const resp = await fetch('/api/plugins');
+                if (!resp.ok) return;
+                availablePlugins = await resp.json();
+                const container = document.getElementById('plugin-checkboxes');
+                container.innerHTML = '';
+                availablePlugins.forEach(p => {
+                    const label = document.createElement('label');
+                    label.className = 'flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none';
+                    label.title = p.description || '';
+                    label.innerHTML = `<input type="checkbox" class="plugin-checkbox" value="${p.name}" style="accent-color:#10b981"> ${p.name}`;
+                    container.appendChild(label);
+                });
+            } catch(e) {}
+        }
+        function getSelectedPlugins() {
+            const checked = [...document.querySelectorAll('.plugin-checkbox:checked')].map(cb => cb.value);
+            return checked.length > 0 ? checked : null;
+        }
+        document.getElementById('advanced-toggle-btn').addEventListener('click', () => {
+            const panel = document.getElementById('advanced-panel');
+            const chevron = document.getElementById('advanced-chevron');
+            panel.classList.toggle('hidden');
+            chevron.style.transform = panel.classList.contains('hidden') ? '' : 'rotate(180deg)';
         });
 
         // ─── STATS DASHBOARD ──────────────────────────────────────────────────────
@@ -1683,6 +1860,12 @@
                 if (retSel && currentUser.retentionDays) {
                     retSel.value = String(currentUser.retentionDays);
                 }
+                if (currentUser) {
+                    document.getElementById('discord-webhook-input').value = currentUser.discordWebhookURL || '';
+                    document.getElementById('telegram-token-input').value = currentUser.telegramBotToken || '';
+                    document.getElementById('telegram-chatid-input').value = currentUser.telegramChatID || '';
+                    document.getElementById('slack-webhook-input').value = currentUser.slackWebhookURL || '';
+                }
             }
         });
 
@@ -1713,6 +1896,64 @@
             }
             msg.classList.remove('hidden');
             setTimeout(() => msg.classList.add('hidden'), 3000);
+        });
+
+        // ─── D3: NOTIFICATION CHANNEL SETTINGS ───────────────────────────────────
+        document.getElementById('save-notification-settings-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('save-notification-settings-btn');
+            const msg = document.getElementById('notif-settings-msg');
+            btn.textContent = 'Saving…';
+            btn.disabled = true;
+            try {
+                const body = {
+                    discordWebhookURL: document.getElementById('discord-webhook-input').value.trim() || null,
+                    telegramBotToken:  document.getElementById('telegram-token-input').value.trim() || null,
+                    telegramChatID:    document.getElementById('telegram-chatid-input').value.trim() || null,
+                    slackWebhookURL:   document.getElementById('slack-webhook-input').value.trim() || null,
+                };
+                const resp = await fetch('/api/auth/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const user = await resp.json();
+                currentUser = user;
+                msg.textContent = '✓ Saved';
+                msg.className = 'text-[10px] mt-1 text-green-400';
+                msg.classList.remove('hidden');
+                setTimeout(() => msg.classList.add('hidden'), 2500);
+            } catch(err) {
+                msg.textContent = '✗ Failed: ' + err.message;
+                msg.className = 'text-[10px] mt-1 text-red-400';
+                msg.classList.remove('hidden');
+            } finally {
+                btn.textContent = 'Save Channels';
+                btn.disabled = false;
+            }
+        });
+        document.getElementById('test-notification-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('test-notification-btn');
+            btn.textContent = 'Sending…';
+            btn.disabled = true;
+            try {
+                const resp = await fetch('/api/auth/notifications/test', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const msg = document.getElementById('notif-settings-msg');
+                msg.textContent = '✓ Test sent!';
+                msg.className = 'text-[10px] mt-1 text-green-400';
+                msg.classList.remove('hidden');
+                setTimeout(() => msg.classList.add('hidden'), 2500);
+            } catch(err) {
+                alert('Test failed: ' + err.message);
+            } finally {
+                btn.textContent = 'Test';
+                btn.disabled = false;
+            }
         });
 
         document.getElementById('create-tag-btn').addEventListener('click', async () => {
@@ -2098,6 +2339,40 @@
             }
         })();
 
+        // Handle /share/TOKEN path
+        const pathParts = window.location.pathname.split('/');
+        if (pathParts[1] === 'share' && pathParts[2]) {
+            const shareToken = pathParts[2];
+            (async () => {
+                try {
+                    const resp = await fetch('/api/share/' + shareToken);
+                    if (resp.status === 401) {
+                        const pw = prompt('This report is password-protected. Enter password:');
+                        if (!pw) return;
+                        const resp2 = await fetch('/api/share/' + shareToken, {
+                            method: 'GET',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: pw })
+                        });
+                        if (!resp2.ok) { alert('Wrong password or expired link.'); return; }
+                        var data = await resp2.json();
+                    } else if (!resp.ok) {
+                        alert(resp.status === 410 ? 'This share link has expired.' : 'Share link not found.');
+                        return;
+                    } else {
+                        var data = await resp.json();
+                    }
+                    lastScanData = { scanID: data.scan.id, input: data.scan.input, results: data.results, status: data.scan.status };
+                    document.getElementById('target-input').value = data.scan.input;
+                    displayResults(data.results || [], data.scan.input);
+                    logStatus('Viewing shared report for: ' + data.scan.input + ' (' + (data.results || []).length + ' results)');
+                    document.getElementById('results-panel').classList.remove('hidden');
+                } catch(e) {
+                    logStatus('Failed to load shared report: ' + e.message, 'text-red-500');
+                }
+            })();
+        }
+
         // Notification bell dropdown toggle.
         document.getElementById('notif-bell-btn').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2261,6 +2536,67 @@
             }
             status.classList.remove('hidden');
             setTimeout(() => status.classList.add('hidden'), 3000);
+        });
+
+        // ─── E1: BULK SCAN ────────────────────────────────────────────────────────
+        document.getElementById('bulk-scan-open-btn').addEventListener('click', () => {
+            document.getElementById('bulk-results-list').innerHTML = '';
+            document.getElementById('bulk-progress-section').classList.add('hidden');
+            document.getElementById('bulk-scan-modal').classList.remove('hidden');
+        });
+        document.getElementById('bulk-modal-close').addEventListener('click', () => {
+            document.getElementById('bulk-scan-modal').classList.add('hidden');
+        });
+        document.getElementById('bulk-scan-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('bulk-scan-modal')) document.getElementById('bulk-scan-modal').classList.add('hidden');
+        });
+        document.getElementById('bulk-scan-submit-btn').addEventListener('click', async () => {
+            const raw = document.getElementById('bulk-targets-textarea').value;
+            const targets = raw.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+            if (targets.length === 0) { alert('Please enter at least one target.'); return; }
+            if (targets.length > 50) { alert('Maximum 50 targets allowed.'); return; }
+            const btn = document.getElementById('bulk-scan-submit-btn');
+            const progressSection = document.getElementById('bulk-progress-section');
+            const progressFill = document.getElementById('bulk-progress-fill');
+            const statusText = document.getElementById('bulk-status-text');
+            const resultsList = document.getElementById('bulk-results-list');
+            btn.disabled = true;
+            btn.textContent = 'Scanning…';
+            progressSection.classList.remove('hidden');
+            progressFill.style.width = '10%';
+            statusText.textContent = 'Submitting…';
+            resultsList.innerHTML = '';
+            try {
+                const selectedPlugins = getSelectedPlugins();
+                const body = { targets };
+                if (selectedPlugins) body.plugins = selectedPlugins;
+                const resp = await fetch('/api/scan/bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) {
+                    const err = await resp.text().catch(() => 'HTTP ' + resp.status);
+                    throw new Error(err);
+                }
+                const results = await resp.json();
+                progressFill.style.width = '100%';
+                statusText.textContent = results.length + ' scans queued';
+                results.forEach(r => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between px-2 py-1 bg-dark-900 rounded text-[10px]';
+                    div.innerHTML = `<span class="text-slate-300 truncate flex-grow mr-2">${r.target}</span><span class="text-brand-400 font-mono">${r.scanID.substring(0,8)}…</span><span class="ml-2 text-yellow-400 uppercase">${r.status}</span>`;
+                    resultsList.appendChild(div);
+                });
+            } catch(err) {
+                statusText.textContent = 'Error: ' + err.message;
+                progressFill.classList.add('bg-red-500');
+                progressFill.classList.remove('bg-purple-500');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'START BULK SCAN';
+            }
         });
 
         // ── Leaflet IP Geolocation Map ──────────────────────────────────────────
@@ -2442,6 +2778,7 @@
         renderHistory();
         // Load platform stats on page load.
         loadStats();
+        loadPlugins();
         // Check auth state on page load.
         loadAuthState();
     </script>

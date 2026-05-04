@@ -21,6 +21,8 @@ struct AuthController: RouteCollection {
         auth.get("me", use: me)
         auth.post("webhook", use: setWebhook)
         auth.post("retention", use: setRetention)
+        auth.patch("settings", use: updateSettings)
+        auth.post("notifications", "test", use: testNotifications)
     }
 
     @Sendable
@@ -133,6 +135,37 @@ struct AuthController: RouteCollection {
         user.retentionDays = body.retentionDays
         try await user.save(on: req.db)
         return user.toPublic()
+    }
+
+    @Sendable
+    func updateSettings(req: Request) async throws -> User.Public {
+        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        struct Body: Content {
+            let discordWebhookURL: String?
+            let telegramBotToken: String?
+            let telegramChatID: String?
+            let slackWebhookURL: String?
+        }
+        let body = try req.content.decode(Body.self)
+        user.discordWebhookURL = body.discordWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.discordWebhookURL
+        user.telegramBotToken = body.telegramBotToken.map { $0.isEmpty ? nil : $0 } ?? user.telegramBotToken
+        user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
+        user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
+        try await user.save(on: req.db)
+        return user.toPublic()
+    }
+
+    @Sendable
+    func testNotifications(req: Request) async throws -> HTTPStatus {
+        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        await NotificationDispatcher.notify(
+            user: user,
+            title: "Test Notification",
+            message: "Your notification channels are configured correctly.",
+            scanID: nil,
+            app: req.application
+        )
+        return .ok
     }
 }
 

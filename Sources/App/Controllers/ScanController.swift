@@ -9,6 +9,12 @@ import FoundationNetworking
 struct ScanRequest: Content {
     let input: String
     let force: Bool?
+    let plugins: [String]?  // if nil/empty → run all plugins
+}
+
+struct PluginInfo: Content {
+    let name: String
+    let description: String
 }
 
 struct ScanResponse: Content {
@@ -26,7 +32,7 @@ private let activeSSEConnections = NIOAtomic<Int>.makeAtomic(value: 0)
 private let maxSSEConnections = 30
 
 struct ScanController: RouteCollection {
-    let plugins: [any FootprintPlugin] = [
+    static let defaultPlugins: [any FootprintPlugin] = [
         GravatarPlugin(),
         HaveIBeenPwnedPlugin(),
         UsernamePlugin(),
@@ -47,14 +53,54 @@ struct ScanController: RouteCollection {
         BulkEmailPlugin(),
         CrtShPlugin(),
         WhoisPlugin(),
-        ShodanPlugin()
+        ShodanPlugin(),
+        VirusTotalPlugin(),
+        AbuseIPDBPlugin(),
+        PassiveDNSPlugin()
     ]
+    let plugins: [any FootprintPlugin] = ScanController.defaultPlugins
 
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.grouped(ScanRateLimiter()).post("scan", use: scan)
         noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("results", ":id", use: getResults)
         noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("stream", ":id", use: streamResults)
+        noCache.get("plugins", use: listPlugins)
+    }
+
+    @Sendable
+    func listPlugins(req: Request) async throws -> [PluginInfo] {
+        return self.plugins.map { PluginInfo(name: $0.name, description: descriptionFor($0.name)) }
+    }
+
+    private func descriptionFor(_ name: String) -> String {
+        switch name {
+        case "Gravatar": return "Profile picture lookup by email"
+        case "HaveIBeenPwned": return "Email breach database check"
+        case "Username": return "Username presence on 50+ platforms"
+        case "GitLab": return "GitLab profile search"
+        case "Reddit": return "Reddit account lookup"
+        case "Twitter": return "Twitter/X profile search"
+        case "Keybase": return "Keybase identity lookup"
+        case "Telegram": return "Telegram username search"
+        case "Mastodon": return "Mastodon account search"
+        case "HackerNews": return "Hacker News profile lookup"
+        case "Steam": return "Steam profile search"
+        case "Npm": return "NPM package author lookup"
+        case "PyPI": return "PyPI package author lookup"
+        case "Pastebin": return "Pastebin content search"
+        case "Phone": return "Phone number OSINT"
+        case "DomainOSINT": return "DNS records, WHOIS, SSL info"
+        case "BulkUsername": return "Sherlock: 480+ platform username check"
+        case "BulkEmail": return "Holehe: email-to-account correlation"
+        case "CrtSh": return "Certificate Transparency subdomain enumeration"
+        case "Whois": return "RDAP domain registration info"
+        case "Shodan": return "Exposed ports and services (requires API key)"
+        case "VirusTotal": return "Malware/reputation check for domains and IPs (requires API key)"
+        case "AbuseIPDB": return "IP abuse reputation score (requires API key)"
+        case "PassiveDNS": return "Historical DNS and subdomain discovery"
+        default: return "OSINT plugin"
+        }
     }
 
     @Sendable
@@ -146,124 +192,131 @@ struct ScanController: RouteCollection {
         }
 
         let app = req.application
-        let activePlugins = self.plugins
+
+        // E2: Filter plugins based on request
+        let requestedPlugins = scanReq.plugins?.map { $0.lowercased() } ?? []
+        let activePlugins: [any FootprintPlugin]
+        if requestedPlugins.isEmpty {
+            activePlugins = self.plugins
+        } else {
+            activePlugins = self.plugins.filter { requestedPlugins.contains($0.name.lowercased()) }
+            guard !activePlugins.isEmpty else {
+                throw Abort(.badRequest, reason: "No valid plugins specified")
+            }
+        }
 
         await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
 
         // Run plugins in the background so the HTTP request returns immediately.
-        // A 120-second deadline prevents scans from hanging in "pending" forever
-        // if a plugin stalls or a remote server never responds.
         Task {
-            // In the test environment there are no external services to reach,
-            // and the background URLSession calls generate SIGPIPE when the app
-            // shuts down immediately after the test.  Skip execution entirely.
-            guard app.environment != .testing else { return }
-
-            // Use the optional-returning API so we exit gracefully if the app
-            // shuts down (e.g., during tests) before this Task gets a chance to run.
-            guard let db = app.databases.database(
-                nil, logger: app.logger, on: app.eventLoopGroup.any()
-            ) else {
-                app.logger.warning("Scan \(scanID): database unavailable, skipping plugin execution")
-                return
-            }
-
-            var successCount = 0
-            var failureCount = 0
-            var timedOut = false
-
-            enum PluginOutcome {
-                case success(pluginName: String)
-                case failure(pluginName: String)
-                case timeout
-            }
-
-            await withTaskGroup(of: PluginOutcome.self) { group in
-                // Timeout sentinel: cancels all plugins if 120 s elapse.
-                group.addTask {
-                    try? await Task.sleep(for: .seconds(120))
-                    return .timeout
-                }
-
-                // Each plugin runs concurrently in its own child task.
-                for plugin in activePlugins {
-                    let pName = plugin.name
-                    group.addTask {
-                        guard !Task.isCancelled else { return .failure(pluginName: pName) }
-                        do {
-                            let pluginResults = try await plugin.scan(input: input, on: app)
-                            for pr in pluginResults {
-                                // Cap rawData to 8 KB — prevents bloated rows from misbehaving
-                                // upstream servers or unusually large API responses.
-                                let cappedRawData = pr.rawData.count > 8192
-                                    ? String(pr.rawData.prefix(8192)) + "… [truncated]"
-                                    : pr.rawData
-                                let result = Result(
-                                    scanID: scanID,
-                                    source: String(pr.source.prefix(64)),
-                                    type: String(pr.type.prefix(64)),
-                                    confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
-                                    rawData: cappedRawData
-                                )
-                                try await result.save(on: db)
-                            }
-                            return .success(pluginName: pName)
-                        } catch {
-                            app.logger.error("Plugin \(pName) failed: \(error)")
-                            return .failure(pluginName: pName)
-                        }
-                    }
-                }
-
-                // Drain results. Cancel remaining tasks as soon as all plugins
-                // have responded (killing the timeout sentinel) or on timeout.
-                var pluginsDone = 0
-                var allPluginsCompleted = false
-                for await outcome in group {
-                    switch outcome {
-                    case .timeout:
-                        if !allPluginsCompleted { timedOut = true; group.cancelAll() }
-                    case .success(let name):
-                        successCount += 1; pluginsDone += 1
-                        await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                    case .failure(let name):
-                        failureCount += 1; pluginsDone += 1
-                        await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                    }
-                    if !allPluginsCompleted && pluginsDone == activePlugins.count {
-                        allPluginsCompleted = true
-                        group.cancelAll()
-                    }
-                }
-            }
-
-            do {
-                if let scan = try await Scan.find(scanID, on: db) {
-                    if timedOut {
-                        app.logger.warning("Scan \(scanID) exceeded 120-second deadline; marking failed")
-                        scan.status = .failed
-                    } else {
-                        // Mark failed only when every plugin threw — partial success is still completed.
-                        scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
-                    }
-                    scan.completedAt = Date()
-                    try await scan.save(on: db)
-                    await ScanProgressTracker.shared.remove(for: scanID)
-                    // Fire webhook if user has one set.
-                    if let userID = scan.$user.id,
-                       let user = try? await User.find(userID, on: db),
-                       let hookURL = user.webhookURL {
-                        let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
-                        let risk = RiskScorer.compute(results: allResults)
-                        await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
-                    }
-                }
-            } catch {
-                app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
-            }
+            await ScanController.runPlugins(scanID: scanID, input: input, plugins: activePlugins, app: app)
         }
 
         return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil, scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 })
+    }
+
+    /// Shared plugin runner — called from both scan() and BulkScanController.
+    /// The caller is responsible for starting ScanProgressTracker before the Task.
+    static func runPlugins(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application) async {
+        // In the test environment there are no external services to reach,
+        // and the background URLSession calls generate SIGPIPE when the app
+        // shuts down immediately after the test.  Skip execution entirely.
+        guard app.environment != .testing else { return }
+
+        guard let db = app.databases.database(
+            nil, logger: app.logger, on: app.eventLoopGroup.any()
+        ) else {
+            app.logger.warning("Scan \(scanID): database unavailable, skipping plugin execution")
+            return
+        }
+
+        var successCount = 0
+        var failureCount = 0
+        var timedOut = false
+
+        enum PluginOutcome {
+            case success(pluginName: String)
+            case failure(pluginName: String)
+            case timeout
+        }
+
+        await withTaskGroup(of: PluginOutcome.self) { group in
+            // Timeout sentinel: cancels all plugins if 120 s elapse.
+            group.addTask {
+                try? await Task.sleep(for: .seconds(120))
+                return .timeout
+            }
+
+            for plugin in plugins {
+                let pName = plugin.name
+                group.addTask {
+                    guard !Task.isCancelled else { return .failure(pluginName: pName) }
+                    do {
+                        let pluginResults = try await plugin.scan(input: input, on: app)
+                        for pr in pluginResults {
+                            let cappedRawData = pr.rawData.count > 8192
+                                ? String(pr.rawData.prefix(8192)) + "… [truncated]"
+                                : pr.rawData
+                            let result = Result(
+                                scanID: scanID,
+                                source: String(pr.source.prefix(64)),
+                                type: String(pr.type.prefix(64)),
+                                confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
+                                rawData: cappedRawData
+                            )
+                            try await result.save(on: db)
+                        }
+                        return .success(pluginName: pName)
+                    } catch {
+                        app.logger.error("Plugin \(pName) failed: \(error)")
+                        return .failure(pluginName: pName)
+                    }
+                }
+            }
+
+            var pluginsDone = 0
+            var allPluginsCompleted = false
+            for await outcome in group {
+                switch outcome {
+                case .timeout:
+                    if !allPluginsCompleted { timedOut = true; group.cancelAll() }
+                case .success(let name):
+                    successCount += 1; pluginsDone += 1
+                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
+                case .failure(let name):
+                    failureCount += 1; pluginsDone += 1
+                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
+                }
+                if !allPluginsCompleted && pluginsDone == plugins.count {
+                    allPluginsCompleted = true
+                    group.cancelAll()
+                }
+            }
+        }
+
+        do {
+            if let scan = try await Scan.find(scanID, on: db) {
+                if timedOut {
+                    app.logger.warning("Scan \(scanID) exceeded 120-second deadline; marking failed")
+                    scan.status = .failed
+                } else {
+                    scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
+                }
+                scan.completedAt = Date()
+                try await scan.save(on: db)
+                await ScanProgressTracker.shared.remove(for: scanID)
+                // Fire webhook if user has one set.
+                if let userID = scan.$user.id,
+                   let user = try? await User.find(userID, on: db),
+                   let hookURL = user.webhookURL {
+                    let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
+                    let risk = RiskScorer.compute(results: allResults)
+                    await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
+                }
+            }
+        } catch {
+            app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
+        }
     }
 
     @Sendable
