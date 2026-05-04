@@ -326,7 +326,8 @@ struct ScanController: RouteCollection {
                 lastCount = results.count
 
                 if scan.status == .completed || scan.status == .failed {
-                    let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count)}"
+                    let risk = RiskScorer.compute(results: results)
+                    let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count),\"riskScore\":\(risk.value),\"riskLevel\":\"\(risk.level.rawValue)\"}"
                     try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
                     return
                 }

@@ -6,6 +6,8 @@ struct ScanSummary: Content {
     let input: String
     let status: String
     let resultCount: Int
+    let riskScore: Int
+    let riskLevel: String
     let createdAt: Double?
     let completedAt: Double?
 }
@@ -51,14 +53,17 @@ struct UserController: RouteCollection {
         var items: [ScanSummary] = []
         for scan in paged {
             guard let scanID = scan.id else { continue }
-            let count = try await Result.query(on: req.db)
+            let scanResults = try await Result.query(on: req.db)
                 .filter(\Result.$scan.$id == scanID)
-                .count()
+                .all()
+            let risk = RiskScorer.compute(results: scanResults)
             items.append(ScanSummary(
                 scanID: scanID,
                 input: scan.input,
                 status: scan.status.rawValue,
-                resultCount: count,
+                resultCount: scanResults.count,
+                riskScore: risk.value,
+                riskLevel: risk.level.rawValue,
                 createdAt: scan.createdAt.map { $0.timeIntervalSince1970 },
                 completedAt: scan.completedAt.map { $0.timeIntervalSince1970 }
             ))
@@ -96,14 +101,17 @@ struct UserController: RouteCollection {
         var items: [ScanSummary] = []
         for scan in paged {
             guard let scanID = scan.id else { continue }
-            let count = try await Result.query(on: req.db)
+            let scanResults = try await Result.query(on: req.db)
                 .filter(\Result.$scan.$id == scanID)
-                .count()
+                .all()
+            let risk = RiskScorer.compute(results: scanResults)
             items.append(ScanSummary(
                 scanID: scanID,
                 input: maskInput(scan.input),
                 status: scan.status.rawValue,
-                resultCount: count,
+                resultCount: scanResults.count,
+                riskScore: risk.value,
+                riskLevel: risk.level.rawValue,
                 createdAt: scan.createdAt.map { $0.timeIntervalSince1970 },
                 completedAt: scan.completedAt.map { $0.timeIntervalSince1970 }
             ))

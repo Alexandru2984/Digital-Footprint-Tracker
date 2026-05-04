@@ -8,6 +8,31 @@ from fpdf import FPDF
 from datetime import datetime, timezone
 
 
+def compute_risk(results: list) -> tuple:
+    """Returns (score 0-100, level str, colour RGB tuple)."""
+    if not results:
+        return (0, 'Low', (100, 160, 100))
+    total = 0.0
+    for r in results:
+        t = (r.get('type') or '').lower()
+        if any(k in t for k in ('breach', 'credential', 'leak', 'password')):
+            w = 3.0
+        elif any(k in t for k in ('email', 'phone', 'location')):
+            w = 2.0
+        else:
+            w = 1.0
+        total += r.get('confidenceScore', 0) * w
+    score = int(min(100, round(total / 20.0 * 100)))
+    if score < 25:
+        return (score, 'Low',      (100, 160, 100))
+    elif score < 50:
+        return (score, 'Medium',   (200, 160,  50))
+    elif score < 75:
+        return (score, 'High',     (210, 100,  30))
+    else:
+        return (score, 'Critical', (200,  40,  40))
+
+
 def make_report(data: dict) -> bytes:
     scan_id = str(data.get('scanID', ''))
     target = data.get('input', 'UNKNOWN')
@@ -23,6 +48,8 @@ def make_report(data: dict) -> bytes:
     med  = [r for r in results if 0.5 <= r.get('confidenceScore', 0) < 0.8]
     low  = [r for r in results if r.get('confidenceScore', 0) < 0.5]
 
+    risk_score, risk_level, risk_colour = compute_risk(results)
+
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -35,6 +62,16 @@ def make_report(data: dict) -> bytes:
     pdf.set_line_width(0.5)
     pdf.line(10, pdf.get_y(), 287, pdf.get_y())
     pdf.ln(4)
+
+    # Risk Score banner (right-aligned block)
+    banner_x = 210
+    pdf.set_xy(banner_x, 14)
+    pdf.set_fill_color(*risk_colour)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(70, 7, f'Risk Score: {risk_score}/100  [{risk_level}]', border=0, fill=True, align='C', ln=True)
+    pdf.set_text_color(20, 20, 20)
+    pdf.set_xy(10, pdf.get_y())
 
     # Meta
     pdf.set_font('Helvetica', '', 9)

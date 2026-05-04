@@ -755,12 +755,29 @@
                 try {
                     const info = JSON.parse(e.data);
                     setScanningState(false);
+                    document.getElementById('scan-progress').classList.add('hidden');
                     if (info.status === 'failed') {
                         logStatus('Scan finished with errors. Partial results shown.', 'text-red-500');
                     } else if (info.status === 'timeout') {
                         logStatus('Scan timed out. Partial results shown.', 'text-yellow-500');
                     } else {
-                        logStatus('Scan completed: ' + info.count + ' result(s).');
+                        const riskLabel = info.riskLevel ? ` · Risk: ${info.riskLevel} (${info.riskScore}/100)` : '';
+                        logStatus('Scan completed: ' + info.count + ' result(s)' + riskLabel + '.');
+                    }
+                    // Show risk badge above results grid
+                    if (info.riskLevel) {
+                        const riskColors = { Low: 'text-green-400', Medium: 'text-yellow-400', High: 'text-orange-400', Critical: 'text-red-500' };
+                        const cls = riskColors[info.riskLevel] || 'text-slate-400';
+                        let badge = document.getElementById('risk-score-badge');
+                        if (!badge) {
+                            badge = document.createElement('div');
+                            badge.id = 'risk-score-badge';
+                            badge.className = 'text-xs font-semibold uppercase tracking-wide mb-2';
+                            resultsGrid.parentNode.insertBefore(badge, resultsGrid);
+                        }
+                        badge.className = `text-xs font-semibold uppercase tracking-wide mb-2 ${cls}`;
+                        badge.textContent = `⚠ Exposure Risk: ${info.riskLevel} — ${info.riskScore}/100`;
+                        badge.classList.remove('hidden');
                     }
                     if (receivedResults === 0) {
                         emptyState.classList.remove('hidden');
@@ -1296,6 +1313,8 @@
                 items.forEach(s => {
                     const date = s.createdAt ? new Date(s.createdAt * 1000).toLocaleString() : '—';
                     const statusColor = s.status === 'completed' ? 'text-green-400' : s.status === 'failed' ? 'text-red-400' : 'text-yellow-400';
+                    const riskColors = { Low: 'text-green-400 border-green-800', Medium: 'text-yellow-400 border-yellow-800', High: 'text-orange-400 border-orange-800', Critical: 'text-red-500 border-red-800' };
+                    const riskCls = (s.status === 'completed' && s.riskLevel) ? (riskColors[s.riskLevel] || 'text-slate-400 border-slate-700') : null;
                     const div = document.createElement('div');
                     div.className = 'flex items-center justify-between bg-dark-900 rounded px-3 py-2 border border-dark-700 gap-2';
                     const inputEl = document.createElement('span');
@@ -1311,6 +1330,12 @@
                     dateEl.className = 'text-[10px] text-slate-600 flex-shrink-0';
                     dateEl.textContent = date;
                     div.appendChild(inputEl);
+                    if (riskCls) {
+                        const riskEl = document.createElement('span');
+                        riskEl.className = `text-[10px] border rounded px-1 flex-shrink-0 ${riskCls}`;
+                        riskEl.textContent = s.riskLevel + ' ' + s.riskScore;
+                        div.appendChild(riskEl);
+                    }
                     div.appendChild(statusEl);
                     div.appendChild(hitsEl);
                     div.appendChild(dateEl);
@@ -1320,6 +1345,14 @@
                         viewBtn.textContent = 'VIEW';
                         viewBtn.addEventListener('click', () => loadScanByID(s.scanID));
                         div.appendChild(viewBtn);
+                        if (s.status === 'completed') {
+                            const pdfBtn = document.createElement('a');
+                            pdfBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 flex-shrink-0 underline';
+                            pdfBtn.textContent = 'PDF';
+                            pdfBtn.href = '/api/report/' + s.scanID;
+                            pdfBtn.target = '_blank';
+                            div.appendChild(pdfBtn);
+                        }
                     }
                     list.appendChild(div);
                 });
