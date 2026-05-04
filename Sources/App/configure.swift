@@ -13,7 +13,7 @@ public func configure(_ app: Application) async throws {
     }
     let corsConfig = CORSMiddleware.Configuration(
         allowedOrigin: allowedOrigin,
-        allowedMethods: [.GET, .POST, .OPTIONS],
+        allowedMethods: [.GET, .POST, .OPTIONS, .DELETE, .PUT],
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
@@ -28,6 +28,7 @@ public func configure(_ app: Application) async throws {
         return cookie
     }
     app.middleware.use(app.sessions.middleware)
+    app.middleware.use(APIKeyMiddleware())
 
     // Global HTTP client timeout — applies to all outbound requests (all plugins).
     var clientConfig = app.http.client.configuration
@@ -68,6 +69,9 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateScanTags())
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
+    app.migrations.add(CreateAPIKeys())
+    app.migrations.add(CreateAuditLogs())
+    app.migrations.add(AddRetentionDaysToUsers())
 
     // Run migrations automatically
     try await app.autoMigrate()

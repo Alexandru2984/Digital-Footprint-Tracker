@@ -42,7 +42,8 @@ private func runDueScans(app: Application) async {
             RedditPlugin(), TwitterPlugin(), KeybasePlugin(), TelegramPlugin(),
             MastodonPlugin(), HackerNewsPlugin(), SteamPlugin(), NpmPlugin(),
             PyPIPlugin(), PastebinPlugin(), PhonePlugin(), DomainPlugin(),
-            BulkUsernamePlugin(), BulkEmailPlugin()
+            BulkUsernamePlugin(), BulkEmailPlugin(),
+            CrtShPlugin(), WhoisPlugin(), ShodanPlugin()
         ]
 
         let newScan = Scan(input: input)

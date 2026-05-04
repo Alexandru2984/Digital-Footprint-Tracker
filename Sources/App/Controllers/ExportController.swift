@@ -14,6 +14,7 @@ struct ExportController: RouteCollection {
         guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
             throw Abort(.notFound, reason: "Scan not found.")
         }
+        AuditLogger.log(req: req, action: "export_json", target: scan.input)
 
         let risk = RiskScorer.compute(results: scan.results)
         let payload: [String: Any] = [

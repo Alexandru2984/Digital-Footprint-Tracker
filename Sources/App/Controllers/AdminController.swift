@@ -21,6 +21,7 @@ struct AdminController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.get("admin", "dashboard", use: dashboard)
+        noCache.get("admin", "audit", use: auditLog)
     }
 
     @Sendable
@@ -81,5 +82,15 @@ struct AdminController: RouteCollection {
             scansPerDay: scansPerDay,
             topPlugins: topPlugins
         )
+    }
+
+    @Sendable
+    func auditLog(req: Request) async throws -> Page<AuditLog> {
+        guard let user = try await req.currentUser(), user.isAdmin else {
+            throw Abort(.forbidden)
+        }
+        return try await AuditLog.query(on: req.db)
+            .sort(\.$createdAt, .descending)
+            .paginate(for: req)
     }
 }

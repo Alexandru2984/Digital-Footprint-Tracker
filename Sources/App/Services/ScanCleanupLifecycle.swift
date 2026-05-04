@@ -28,6 +28,23 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 } catch {
                     app.logger.error("CleanupJob failed: \(error)")
                 }
+
+                // Per-user retention policies
+                let usersWithRetention = (try? await User.query(on: db).filter(\.$retentionDays != nil).all()) ?? []
+                for user in usersWithRetention {
+                    guard let days = user.retentionDays, days > 0 else { continue }
+                    let userCutoff = Date().addingTimeInterval(-Double(days) * 86400)
+                    let oldScans = (try? await Scan.query(on: db)
+                        .filter(\.$user.$id == user.id!)
+                        .filter(\.$createdAt < userCutoff)
+                        .all()) ?? []
+                    for scan in oldScans {
+                        try? await scan.delete(on: db)
+                    }
+                    if !oldScans.isEmpty {
+                        app.logger.info("[DataRetention] Deleted \(oldScans.count) scans for user \(user.username) (retention: \(days) days)")
+                    }
+                }
             }
         }
     }

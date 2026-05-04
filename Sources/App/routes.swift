@@ -51,6 +51,9 @@ func routes(_ app: Application) throws {
     let notificationController = NotificationController()
     try app.register(collection: notificationController)
 
+    let apiKeyController = APIKeyController()
+    try app.register(collection: apiKeyController)
+
     let healthController = HealthController()
     try app.register(collection: healthController)
 }

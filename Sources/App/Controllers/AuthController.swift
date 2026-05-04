@@ -20,6 +20,7 @@ struct AuthController: RouteCollection {
         auth.post("logout", use: logout)
         auth.get("me", use: me)
         auth.post("webhook", use: setWebhook)
+        auth.post("retention", use: setRetention)
     }
 
     @Sendable
@@ -54,6 +55,8 @@ struct AuthController: RouteCollection {
         let user = User(username: body.username, email: body.email.lowercased(), passwordHash: hash)
         try await user.save(on: req.db)
 
+        AuditLogger.log(req: req, action: "register", target: body.username)
+
         // Regenerate session to prevent session fixation: clear any pre-auth data
         // before binding the authenticated user ID to this session.
         req.session.data = .init()
@@ -81,6 +84,7 @@ struct AuthController: RouteCollection {
         // Regenerate session to prevent session fixation.
         req.session.data = .init()
         req.session.data["userID"] = user.id?.uuidString
+        AuditLogger.log(req: req, action: "login", target: body.username)
         return user.toPublic()
     }
 
@@ -113,6 +117,20 @@ struct AuthController: RouteCollection {
         let body = try req.content.decode(Body.self)
         let url = body.webhookURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         user.webhookURL = (url?.isEmpty == false) ? url : nil
+        try await user.save(on: req.db)
+        return user.toPublic()
+    }
+    @Sendable
+    func setRetention(req: Request) async throws -> User.Public {
+        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        struct Body: Content { let retentionDays: Int? }
+        let body = try req.content.decode(Body.self)
+        if let days = body.retentionDays {
+            guard days == 30 || days == 90 || days == 365 else {
+                throw Abort(.badRequest, reason: "Retention must be 30, 90, or 365 days (or null to disable).")
+            }
+        }
+        user.retentionDays = body.retentionDays
         try await user.save(on: req.db)
         return user.toPublic()
     }

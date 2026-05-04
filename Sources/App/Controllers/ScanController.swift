@@ -44,7 +44,10 @@ struct ScanController: RouteCollection {
         PhonePlugin(),
         DomainPlugin(),
         BulkUsernamePlugin(),
-        BulkEmailPlugin()
+        BulkEmailPlugin(),
+        CrtShPlugin(),
+        WhoisPlugin(),
+        ShodanPlugin()
     ]
 
     func boot(routes: RoutesBuilder) throws {
@@ -134,8 +137,10 @@ struct ScanController: RouteCollection {
 
         let userID = try await req.currentUser()?.id
 
-        let newScan = Scan(input: input, userID: userID)
+        let normalized = input
+        let newScan = Scan(input: normalized, userID: userID)
         try await newScan.save(on: req.db)
+        AuditLogger.log(req: req, action: "scan_start", target: String(normalized.prefix(100)))
         guard let scanID = newScan.id else {
             throw Abort(.internalServerError)
         }
