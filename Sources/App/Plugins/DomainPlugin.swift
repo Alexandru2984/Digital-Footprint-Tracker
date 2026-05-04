@@ -1,5 +1,8 @@
 import Vapor
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Detects domain name / IP inputs and performs DNS + WHOIS OSINT.
 ///
@@ -29,10 +32,12 @@ struct DomainPlugin: FootprintPlugin {
         var results: [PluginResult] = []
 
         // ── A records ───────────────────────────────────────────────────────────
+        var resolvedIPs: [String] = []
         if let aOut = runDig(args: [target, "A", "+short", "+time=3", "+tries=1"], app: app) {
             let ips = aOut.components(separatedBy: .newlines)
                          .map { $0.trimmingCharacters(in: .whitespaces) }
                          .filter { !$0.isEmpty && !$0.hasPrefix(";") }
+            resolvedIPs = ips
             if !ips.isEmpty {
                 results.append(PluginResult(
                     source: "DomainDNS",
@@ -107,7 +112,72 @@ struct DomainPlugin: FootprintPlugin {
             }
         }
 
+        // ── IP Geolocation ────────────────────────────────────────────────────────
+        // Collect all IPs to geolocate: the target if it's an IP, or the resolved A records.
+        let ipsToGeolocate: [String]
+        if isIP {
+            ipsToGeolocate = [target]
+        } else {
+            ipsToGeolocate = Array(resolvedIPs
+                .filter { $0.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil }
+                .prefix(3))
+        }
+
+        if !ipsToGeolocate.isEmpty {
+            if let geoResults = await geolocateIPs(ipsToGeolocate, app: app) {
+                results.append(contentsOf: geoResults)
+            }
+        }
+
         return results
+    }
+
+    // MARK: - IP Geolocation via ip-api.com (free, no key, 45 req/min limit)
+
+    private func geolocateIPs(_ ips: [String], app: Application) async -> [PluginResult]? {
+        guard let url = URL(string: "http://ip-api.com/batch?fields=status,query,country,countryCode,regionName,city,isp,org,as") else { return nil }
+
+        let body = try? JSONSerialization.data(withJSONObject: ips.map { ["query": $0] })
+        guard let body = body else { return nil }
+
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.httpMethod = "POST"
+        req.httpBody = body
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+
+        struct GeoResult: Decodable {
+            let status: String
+            let query: String?
+            let country: String?
+            let countryCode: String?
+            let regionName: String?
+            let city: String?
+            let isp: String?
+            let org: String?
+            let `as`: String?
+        }
+
+        guard let geos = try? JSONDecoder().decode([GeoResult].self, from: data) else { return nil }
+
+        return geos.compactMap { geo in
+            guard geo.status == "success", let ip = geo.query else { return nil }
+            var parts: [String] = ["IP: \(ip)"]
+            if let country = geo.country     { parts.append("Country: \(country)") }
+            if let region = geo.regionName, !region.isEmpty { parts.append("Region: \(region)") }
+            if let city = geo.city, !city.isEmpty           { parts.append("City: \(city)") }
+            if let isp = geo.isp, !isp.isEmpty              { parts.append("ISP: \(isp)") }
+            if let org = geo.org, !org.isEmpty, org != geo.isp { parts.append("Org: \(org)") }
+            if let asn = geo.as, !asn.isEmpty               { parts.append("ASN: \(asn)") }
+            return PluginResult(
+                source: "DomainGeo",
+                type: "ip_geolocation",
+                confidenceScore: 0.95,
+                rawData: parts.joined(separator: " | ")
+            )
+        }
     }
 
     // MARK: - Subprocess helpers

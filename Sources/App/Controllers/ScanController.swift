@@ -26,12 +26,16 @@ struct ScanController: RouteCollection {
         GravatarPlugin(),
         HaveIBeenPwnedPlugin(),
         UsernamePlugin(),
+        GitLabPlugin(),
         RedditPlugin(),
         TwitterPlugin(),
         KeybasePlugin(),
         TelegramPlugin(),
         MastodonPlugin(),
         HackerNewsPlugin(),
+        SteamPlugin(),
+        NpmPlugin(),
+        PyPIPlugin(),
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),
@@ -124,7 +128,9 @@ struct ScanController: RouteCollection {
             )
         }
 
-        let newScan = Scan(input: input)
+        let userID = try await req.currentUser()?.id
+
+        let newScan = Scan(input: input, userID: userID)
         try await newScan.save(on: req.db)
         guard let scanID = newScan.id else {
             throw Abort(.internalServerError)

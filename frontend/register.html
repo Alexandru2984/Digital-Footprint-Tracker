@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register — OSINT Footprint Tracker</title>
+    <link rel="stylesheet" href="/tailwind.css"
+          integrity="sha384-/FDiYHclalmLBee7NtkJs55xr1oAlWsYiK9xDXVCdvxeSBcuOvQEVOMZg9eWm0a7"
+          crossorigin="anonymous">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+    </style>
+</head>
+<body class="font-mono min-h-screen flex items-center justify-center relative overflow-x-hidden">
+    <!-- Grid Background -->
+    <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
+
+    <div class="relative z-10 w-full max-w-sm px-4">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center gap-3 mb-3">
+                <div class="p-3 bg-dark-800 rounded-lg border border-dark-700 shadow-[0_0_15px_rgba(16,185,129,0.2)] text-brand-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+                        <path d="M2 12h20"></path>
+                    </svg>
+                </div>
+                <span class="text-xl font-bold text-white">OSINT <span class="text-brand-500">TRACKER</span></span>
+            </div>
+            <p class="text-slate-400 text-sm">Create your account</p>
+        </div>
+
+        <!-- Form Card -->
+        <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 shadow-2xl">
+            <div id="error-msg" class="hidden mb-4 p-3 bg-red-900/30 border border-red-700 rounded text-red-400 text-xs"></div>
+
+            <form id="register-form" class="flex flex-col gap-4">
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
+                    <input type="text" id="username" name="username" required autocomplete="username"
+                           minlength="3" maxlength="30" pattern="[a-zA-Z0-9_\-]+"
+                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
+                           placeholder="3–30 chars, letters/numbers/_-">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
+                    <input type="email" id="email" name="email" required autocomplete="email"
+                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
+                           placeholder="you@example.com">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+                    <input type="password" id="password" name="password" required autocomplete="new-password"
+                           minlength="8"
+                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
+                           placeholder="Minimum 8 characters">
+                </div>
+                <button type="submit" id="submit-btn"
+                        class="mt-2 w-full text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:ring-brand-500/50 font-bold rounded-lg text-sm px-5 py-3 text-center transition-colors shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+                    CREATE ACCOUNT
+                </button>
+            </form>
+
+            <p class="text-center text-xs text-slate-500 mt-4">
+                Already have an account? <a href="/login.html" class="text-brand-400 hover:text-brand-300 transition-colors">Login here</a>
+            </p>
+            <p class="text-center text-xs text-slate-600 mt-2">
+                <a href="/" class="hover:text-slate-400 transition-colors">← Back to scanner</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            const errEl = document.getElementById('error-msg');
+            btn.textContent = 'CREATING...';
+            btn.disabled = true;
+            errEl.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        email: document.getElementById('email').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    errEl.textContent = data.reason || 'Registration failed. Please try again.';
+                    errEl.classList.remove('hidden');
+                    btn.textContent = 'CREATE ACCOUNT';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                errEl.textContent = 'Network error. Please try again.';
+                errEl.classList.remove('hidden');
+                btn.textContent = 'CREATE ACCOUNT';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

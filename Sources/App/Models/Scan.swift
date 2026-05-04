@@ -33,11 +33,15 @@ final class Scan: Model, Content {
     @Children(for: \.$scan)
     var results: [Result]
 
+    @OptionalParent(key: "user_id")
+    var user: User?
+
     init() { }
 
-    init(id: UUID? = nil, input: String, status: ScanStatus = .pending) {
+    init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {
         self.id = id
         self.input = input
         self.statusRaw = status.rawValue
+        self.$user.id = userID
     }
 }

@@ -19,10 +19,15 @@ private func makeApp() async throws -> Application {
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )), at: .beginning)
 
+    app.sessions.use(.memory)
+    app.middleware.use(app.sessions.middleware)
+
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
     app.migrations.add(AddInputIndex())
+    app.migrations.add(CreateUser())
+    app.migrations.add(AddUserIDToScans())
     try await app.autoMigrate()
 
     try routes(app)

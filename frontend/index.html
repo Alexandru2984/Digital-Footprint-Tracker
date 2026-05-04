@@ -73,11 +73,51 @@
                     <path d="M2 12h20"></path>
                 </svg>
             </div>
-            <div>
+            <div class="flex-grow">
                 <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-md">OSINT <span class="text-brand-500">FOOTPRINT TRACKER</span></h1>
                 <p class="text-slate-400 text-sm mt-1">Aggregated target intel analysis module</p>
             </div>
+            <!-- Auth widget -->
+            <div id="auth-widget" class="flex items-center gap-2 flex-shrink-0">
+                <!-- Shown when logged out -->
+                <div id="auth-logged-out" class="hidden flex items-center gap-2">
+                    <a href="/login.html" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-white hover:border-brand-500/50 transition-colors">LOGIN</a>
+                    <a href="/register.html" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 rounded text-white transition-colors font-bold">REGISTER</a>
+                </div>
+                <!-- Shown when logged in -->
+                <div id="auth-logged-in" class="hidden flex items-center gap-2">
+                    <button id="my-scans-toggle-btn" title="My scan history" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                        MY SCANS
+                    </button>
+                    <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded text-brand-400 font-bold flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <span id="auth-username-text">—</span>
+                        <span id="auth-admin-badge" class="hidden text-[10px] px-1 bg-yellow-500/20 text-yellow-400 rounded ml-1">ADMIN</span>
+                    </span>
+                    <button id="logout-btn" title="Logout" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-500 hover:text-red-400 hover:border-red-500/50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    </button>
+                </div>
+            </div>
         </header>
+
+        <!-- My Scans Panel (hidden by default, toggled by button) -->
+        <section id="my-scans-panel" class="hidden bg-dark-800 border border-dark-700 rounded-xl p-4 mb-8 shadow-xl">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+                    <span id="my-scans-title">MY SCANS</span>
+                </h3>
+                <div class="flex gap-2">
+                    <button id="admin-scans-btn" class="hidden text-xs text-yellow-500 hover:text-yellow-400 transition-colors uppercase tracking-wide">All Scans (Admin)</button>
+                    <button id="close-my-scans-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
+                </div>
+            </div>
+            <div id="my-scans-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1 text-sm">
+                <p class="text-slate-500 text-xs">Loading...</p>
+            </div>
+        </section>
 
         <!-- Search Panel -->
         <section class="bg-dark-800 border border-dark-700 rounded-xl p-6 shadow-xl mb-8 relative overflow-hidden" id="search-panel">
@@ -1106,6 +1146,81 @@
             if (!section.classList.contains('hidden')) renderSocialGraph(data);
         }
 
+        // ─── AUTH ─────────────────────────────────────────────────────────────────
+        let currentUser = null;
+
+        async function loadAuthState() {
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'include' });
+                if (res.ok) {
+                    currentUser = await res.json();
+                    document.getElementById('auth-logged-out').classList.add('hidden');
+                    document.getElementById('auth-logged-in').classList.remove('hidden');
+                    document.getElementById('auth-username-text').textContent = currentUser.username;
+                    if (currentUser.isAdmin) {
+                        document.getElementById('auth-admin-badge').classList.remove('hidden');
+                        document.getElementById('admin-scans-btn').classList.remove('hidden');
+                    }
+                } else {
+                    currentUser = null;
+                    document.getElementById('auth-logged-out').classList.remove('hidden');
+                    document.getElementById('auth-logged-in').classList.add('hidden');
+                }
+            } catch (e) {
+                document.getElementById('auth-logged-out').classList.remove('hidden');
+            }
+        }
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+            currentUser = null;
+            document.getElementById('auth-logged-out').classList.remove('hidden');
+            document.getElementById('auth-logged-in').classList.add('hidden');
+            document.getElementById('my-scans-panel').classList.add('hidden');
+        });
+
+        document.getElementById('my-scans-toggle-btn').addEventListener('click', async () => {
+            const panel = document.getElementById('my-scans-panel');
+            if (!panel.classList.contains('hidden')) {
+                panel.classList.add('hidden');
+                return;
+            }
+            panel.classList.remove('hidden');
+            await loadMyScans('/api/my-scans', 'MY SCANS');
+        });
+
+        document.getElementById('close-my-scans-btn').addEventListener('click', () => {
+            document.getElementById('my-scans-panel').classList.add('hidden');
+        });
+
+        document.getElementById('admin-scans-btn').addEventListener('click', async () => {
+            await loadMyScans('/api/admin/scans', 'ALL SCANS (ADMIN)');
+        });
+
+        async function loadMyScans(url, title) {
+            document.getElementById('my-scans-title').textContent = title;
+            const list = document.getElementById('my-scans-list');
+            list.innerHTML = '<p class="text-slate-500 text-xs">Loading...</p>';
+            try {
+                const res = await fetch(url, { credentials: 'include' });
+                if (!res.ok) { list.innerHTML = '<p class="text-red-400 text-xs">Failed to load.</p>'; return; }
+                const scans = await res.json();
+                if (!scans.length) { list.innerHTML = '<p class="text-slate-500 text-xs">No scans yet.</p>'; return; }
+                list.innerHTML = scans.map(s => {
+                    const date = s.createdAt ? new Date(s.createdAt * 1000).toLocaleString() : '—';
+                    const statusColor = s.status === 'completed' ? 'text-green-400' : s.status === 'failed' ? 'text-red-400' : 'text-yellow-400';
+                    return `<div class="flex items-center justify-between bg-dark-900 rounded px-3 py-2 border border-dark-700 gap-2">
+                        <span class="text-slate-300 font-mono text-xs flex-grow truncate">${s.inputMasked}</span>
+                        <span class="text-[10px] ${statusColor} uppercase flex-shrink-0">${s.status}</span>
+                        <span class="text-[10px] text-slate-600 flex-shrink-0">${date}</span>
+                        ${s.scanID ? `<button onclick="loadScanByID('${s.scanID}')" class="text-[10px] text-brand-400 hover:text-brand-300 flex-shrink-0 underline">VIEW</button>` : ''}
+                    </div>`;
+                }).join('');
+            } catch(e) {
+                list.innerHTML = '<p class="text-red-400 text-xs">Error loading scans.</p>';
+            }
+        }
+
         // ─── URL AUTO-LOAD ────────────────────────────────────────────────────────
         // Validate UUID format client-side to avoid pointless API calls.
         (function checkURLScan() {
@@ -1120,6 +1235,8 @@
         renderHistory();
         // Load platform stats on page load.
         loadStats();
+        // Check auth state on page load.
+        loadAuthState();
     </script>
 </body>
 </html>

@@ -18,6 +18,17 @@ public func configure(_ app: Application) async throws {
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
 
+    // Sessions — in-memory; users are logged out on server restart.
+    app.sessions.use(.memory)
+    app.sessions.configuration.cookieFactory = { sessionID in
+        var cookie = HTTPCookies.Value(string: sessionID.string)
+        cookie.isSecure = true
+        cookie.isHTTPOnly = true
+        cookie.sameSite = .strict
+        return cookie
+    }
+    app.middleware.use(app.sessions.middleware)
+
     // Global HTTP client timeout — applies to all outbound requests (all plugins).
     var clientConfig = app.http.client.configuration
     clientConfig.timeout = .init(connect: .seconds(5), read: .seconds(15))
@@ -50,9 +61,26 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
     app.migrations.add(AddInputIndex())
+    app.migrations.add(CreateUser())
+    app.migrations.add(AddUserIDToScans())
 
     // Run migrations automatically
     try await app.autoMigrate()
+
+    // Seed admin user from environment variables if not already present.
+    let adminUsername = Environment.get("ADMIN_USERNAME") ?? "admin"
+    let adminEmail    = Environment.get("ADMIN_EMAIL")    ?? "admin@localhost"
+    if let adminPassword = Environment.get("ADMIN_PASSWORD") {
+        let existing = try await User.query(on: app.db).filter(\.$username == adminUsername).first()
+        if existing == nil {
+            let hash = try await app.password.async.hash(adminPassword)
+            let admin = User(username: adminUsername, email: adminEmail, passwordHash: hash, isAdmin: true)
+            try await admin.save(on: app.db)
+            app.logger.notice("Admin user '\(adminUsername)' created.")
+        }
+    } else {
+        app.logger.warning("ADMIN_PASSWORD not set — admin account will not be seeded.")
+    }
 
     // Register routes
     try routes(app)

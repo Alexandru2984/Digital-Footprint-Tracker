@@ -2,7 +2,7 @@
 
 > **Live demo:** [https://swift.micutu.com](https://swift.micutu.com)
 
-A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on a hardened Linux VPS. Scans an email address, username, domain, or phone number across 500+ sources in parallel, streams results live via SSE, and visualises them as an interactive force-directed identity graph.
+A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on a hardened Linux VPS. Scans an email address, username, domain, or phone number across 500+ sources in parallel, streams results live via SSE, and visualises them as an interactive force-directed identity graph. Includes a full **authentication system** — any user can register and track their own scans; the admin account has access to all scan history.
 
 ---
 
@@ -36,25 +36,32 @@ nginx (rate limiting, CSP, HSTS, XSS headers)
 Vapor 4 (async/await, Swift concurrency)
   ├── ScanController   — POST /scan, GET /results/:id, GET /stream/:id (SSE)
   ├── StatsController  — GET /stats
+  ├── AuthController   — POST /auth/register, POST /auth/login, POST /auth/logout, GET /auth/me
+  ├── UserController   — GET /my-scans, GET /admin/scans
   └── Plugin Pipeline  — parallel TaskGroup, 120s timeout
         ├── GravatarPlugin          (email)
         ├── HaveIBeenPwnedPlugin    (email — breach data)
         ├── PastebinPlugin          (email → HIBP paste API / username → pastebin.com)
         ├── BulkEmailPlugin         (email — holehe CLI: 400+ sites)
-        ├── UsernamePlugin          (username — GitHub, npm, PyPI, Crates.io, Docker Hub)
+        ├── UsernamePlugin          (username — GitHub enriched: name/bio/location/Twitter)
+        ├── GitLabPlugin            (username — GitLab profile)
         ├── RedditPlugin            (username)
         ├── TwitterPlugin           (username — public CDN endpoint, no key needed)
         ├── KeybasePlugin           (username — identity proofs + crypto wallets)
         ├── TelegramPlugin          (username — t.me profile scrape)
         ├── MastodonPlugin          (username — mastodon.social public API)
         ├── HackerNewsPlugin        (username — karma, submissions, member since)
+        ├── SteamPlugin             (username — Steam community XML, no key needed)
+        ├── NpmPlugin               (username — npm maintainer package search)
+        ├── PyPIPlugin              (username — PyPI user profile + packages)
         ├── PhonePlugin             (phone — AbstractAPI validation)
-        ├── DomainPlugin            (domain/IP — dig A/MX/TXT/PTR + whois)
+        ├── DomainPlugin            (domain/IP — DNS A/MX/TXT/PTR + WHOIS + IP geolocation)
         └── BulkUsernamePlugin      (username — Sherlock data: 481 sites)
   │
   ▼
 PostgreSQL
-  ├── scans   (id, input, status, created_at, completed_at)
+  ├── users   (id, username, email, password_hash, is_admin, created_at)
+  ├── scans   (id, input, status, created_at, completed_at, user_id FK)
   └── results (id, scan_id, source, type, confidence_score, raw_data)
 ```
 
@@ -63,12 +70,19 @@ PostgreSQL
 ## Features
 
 ### OSINT Engine
-- **500+ sources** checked per scan (481 Sherlock sites + 14 dedicated plugins)
+- **500+ sources** checked per scan (481 Sherlock sites + 18 dedicated plugins)
 - **Email OSINT**: Gravatar, HaveIBeenPwned breaches + pastes, holehe (400+ sites), Pastebin
-- **Username OSINT**: GitHub, npm, PyPI, Docker Hub, Crates.io, Reddit, Twitter/X, Keybase, Telegram, Mastodon, HackerNews, Pastebin, 481 Sherlock sites
-- **Domain / IP OSINT**: DNS A/MX/TXT/SPF records, reverse PTR, WHOIS registrar + expiry
+- **Username OSINT**: GitHub (enriched), GitLab, Reddit, Twitter/X, Keybase, Telegram, Mastodon, HackerNews, Steam, npm packages, PyPI packages, Pastebin, 481 Sherlock sites
+- **Domain / IP OSINT**: DNS A/MX/TXT/SPF records, reverse PTR, WHOIS registrar + expiry, **IP geolocation** (country, city, ISP, ASN via ip-api.com)
 - **Phone OSINT**: E.164 format detection, carrier + country lookup via AbstractAPI
 - **Parallel execution**: all plugins run concurrently in a Swift `TaskGroup` with a 120s hard timeout
+
+### Authentication
+- **Register / Login / Logout** — session-based auth (HttpOnly + Secure + SameSite=Strict cookie)
+- **Admin account** seeded from `ADMIN_USERNAME` + `ADMIN_PASSWORD` env vars on first start
+- **My Scans** — authenticated users see their own scan history
+- **Admin panel** — admin account sees all scan history across all users
+- Password hashing with BCrypt (cost factor 12)
 
 ### Real-time Streaming
 - **Server-Sent Events (SSE)**: results appear live as each plugin finishes
@@ -79,6 +93,8 @@ PostgreSQL
 - **Stats Dashboard**: total scans, last 24h/7d activity, top sources bar chart
 - **Identity Graph**: D3.js v7 force-directed graph — centre node = target, leaf nodes = found sources, edge colour = confidence
 - **Type filter**: dropdown to filter results by category (social_media, breach_data, dns_record, account_presence, etc.)
+- **Sort**: by confidence ↓↑, source A-Z, type A-Z, or default
+- **CSV export**: download results as `footprint-{target}.csv`
 - Scan history (localStorage, last 20 scans)
 - JSON export, PDF via browser print (`@media print` CSS)
 - Share link (UUID-based, copyable)
@@ -116,8 +132,24 @@ SSE stream — emits individual `PluginResult` objects as `message` events, then
 ### `GET /api/results/:id`
 Fetch full scan result (polling endpoint).
 
-### `GET /api/stats`
-Platform statistics.
+### `GET /api/auth/me`
+Returns current user info (requires session cookie).
+
+### `POST /api/auth/register`
+```json
+{ "username": "alice", "email": "alice@example.com", "password": "password123" }
+```
+
+### `POST /api/auth/login`
+```json
+{ "username": "alice", "password": "password123" }
+```
+
+### `GET /api/my-scans`
+Returns last 50 scans for the authenticated user (masked input).
+
+### `GET /api/admin/scans`
+Returns last 100 scans across all users. Admin only.
 
 ```json
 {
@@ -156,6 +188,10 @@ DATABASE_PASSWORD=your_password
 DATABASE_NAME=footprint_db
 HOLEHE_PATH=/usr/local/bin/holehe
 HOLEHE_PYTHONPATH=/path/to/site-packages
+# Admin account (seeded automatically on first start)
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=your_strong_password
 # Optional:
 HIBP_API_KEY=your_hibp_key
 ABSTRACT_PHONE_API_KEY=your_abstract_key
@@ -182,23 +218,30 @@ swift test --enable-xctest
 ```
 Sources/App/
 ├── Controllers/
+│   ├── AuthController.swift   — register, login, logout, me
 │   ├── ScanController.swift   — scan, results, SSE stream
-│   └── StatsController.swift  — /stats endpoint
+│   ├── StatsController.swift  — /stats endpoint
+│   └── UserController.swift   — /my-scans, /admin/scans
 ├── Models/
 │   ├── Scan.swift
-│   └── Result.swift
+│   ├── Result.swift
+│   └── User.swift
 ├── Plugins/
 │   ├── BulkEmailPlugin.swift
 │   ├── BulkUsernamePlugin.swift
-│   ├── DomainPlugin.swift
+│   ├── DomainPlugin.swift     — DNS + WHOIS + IP geolocation
+│   ├── GitLabPlugin.swift
 │   ├── GravatarPlugin.swift
 │   ├── HaveIBeenPwnedPlugin.swift
 │   ├── HackerNewsPlugin.swift
 │   ├── KeybasePlugin.swift
 │   ├── MastodonPlugin.swift
+│   ├── NpmPlugin.swift
 │   ├── PastebinPlugin.swift
 │   ├── PhonePlugin.swift
+│   ├── PyPIPlugin.swift
 │   ├── RedditPlugin.swift
+│   ├── SteamPlugin.swift
 │   ├── TelegramPlugin.swift
 │   ├── TwitterPlugin.swift
 │   ├── UsernamePlugin.swift
@@ -207,10 +250,18 @@ Sources/App/
 │   ├── NoCacheMiddleware.swift
 │   └── ScanRateLimiter.swift
 ├── Migrations/
+│   ├── CreateScan.swift
+│   ├── CreateResult.swift
+│   ├── AddScanStatus.swift
+│   ├── AddInputIndex.swift
+│   ├── CreateUser.swift
+│   └── AddUserIDToScans.swift
 ├── configure.swift
 └── routes.swift
 frontend/
-├── index.html                 — single-page app
+├── index.html                 — single-page app (auth widget, My Scans panel)
+├── login.html                 — login page
+├── register.html              — registration page
 ├── d3.min.js                  — D3.js v7 (local, no CDN)
 └── tailwind.css               — compiled Tailwind (SRI hash in HTML)
 Tests/AppTests/AppTests.swift  — 13 XCTests
