@@ -1,0 +1,476 @@
+openapi: "3.0.3"
+info:
+  title: Digital Footprint Tracker API
+  description: |
+    OSINT aggregation API for tracking digital footprints across platforms.
+    All endpoints are prefixed with `/api` via the nginx reverse proxy.
+  version: "1.0.0"
+  contact:
+    name: Digital Footprint Tracker
+
+servers:
+  - url: https://swift.micutu.com/api
+    description: Production
+
+security:
+  - cookieAuth: []
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: vapor-session
+
+  schemas:
+    ScanResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        scanID:
+          type: string
+          format: uuid
+        source:
+          type: string
+          example: Gravatar
+        type:
+          type: string
+          example: profile_image
+        rawData:
+          type: string
+        confidenceScore:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+
+    Scan:
+      type: object
+      properties:
+        scanID:
+          type: string
+          format: uuid
+        input:
+          type: string
+          example: user@example.com
+        status:
+          type: string
+          enum: [pending, running, completed, failed, timeout]
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanResult'
+        riskScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        riskLevel:
+          type: string
+          enum: [Low, Medium, High, Critical]
+        scannedAt:
+          type: integer
+          format: int64
+          description: Unix timestamp
+        completedAt:
+          type: integer
+          format: int64
+          description: Unix timestamp
+
+    ScanSummary:
+      type: object
+      properties:
+        scanID:
+          type: string
+          format: uuid
+        input:
+          type: string
+        status:
+          type: string
+        resultCount:
+          type: integer
+        riskScore:
+          type: integer
+        riskLevel:
+          type: string
+        createdAt:
+          type: integer
+          format: int64
+
+    PaginatedScans:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanSummary'
+        total:
+          type: integer
+        page:
+          type: integer
+        pages:
+          type: integer
+
+    AuthToken:
+      type: object
+      properties:
+        token:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        isAdmin:
+          type: boolean
+        createdAt:
+          type: integer
+          format: int64
+
+    DashboardStats:
+      type: object
+      properties:
+        totalScans:
+          type: integer
+        totalUsers:
+          type: integer
+        totalResults:
+          type: integer
+        scansPerDay:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+        topPlugins:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              hitCount:
+                type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: boolean
+        reason:
+          type: string
+
+paths:
+  /scan:
+    post:
+      summary: Submit a scan
+      description: Queues a new scan for the given target input. Returns immediately with a scanID for streaming/polling.
+      tags: [Scan]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input:
+                  type: string
+                  description: Email address, username, domain, or phone number
+                  example: user@example.com
+                force:
+                  type: boolean
+                  description: Bypass cache and force a fresh scan
+                  default: false
+      responses:
+        '200':
+          description: Scan queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+
+  /results/{id}:
+    get:
+      summary: Get scan results
+      description: Returns the full scan record including all results.
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scan found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '404':
+          description: Scan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /stream/{id}:
+    get:
+      summary: Stream scan results via SSE
+      description: |
+        Server-Sent Events stream for a running scan. Emits three event types:
+        - `message` (default): a single `ScanResult` JSON object as it arrives
+        - `event: progress`: `{"done": N, "total": N, "lastPlugin": "..."}` progress update
+        - `event: done`: `{"status": "completed"|"failed"|"timeout", "count": N, "riskLevel": "...", "riskScore": N}`
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          description: Scan not found
+
+  /auth/register:
+    post:
+      summary: Register a new account
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                  format: password
+      responses:
+        '200':
+          description: Registered and logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400':
+          description: Validation error or username/email taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      summary: Login
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      summary: Logout (invalidate session)
+      tags: [Auth]
+      responses:
+        '200':
+          description: Logged out
+        '401':
+          description: Not authenticated
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      tags: [Auth]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /my-scans:
+    get:
+      summary: List scans for the authenticated user
+      tags: [User]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: q
+          in: query
+          description: Search filter on scan input
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated scan list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScans'
+        '401':
+          description: Not authenticated
+
+  /admin/scans:
+    get:
+      summary: List all scans (admin only)
+      tags: [Admin]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated scan list for all users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScans'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Admin access required
+
+  /admin/dashboard:
+    get:
+      summary: Admin dashboard statistics
+      tags: [Admin]
+      responses:
+        '200':
+          description: Platform-wide statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+        '401':
+          description: Not authenticated
+        '403':
+          description: Admin access required
+
+  /report/{id}:
+    get:
+      summary: Download scan report as PDF
+      tags: [Scan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: PDF report
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Scan not found
+
+  /openapi.yaml:
+    get:
+      summary: OpenAPI specification (this document)
+      tags: [Meta]
+      security: []
+      responses:
+        '200':
+          description: OpenAPI 3.0 YAML
+          content:
+            application/yaml:
+              schema:
+                type: string

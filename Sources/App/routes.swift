@@ -5,6 +5,20 @@ func routes(_ app: Application) throws {
         "Digital Footprint Tracker API is running!"
     }
 
+    // Serve OpenAPI specification
+    app.get("openapi.yaml") { req throws -> Response in
+        let yamlPath = Environment.get("OPENAPI_PATH")
+            ?? "/home/micu/swift+vapor/frontend/openapi.yaml"
+        guard FileManager.default.fileExists(atPath: yamlPath),
+              let content = try? String(contentsOfFile: yamlPath, encoding: .utf8) else {
+            throw Abort(.notFound)
+        }
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "application/yaml; charset=utf-8")
+        headers.add(name: .accessControlAllowOrigin, value: "*")
+        return Response(status: .ok, headers: headers, body: .init(string: content))
+    }
+
     let scanController = ScanController()
     try app.register(collection: scanController)
 

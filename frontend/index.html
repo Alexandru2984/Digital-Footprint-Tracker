@@ -290,34 +290,72 @@
                 </div>
             </div>
 
-            <!-- Empty State / No findings -->
-            <div id="empty-state" class="hidden text-center py-12 bg-dark-800 rounded-xl border border-dark-700 border-dashed">
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-slate-500 mb-4">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <path d="m21 21-4.3-4.3"></path>
-                </svg>
-                <h3 class="text-lg font-medium text-slate-300">No Footprint Detected</h3>
-                <p class="text-slate-500 text-sm mt-1">The plugins did not return any positive matches.</p>
+            <!-- Tab Bar: RESULTS | GRAPH -->
+            <div class="flex gap-0 border-b border-dark-700 -mb-2">
+                <button id="tab-results" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-400 -mb-px transition-colors flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                    RESULTS
+                </button>
+                <button id="tab-graph" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
+                    GRAPH
+                </button>
             </div>
 
-            <!-- Results Grid -->
-            <div id="results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <!-- Result Cards will be injected here -->
+            <!-- Results Tab Content -->
+            <div id="results-tab-content" class="flex flex-col gap-4 pt-2">
+                <!-- Empty State / No findings -->
+                <div id="empty-state" class="hidden text-center py-12 bg-dark-800 rounded-xl border border-dark-700 border-dashed">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-slate-500 mb-4">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.3-4.3"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium text-slate-300">No Footprint Detected</h3>
+                    <p class="text-slate-500 text-sm mt-1">The plugins did not return any positive matches.</p>
+                </div>
+
+                <!-- Results Grid -->
+                <div id="results-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Result Cards will be injected here -->
+                </div>
             </div>
 
-            <!-- Social Graph Visualization -->
-            <div id="graph-section" class="hidden mt-4">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
-                        IDENTITY GRAPH
-                    </h3>
-                    <button id="close-graph-btn" class="text-xs text-slate-500 hover:text-red-400 transition-colors">CLOSE</button>
+            <!-- Graph Tab Content -->
+            <div id="graph-tab-content" class="hidden flex-col gap-3 pt-2">
+                <!-- No data message -->
+                <div id="graph-no-data" class="hidden text-center py-12 bg-dark-800 rounded-xl border border-dark-700 border-dashed">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-slate-500 mb-4">
+                        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                        <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
+                    </svg>
+                    <p class="text-slate-400 text-sm">No data to visualize — run a scan first.</p>
                 </div>
-                <div class="bg-dark-900 border border-dark-700 rounded-xl overflow-hidden" style="height:400px">
-                    <svg id="social-graph-svg" width="100%" height="100%"></svg>
+                <!-- Graph Canvas Wrapper -->
+                <div id="graph-canvas-wrapper" class="hidden flex-col gap-2">
+                    <div class="flex gap-3 items-start">
+                        <div class="flex-grow relative rounded-xl overflow-hidden border border-dark-700" style="height:520px;background:#0f172a">
+                            <svg id="social-graph-svg" style="width:100%;height:100%"></svg>
+                            <div id="graph-tooltip" class="pointer-events-none absolute z-50 bg-dark-900 border border-dark-600 text-xs text-slate-200 rounded px-2 py-1.5 max-w-xs shadow-xl" style="display:none;word-break:break-all;top:0;left:0"></div>
+                            <button id="download-graph-btn" class="absolute top-2 right-2 text-xs px-3 py-1.5 bg-dark-900 bg-opacity-90 border border-dark-600 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors z-10">⬇ PNG</button>
+                        </div>
+                        <div id="graph-detail-panel" class="hidden w-56 flex-shrink-0 bg-dark-900 border border-dark-700 rounded-xl p-3 overflow-y-auto" style="height:520px">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Node Detail</span>
+                                <button id="graph-detail-close" class="text-slate-500 hover:text-red-400 transition-colors text-xs">✕</button>
+                            </div>
+                            <h4 id="graph-detail-title" class="font-bold text-brand-400 mb-2 text-xs break-all leading-snug"></h4>
+                            <div id="graph-detail-body" class="text-slate-300 text-xs break-all leading-relaxed whitespace-pre-wrap"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4 text-[10px] text-slate-600 flex-wrap">
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-brand-500 inline-block"></span>Target</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>Source</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>High conf (≥80%)</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-yellow-500 inline-block"></span>Med conf (50–79%)</span>
+                        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>Low conf (&lt;50%)</span>
+                        <span class="ml-auto">Drag · Scroll to zoom · Click for details</span>
+                    </div>
                 </div>
-                <p class="text-xs text-slate-600 mt-1 text-center">Drag nodes to explore. Node size = confidence. Green edges = high confidence.</p>
             </div>
         </section>
 
@@ -358,6 +396,8 @@
         let activeTypeFilter = null;
         // Current sort mode for results grid.
         let activeSortMode = 'default';
+        // Active results tab: 'results' | 'graph'
+        let activeResultsTab = 'results';
 
         // Populates and shows/hides the type filter dropdown.
         function buildTypeFilterDropdown() {
@@ -560,6 +600,7 @@
             resultsPanel.classList.add('hidden');
             resultsGrid.innerHTML = '';
             emptyState.classList.add('hidden');
+            switchResultsTab('results');
         }
 
         // Returns a DOM element; all API values set via textContent/classList — never innerHTML.
@@ -695,6 +736,8 @@
 
             reRenderGrid();
             saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
+            // Refresh graph if user has the graph tab open.
+            if (activeResultsTab === 'graph') renderD3Graph(data);
         }
 
         // Per-session SSE streaming: streams results as they arrive from the server.
@@ -1070,135 +1113,240 @@
 
         document.getElementById('refresh-stats-btn').addEventListener('click', loadStats);
 
-        // ─── SOCIAL GRAPH (D3) ────────────────────────────────────────────────────
-        let simulation = null;
+        // ─── D3 FORCE-DIRECTED GRAPH TAB ─────────────────────────────────────────
+        let graphSimulation = null;
 
-        function renderSocialGraph(scanData) {
-            if (!window.d3 || !scanData || !scanData.results) return;
-            const results = scanData.results;
-            if (results.length === 0) return;
+        function switchResultsTab(tab) {
+            activeResultsTab = tab;
+            const resContent = document.getElementById('results-tab-content');
+            const grContent  = document.getElementById('graph-tab-content');
+            const tabRes     = document.getElementById('tab-results');
+            const tabGrp     = document.getElementById('tab-graph');
+            if (!resContent || !grContent || !tabRes || !tabGrp) return;
+            if (tab === 'graph') {
+                resContent.classList.add('hidden');
+                grContent.classList.remove('hidden');
+                grContent.classList.add('flex');
+                tabGrp.classList.add('border-brand-500', 'text-brand-400');
+                tabGrp.classList.remove('border-transparent', 'text-slate-500');
+                tabRes.classList.remove('border-brand-500', 'text-brand-400');
+                tabRes.classList.add('border-transparent', 'text-slate-500');
+                if (lastScanData) renderD3Graph(lastScanData);
+            } else {
+                grContent.classList.add('hidden');
+                grContent.classList.remove('flex');
+                resContent.classList.remove('hidden');
+                tabRes.classList.add('border-brand-500', 'text-brand-400');
+                tabRes.classList.remove('border-transparent', 'text-slate-500');
+                tabGrp.classList.remove('border-brand-500', 'text-brand-400');
+                tabGrp.classList.add('border-transparent', 'text-slate-500');
+            }
+        }
+
+        document.getElementById('tab-results').addEventListener('click', () => switchResultsTab('results'));
+        document.getElementById('tab-graph').addEventListener('click', () => switchResultsTab('graph'));
+
+        document.getElementById('toggle-graph-btn').addEventListener('click', () => {
+            if (resultsPanel.classList.contains('hidden')) return;
+            switchResultsTab(activeResultsTab === 'graph' ? 'results' : 'graph');
+        });
+
+        function renderD3Graph(scanData) {
+            if (!window.d3) return;
+            const results = (scanData && scanData.results) || [];
+            const noData       = document.getElementById('graph-no-data');
+            const canvasWrap   = document.getElementById('graph-canvas-wrapper');
+            if (!results.length) {
+                noData.classList.remove('hidden');
+                canvasWrap.classList.add('hidden');
+                canvasWrap.classList.remove('flex');
+                return;
+            }
+            noData.classList.add('hidden');
+            canvasWrap.classList.remove('hidden');
+            canvasWrap.classList.add('flex');
 
             const svgEl = document.getElementById('social-graph-svg');
-            const container = svgEl.parentElement;
-            const W = container.offsetWidth || 800;
-            const H = 400;
-            svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
+            const cont  = svgEl.parentElement;
+            const W = cont.clientWidth || 700;
+            const H = 520;
             const d3 = window.d3;
             const svg = d3.select(svgEl);
             svg.selectAll('*').remove();
-            if (simulation) simulation.stop();
+            if (graphSimulation) { graphSimulation.stop(); graphSimulation = null; }
 
-            // Build nodes: one center (identity) + one per unique source
-            const target = scanData.input || 'Target';
-            const sourceMap = {};
-            results.forEach(r => {
-                const src = r.source || 'Unknown';
-                if (!sourceMap[src]) {
-                    sourceMap[src] = { id: src, confidence: r.confidenceScore, count: 1 };
-                } else {
-                    sourceMap[src].confidence = Math.max(sourceMap[src].confidence, r.confidenceScore);
-                    sourceMap[src].count++;
-                }
+            const targetLabel = scanData.input || 'Target';
+
+            // Build nodes: target + sources + findings
+            const nodes = [{ id: '__target__', label: targetLabel, ntype: 'target', rawData: targetLabel }];
+            const sourceNames = new Set();
+            results.forEach(r => sourceNames.add(r.source || 'Unknown'));
+            sourceNames.forEach(src => nodes.push({
+                id: '__src__' + src, label: src, ntype: 'source', sourceId: src, rawData: src
+            }));
+            results.forEach((r, i) => {
+                const rd = r.rawData || '';
+                nodes.push({
+                    id: '__f__' + i,
+                    label: rd.length > 40 ? rd.slice(0, 39) + '…' : rd,
+                    ntype: 'finding',
+                    confidence: r.confidenceScore || 0,
+                    sourceId: r.source || 'Unknown',
+                    rawData: rd,
+                    fullResult: r
+                });
             });
 
-            const nodes = [{ id: target, isCenter: true, count: 1 }];
-            Object.values(sourceMap).forEach(s => nodes.push({ ...s, isCenter: false }));
+            // Build links
+            const links = [];
+            sourceNames.forEach(src => links.push({ source: '__target__', target: '__src__' + src }));
+            results.forEach((r, i) => links.push({ source: '__src__' + (r.source || 'Unknown'), target: '__f__' + i }));
 
-            const links = Object.values(sourceMap).map(s => ({
-                source: target,
-                target: s.id,
-                confidence: s.confidence
-            }));
+            const nodeColor = d => {
+                if (d.ntype === 'target') return '#10b981';
+                if (d.ntype === 'source') return '#3b82f6';
+                const c = d.confidence || 0;
+                return c >= 0.8 ? '#10b981' : c >= 0.5 ? '#f59e0b' : '#ef4444';
+            };
+            const nodeR = d => d.ntype === 'target' ? 22 : d.ntype === 'source' ? 13 : 6;
 
-            const defs = svg.append('defs');
-            defs.append('radialGradient').attr('id', 'centerGlow')
-                .call(g => {
-                    g.append('stop').attr('offset', '0%').attr('stop-color', '#10b981').attr('stop-opacity', 0.8);
-                    g.append('stop').attr('offset', '100%').attr('stop-color', '#059669').attr('stop-opacity', 0.2);
-                });
+            // Background rect
+            svg.append('rect').attr('width', W).attr('height', H).attr('fill', '#0f172a');
+            const g = svg.append('g');
 
-            const linkGroup = svg.append('g');
-            const nodeGroup = svg.append('g');
+            // Zoom + pan
+            const zoom = d3.zoom().scaleExtent([0.1, 6])
+                .on('zoom', ev => g.attr('transform', ev.transform));
+            svg.call(zoom).on('dblclick.zoom', null);
 
-            const link = linkGroup.selectAll('line').data(links).enter().append('line')
-                .attr('stroke-width', d => 1 + d.confidence * 2)
-                .attr('stroke', d => d.confidence >= 0.8 ? '#10b981' : d.confidence >= 0.5 ? '#f59e0b' : '#64748b')
-                .attr('stroke-opacity', d => 0.3 + d.confidence * 0.5);
+            const tooltip = document.getElementById('graph-tooltip');
 
-            const nodeEl = nodeGroup.selectAll('g').data(nodes).enter().append('g')
-                .attr('cursor', 'grab')
+            // Links
+            const linkEl = g.append('g').selectAll('line').data(links).enter().append('line')
+                .attr('stroke', d => {
+                    const sNode = nodes.find(n => n.id === (typeof d.source === 'object' ? d.source.id : d.source));
+                    return (sNode && sNode.ntype === 'target') ? '#1e3a5f' : '#1e293b';
+                })
+                .attr('stroke-width', 1).attr('stroke-opacity', 0.8);
+
+            // Node groups
+            const nodeEl = g.append('g').selectAll('g').data(nodes).enter().append('g')
+                .attr('cursor', 'pointer')
                 .call(d3.drag()
-                    .on('start', (event, d) => {
-                        if (!event.active) simulation.alphaTarget(0.3).restart();
-                        d.fx = d.x; d.fy = d.y;
-                    })
-                    .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-                    .on('end', (event, d) => {
-                        if (!event.active) simulation.alphaTarget(0);
-                        d.fx = null; d.fy = null;
-                    })
-                );
+                    .on('start', (ev, d) => { if (!ev.active) graphSimulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                    .on('drag',  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+                    .on('end',   (ev, d) => { if (!ev.active) graphSimulation.alphaTarget(0); d.fx = null; d.fy = null; })
+                )
+                .on('mouseover', (ev, d) => {
+                    if (d.ntype === 'finding' && d.rawData) {
+                        tooltip.textContent = d.rawData;
+                        tooltip.style.display = 'block';
+                        const r = svgEl.getBoundingClientRect();
+                        tooltip.style.left = (ev.clientX - r.left + 12) + 'px';
+                        tooltip.style.top  = (ev.clientY - r.top  -  8) + 'px';
+                    }
+                })
+                .on('mousemove', (ev, d) => {
+                    if (d.ntype === 'finding') {
+                        const r = svgEl.getBoundingClientRect();
+                        tooltip.style.left = (ev.clientX - r.left + 12) + 'px';
+                        tooltip.style.top  = (ev.clientY - r.top  -  8) + 'px';
+                    }
+                })
+                .on('mouseout', () => { tooltip.style.display = 'none'; })
+                .on('click', (ev, d) => { ev.stopPropagation(); showNodeDetail(d); });
 
+            // Circles
             nodeEl.append('circle')
-                .attr('r', d => d.isCenter ? 22 : 8 + (d.count || 1) * 2)
-                .attr('fill', d => d.isCenter ? 'url(#centerGlow)' : '#1e293b')
-                .attr('stroke', d => d.isCenter ? '#10b981' : (d.confidence >= 0.8 ? '#10b981' : d.confidence >= 0.5 ? '#f59e0b' : '#475569'))
-                .attr('stroke-width', d => d.isCenter ? 2.5 : 1.5);
+                .attr('r', d => nodeR(d))
+                .attr('fill', d => d.ntype === 'target' ? '#0b1a2e' : '#0f172a')
+                .attr('stroke', d => nodeColor(d))
+                .attr('stroke-width', d => d.ntype === 'target' ? 3 : d.ntype === 'source' ? 2 : 1.5);
 
+            // Target glow ring
+            nodeEl.filter(d => d.ntype === 'target').append('circle')
+                .attr('r', 30).attr('fill', '#10b981').attr('fill-opacity', 0.07)
+                .attr('pointer-events', 'none');
+
+            // Labels
             nodeEl.append('text')
                 .attr('text-anchor', 'middle')
-                .attr('dy', d => d.isCenter ? 5 : -14)
-                .attr('fill', d => d.isCenter ? '#10b981' : '#94a3b8')
-                .attr('font-size', d => d.isCenter ? '10px' : '9px')
+                .attr('dy', d => d.ntype === 'target' ? 5 : d.ntype === 'source' ? -19 : -10)
+                .attr('fill', d => d.ntype === 'target' ? '#10b981' : d.ntype === 'source' ? '#93c5fd' : '#475569')
+                .attr('font-size', d => d.ntype === 'target' ? '10px' : d.ntype === 'source' ? '9px' : '8px')
                 .attr('font-family', 'monospace')
                 .attr('pointer-events', 'none')
-                .text(d => d.isCenter
-                    ? (d.id.length > 14 ? d.id.slice(0, 13) + '…' : d.id)
-                    : (d.id.length > 12 ? d.id.slice(0, 11) + '…' : d.id));
-
-            simulation = d3.forceSimulation(nodes)
-                .force('link', d3.forceLink(links).id(d => d.id).distance(100))
-                .force('charge', d3.forceManyBody().strength(-180))
-                .force('center', d3.forceCenter(W / 2, H / 2))
-                .force('collision', d3.forceCollide(35))
-                .on('tick', () => {
-                    link
-                        .attr('x1', d => d.source.x)
-                        .attr('y1', d => d.source.y)
-                        .attr('x2', d => d.target.x)
-                        .attr('y2', d => d.target.y);
-                    nodeEl.attr('transform', d => `translate(${
-                        Math.max(25, Math.min(W - 25, d.x))
-                    },${
-                        Math.max(25, Math.min(H - 25, d.y))
-                    })`);
+                .text(d => {
+                    const max = d.ntype === 'target' ? 16 : d.ntype === 'source' ? 14 : 22;
+                    return d.label.length > max ? d.label.slice(0, max - 1) + '…' : d.label;
                 });
+
+            // Force simulation
+            graphSimulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id)
+                    .distance(d => (d.source.ntype === 'target' ? 140 : 80)))
+                .force('charge',    d3.forceManyBody().strength(d => d.ntype === 'finding' ? -40 : -200))
+                .force('center',    d3.forceCenter(W / 2, H / 2))
+                .force('collision', d3.forceCollide(d => nodeR(d) + 10))
+                .on('tick', () => {
+                    linkEl
+                        .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                    nodeEl.attr('transform', d => `translate(${d.x},${d.y})`);
+                });
+
+            // Download as PNG
+            document.getElementById('download-graph-btn').onclick = () => {
+                const serializer = new XMLSerializer();
+                const src = serializer.serializeToString(svgEl);
+                const canvas = document.createElement('canvas');
+                canvas.width = W; canvas.height = H;
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.onload = () => {
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillRect(0, 0, W, H);
+                    ctx.drawImage(img, 0, 0);
+                    const a = document.createElement('a');
+                    a.download = 'graph-' + (scanData.input || 'export') + '.png';
+                    a.href = canvas.toDataURL('image/png');
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                };
+                img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(src)));
+            };
+
+            // Click on SVG background closes detail panel
+            svg.on('click', () => {
+                document.getElementById('graph-detail-panel').classList.add('hidden');
+            });
         }
 
-        document.getElementById('toggle-graph-btn').addEventListener('click', () => {
-            const section = document.getElementById('graph-section');
-            if (section.classList.contains('hidden')) {
-                section.classList.remove('hidden');
-                if (lastScanData) renderSocialGraph(lastScanData);
+        function showNodeDetail(d) {
+            const panel = document.getElementById('graph-detail-panel');
+            const title = document.getElementById('graph-detail-title');
+            const body  = document.getElementById('graph-detail-body');
+            panel.classList.remove('hidden');
+            if (d.ntype === 'target') {
+                title.textContent = 'TARGET';
+                body.textContent  = d.rawData;
+            } else if (d.ntype === 'source') {
+                title.textContent = 'SOURCE: ' + d.label;
+                const cnt = lastScanData && lastScanData.results
+                    ? lastScanData.results.filter(r => r.source === d.sourceId).length : 0;
+                body.textContent = cnt + ' finding' + (cnt !== 1 ? 's' : '') + ' from this source.';
             } else {
-                section.classList.add('hidden');
-                if (simulation) { simulation.stop(); simulation = null; }
+                const r = d.fullResult || {};
+                title.textContent = (d.sourceId || '') + ' · Finding';
+                const lines = ['Confidence: ' + ((d.confidence || 0) * 100).toFixed(0) + '%'];
+                if (r.type) lines.push('Type: ' + r.type);
+                lines.push('', d.rawData || '');
+                body.textContent = lines.join('\n');
             }
-        });
-
-        document.getElementById('close-graph-btn').addEventListener('click', () => {
-            document.getElementById('graph-section').classList.add('hidden');
-            if (simulation) { simulation.stop(); simulation = null; }
-        });
-
-        // Re-render graph after scan completes (if visible).
-        const _origDisplayResults = displayResults;
-        function displayResults(data) {
-            _origDisplayResults(data);
-            const section = document.getElementById('graph-section');
-            if (!section.classList.contains('hidden')) renderSocialGraph(data);
         }
+
+        document.getElementById('graph-detail-close').addEventListener('click', () => {
+            document.getElementById('graph-detail-panel').classList.add('hidden');
+        });
 
         // ─── AUTH ─────────────────────────────────────────────────────────────────
         let currentUser = null;
