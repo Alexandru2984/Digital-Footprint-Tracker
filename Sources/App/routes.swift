@@ -56,4 +56,7 @@ func routes(_ app: Application) throws {
 
     let healthController = HealthController()
     try app.register(collection: healthController)
+
+    let diffController = DiffController()
+    try app.register(collection: diffController)
 }

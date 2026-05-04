@@ -337,7 +337,7 @@ struct ScanController: RouteCollection {
                     )
                     if let data = try? encoder.encode(pr),
                        let json = String(data: data, encoding: .utf8) {
-                        try await writer.writeBuffer(ByteBuffer(string: "data: \(json)\n\n"))
+                        try await writer.writeBuffer(ByteBuffer(string: "event: result\ndata: \(json)\n\n"))
                     }
                 }
                 lastCount = results.count
