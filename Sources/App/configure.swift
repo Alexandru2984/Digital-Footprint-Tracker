@@ -67,6 +67,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateTags())
     app.migrations.add(CreateScanTags())
     app.migrations.add(CreateScheduledScans())
+    app.migrations.add(CreateScanNotifications())
 
     // Run migrations automatically
     try await app.autoMigrate()

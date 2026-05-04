@@ -85,6 +85,60 @@ private func runDueScans(app: Application) async {
                 scan.completedAt = Date()
                 try await scan.save(on: db)
 
+                // Monitor mode: diff against previous scan for same input+user
+                let previousScan = try? await Scan.query(on: db)
+                    .filter(\.$input == input)
+                    .filter(\.$user.$id == userID)
+                    .filter(\.$statusRaw == "completed")
+                    .filter(\.$id != scanID)
+                    .sort(\.$createdAt, .descending)
+                    .first()
+
+                if let prev = previousScan, let prevID = prev.id {
+                    let prevResults = (try? await App.Result.query(on: db).filter(\.$scan.$id == prevID).all()) ?? []
+                    let prevFingerprints = Set(prevResults.map { "\($0.source):\($0.type):\(String($0.rawData.prefix(200)))" })
+                    let newResults = allResults.filter { r in
+                        !prevFingerprints.contains("\(r.source):\(r.type):\(String(r.rawData.prefix(200)))")
+                    }
+                    if !newResults.isEmpty {
+                        let notification = ScanNotification(
+                            userID: userID,
+                            scanID: scanID,
+                            message: "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}",
+                            newResultsCount: newResults.count
+                        )
+                        try? await notification.save(on: db)
+
+                        if let monitorUser = try? await User.find(userID, on: db), let hookURL = monitorUser.webhookURL {
+                            let risk = RiskScorer.compute(results: allResults)
+                            let newResultDTOs = newResults.prefix(10).map { r -> [String: Any] in
+                                ["source": r.source, "type": r.type, "confidenceScore": r.confidenceScore, "rawData": String(r.rawData.prefix(500))]
+                            }
+                            let monitorPayload: [String: Any] = [
+                                "event": "scan.new_findings",
+                                "scanID": scanID.uuidString,
+                                "input": input,
+                                "newResultsCount": newResults.count,
+                                "totalResultsCount": allResults.count,
+                                "riskScore": risk.value,
+                                "riskLevel": risk.level.rawValue,
+                                "newResults": Array(newResultDTOs),
+                                "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
+                            ]
+                            if let body = try? JSONSerialization.data(withJSONObject: monitorPayload),
+                               let url = URL(string: hookURL) {
+                                var hookReq = URLRequest(url: url)
+                                hookReq.httpMethod = "POST"
+                                hookReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                                hookReq.httpBody = body
+                                hookReq.timeoutInterval = 10
+                                _ = try? await URLSession.shared.data(for: hookReq)
+                            }
+                        }
+                        app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)'")
+                    }
+                }
+
                 if let user = try? await User.find(userID, on: db), let hookURL = user.webhookURL {
                     let risk = RiskScorer.compute(results: allResults)
                     await fireWebhookScheduled(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)

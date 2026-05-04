@@ -44,4 +44,13 @@ func routes(_ app: Application) throws {
 
     let scheduledScanController = ScheduledScanController()
     try app.register(collection: scheduledScanController)
+
+    let correlationController = CorrelationController()
+    try app.register(collection: correlationController)
+
+    let notificationController = NotificationController()
+    try app.register(collection: notificationController)
+
+    let healthController = HealthController()
+    try app.register(collection: healthController)
 }
