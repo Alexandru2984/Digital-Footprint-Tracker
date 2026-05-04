@@ -12,7 +12,8 @@ struct StatsResponse: Content {
     let scansLast7d: Int
     let totalResults: Int
     let topSources: [SourceStat]
-    let recentTargets: [String]   // masked inputs for recent scans
+    // recentTargets intentionally omitted — even masked inputs are a privacy risk
+    // on a public endpoint. Admins can see recent scans via /api/admin/scans.
 }
 
 struct StatsController: RouteCollection {
@@ -57,20 +58,12 @@ struct StatsController: RouteCollection {
             topSources = rows.map { StatsResponse.SourceStat(source: $0.source, hitCount: $0.hit_count) }
         }
 
-        // 10 most recent scans — mask PII before sending to client
-        let recentScans = try await Scan.query(on: db)
-            .sort(\.$createdAt, .descending)
-            .limit(10)
-            .all()
-        let recentTargets = recentScans.map { maskInput($0.input) }
-
         return StatsResponse(
             totalScans: totalScans,
             scansLast24h: scansLast24h,
             scansLast7d: scansLast7d,
             totalResults: totalResults,
-            topSources: topSources,
-            recentTargets: recentTargets
+            topSources: topSources
         )
     }
 

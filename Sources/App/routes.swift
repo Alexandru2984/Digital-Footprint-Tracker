@@ -15,7 +15,6 @@ func routes(_ app: Application) throws {
         }
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "application/yaml; charset=utf-8")
-        headers.add(name: .accessControlAllowOrigin, value: "*")
         return Response(status: .ok, headers: headers, body: .init(string: content))
     }
 

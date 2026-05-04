@@ -53,7 +53,9 @@ struct AuthController: RouteCollection {
         let user = User(username: body.username, email: body.email.lowercased(), passwordHash: hash)
         try await user.save(on: req.db)
 
-        // Auto-login after registration
+        // Regenerate session to prevent session fixation: clear any pre-auth data
+        // before binding the authenticated user ID to this session.
+        req.session.data = .init()
         req.session.data["userID"] = user.id?.uuidString
 
         return user.toPublic()
@@ -75,6 +77,8 @@ struct AuthController: RouteCollection {
             throw Abort(.unauthorized, reason: "Invalid username or password.")
         }
 
+        // Regenerate session to prevent session fixation.
+        req.session.data = .init()
         req.session.data["userID"] = user.id?.uuidString
         return user.toPublic()
     }
