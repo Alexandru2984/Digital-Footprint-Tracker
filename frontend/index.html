@@ -1860,10 +1860,16 @@
                     retSel.value = String(currentUser.retentionDays);
                 }
                 if (currentUser) {
-                    document.getElementById('discord-webhook-input').value = currentUser.discordWebhookURL || '';
-                    document.getElementById('telegram-token-input').value = currentUser.telegramBotToken || '';
-                    document.getElementById('telegram-chatid-input').value = currentUser.telegramChatID || '';
-                    document.getElementById('slack-webhook-input').value = currentUser.slackWebhookURL || '';
+                    // Notification credentials are never returned by the server for security.
+                    // Show "configured" placeholder when a value is already saved.
+                    const discordInput = document.getElementById('discord-webhook-input');
+                    const telegramTokenInput = document.getElementById('telegram-token-input');
+                    const telegramChatInput = document.getElementById('telegram-chatid-input');
+                    const slackInput = document.getElementById('slack-webhook-input');
+                    if (discordInput) discordInput.placeholder = currentUser.discordConfigured ? '(configured — enter new value to change)' : 'https://discord.com/api/webhooks/...';
+                    if (telegramTokenInput) telegramTokenInput.placeholder = currentUser.telegramConfigured ? '(configured — enter new value to change)' : 'bot token';
+                    if (telegramChatInput) telegramChatInput.value = currentUser.telegramChatID || '';
+                    if (slackInput) slackInput.placeholder = currentUser.slackConfigured ? '(configured — enter new value to change)' : 'https://hooks.slack.com/services/...';
                 }
             }
         });

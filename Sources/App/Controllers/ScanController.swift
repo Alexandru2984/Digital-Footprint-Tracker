@@ -125,6 +125,10 @@ struct ScanController: RouteCollection {
         guard input.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
             throw Abort(.badRequest, reason: "Input contains invalid characters.")
         }
+        // SSRF guard: reject targets that resolve to private/loopback/link-local ranges.
+        guard !isInternalTarget(input) else {
+            throw Abort(.badRequest, reason: "Scanning internal/private targets is not allowed.")
+        }
 
         // Audit log: record every scan request with client IP for later review.
         let clientIP = req.headers.first(name: "CF-Connecting-IP")
@@ -332,6 +336,13 @@ struct ScanController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found")
         }
 
+        // If the scan belongs to a specific user, only that user may fetch it.
+        if let ownerID = scan.$user.id {
+            guard let currentUser = try await req.currentUser(), currentUser.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
+        }
+
         return ScanResponse(
             scanID: scan.id!,
             input: scan.input,
@@ -431,6 +442,10 @@ struct ScanController: RouteCollection {
 
 private func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
     guard let hookURL = URL(string: url) else { return }
+    guard !isInternalURL(hookURL) else {
+        logger.warning("Webhook delivery to \(url) blocked: internal/private target.")
+        return
+    }
     let payload: [String: Any] = [
         "event": "scan.completed",
         "scanID": scanID.uuidString,
@@ -452,4 +467,54 @@ private func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer
     } catch {
         logger.warning("Webhook delivery to \(url) failed: \(error)")
     }
+}
+
+/// Returns true if the raw input looks like a private/loopback/link-local host.
+/// Used to block SSRF attempts before dispatching plugin requests.
+func isInternalTarget(_ input: String) -> Bool {
+    // Strip email local-part if present
+    let host: String
+    if let atIdx = input.firstIndex(of: "@") {
+        host = String(input[input.index(after: atIdx)...])
+    } else {
+        host = input
+    }
+    return isInternalHostname(host)
+}
+
+/// Returns true if a URL points to a private/loopback/link-local host.
+func isInternalURL(_ url: URL) -> Bool {
+    guard let host = url.host else { return true }
+    return isInternalHostname(host)
+}
+
+private func isInternalHostname(_ host: String) -> Bool {
+    let lower = host.lowercased()
+
+    // Loopback / localhost
+    if lower == "localhost" || lower == "ip6-localhost" || lower == "::1" { return true }
+    if lower.hasSuffix(".localhost") { return true }
+
+    // Loopback IPv4
+    if lower.hasPrefix("127.") { return true }
+
+    // Private class A: 10.0.0.0/8
+    if lower.hasPrefix("10.") { return true }
+
+    // Private class B: 172.16.0.0/12
+    if lower.hasPrefix("172.") {
+        let parts = lower.split(separator: ".")
+        if parts.count >= 2, let second = Int(parts[1]), second >= 16 && second <= 31 { return true }
+    }
+
+    // Private class C: 192.168.0.0/16
+    if lower.hasPrefix("192.168.") { return true }
+
+    // Link-local: 169.254.0.0/16 (AWS/GCP metadata)
+    if lower.hasPrefix("169.254.") { return true }
+
+    // IPv6 private / link-local
+    if lower.hasPrefix("fc") || lower.hasPrefix("fd") || lower.hasPrefix("fe80") { return true }
+
+    return false
 }

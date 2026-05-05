@@ -20,6 +20,11 @@ struct BulkScanController: RouteCollection {
 
     @Sendable
     func bulkScan(req: Request) async throws -> [BulkScanResult] {
+        // Bulk scanning requires authentication to prevent abuse.
+        guard let user = try await req.currentUser() else {
+            throw Abort(.unauthorized, reason: "Authentication required for bulk scan.")
+        }
+
         let body = try req.content.decode(BulkScanRequest.self)
         let targets = body.targets.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         guard !targets.isEmpty else {
@@ -29,7 +34,14 @@ struct BulkScanController: RouteCollection {
             throw Abort(.badRequest, reason: "Maximum 50 targets per bulk scan")
         }
 
-        let userID = try await req.currentUser()?.id
+        // SSRF guard: reject any target pointing to internal/private ranges.
+        for target in targets {
+            guard !isInternalTarget(target) else {
+                throw Abort(.badRequest, reason: "Target '\(target)' is not allowed (internal/private).")
+            }
+        }
+
+        let userID = user.id
         let app = req.application
 
         let requestedPlugins = body.plugins?.map { $0.lowercased() } ?? []
@@ -51,7 +63,6 @@ struct BulkScanController: RouteCollection {
             guard let scanID = scan.id else { continue }
             AuditLogger.log(req: req, action: "bulk_scan_start", target: String(target.prefix(100)))
 
-            // Don't start ScanProgressTracker — complete() is a no-op if start() was never called.
             let pluginsCopy = activePlugins
             Task {
                 await ScanController.runPlugins(scanID: scanID, input: target, plugins: pluginsCopy, app: app)

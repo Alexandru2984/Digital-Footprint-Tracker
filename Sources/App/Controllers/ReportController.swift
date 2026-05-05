@@ -24,6 +24,13 @@ struct ReportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
 
+        // If the scan belongs to a specific user, only that user may download the report.
+        if let ownerID = scan.$user.id {
+            guard let currentUser = try await req.currentUser(), currentUser.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
+        }
+
         // Serialise scan + results to JSON for the Python script.
         let payload: [String: Any] = [
             "scanID":      scan.id?.uuidString ?? "",

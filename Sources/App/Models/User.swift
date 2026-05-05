@@ -61,22 +61,44 @@ final class User: Model, Content {
 }
 
 extension User {
-    /// Public representation — never includes the password hash.
+    /// Public representation — never includes secrets (password hash, tokens, webhook URLs).
+    /// Sensitive channels are exposed only as boolean "configured" flags.
     struct Public: Content {
         let id: UUID?
         let username: String
         let email: String
         let isAdmin: Bool
-        let webhookURL: String?
         let retentionDays: Int?
         let createdAt: Date?
-        let discordWebhookURL: String?
-        let telegramBotToken: String?
+        // Webhook URL: masked to avoid leaking the full URL (may contain secrets/tokens)
+        let webhookURL: String?
+        // Boolean flags so the UI can show "configured" without leaking credentials
+        let discordConfigured: Bool
+        let telegramConfigured: Bool
+        let slackConfigured: Bool
+        // Chat ID is not a secret (just a numeric ID), safe to return
         let telegramChatID: String?
-        let slackWebhookURL: String?
     }
 
     func toPublic() -> Public {
-        Public(id: id, username: username, email: email, isAdmin: isAdmin, webhookURL: webhookURL, retentionDays: retentionDays, createdAt: createdAt, discordWebhookURL: discordWebhookURL, telegramBotToken: telegramBotToken, telegramChatID: telegramChatID, slackWebhookURL: slackWebhookURL)
+        Public(
+            id: id,
+            username: username,
+            email: email,
+            isAdmin: isAdmin,
+            retentionDays: retentionDays,
+            createdAt: createdAt,
+            webhookURL: webhookURL.map { maskSecret($0) },
+            discordConfigured: discordWebhookURL != nil,
+            telegramConfigured: telegramBotToken != nil,
+            slackConfigured: slackWebhookURL != nil,
+            telegramChatID: telegramChatID
+        )
     }
+}
+
+/// Returns the first 12 characters of a secret followed by asterisks.
+private func maskSecret(_ s: String) -> String {
+    guard s.count > 12 else { return String(repeating: "*", count: s.count) }
+    return String(s.prefix(12)) + "***"
 }

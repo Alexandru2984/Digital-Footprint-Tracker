@@ -15,8 +15,9 @@ struct LoginRequest: Content {
 struct AuthController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let auth = routes.grouped("auth")
-        auth.post("register", use: register)
-        auth.post("login", use: login)
+        let limited = auth.grouped(AuthRateLimiter(maxAttempts: 10, windowSeconds: 300))
+        limited.post("register", use: register)
+        limited.post("login", use: login)
         auth.post("logout", use: logout)
         auth.get("me", use: me)
         auth.post("webhook", use: setWebhook)
@@ -118,6 +119,9 @@ struct AuthController: RouteCollection {
         }
         let body = try req.content.decode(Body.self)
         let url = body.webhookURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url, !url.isEmpty {
+            try validateWebhookURL(url)
+        }
         user.webhookURL = (url?.isEmpty == false) ? url : nil
         try await user.save(on: req.db)
         return user.toPublic()
@@ -147,6 +151,8 @@ struct AuthController: RouteCollection {
             let slackWebhookURL: String?
         }
         let body = try req.content.decode(Body.self)
+        if let url = body.discordWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
+        if let url = body.slackWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         user.discordWebhookURL = body.discordWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.discordWebhookURL
         user.telegramBotToken = body.telegramBotToken.map { $0.isEmpty ? nil : $0 } ?? user.telegramBotToken
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
@@ -176,5 +182,21 @@ extension Request {
               let userID = UUID(userIDString)
         else { return nil }
         return try await User.find(userID, on: db)
+    }
+}
+
+// MARK: - Webhook URL validation (SSRF prevention)
+
+/// Validates that a webhook URL is an HTTPS URL pointing to a public host.
+/// Throws `.badRequest` if the URL is invalid or targets a private/internal range.
+private func validateWebhookURL(_ rawURL: String) throws {
+    guard let url = URL(string: rawURL),
+          let scheme = url.scheme?.lowercased(),
+          scheme == "https"
+    else {
+        throw Abort(.badRequest, reason: "Webhook URL must be a valid HTTPS URL.")
+    }
+    guard !isInternalURL(url) else {
+        throw Abort(.badRequest, reason: "Webhook URL must not target an internal or private host.")
     }
 }
