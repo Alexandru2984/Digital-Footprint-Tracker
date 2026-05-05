@@ -363,8 +363,14 @@ struct ScanController: RouteCollection {
         guard let idString = req.parameters.get("id"), let scanID = UUID(uuidString: idString) else {
             throw Abort(.badRequest, reason: "Invalid scan ID format.")
         }
-        guard try await Scan.find(scanID, on: req.db) != nil else {
+        guard let scan = try await Scan.find(scanID, on: req.db) else {
             throw Abort(.notFound, reason: "Scan not found.")
+        }
+        // Enforce ownership: only the scan's owner may subscribe to its SSE stream.
+        if let ownerID = scan.$user.id {
+            guard let me = try await req.currentUser(), me.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
         }
 
         // Enforce a global cap on concurrent SSE connections to protect the DB pool.

@@ -80,6 +80,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddRetentionDaysToUsers())
     app.migrations.add(AddNotificationChannelsToUsers())
     app.migrations.add(CreateSharedReports())
+    app.migrations.add(HashAPIKeyColumn())
+    app.migrations.add(HashSharedReportTokens())
 
     // Run migrations automatically
     try await app.autoMigrate()

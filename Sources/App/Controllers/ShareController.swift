@@ -70,10 +70,11 @@ struct ShareController: RouteCollection {
         let body = try req.content.decode(CreateShareRequest.self)
 
         let token = [UInt8].random(count: 24).base64URLEncoded()
+        let tokenHash = sha256Hex(token)
         let expiresAt = body.expiresIn.map { Date().addingTimeInterval(Double($0)) }
         let passwordHash = try body.password.map { try Bcrypt.hash($0) }
 
-        let share = SharedReport(scanID: scanID, token: token, expiresAt: expiresAt, passwordHash: passwordHash)
+        let share = SharedReport(scanID: scanID, tokenHash: tokenHash, expiresAt: expiresAt, passwordHash: passwordHash)
         try await share.save(on: req.db)
 
         let baseURL = Environment.get("BASE_URL") ?? "https://swift.micutu.com"
@@ -108,7 +109,7 @@ struct ShareController: RouteCollection {
 
         return shares.map { s in
             ShareDetail(
-                token: s.token,
+                token: String(s.tokenHash.prefix(8)) + "…",
                 expiresAt: s.expiresAt.map { $0.timeIntervalSince1970 },
                 viewCount: s.viewCount,
                 createdAt: s.createdAt.map { $0.timeIntervalSince1970 }
@@ -124,7 +125,8 @@ struct ShareController: RouteCollection {
         guard let token = req.parameters.get("token") else {
             throw Abort(.badRequest)
         }
-        guard let share = try await SharedReport.query(on: req.db).filter(\.$token == token).first() else {
+        let hash = sha256Hex(token)
+        guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
             throw Abort(.notFound)
         }
         guard let scan = try await Scan.find(share.scanID, on: req.db),
@@ -139,10 +141,11 @@ struct ShareController: RouteCollection {
 
     @Sendable
     func viewShare(req: Request) async throws -> SharedReportResponse {
-        guard let token = req.parameters.get("token") else {
+        guard let rawToken = req.parameters.get("token") else {
             throw Abort(.badRequest)
         }
-        guard let share = try await SharedReport.query(on: req.db).filter(\.$token == token).first() else {
+        let hash = sha256Hex(rawToken)
+        guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
             throw Abort(.notFound)
         }
         if let exp = share.expiresAt, exp < Date() {

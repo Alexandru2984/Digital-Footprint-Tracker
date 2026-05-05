@@ -15,14 +15,21 @@ struct EmailService {
             return
         }
 
+        // Strip CRLF / bare CR to prevent mail header injection.
+        let safeFrom    = sanitizeHeader(from)
+        let safeTo      = sanitizeHeader(to)
+        let safeSubject = sanitizeHeader(subject)
+        // Body CRLF is fine (multiline content), only strip NULL bytes.
+        let safeBody    = body.replacingOccurrences(of: "\0", with: "")
+
         let mimeMessage = """
-            From: Digital Footprint Tracker <\(from)>
-            To: \(to)
-            Subject: \(subject)
+            From: Digital Footprint Tracker <\(safeFrom)>
+            To: \(safeTo)
+            Subject: \(safeSubject)
             MIME-Version: 1.0
             Content-Type: text/plain; charset=utf-8
 
-            \(body)
+            \(safeBody)
             """
 
         let port = Int(portStr) ?? 587
@@ -34,8 +41,8 @@ struct EmailService {
         process.arguments = [
             "--url", "\(protocol_)://\(host):\(port)",
             sslFlag,
-            "--mail-from", from,
-            "--mail-rcpt", to,
+            "--mail-from", safeFrom,
+            "--mail-rcpt", safeTo,
             "--user", "\(user):\(pass)",
             "--upload-file", "-",
             "--silent",
@@ -62,4 +69,13 @@ struct EmailService {
             }
         }
     }
+
+    /// Removes CR, LF, and NULL characters from a single-line mail header value.
+    private static func sanitizeHeader(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: "\0", with: "")
+    }
 }
+

@@ -1480,7 +1480,7 @@
                     const label = document.createElement('label');
                     label.className = 'flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none';
                     label.title = p.description || '';
-                    label.innerHTML = `<input type="checkbox" class="plugin-checkbox" value="${p.name}" style="accent-color:#10b981"> ${p.name}`;
+                    label.innerHTML = `<input type="checkbox" class="plugin-checkbox" value="${escapeHtml(p.name)}" style="accent-color:#10b981"> ${escapeHtml(p.name)}`;
                     container.appendChild(label);
                 });
             } catch(e) {}
@@ -2591,7 +2591,7 @@
                 results.forEach(r => {
                     const div = document.createElement('div');
                     div.className = 'flex items-center justify-between px-2 py-1 bg-dark-900 rounded text-[10px]';
-                    div.innerHTML = `<span class="text-slate-300 truncate flex-grow mr-2">${r.target}</span><span class="text-brand-400 font-mono">${r.scanID.substring(0,8)}…</span><span class="ml-2 text-yellow-400 uppercase">${r.status}</span>`;
+                    div.innerHTML = `<span class="text-slate-300 truncate flex-grow mr-2">${escapeHtml(r.target)}</span><span class="text-brand-400 font-mono">${escapeHtml(r.scanID.substring(0,8))}…</span><span class="ml-2 text-yellow-400 uppercase">${escapeHtml(r.status)}</span>`;
                     resultsList.appendChild(div);
                 });
             } catch(err) {

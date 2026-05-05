@@ -14,6 +14,12 @@ struct ExportController: RouteCollection {
         guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
             throw Abort(.notFound, reason: "Scan not found.")
         }
+        // Enforce ownership: only the scan's owner may export it.
+        if let ownerID = scan.$user.id {
+            guard let me = try await req.currentUser(), me.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
+        }
         AuditLogger.log(req: req, action: "export_json", target: scan.input)
 
         let risk = RiskScorer.compute(results: scan.results)
