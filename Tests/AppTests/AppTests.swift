@@ -206,16 +206,36 @@ final class AppTests: XCTestCase {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
 
-        var scanID: UUID?
+        // Register + login so the scan has an owner (IDOR fix requires ownership)
+        try await app.test(.POST, "/auth/register", beforeRequest: { req in
+            try req.content.encode(["username": "resultstest", "email": "rt@example.com", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
 
+        var sessionCookie = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            try req.content.encode(["username": "resultstest", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            // Extract session cookie to replay on subsequent requests
+            if let raw = res.headers.first(name: "set-cookie"),
+               let pair = raw.split(separator: ";").first {
+                sessionCookie = String(pair)
+            }
+        })
+
+        var scanID: UUID?
         try await app.test(.POST, "/scan", beforeRequest: { req in
             try req.content.encode(["input": "lookuptest"], as: .json)
+            if !sessionCookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: sessionCookie) }
         }, afterResponse: { res in
             scanID = try res.content.decode(ScanResponse.self).scanID
         })
 
         let id = try XCTUnwrap(scanID)
-        try await app.test(.GET, "/results/\(id.uuidString)") { res in
+        try await app.test(.GET, "/results/\(id.uuidString)", beforeRequest: { req in
+            if !sessionCookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: sessionCookie) }
+        }) { res in
             XCTAssertEqual(res.status, .ok)
             let body = try res.content.decode(ScanResponse.self)
             XCTAssertEqual(body.scanID, id)
