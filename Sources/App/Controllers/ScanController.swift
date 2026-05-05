@@ -337,8 +337,13 @@ struct ScanController: RouteCollection {
         }
 
         // If the scan belongs to a specific user, only that user may fetch it.
+        // Anonymous scans (no owner) are restricted to admins only.
         if let ownerID = scan.$user.id {
             guard let currentUser = try await req.currentUser(), currentUser.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
+        } else {
+            guard let currentUser = try await req.currentUser(), currentUser.isAdmin else {
                 throw Abort(.forbidden, reason: "Access denied.")
             }
         }
@@ -367,8 +372,13 @@ struct ScanController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         // Enforce ownership: only the scan's owner may subscribe to its SSE stream.
+        // Anonymous scans (no owner) are restricted to admins only.
         if let ownerID = scan.$user.id {
             guard let me = try await req.currentUser(), me.id == ownerID else {
+                throw Abort(.forbidden, reason: "Access denied.")
+            }
+        } else {
+            guard let me = try await req.currentUser(), me.isAdmin else {
                 throw Abort(.forbidden, reason: "Access denied.")
             }
         }

@@ -35,6 +35,7 @@ public func configure(_ app: Application) async throws {
     }
     app.middleware.use(app.sessions.middleware)
     app.middleware.use(APIKeyMiddleware())
+    app.middleware.use(CSRFMiddleware())
 
     // Global HTTP client timeout — applies to all outbound requests (all plugins).
     var clientConfig = app.http.client.configuration

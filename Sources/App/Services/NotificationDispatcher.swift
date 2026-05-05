@@ -42,6 +42,10 @@ struct NotificationDispatcher {
     }
 
     private static func sendWebhook(url: URL, payload: [String: Any], app: Application) async {
+        guard !isInternalURL(url) else {
+            app.logger.warning("Blocked outbound webhook to internal host: \(url.host ?? url.absoluteString)")
+            return
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         var urlReq = URLRequest(url: url)
         urlReq.httpMethod = "POST"
@@ -52,7 +56,9 @@ struct NotificationDispatcher {
     }
 
     private static func sendTelegram(token: String, chatID: String, text: String, app: Application) async {
-        guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendMessage") else { return }
+        // Decrypt token if encryption is available; fall back to raw value for legacy plaintext tokens
+        let plainToken = TokenEncryption.decrypt(token) ?? token
+        guard let url = URL(string: "https://api.telegram.org/bot\(plainToken)/sendMessage") else { return }
         let payload: [String: Any] = ["chat_id": chatID, "text": text, "parse_mode": "Markdown"]
         await sendWebhook(url: url, payload: payload, app: app)
     }

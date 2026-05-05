@@ -154,7 +154,14 @@ struct AuthController: RouteCollection {
         if let url = body.discordWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         if let url = body.slackWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         user.discordWebhookURL = body.discordWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.discordWebhookURL
-        user.telegramBotToken = body.telegramBotToken.map { $0.isEmpty ? nil : $0 } ?? user.telegramBotToken
+        // Encrypt Telegram token at rest if encryption key is configured
+        if let rawToken = body.telegramBotToken {
+            if rawToken.isEmpty {
+                user.telegramBotToken = nil
+            } else {
+                user.telegramBotToken = (try? TokenEncryption.encrypt(rawToken)) ?? rawToken
+            }
+        }
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
         user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
         try await user.save(on: req.db)
