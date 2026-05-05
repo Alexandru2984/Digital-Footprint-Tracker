@@ -2455,10 +2455,10 @@
                 el.innerHTML = data.correlations.map(c => `
                   <div class="rounded bg-dark-700 px-2 py-1.5 mb-1">
                     <div class="flex items-center gap-1 flex-wrap">
-                      <span class="text-[10px] font-semibold text-brand-400 uppercase">${escapeHtml(c.type)}</span>
-                      <span class="text-[11px] text-slate-200 font-mono">${escapeHtml(c.value)}</span>
+                      <span class="text-[10px] font-semibold text-brand-400 uppercase">${escapeHtml(c.entityType)}</span>
+                      <span class="text-[11px] text-slate-200 font-mono">${escapeHtml(c.entity)}</span>
                     </div>
-                    <div class="text-[9px] text-slate-400 mt-0.5">Found in ${c.scanCount} scan${c.scanCount !== 1 ? 's' : ''}: ${c.scanInputs.map(escapeHtml).join(', ')}</div>
+                    <div class="text-[9px] text-slate-400 mt-0.5">Found in ${c.occurrences.length} scan${c.occurrences.length !== 1 ? 's' : ''}: ${c.occurrences.map(o => escapeHtml(o.input)).join(', ')}</div>
                   </div>`).join('');
             } catch (e) { el.textContent = 'Error loading correlations.'; }
         }
@@ -2473,6 +2473,14 @@
 
         function escapeHtml(s) {
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+        function showToast(msg, type = 'success') {
+            const t = document.createElement('div');
+            const color = type === 'error' ? 'bg-red-600' : type === 'warning' ? 'bg-yellow-600' : 'bg-brand-600';
+            t.className = `fixed bottom-6 right-6 z-[200] px-4 py-2.5 rounded-lg text-white text-sm shadow-xl transition-all duration-300 ${color}`;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3500);
         }
 
         function timeAgo(dateInput) {
@@ -2586,14 +2594,15 @@
                     throw new Error(err);
                 }
                 const results = await resp.json();
-                progressFill.style.width = '100%';
-                statusText.textContent = results.length + ' scans queued';
-                results.forEach(r => {
-                    const div = document.createElement('div');
-                    div.className = 'flex items-center justify-between px-2 py-1 bg-dark-900 rounded text-[10px]';
-                    div.innerHTML = `<span class="text-slate-300 truncate flex-grow mr-2">${escapeHtml(r.target)}</span><span class="text-brand-400 font-mono">${escapeHtml(r.scanID.substring(0,8))}…</span><span class="ml-2 text-yellow-400 uppercase">${escapeHtml(r.status)}</span>`;
-                    resultsList.appendChild(div);
-                });
+                // Close modal and show success toast
+                document.getElementById('bulk-scan-modal').classList.add('hidden');
+                document.getElementById('bulk-targets-textarea').value = '';
+                progressSection.classList.add('hidden');
+                progressFill.style.width = '0%';
+                progressFill.classList.remove('bg-red-500');
+                progressFill.classList.add('bg-purple-500');
+                resultsList.innerHTML = '';
+                showToast(`✓ ${results.length} scan${results.length !== 1 ? 's' : ''} queued successfully`);
             } catch(err) {
                 statusText.textContent = 'Error: ' + err.message;
                 progressFill.classList.add('bg-red-500');
