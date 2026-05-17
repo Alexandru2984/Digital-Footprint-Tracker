@@ -31,7 +31,7 @@ Cloudflare (TLS termination, DDoS protection)
   │
   ▼
 nginx (rate limiting, CSP, HSTS, XSS headers)
-  │  /api/*  →  strip prefix  →  Vapor :8082
+  │  /api/*  →  strip prefix  →  Vapor :8085
   │  /*      →  static files (frontend/)
   ▼
 Vapor 4
@@ -176,7 +176,7 @@ cp .env.example .env   # then edit values
 
 **.env** — minimal set:
 ```
-PORT=8082
+PORT=8085
 DATABASE_HOST=localhost
 DATABASE_USERNAME=footprint_user
 DATABASE_PASSWORD=your_password

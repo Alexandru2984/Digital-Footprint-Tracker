@@ -22,8 +22,8 @@ struct CSRFMiddleware: AsyncMiddleware {
         }
         let allowed = [
             Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com",
-            "http://localhost:8082",
-            "http://127.0.0.1:8082"
+            "http://localhost:8085",
+            "http://127.0.0.1:8085"
         ]
         guard allowed.contains(where: { origin.hasPrefix($0) }) else {
             throw Abort(.forbidden, reason: "Cross-origin request blocked.")
