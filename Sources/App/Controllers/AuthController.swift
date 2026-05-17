@@ -44,14 +44,20 @@ struct AuthController: RouteCollection {
             throw Abort(.badRequest, reason: "Password must be at least 8 characters.")
         }
 
-        // Check uniqueness
-        let existingUsername = try await User.query(on: req.db).filter(\.$username == body.username).first()
-        if existingUsername != nil {
-            throw Abort(.conflict, reason: "Username already taken.")
-        }
-        let existingEmail = try await User.query(on: req.db).filter(\.$email == body.email.lowercased()).first()
-        if existingEmail != nil {
-            throw Abort(.conflict, reason: "Email already registered.")
+        // Uniqueness check. Both queries run concurrently and the response
+        // returns a single generic reason regardless of which constraint
+        // failed — distinct messages would let an attacker enumerate
+        // registered usernames AND email addresses by trial registration.
+        // (A stronger mitigation — accept registration silently and send an
+        // email verification link — is out of scope here; this is the
+        // single-message hardening.)
+        async let usernameTask = User.query(on: req.db).filter(\.$username == body.username).first()
+        async let emailTask    = User.query(on: req.db).filter(\.$email == body.email.lowercased()).first()
+        let (existingUsername, existingEmail) = try await (usernameTask, emailTask)
+        if existingUsername != nil || existingEmail != nil {
+            // Log internally for ops, generic response externally.
+            req.logger.debug("Registration rejected (username conflict: \(existingUsername != nil), email conflict: \(existingEmail != nil))")
+            throw Abort(.conflict, reason: "Registration failed: that username or email is already in use.")
         }
 
         let hash = try await req.password.async.hash(body.password)
