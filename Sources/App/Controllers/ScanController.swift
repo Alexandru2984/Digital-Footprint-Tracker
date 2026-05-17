@@ -109,10 +109,7 @@ struct ScanController: RouteCollection {
         let input = try InputValidator.validateScanInput(scanReq.input)
 
         // Audit log: record every scan request with client IP for later review.
-        let clientIP = req.headers.first(name: "CF-Connecting-IP")
-            ?? req.headers.first(name: "X-Real-IP")
-            ?? req.remoteAddress?.description
-            ?? "unknown"
+        let clientIP = req.clientIP
 
         // Mask PII in logs: show only domain part for emails, first 3 chars for usernames.
         let logSafe: String

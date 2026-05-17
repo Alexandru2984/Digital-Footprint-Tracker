@@ -24,16 +24,7 @@ final class AuthRateLimiter: AsyncMiddleware {
     }
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        let ip: String
-        if let cf = request.headers.first(name: "CF-Connecting-IP")?
-            .trimmingCharacters(in: .whitespaces), !cf.isEmpty {
-            ip = cf
-        } else if let realIP = request.headers.first(name: "X-Real-IP")?
-            .trimmingCharacters(in: .whitespaces), !realIP.isEmpty {
-            ip = realIP
-        } else {
-            ip = request.remoteAddress?.ipAddress ?? "unknown"
-        }
+        let ip = request.clientIP
 
         let now = Date()
         let allowed: Bool = lock.withLock {

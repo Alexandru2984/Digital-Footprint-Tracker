@@ -23,20 +23,9 @@ final class ScanRateLimiter: AsyncMiddleware {
     }
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        // Trust Cloudflare's real-client header first, then nginx's X-Real-IP,
-        // then fall back to the socket address. Never take the first X-Forwarded-For
-        // entry directly — it is trivially spoofable by clients.
-        let ipKey: String
-        if let cf = request.headers.first(name: "CF-Connecting-IP")?
-            .trimmingCharacters(in: .whitespaces), !cf.isEmpty {
-            ipKey = cf
-        } else if let realIP = request.headers.first(name: "X-Real-IP")?
-            .trimmingCharacters(in: .whitespaces), !realIP.isEmpty {
-            ipKey = realIP
-        } else {
-            ipKey = request.remoteAddress?.ipAddress ?? "unknown"
-        }
-
+        // Real client IP resolved via the same Request.clientIP helper used by
+        // AuditLogger and the auth limiter — never trust raw X-Forwarded-For.
+        let ipKey = request.clientIP
         let userID = request.authenticatedUserID
         let isAuthed = userID != nil
         let key = isAuthed ? "user:\(userID!.uuidString)" : "ip:\(ipKey)"

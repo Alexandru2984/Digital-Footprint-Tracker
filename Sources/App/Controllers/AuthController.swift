@@ -143,6 +143,7 @@ struct AuthController: RouteCollection {
         }
         user.webhookURL = (url?.isEmpty == false) ? url : nil
         try await user.save(on: req.db)
+        AuditLogger.log(req: req, action: "update_webhook", target: user.username)
         return user.toPublic()
     }
     @Sendable
@@ -157,6 +158,7 @@ struct AuthController: RouteCollection {
         }
         user.retentionDays = body.retentionDays
         try await user.save(on: req.db)
+        AuditLogger.log(req: req, action: "update_retention", target: user.username)
         return user.toPublic()
     }
 
@@ -208,6 +210,7 @@ struct AuthController: RouteCollection {
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
         user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
         try await user.save(on: req.db)
+        AuditLogger.log(req: req, action: "update_settings", target: user.username)
         return user.toPublic()
     }
 
