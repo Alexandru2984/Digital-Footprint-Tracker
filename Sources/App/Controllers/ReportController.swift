@@ -77,7 +77,12 @@ struct ReportController: RouteCollection {
         stdinPipe.fileHandleForWriting.write(jsonData)
         stdinPipe.fileHandleForWriting.closeFile()
 
-        let pdfData: Data = await withCheckedContinuation { cont in
+        // Hard cap on report size — prevents OOM if generate_report.py
+        // produces a runaway PDF (logic bug, malformed input, infinite loop).
+        // 20 MB is far above any plausible legitimate report.
+        let MAX_PDF_BYTES = 20 * 1024 * 1024
+
+        let result: (data: Data, oversize: Bool) = await withCheckedContinuation { cont in
             let sema = DispatchSemaphore(value: 0)
             process.terminationHandler = { _ in sema.signal() }
 
@@ -85,13 +90,31 @@ struct ReportController: RouteCollection {
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30, execute: killTimer)
 
             DispatchQueue.global(qos: .utility).async {
+                // Stream stdout in chunks so we can stop and terminate the
+                // subprocess as soon as the cap is hit, instead of waiting
+                // for it to finish producing arbitrary data.
+                var data = Data()
+                let handle = stdoutPipe.fileHandleForReading
+                var oversize = false
+                while data.count < MAX_PDF_BYTES {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break } // EOF
+                    data.append(chunk)
+                }
+                if data.count >= MAX_PDF_BYTES, process.isRunning {
+                    oversize = true
+                    process.terminate()
+                }
                 sema.wait()
                 killTimer.cancel()
-                let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                cont.resume(returning: data)
+                cont.resume(returning: (data, oversize))
             }
         }
 
+        if result.oversize {
+            throw Abort(.payloadTooLarge, reason: "Generated report exceeded the 20 MB limit.")
+        }
+        let pdfData = result.data
         guard !pdfData.isEmpty else {
             throw Abort(.internalServerError, reason: "Report generation failed.")
         }
