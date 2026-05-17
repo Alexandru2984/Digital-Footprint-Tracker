@@ -23,12 +23,28 @@ struct BulkEmailPlugin: FootprintPlugin {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: holehePath)
         process.arguments = [cleanedEmail, "--only-used", "--no-color"]
+        // Per-invocation HOME directory with 0700 perms — previously set to
+        // /tmp, which is world-readable/writable. Anything holehe wrote to
+        // $HOME (config, cache, cookies) was accessible to every local user
+        // on the box. The dir is removed after the subprocess exits.
+        let processHome = NSTemporaryDirectory() + "holehe-\(UUID().uuidString)"
+        do {
+            try FileManager.default.createDirectory(
+                atPath: processHome,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            )
+        } catch {
+            app.logger.warning("Holehe: failed to create per-process HOME (\(error)); skipping")
+            return []
+        }
+        defer { try? FileManager.default.removeItem(atPath: processHome) }
+
         // Explicitly clear the environment so holehe cannot access app secrets.
-        // PYTHONPATH must point to the user-site dir because HOME=/tmp disables it.
         let pythonPath = Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages"
         process.environment = [
             "PATH": "/usr/bin:/usr/local/bin:/home/micu/.local/bin",
-            "HOME": "/tmp",
+            "HOME": processHome,
             "PYTHONPATH": pythonPath
         ]
 

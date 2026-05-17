@@ -56,6 +56,18 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                     }
                 }
                 app.logger.info("CleanupJob: completed retention sweep across \(allUsers.count) user(s)")
+
+                // Audit-log retention — keep ≤ 90 days. Without this the
+                // audit_logs table grows forever; admins eventually face an
+                // unusable log list and an oversized backup.
+                let auditCutoff = now.addingTimeInterval(-90 * 86400)
+                do {
+                    try await AuditLog.query(on: db)
+                        .filter(\.$createdAt < auditCutoff)
+                        .delete()
+                } catch {
+                    app.logger.error("CleanupJob: audit log cleanup failed: \(error)")
+                }
             }
         }
     }
