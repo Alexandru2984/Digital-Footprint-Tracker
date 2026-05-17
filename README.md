@@ -1,6 +1,9 @@
 # Digital Footprint Tracker
 
-> **Live demo:** [https://swift.micutu.com](https://swift.micutu.com)
+[![CI](https://github.com/Alexandru2984/Digital-Footprint-Tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexandru2984/Digital-Footprint-Tracker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Swift](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
+[![Live Demo](https://img.shields.io/badge/demo-swift.micutu.com-success.svg)](https://swift.micutu.com)
 
 A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on a hardened Linux VPS. Scans an email address, username, domain, IP, or phone number across 500+ sources in parallel, streams results live via SSE, and visualises them as an interactive force-directed identity graph. Ships with full authentication, an admin panel, API keys, scheduled scans, webhooks, multi-channel notifications, shareable reports, and an audit log.
 
