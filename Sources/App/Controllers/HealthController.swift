@@ -9,18 +9,43 @@ struct HealthController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.get("health", use: health)
         routes.get("metrics", use: metrics)
-        routes.post("api", "geolocate", use: geolocate)
+        // Registered at /geolocate (not /api/geolocate) — nginx strips the /api/
+        // prefix when forwarding, so the public URL remains /api/geolocate.
+        // Rate-limited to prevent abuse: this endpoint forwards request bodies
+        // to ip-api.com on the server's behalf.
+        routes.grouped(ScanRateLimiter(anonMax: 5, authedMax: 30, windowSeconds: 60))
+            .post("geolocate", use: geolocate)
     }
 
-    // Proxy for ip-api.com/batch — keeps third-party calls off the browser
+    /// Server-side proxy to ip-api.com/batch.
+    ///
+    /// Hardened against abuse:
+    ///   • Authentication required — prevents anonymous abuse of the server as
+    ///     an open HTTP proxy and protects the project's ip-api.com quota.
+    ///   • 4 KB body cap — ip-api batch accepts up to 100 IPs; well under 4 KB.
+    ///   • JSON-array structural check — rejects garbage / oversized payloads
+    ///     before forwarding upstream.
     @Sendable func geolocate(req: Request) async throws -> Response {
-        guard let bodyData = req.body.data else {
-            throw Abort(.badRequest)
+        guard try await req.currentUser() != nil else {
+            throw Abort(.unauthorized, reason: "Authentication required.")
         }
+        guard let bodyData = req.body.data else {
+            throw Abort(.badRequest, reason: "Request body required.")
+        }
+        guard bodyData.readableBytes <= 4096 else {
+            throw Abort(.payloadTooLarge, reason: "Body must be ≤ 4 KB.")
+        }
+        let bodyBytes = Data(bodyData.readableBytesView)
+        guard let json = try? JSONSerialization.jsonObject(with: bodyBytes),
+              json is [Any] else {
+            throw Abort(.badRequest, reason: "Body must be a JSON array.")
+        }
+
         var urlReq = URLRequest(url: URL(string: "http://ip-api.com/batch?fields=status,country,countryCode,regionName,city,isp,org,query")!)
         urlReq.httpMethod = "POST"
         urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlReq.httpBody = Data(bodyData.readableBytesView)
+        urlReq.httpBody = bodyBytes
+        urlReq.timeoutInterval = 10
 
         let (data, _) = try await URLSession.shared.data(for: urlReq)
         return Response(
