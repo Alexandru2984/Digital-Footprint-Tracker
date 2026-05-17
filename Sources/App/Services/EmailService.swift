@@ -19,18 +19,28 @@ struct EmailService {
         let safeFrom    = sanitizeHeader(from)
         let safeTo      = sanitizeHeader(to)
         let safeSubject = sanitizeHeader(subject)
-        // Body CRLF is fine (multiline content), only strip NULL bytes.
-        let safeBody    = body.replacingOccurrences(of: "\0", with: "")
+        // Body: drop NULs and normalize any line endings to CRLF (some MUAs
+        // produce LF or CR alone; SMTP requires CRLF throughout, including
+        // body lines for strict relays).
+        let safeBody = body
+            .replacingOccurrences(of: "\0", with: "")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r",   with: "\n")
+            .replacingOccurrences(of: "\n",   with: "\r\n")
 
-        let mimeMessage = """
-            From: Digital Footprint Tracker <\(safeFrom)>
-            To: \(safeTo)
-            Subject: \(safeSubject)
-            MIME-Version: 1.0
-            Content-Type: text/plain; charset=utf-8
-
-            \(safeBody)
-            """
+        // Build the MIME message with explicit CRLF separators between headers
+        // and between header/body — required by RFC 5321/5322. The previous
+        // Swift multiline literal produced LF-only line endings, which strict
+        // SMTP relays may reject as malformed.
+        let mimeMessage = [
+            "From: Digital Footprint Tracker <\(safeFrom)>",
+            "To: \(safeTo)",
+            "Subject: \(safeSubject)",
+            "MIME-Version: 1.0",
+            "Content-Type: text/plain; charset=utf-8",
+            "",
+            safeBody,
+        ].joined(separator: "\r\n")
 
         let port = Int(portStr) ?? 587
         let protocol_ = port == 465 ? "smtps" : "smtp"
@@ -59,8 +69,20 @@ struct EmailService {
         }
         defer { try? FileManager.default.removeItem(atPath: credsFile) }
 
+        // Resolve a curl binary. The previous hardcoded path failed silently
+        // on systems where curl lives elsewhere (macOS dev installs, alpine
+        // containers, custom toolchains). Order: CURL_PATH env → /usr/bin →
+        // /usr/local/bin. Log clearly if nothing is found.
+        let curlCandidates = [Environment.get("CURL_PATH"), "/usr/bin/curl", "/usr/local/bin/curl"]
+            .compactMap { $0 }
+        guard let curlPath = curlCandidates.first(where: {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }) else {
+            app.logger.error("EmailService: no executable curl found (tried: \(curlCandidates.joined(separator: ", ")))")
+            return
+        }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.executableURL = URL(fileURLWithPath: curlPath)
         process.arguments = [
             "--url", "\(protocol_)://\(host):\(port)",
             sslFlag,
