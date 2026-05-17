@@ -42,7 +42,7 @@ struct NotificationDispatcher {
     }
 
     private static func sendWebhook(url: URL, payload: [String: Any], app: Application) async {
-        guard !isInternalURL(url) else {
+        guard !SSRFGuard.isInternalURL(url) else {
             app.logger.warning("Blocked outbound webhook to internal host: \(url.host ?? url.absoluteString)")
             return
         }

@@ -126,7 +126,7 @@ struct ScanController: RouteCollection {
             throw Abort(.badRequest, reason: "Input contains invalid characters.")
         }
         // SSRF guard: reject targets that resolve to private/loopback/link-local ranges.
-        guard !isInternalTarget(input) else {
+        guard !SSRFGuard.isInternalTarget(input) else {
             throw Abort(.badRequest, reason: "Scanning internal/private targets is not allowed.")
         }
 
@@ -213,114 +213,10 @@ struct ScanController: RouteCollection {
 
         // Run plugins in the background so the HTTP request returns immediately.
         Task {
-            await ScanController.runPlugins(scanID: scanID, input: input, plugins: activePlugins, app: app)
+            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app)
         }
 
         return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil, scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 })
-    }
-
-    /// Shared plugin runner — called from both scan() and BulkScanController.
-    /// The caller is responsible for starting ScanProgressTracker before the Task.
-    static func runPlugins(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application) async {
-        // In the test environment there are no external services to reach,
-        // and the background URLSession calls generate SIGPIPE when the app
-        // shuts down immediately after the test.  Skip execution entirely.
-        guard app.environment != .testing else { return }
-
-        guard let db = app.databases.database(
-            nil, logger: app.logger, on: app.eventLoopGroup.any()
-        ) else {
-            app.logger.warning("Scan \(scanID): database unavailable, skipping plugin execution")
-            return
-        }
-
-        var successCount = 0
-        var failureCount = 0
-        var timedOut = false
-
-        enum PluginOutcome {
-            case success(pluginName: String)
-            case failure(pluginName: String)
-            case timeout
-        }
-
-        await withTaskGroup(of: PluginOutcome.self) { group in
-            // Timeout sentinel: cancels all plugins if 120 s elapse.
-            group.addTask {
-                try? await Task.sleep(for: .seconds(120))
-                return .timeout
-            }
-
-            for plugin in plugins {
-                let pName = plugin.name
-                group.addTask {
-                    guard !Task.isCancelled else { return .failure(pluginName: pName) }
-                    do {
-                        let pluginResults = try await plugin.scan(input: input, on: app)
-                        for pr in pluginResults {
-                            let cappedRawData = pr.rawData.count > 8192
-                                ? String(pr.rawData.prefix(8192)) + "… [truncated]"
-                                : pr.rawData
-                            let result = Result(
-                                scanID: scanID,
-                                source: String(pr.source.prefix(64)),
-                                type: String(pr.type.prefix(64)),
-                                confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
-                                rawData: cappedRawData
-                            )
-                            try await result.save(on: db)
-                        }
-                        return .success(pluginName: pName)
-                    } catch {
-                        app.logger.error("Plugin \(pName) failed: \(error)")
-                        return .failure(pluginName: pName)
-                    }
-                }
-            }
-
-            var pluginsDone = 0
-            var allPluginsCompleted = false
-            for await outcome in group {
-                switch outcome {
-                case .timeout:
-                    if !allPluginsCompleted { timedOut = true; group.cancelAll() }
-                case .success(let name):
-                    successCount += 1; pluginsDone += 1
-                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                case .failure(let name):
-                    failureCount += 1; pluginsDone += 1
-                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                }
-                if !allPluginsCompleted && pluginsDone == plugins.count {
-                    allPluginsCompleted = true
-                    group.cancelAll()
-                }
-            }
-        }
-
-        do {
-            if let scan = try await Scan.find(scanID, on: db) {
-                if timedOut {
-                    app.logger.warning("Scan \(scanID) exceeded 120-second deadline; marking failed")
-                    scan.status = .failed
-                } else {
-                    scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
-                }
-                scan.completedAt = Date()
-                try await scan.save(on: db)
-                await ScanProgressTracker.shared.remove(for: scanID)
-                // Fire webhook if user has one set.
-                if let userID = scan.$user.id,
-                   let user = try? await User.find(userID, on: db),
-                   let hookURL = user.webhookURL {
-                    let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
-                    let risk = RiskScorer.compute(results: allResults)
-                    await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
-                }
-            }
-        } catch {
-            app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
-        }
     }
 
     @Sendable
@@ -454,83 +350,4 @@ struct ScanController: RouteCollection {
 
         return Response(status: .ok, headers: headers, body: body)
     }
-}
-
-private func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
-    guard let hookURL = URL(string: url) else { return }
-    guard !isInternalURL(hookURL) else {
-        logger.warning("Webhook delivery to \(url) blocked: internal/private target.")
-        return
-    }
-    let payload: [String: Any] = [
-        "event": "scan.completed",
-        "scanID": scanID.uuidString,
-        "input": scan.input,
-        "status": scan.status.rawValue,
-        "riskScore": risk.value,
-        "riskLevel": risk.level.rawValue,
-        "resultCount": resultCount,
-        "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
-    ]
-    guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-    var request = URLRequest(url: hookURL)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = body
-    request.timeoutInterval = 10
-    do {
-        _ = try await URLSession.shared.data(for: request)
-    } catch {
-        logger.warning("Webhook delivery to \(url) failed: \(error)")
-    }
-}
-
-/// Returns true if the raw input looks like a private/loopback/link-local host.
-/// Used to block SSRF attempts before dispatching plugin requests.
-func isInternalTarget(_ input: String) -> Bool {
-    // Strip email local-part if present
-    let host: String
-    if let atIdx = input.firstIndex(of: "@") {
-        host = String(input[input.index(after: atIdx)...])
-    } else {
-        host = input
-    }
-    return isInternalHostname(host)
-}
-
-/// Returns true if a URL points to a private/loopback/link-local host.
-func isInternalURL(_ url: URL) -> Bool {
-    guard let host = url.host else { return true }
-    return isInternalHostname(host)
-}
-
-private func isInternalHostname(_ host: String) -> Bool {
-    let lower = host.lowercased()
-
-    // Loopback / localhost
-    if lower == "localhost" || lower == "ip6-localhost" || lower == "::1" { return true }
-    if lower.hasSuffix(".localhost") { return true }
-
-    // Loopback IPv4
-    if lower.hasPrefix("127.") { return true }
-
-    // Private class A: 10.0.0.0/8
-    if lower.hasPrefix("10.") { return true }
-
-    // Private class B: 172.16.0.0/12
-    if lower.hasPrefix("172.") {
-        let parts = lower.split(separator: ".")
-        if parts.count >= 2, let second = Int(parts[1]), second >= 16 && second <= 31 { return true }
-    }
-
-    // Private class C: 192.168.0.0/16
-    if lower.hasPrefix("192.168.") { return true }
-
-    // Link-local: 169.254.0.0/16 (AWS/GCP metadata)
-    if lower.hasPrefix("169.254.") { return true }
-
-    // IPv6 private / link-local
-    if lower.hasPrefix("fc") || lower.hasPrefix("fd") || lower.hasPrefix("fe80") { return true }
-
-    return false
 }

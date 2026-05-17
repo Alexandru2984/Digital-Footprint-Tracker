@@ -36,7 +36,7 @@ struct BulkScanController: RouteCollection {
 
         // SSRF guard: reject any target pointing to internal/private ranges.
         for target in targets {
-            guard !isInternalTarget(target) else {
+            guard !SSRFGuard.isInternalTarget(target) else {
                 throw Abort(.badRequest, reason: "Target '\(target)' is not allowed (internal/private).")
             }
         }
@@ -65,7 +65,7 @@ struct BulkScanController: RouteCollection {
 
             let pluginsCopy = activePlugins
             Task {
-                await ScanController.runPlugins(scanID: scanID, input: target, plugins: pluginsCopy, app: app)
+                await ScanPluginRunner.run(scanID: scanID, input: target, plugins: pluginsCopy, app: app)
             }
 
             results.append(BulkScanResult(target: target, scanID: scanID.uuidString, status: "pending"))

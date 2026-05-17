@@ -203,7 +203,7 @@ private func validateWebhookURL(_ rawURL: String) throws {
     else {
         throw Abort(.badRequest, reason: "Webhook URL must be a valid HTTPS URL.")
     }
-    guard !isInternalURL(url) else {
+    guard !SSRFGuard.isInternalURL(url) else {
         throw Abort(.badRequest, reason: "Webhook URL must not target an internal or private host.")
     }
 }
