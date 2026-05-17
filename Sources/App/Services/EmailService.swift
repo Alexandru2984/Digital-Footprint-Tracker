@@ -36,6 +36,29 @@ struct EmailService {
         let protocol_ = port == 465 ? "smtps" : "smtp"
         let sslFlag = port == 465 ? "--ssl" : "--ssl-reqd"
 
+        // Write SMTP credentials to a private temp file rather than passing
+        // them as process arguments. Without this, "user:pass" would be
+        // visible to any local account via `ps auxf` / /proc/*/cmdline for
+        // the duration of each curl invocation. The file is created mode 600
+        // and deleted on function exit (`defer` runs after the await below).
+        let credsFile = NSTemporaryDirectory() + "smtp-\(UUID().uuidString).netrc"
+        // Strip CR/LF so a maliciously-set env var cannot inject extra
+        // netrc entries or change the active machine block.
+        let safeUser = user.replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "")
+        let safePass = pass.replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "")
+        let netrcBody = "default\n  login \(safeUser)\n  password \(safePass)\n"
+        do {
+            try netrcBody.write(toFile: credsFile, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o600)],
+                ofItemAtPath: credsFile
+            )
+        } catch {
+            app.logger.error("EmailService: failed to write credentials file: \(error)")
+            return
+        }
+        defer { try? FileManager.default.removeItem(atPath: credsFile) }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
         process.arguments = [
@@ -43,7 +66,7 @@ struct EmailService {
             sslFlag,
             "--mail-from", safeFrom,
             "--mail-rcpt", safeTo,
-            "--user", "\(user):\(pass)",
+            "--netrc-file", credsFile,
             "--upload-file", "-",
             "--silent",
             "--max-time", "15"
