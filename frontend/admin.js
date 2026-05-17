@@ -222,6 +222,9 @@
                     </tbody>
                 </table>
                 ${body.metadata && body.metadata.total > 50 ? `<p class="text-[10px] text-slate-500 mt-2">Showing first 50 of ${body.metadata.total}. Use pagination for more.</p>` : ''}`;
-        } catch (err) { container.innerHTML = `<p class="text-[11px] text-red-400">Error: ${err.message}</p>`; }
+        } catch (err) {
+            const msg = String(err && err.message || err).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            container.innerHTML = `<p class="text-[11px] text-red-400">Error: ${msg}</p>`;
+        }
     }
 })();
