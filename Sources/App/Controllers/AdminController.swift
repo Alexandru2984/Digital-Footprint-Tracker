@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import SQLKit
 
 struct DashboardResponse: Content {
     struct DayCount: Content {
@@ -64,16 +65,22 @@ struct AdminController: RouteCollection {
             scansPerDay.append(.init(date: key, count: countsByDay[key] ?? 0))
         }
 
-        // Top plugins — aggregate in Swift so this works with any DB backend
-        let allResults = try await Result.query(on: db).all()
-        var sourceCounts: [String: Int] = [:]
-        for r in allResults {
-            sourceCounts[r.source, default: 0] += 1
+        // Top plugins — push the aggregation into the database (GROUP BY +
+        // ORDER BY + LIMIT). The previous version loaded every Result row
+        // into memory just to count occurrences per source — OOM-prone on
+        // any non-trivial dataset. Matches StatsController.getStats pattern.
+        var topPlugins: [DashboardResponse.PluginStat] = []
+        if let sqlDB = db as? SQLDatabase {
+            struct Row: Decodable { let source: String; let hit_count: Int }
+            let rows = try await sqlDB.raw("""
+                SELECT source, COUNT(*) AS hit_count
+                FROM results
+                GROUP BY source
+                ORDER BY hit_count DESC
+                LIMIT 10
+                """).all(decoding: Row.self)
+            topPlugins = rows.map { DashboardResponse.PluginStat(source: $0.source, hitCount: $0.hit_count) }
         }
-        let topPlugins: [DashboardResponse.PluginStat] = sourceCounts
-            .sorted { $0.value > $1.value }
-            .prefix(10)
-            .map { DashboardResponse.PluginStat(source: $0.key, hitCount: $0.value) }
 
         return DashboardResponse(
             totalScans: totalScans,

@@ -13,8 +13,11 @@ struct APIKeyController: RouteCollection {
     @Sendable func list(req: Request) async throws -> [APIKey.Public] {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         let keys = try await APIKey.query(on: req.db).filter(\.$user.$id == user.id!).all()
-        // Return preview (first 8 chars of key hash as identifier) but never the hash itself.
-        return keys.map { k in k.toPublic(preview: String(k.keyHash.prefix(8)) + "…") }
+        // The preview field was historically the first 8 chars of the SHA-256
+        // key hash — that's 32 bits of the hash leaking into a list endpoint
+        // for no functional gain (users identify keys by label). Replaced with
+        // an opaque mask so we never expose hash material via /api/auth/api-keys.
+        return keys.map { k in k.toPublic(preview: "•••") }
     }
 
     @Sendable func create(req: Request) async throws -> APIKey.Created {
@@ -36,7 +39,7 @@ struct APIKeyController: RouteCollection {
             id: key.id,
             label: key.label,
             token: rawToken,
-            keyPreview: String(hash.prefix(8)) + "…",
+            keyPreview: "•••",
             createdAt: key.createdAt
         )
     }

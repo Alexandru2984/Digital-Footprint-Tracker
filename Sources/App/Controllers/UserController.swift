@@ -36,19 +36,34 @@ struct UserController: RouteCollection {
         let limit = max(1, min(100, (try? req.query.get(Int.self, at: "limit")) ?? 20))
         let q     = try? req.query.get(String.self, at: "q")
 
-        var scans = try await Scan.query(on: req.db)
-            .filter(\.$user.$id == user.id!)
-            .sort(\.$createdAt, .descending)
-            .all()
-
+        // DB-level pagination — never load the user's full scan history into
+        // memory. For the search path we still need Swift-side substring
+        // filtering (case-insensitive across DB dialects), but bounded to a
+        // 500-row candidate window to avoid OOM on huge histories.
+        let total: Int
+        let paged: [Scan]
         if let q = q, !q.isEmpty {
-            scans = scans.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            let candidates = try await Scan.query(on: req.db)
+                .filter(\.$user.$id == user.id!)
+                .sort(\.$createdAt, .descending)
+                .range(..<500)
+                .all()
+            let matched = candidates.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            total = matched.count
+            let offset = (page - 1) * limit
+            paged = Array(matched.dropFirst(offset).prefix(limit))
+        } else {
+            total = try await Scan.query(on: req.db)
+                .filter(\.$user.$id == user.id!)
+                .count()
+            let offset = (page - 1) * limit
+            paged = try await Scan.query(on: req.db)
+                .filter(\.$user.$id == user.id!)
+                .sort(\.$createdAt, .descending)
+                .range(offset..<(offset + limit))
+                .all()
         }
-
-        let total  = scans.count
-        let pages  = max(1, Int(ceil(Double(total) / Double(limit))))
-        let offset = (page - 1) * limit
-        let paged  = Array(scans.dropFirst(offset).prefix(limit))
+        let pages = max(1, Int(ceil(Double(total) / Double(limit))))
 
         var items: [ScanSummary] = []
         for scan in paged {
@@ -85,18 +100,28 @@ struct UserController: RouteCollection {
         let limit = max(1, min(100, (try? req.query.get(Int.self, at: "limit")) ?? 20))
         let q     = try? req.query.get(String.self, at: "q")
 
-        var scans = try await Scan.query(on: req.db)
-            .sort(\.$createdAt, .descending)
-            .all()
-
+        // DB-level pagination across all users. Search path still does
+        // Swift-side substring matching but capped at 500 candidates.
+        let total: Int
+        let paged: [Scan]
         if let q = q, !q.isEmpty {
-            scans = scans.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            let candidates = try await Scan.query(on: req.db)
+                .sort(\.$createdAt, .descending)
+                .range(..<500)
+                .all()
+            let matched = candidates.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            total = matched.count
+            let offset = (page - 1) * limit
+            paged = Array(matched.dropFirst(offset).prefix(limit))
+        } else {
+            total = try await Scan.query(on: req.db).count()
+            let offset = (page - 1) * limit
+            paged = try await Scan.query(on: req.db)
+                .sort(\.$createdAt, .descending)
+                .range(offset..<(offset + limit))
+                .all()
         }
-
-        let total  = scans.count
-        let pages  = max(1, Int(ceil(Double(total) / Double(limit))))
-        let offset = (page - 1) * limit
-        let paged  = Array(scans.dropFirst(offset).prefix(limit))
+        let pages = max(1, Int(ceil(Double(total) / Double(limit))))
 
         var items: [ScanSummary] = []
         for scan in paged {
