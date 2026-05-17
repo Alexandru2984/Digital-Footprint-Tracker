@@ -2635,14 +2635,16 @@
             if (!ips.length) { noData.classList.remove('hidden'); wrapper.classList.add('hidden'); loading.classList.add('hidden'); return; }
             noData.classList.add('hidden'); loading.classList.remove('hidden'); wrapper.classList.add('hidden');
 
-            // Load Leaflet CSS+JS on demand
+            // Load Leaflet CSS+JS on demand. Served from the same origin
+            // (frontend/leaflet.*) — no third-party CDN, no SRI required,
+            // CSP can drop the unpkg.com allowlist entirely.
             if (!leafletLoaded) {
                 await new Promise((resolve, reject) => {
                     const lnk = document.createElement('link');
-                    lnk.rel = 'stylesheet'; lnk.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                    lnk.rel = 'stylesheet'; lnk.href = '/leaflet.css';
                     document.head.appendChild(lnk);
                     const scr = document.createElement('script');
-                    scr.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                    scr.src = '/leaflet.js';
                     scr.onload = () => { leafletLoaded = true; resolve(); };
                     scr.onerror = reject;
                     document.head.appendChild(scr);
