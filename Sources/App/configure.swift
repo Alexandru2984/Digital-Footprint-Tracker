@@ -24,8 +24,10 @@ public func configure(_ app: Application) async throws {
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
 
-    // Sessions — in-memory; users are logged out on server restart.
-    app.sessions.use(.memory)
+    // Sessions persisted to PostgreSQL via Fluent so they survive process
+    // restarts and don't bloat heap memory under sustained traffic. The
+    // SessionRecord migration is registered alongside the rest below.
+    app.sessions.use(.fluent)
     app.sessions.configuration.cookieFactory = { sessionID in
         var cookie = HTTPCookies.Value(string: sessionID.string)
         cookie.isSecure = true
@@ -83,6 +85,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateSharedReports())
     app.migrations.add(HashAPIKeyColumn())
     app.migrations.add(HashSharedReportTokens())
+    // Session storage table — required by `.fluent` session driver above.
+    app.migrations.add(SessionRecord.migration)
 
     // Run migrations automatically
     try await app.autoMigrate()

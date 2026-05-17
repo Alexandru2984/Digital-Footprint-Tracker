@@ -1,5 +1,6 @@
 import XCTest
 import XCTVapor
+import Fluent
 import FluentSQLiteDriver
 @testable import App
 
@@ -19,7 +20,7 @@ private func makeApp() async throws -> Application {
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )), at: .beginning)
 
-    app.sessions.use(.memory)
+    app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
 
     app.migrations.add(CreateScan())
@@ -42,6 +43,7 @@ private func makeApp() async throws -> Application {
     // (use ADD COLUMN IF NOT EXISTS / ALTER COLUMN SET NOT NULL / ADD CONSTRAINT)
     // and are intentionally skipped here. No test in this suite exercises the
     // APIKey or SharedReport models, so the pre-hash schema is sufficient.
+    app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
     try routes(app)
