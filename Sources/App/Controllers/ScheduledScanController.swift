@@ -39,6 +39,15 @@ struct ScheduledScanController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> ScheduledScanDTO {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        // Per-user cap — without this, a single account can schedule
+        // thousands of recurring scans and burn the runner / outbound HTTP
+        // quota for every plugin.
+        let existingCount = try await ScheduledScan.query(on: req.db)
+            .filter(\.$user.$id == user.id!)
+            .count()
+        guard existingCount < 20 else {
+            throw Abort(.tooManyRequests, reason: "Maximum 20 scheduled scans per account.")
+        }
         struct Body: Content { var input: String; var interval: String }
         let body = try req.content.decode(Body.self)
         // Apply the same SSRF + charset + length checks as `/scan` — without

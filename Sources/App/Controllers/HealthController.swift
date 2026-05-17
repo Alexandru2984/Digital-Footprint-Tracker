@@ -7,7 +7,12 @@ import FoundationNetworking
 
 struct HealthController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.get("health", use: health)
+        // /health runs a DB liveness query — rate-limit so a request flood
+        // can't saturate the Postgres connection pool. A 60/min ceiling is
+        // far above any legitimate monitor (Prometheus 30 s = 2/min,
+        // aggressive uptime checks at 5 s = 12/min).
+        routes.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60))
+            .get("health", use: health)
         routes.get("metrics", use: metrics)
         // Registered at /geolocate (not /api/geolocate) — nginx strips the /api/
         // prefix when forwarding, so the public URL remains /api/geolocate.

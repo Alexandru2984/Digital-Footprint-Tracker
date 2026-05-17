@@ -8,7 +8,11 @@ struct ShareController: RouteCollection {
         noCache.post("scans", ":scanID", "share", use: createShare)
         noCache.get("scans", ":scanID", "shares", use: listShares)
         noCache.delete("shares", ":token", use: deleteShare)
-        noCache.get("share", ":token", use: viewShare)
+        // Public endpoint that increments view_count on each hit — rate-limit
+        // per IP so a script with a known token cannot inflate viewCount or
+        // spam-write the DB.
+        noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
+            .get("share", ":token", use: viewShare)
     }
 
     struct CreateShareRequest: Content {
