@@ -33,8 +33,24 @@ private func runDueScans(app: Application) async {
     }
 
     for ss in due {
-        let input = ss.input
+        let rawInput = ss.input
         let userID = ss.$user.id
+        // Defense in depth: re-validate the stored input every cycle. Rows
+        // inserted before validation was added (or via direct DB writes) are
+        // skipped here instead of being dispatched to plugins.
+        let input: String
+        do {
+            input = try InputValidator.validateScanInput(rawInput)
+        } catch {
+            app.logger.warning("[ScheduledScanRunner] Skipping scan \(ss.id?.uuidString ?? "?") — input failed validation: \(error)")
+            // Advance the schedule so we don't busy-loop on this row.
+            ss.lastRunAt = now
+            ss.nextRunAt = ss.interval == .daily
+                ? now.addingTimeInterval(86400)
+                : now.addingTimeInterval(604800)
+            try? await ss.save(on: db)
+            continue
+        }
         app.logger.info("[ScheduledScanRunner] Running scheduled scan for '\(input)'.")
 
         let plugins: [any FootprintPlugin] = [

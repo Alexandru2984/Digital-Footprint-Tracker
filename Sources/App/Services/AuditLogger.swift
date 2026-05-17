@@ -4,7 +4,7 @@ import Fluent
 struct AuditLogger {
     /// Fire-and-forget audit log. Never throws — errors are swallowed.
     static func log(req: Request, action: String, target: String) {
-        let userID = req.session.data["userID"].flatMap { UUID($0) }
+        let userID = req.authenticatedUserID
         let ip = req.headers[.xForwardedFor].first
             ?? req.peerAddress?.description
             ?? "unknown"

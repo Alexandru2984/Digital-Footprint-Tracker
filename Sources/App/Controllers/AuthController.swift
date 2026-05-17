@@ -99,10 +99,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func me(req: Request) async throws -> User.Public {
-        guard let userIDString = req.session.data["userID"],
-              let userID = UUID(userIDString),
-              let user = try await User.find(userID, on: req.db)
-        else {
+        guard let user = try await req.currentUser() else {
             throw Abort(.unauthorized, reason: "Not authenticated.")
         }
         return user.toPublic()
@@ -111,10 +108,7 @@ struct AuthController: RouteCollection {
     @Sendable
     func setWebhook(req: Request) async throws -> User.Public {
         struct Body: Content { var webhookURL: String? }
-        guard let userIDString = req.session.data["userID"],
-              let userID = UUID(userIDString),
-              let user = try await User.find(userID, on: req.db)
-        else {
+        guard let user = try await req.currentUser() else {
             throw Abort(.unauthorized, reason: "Not authenticated.")
         }
         let body = try req.content.decode(Body.self)
@@ -185,9 +179,7 @@ struct AuthController: RouteCollection {
 // MARK: - Helper: extract current user from session (used in other controllers)
 extension Request {
     func currentUser() async throws -> User? {
-        guard let userIDString = session.data["userID"],
-              let userID = UUID(userIDString)
-        else { return nil }
+        guard let userID = authenticatedUserID else { return nil }
         return try await User.find(userID, on: db)
     }
 }

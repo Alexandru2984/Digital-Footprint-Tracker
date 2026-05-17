@@ -37,9 +37,9 @@ final class ScanRateLimiter: AsyncMiddleware {
             ipKey = request.remoteAddress?.ipAddress ?? "unknown"
         }
 
-        let userIDStr = request.session.data["userID"]
-        let isAuthed = userIDStr != nil && !userIDStr!.isEmpty
-        let key = isAuthed ? "user:\(userIDStr!)" : "ip:\(ipKey)"
+        let userID = request.authenticatedUserID
+        let isAuthed = userID != nil
+        let key = isAuthed ? "user:\(userID!.uuidString)" : "ip:\(ipKey)"
         let maxForKey = isAuthed ? authedMax : anonMax
 
         let now = Date()

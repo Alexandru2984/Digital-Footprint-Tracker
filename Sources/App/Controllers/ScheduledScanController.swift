@@ -41,8 +41,10 @@ struct ScheduledScanController: RouteCollection {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         struct Body: Content { var input: String; var interval: String }
         let body = try req.content.decode(Body.self)
-        let input = body.input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { throw Abort(.badRequest, reason: "Input cannot be empty.") }
+        // Apply the same SSRF + charset + length checks as `/scan` — without
+        // this, a user could schedule recurring scans against private/internal
+        // targets that the runner would later execute from the server.
+        let input = try InputValidator.validateScanInput(body.input)
         guard let interval = ScheduledScan.Interval(rawValue: body.interval) else {
             throw Abort(.badRequest, reason: "Interval must be 'daily' or 'weekly'.")
         }

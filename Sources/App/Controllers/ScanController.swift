@@ -106,29 +106,7 @@ struct ScanController: RouteCollection {
     @Sendable
     func scan(req: Request) async throws -> ScanResponse {
         let scanReq = try req.content.decode(ScanRequest.self)
-
-        // Trim whitespace and normalise emails to lowercase so "User@Example.com"
-        // reuses the same cache entry as "user@example.com".
-        let trimmed = scanReq.input.trimmingCharacters(in: .whitespacesAndNewlines)
-        let input   = trimmed.contains("@") ? trimmed.lowercased() : trimmed
-        guard !input.isEmpty else {
-            throw Abort(.badRequest, reason: "Input cannot be empty.")
-        }
-        guard input.count <= 255 else {
-            throw Abort(.badRequest, reason: "Input must be 255 characters or fewer.")
-        }
-        // Allow only printable ASCII that makes sense for an email or username.
-        // This blocks control characters, null bytes, and anything that could
-        // manipulate URLs in BulkUsernamePlugin or shell args in BulkEmailPlugin.
-        let allowedCharacters = CharacterSet.alphanumerics
-            .union(.init(charactersIn: "@._+-"))
-        guard input.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
-            throw Abort(.badRequest, reason: "Input contains invalid characters.")
-        }
-        // SSRF guard: reject targets that resolve to private/loopback/link-local ranges.
-        guard !SSRFGuard.isInternalTarget(input) else {
-            throw Abort(.badRequest, reason: "Scanning internal/private targets is not allowed.")
-        }
+        let input = try InputValidator.validateScanInput(scanReq.input)
 
         // Audit log: record every scan request with client IP for later review.
         let clientIP = req.headers.first(name: "CF-Connecting-IP")
