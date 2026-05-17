@@ -183,15 +183,26 @@ struct AuthController: RouteCollection {
         if let rawToken = body.telegramBotToken {
             if rawToken.isEmpty {
                 user.telegramBotToken = nil
-            } else if TokenEncryption.isAvailable() {
-                do {
-                    user.telegramBotToken = try TokenEncryption.encrypt(rawToken)
-                } catch {
-                    req.logger.error("TokenEncryption.encrypt failed for user \(user.id?.uuidString ?? "?"): \(error)")
-                    throw Abort(.internalServerError, reason: "Failed to encrypt sensitive setting; nothing saved.")
-                }
             } else {
-                user.telegramBotToken = rawToken
+                // Telegram bot tokens follow `<bot_id>:<secret>` — digits, a
+                // colon, then 30+ chars of [A-Za-z0-9_-]. Rejecting arbitrary
+                // strings up front prevents accidental misconfiguration (e.g.
+                // a user pasting their password) and stops anything weird
+                // from ending up substituted into the Telegram API URL.
+                guard rawToken.range(of: "^[0-9]+:[A-Za-z0-9_-]{30,}$", options: .regularExpression) != nil,
+                      rawToken.count <= 100 else {
+                    throw Abort(.badRequest, reason: "Telegram bot token format is invalid (expected `<id>:<secret>`).")
+                }
+                if TokenEncryption.isAvailable() {
+                    do {
+                        user.telegramBotToken = try TokenEncryption.encrypt(rawToken)
+                    } catch {
+                        req.logger.error("TokenEncryption.encrypt failed for user \(user.id?.uuidString ?? "?"): \(error)")
+                        throw Abort(.internalServerError, reason: "Failed to encrypt sensitive setting; nothing saved.")
+                    }
+                } else {
+                    user.telegramBotToken = rawToken
+                }
             }
         }
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID

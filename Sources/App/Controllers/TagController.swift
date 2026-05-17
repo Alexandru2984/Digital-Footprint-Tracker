@@ -30,8 +30,17 @@ struct TagController: RouteCollection {
         struct Body: Content { var name: String; var colour: String }
         let body = try req.content.decode(Body.self)
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { throw Abort(.badRequest, reason: "Tag name cannot be empty.") }
-        let tag = Tag(userID: user.id!, name: name, colour: body.colour)
+        guard !name.isEmpty, name.count <= 32 else {
+            throw Abort(.badRequest, reason: "Tag name must be 1–32 characters.")
+        }
+        // Strict #RRGGBB hex check — without it, the field accepts any string
+        // and could end up rendered inline (e.g. style="background: <colour>")
+        // by future UI changes, opening a CSS-injection vector.
+        let colour = body.colour.lowercased()
+        guard colour.range(of: "^#[0-9a-f]{6}$", options: .regularExpression) != nil else {
+            throw Abort(.badRequest, reason: "Colour must be a 6-digit hex string (e.g. #10b981).")
+        }
+        let tag = Tag(userID: user.id!, name: name, colour: colour)
         try await tag.save(on: req.db)
         return TagDTO(tag: tag)
     }
