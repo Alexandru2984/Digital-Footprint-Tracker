@@ -1,8 +1,14 @@
 import Vapor
 import Foundation
+import Logging
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+
+/// File-scoped logger so `init()` (which has no `Application` reference) can
+/// emit structured log events to the same backend as the rest of the app
+/// instead of plain `print()` to stdout.
+private let pluginLogger = Logger(label: "app.plugin.bulkusername")
 
 struct SherlockSite: Decodable {
     let errorType: String
@@ -76,9 +82,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             let decoded = try JSONDecoder().decode(SherlockData.self, from: data)
             self.sites = decoded.sites
-            print("Loaded \(self.sites.count) OSINT sites from Sherlock data at \(filePath).")
+            pluginLogger.info("Loaded \(self.sites.count) OSINT sites from Sherlock data at \(filePath).")
         } catch {
-            print("Failed to load Sherlock data from \(filePath): \(error)")
+            pluginLogger.error("Failed to load Sherlock data from \(filePath): \(error)")
             self.sites = [:]
         }
     }
@@ -110,8 +116,15 @@ struct BulkUsernamePlugin: FootprintPlugin {
 
                         do {
                             if siteData.errorType == "response_url" {
+                                // Defense in depth: SSRFGuard on the resolved
+                                // outbound URL host. The sherlock_data.json
+                                // template is project-controlled, but a
+                                // compromised or typo'd entry must not redirect
+                                // outbound traffic to internal infrastructure.
                                 guard let errorURL = siteData.errorUrl, !errorURL.isEmpty,
-                                      let url = URL(string: targetURL) else { return nil }
+                                      let url = URL(string: targetURL),
+                                      !SSRFGuard.isInternalURL(url)
+                                else { return nil }
                                 var req = URLRequest(url: url, timeoutInterval: 10)
                                 req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                                 let (_, resp) = try await urlSession.data(for: req)
@@ -123,7 +136,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
                                 return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.8, rawData: "Account found (redirect-based). Profile: \(targetURL)")
                             }
 
-                            guard let url = URL(string: targetURL) else { return nil }
+                            guard let url = URL(string: targetURL),
+                                  !SSRFGuard.isInternalURL(url)
+                            else { return nil }
                             var urlReq = URLRequest(url: url, timeoutInterval: 10)
                             urlReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
                             urlReq.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
