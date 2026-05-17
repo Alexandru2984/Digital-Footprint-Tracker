@@ -13,6 +13,22 @@ struct LoginRequest: Content {
 }
 
 struct AuthController: RouteCollection {
+
+    /// Precomputed BCrypt hash used to keep login response time independent of
+    /// whether the queried username exists.
+    ///
+    /// Without this, a missing user short-circuits before BCrypt and the
+    /// response returns in ~1 ms, while a real user with a wrong password
+    /// takes ~100 ms (cost 12). The measurable difference lets an attacker
+    /// enumerate valid usernames by timing alone.
+    ///
+    /// Cost MUST match `req.password` (default 12) so verify times align.
+    /// `static let` is thread-safe and computed lazily on first access; first
+    /// login after process start absorbs the ~100 ms hash cost once.
+    private static let dummyPasswordHash: String = {
+        (try? Bcrypt.hash("never-a-real-password-\(UUID().uuidString)", cost: 12)) ?? ""
+    }()
+
     func boot(routes: RoutesBuilder) throws {
         let auth = routes.grouped("auth")
         let limited = auth.grouped(AuthRateLimiter(maxAttempts: 10, windowSeconds: 300))
@@ -78,15 +94,18 @@ struct AuthController: RouteCollection {
     func login(req: Request) async throws -> User.Public {
         let body = try req.content.decode(LoginRequest.self)
 
-        guard let user = try await User.query(on: req.db)
+        let existingUser = try await User.query(on: req.db)
             .filter(\.$username == body.username)
             .first()
-        else {
-            throw Abort(.unauthorized, reason: "Invalid username or password.")
-        }
 
-        let valid = try await req.password.async.verify(body.password, created: user.passwordHash)
-        guard valid else {
+        // Always run BCrypt verify — fall back to a dummy hash if no user
+        // matched the username. Equalises response time so an attacker
+        // cannot enumerate valid usernames by measuring how long
+        // /auth/login takes (see `dummyPasswordHash` comment).
+        let hashToVerify = existingUser?.passwordHash ?? AuthController.dummyPasswordHash
+        let passwordValid = try await req.password.async.verify(body.password, created: hashToVerify)
+
+        guard let user = existingUser, passwordValid else {
             throw Abort(.unauthorized, reason: "Invalid username or password.")
         }
 
