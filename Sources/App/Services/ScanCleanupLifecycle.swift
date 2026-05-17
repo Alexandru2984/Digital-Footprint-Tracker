@@ -19,32 +19,43 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 guard let db = app.databases.database(
                     nil, logger: app.logger, on: app.eventLoopGroup.any()
                 ) else { continue }
-                let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+                // Retention sweep — must run per-user with each user's effective
+                // policy. The previous version ran a hard 30-day global delete
+                // FIRST, which would silently destroy scans of users who had
+                // configured 90- or 365-day retention before their per-user
+                // loop got a chance to apply.
+                //
+                // New flow:
+                //   1. Anonymous scans (no owner) — default 30 days.
+                //   2. Each user — effective retention = user.retentionDays ?? 30.
+                let now = Date()
+                let defaultCutoff = now.addingTimeInterval(-30 * 86400)
+
                 do {
                     try await Scan.query(on: db)
-                        .filter(\.$createdAt < cutoff)
+                        .filter(\.$user.$id == nil)
+                        .filter(\.$createdAt < defaultCutoff)
                         .delete()
-                    app.logger.info("CleanupJob: pruned scans older than 30 days")
                 } catch {
-                    app.logger.error("CleanupJob failed: \(error)")
+                    app.logger.error("CleanupJob: anonymous scan cleanup failed: \(error)")
                 }
 
-                // Per-user retention policies
-                let usersWithRetention = (try? await User.query(on: db).filter(\.$retentionDays != nil).all()) ?? []
-                for user in usersWithRetention {
-                    guard let days = user.retentionDays, days > 0 else { continue }
-                    let userCutoff = Date().addingTimeInterval(-Double(days) * 86400)
-                    let oldScans = (try? await Scan.query(on: db)
-                        .filter(\.$user.$id == user.id!)
-                        .filter(\.$createdAt < userCutoff)
-                        .all()) ?? []
-                    for scan in oldScans {
-                        try? await scan.delete(on: db)
-                    }
-                    if !oldScans.isEmpty {
-                        app.logger.info("[DataRetention] Deleted \(oldScans.count) scans for user \(user.username) (retention: \(days) days)")
+                let allUsers = (try? await User.query(on: db).all()) ?? []
+                for user in allUsers {
+                    guard let userID = user.id else { continue }
+                    let days = user.retentionDays ?? 30
+                    guard days > 0 else { continue }
+                    let userCutoff = now.addingTimeInterval(-Double(days) * 86400)
+                    do {
+                        try await Scan.query(on: db)
+                            .filter(\.$user.$id == userID)
+                            .filter(\.$createdAt < userCutoff)
+                            .delete()
+                    } catch {
+                        app.logger.error("CleanupJob: cleanup for user \(user.username) failed: \(error)")
                     }
                 }
+                app.logger.info("CleanupJob: completed retention sweep across \(allUsers.count) user(s)")
             }
         }
     }
