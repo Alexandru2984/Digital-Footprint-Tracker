@@ -17,7 +17,7 @@ A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on 
 | Deployment | systemd (`swift-vapor.service`) on Ubuntu VPS |
 | Network | Cloudflare DNS + proxy (DDoS shield, TLS) |
 | Email | Raw SMTP (Mailcow / SendGrid compatible) |
-| Tests | XCTest (17 tests, all passing) |
+| Tests | XCTest (27 tests, all passing) |
 
 ---
 
@@ -243,7 +243,7 @@ frontend/
 └── d3.min.js               — D3.js v7 (local, no CDN)
 scripts/
 └── generate_report.py      — server-side PDF report generator
-Tests/AppTests/AppTests.swift  — 17 XCTests
+Tests/AppTests/AppTests.swift  — 27 XCTests
 ```
 
 ---

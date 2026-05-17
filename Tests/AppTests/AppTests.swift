@@ -38,6 +38,10 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddRetentionDaysToUsers())
     app.migrations.add(AddNotificationChannelsToUsers())
     app.migrations.add(CreateSharedReports())
+    // Note: HashAPIKeyColumn + HashSharedReportTokens are PostgreSQL-only
+    // (use ADD COLUMN IF NOT EXISTS / ALTER COLUMN SET NOT NULL / ADD CONSTRAINT)
+    // and are intentionally skipped here. No test in this suite exercises the
+    // APIKey or SharedReport models, so the pre-hash schema is sufficient.
     try await app.autoMigrate()
 
     try routes(app)
@@ -310,5 +314,105 @@ final class AppTests: XCTestCase {
         try await app.test(.GET, "/admin/dashboard") { res in
             XCTAssertEqual(res.status, .unauthorized)
         }
+    }
+
+    // MARK: - SSRF Guard
+
+    func testSSRFGuardBlocksLocalhost() {
+        XCTAssertTrue(SSRFGuard.isInternalTarget("localhost"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("LOCALHOST"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("foo.localhost"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("user@localhost"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("::1"))
+    }
+
+    func testSSRFGuardBlocksLoopbackIPv4() {
+        XCTAssertTrue(SSRFGuard.isInternalTarget("127.0.0.1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("127.1.2.3"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("user@127.0.0.1"))
+    }
+
+    func testSSRFGuardBlocksPrivateRanges() {
+        // RFC 1918 — class A / B / C
+        XCTAssertTrue(SSRFGuard.isInternalTarget("10.0.0.1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("10.255.255.255"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("192.168.1.1"))
+        // 172.16.0.0/12 — only 172.16 through 172.31 are private
+        XCTAssertTrue(SSRFGuard.isInternalTarget("172.16.0.1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("172.31.255.255"))
+        // 172.15 and 172.32 are PUBLIC — must not be blocked
+        XCTAssertFalse(SSRFGuard.isInternalTarget("172.15.0.1"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("172.32.0.1"))
+    }
+
+    func testSSRFGuardBlocksLinkLocalAndCloudMetadata() {
+        // 169.254.169.254 is the AWS/GCP instance-metadata endpoint — critical to block
+        XCTAssertTrue(SSRFGuard.isInternalTarget("169.254.169.254"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("169.254.0.1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("user@169.254.169.254"))
+    }
+
+    func testSSRFGuardBlocksIPv6Private() {
+        XCTAssertTrue(SSRFGuard.isInternalTarget("fc00::1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("fd12:3456:789a::1"))
+        XCTAssertTrue(SSRFGuard.isInternalTarget("fe80::1"))
+    }
+
+    func testSSRFGuardAllowsPublicHosts() {
+        XCTAssertFalse(SSRFGuard.isInternalTarget("example.com"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("8.8.8.8"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("1.1.1.1"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("user@example.com"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("swift.micutu.com"))
+    }
+
+    func testSSRFGuardURLBlocksInternalHosts() throws {
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "https://127.0.0.1/foo"))))
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "https://10.0.0.1/foo"))))
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://169.254.169.254/latest/meta-data"))))
+        XCTAssertFalse(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "https://example.com/foo"))))
+        XCTAssertFalse(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "https://api.github.com/users/alice"))))
+    }
+
+    func testScanEndpointRejectsInternalTarget() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "127.0.0.1"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest,
+                "Scan endpoint must reject internal/private targets to prevent SSRF")
+        })
+    }
+
+    // MARK: - Email normalisation
+
+    func testScanNormalisesEmailToLowercase() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "User@Example.COM"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertEqual(body.input, "user@example.com",
+                "Emails must be lowercased so cache lookups are case-insensitive")
+        })
+    }
+
+    // MARK: - Crypto helpers
+
+    func testSha256HexProducesKnownDigests() {
+        // NIST test vectors for SHA-256
+        XCTAssertEqual(
+            sha256Hex("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )
+        XCTAssertEqual(
+            sha256Hex(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
     }
 }
