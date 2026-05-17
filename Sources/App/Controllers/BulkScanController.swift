@@ -26,19 +26,24 @@ struct BulkScanController: RouteCollection {
         }
 
         let body = try req.content.decode(BulkScanRequest.self)
-        let targets = body.targets.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard !targets.isEmpty else {
+        guard !body.targets.isEmpty else {
             throw Abort(.badRequest, reason: "targets array must not be empty")
         }
-        guard targets.count <= 50 else {
+        guard body.targets.count <= 50 else {
             throw Abort(.badRequest, reason: "Maximum 50 targets per bulk scan")
         }
-
-        // SSRF guard: reject any target pointing to internal/private ranges.
-        for target in targets {
-            guard !SSRFGuard.isInternalTarget(target) else {
-                throw Abort(.badRequest, reason: "Target '\(target)' is not allowed (internal/private).")
-            }
+        // Apply the same SSRF + charset + length checks as `/scan`. Previously
+        // BulkScan only ran SSRFGuard on the raw target, leaving the character
+        // whitelist behind — an authenticated user could submit shell or HTML
+        // metacharacters that reached plugin URL templates and subprocess argv.
+        // The validator also returns canonical normalized form (email-lowercase).
+        var targets: [String] = []
+        targets.reserveCapacity(body.targets.count)
+        for raw in body.targets {
+            // InputValidator.validateScanInput throws a generic 400 — does NOT
+            // echo the offending target back in the reason, so the error
+            // response is safe to render in any context.
+            targets.append(try InputValidator.validateScanInput(raw))
         }
 
         let userID = user.id
