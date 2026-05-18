@@ -26,3 +26,17 @@ jobs:
 
       - name: Build & Test
         run: swift test
+
+  lint:
+    name: SwiftLint
+    runs-on: ubuntu-latest
+    # Runs in parallel with the build/test job — failures here surface as
+    # inline annotations on the PR but do not block merge (warning-only
+    # severity for most rules in .swiftlint.yml).
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run SwiftLint
+        uses: norio-nomura/action-swiftlint@3.2.1
+        with:
+          args: --reporter github-actions-logging

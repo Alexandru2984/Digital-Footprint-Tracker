@@ -302,6 +302,30 @@ print('sha256-' + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode()
 
 Then update the `Content-Security-Policy` header in `/etc/nginx/sites-available/swift.micutu.com`.
 
+### Database backups
+
+`scripts/backup.sh` runs `pg_dump | gzip` and writes a timestamped file to
+`/home/micu/swift-vapor-backups/`, rotating so the last 7 dumps are kept.
+The accompanying `swift-vapor-backup.service` + `.timer` units run it daily
+at 02:00 UTC with a 10-minute jitter and `Persistent=true` so a missed run
+catches up on next boot.
+
+Install once:
+
+```bash
+sudo cp scripts/swift-vapor-backup.service scripts/swift-vapor-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now swift-vapor-backup.timer
+sudo systemctl list-timers swift-vapor-backup.timer    # confirm next trigger
+```
+
+Trigger an on-demand backup or run the script directly:
+
+```bash
+sudo systemctl start swift-vapor-backup.service        # via systemd
+scripts/backup.sh                                       # direct, same output
+```
+
 ---
 
 *Built with Swift + Vapor · Deployed on a hardened Ubuntu VPS · Protected by Cloudflare*
