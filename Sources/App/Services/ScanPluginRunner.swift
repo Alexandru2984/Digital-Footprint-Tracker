@@ -14,7 +14,12 @@ import FoundationNetworking
 /// is responsible for starting `ScanProgressTracker` before invoking `run`.
 enum ScanPluginRunner {
 
-    static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application) async {
+    /// - Parameter useCache: when true (default), each plugin's output is
+    ///   served from `PluginCacheStore` if a non-expired entry exists for
+    ///   `(plugin.name, sha256(input))`, and fresh runs are written back.
+    ///   Scheduled scans pass `false` because monitor mode is specifically
+    ///   about detecting *new* findings — a cache hit would mask them.
+    static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application, useCache: Bool = true) async {
         // In the test environment there are no external services to reach,
         // and the background URLSession calls generate SIGPIPE when the app
         // shuts down immediately after the test. Skip execution entirely.
@@ -49,7 +54,19 @@ enum ScanPluginRunner {
                 group.addTask {
                     guard !Task.isCancelled else { return .failure(pluginName: pName) }
                     do {
-                        let pluginResults = try await plugin.scan(input: input, on: app)
+                        // Cache lookup first. On hit we skip the network/CLI
+                        // call entirely; on miss we run the plugin and write
+                        // the result back under its per-plugin TTL.
+                        let pluginResults: [PluginResult]
+                        if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: input, on: db) {
+                            pluginResults = cached
+                        } else {
+                            let fresh = try await plugin.scan(input: input, on: app)
+                            if useCache {
+                                await PluginCacheStore.store(pluginName: pName, input: input, results: fresh, on: db, logger: app.logger)
+                            }
+                            pluginResults = fresh
+                        }
                         for pr in pluginResults {
                             let cappedRawData = pr.rawData.count > 8192
                                 ? String(pr.rawData.prefix(8192)) + "… [truncated]"

@@ -80,7 +80,11 @@ private func runDueScans(app: Application) async {
             // had no timeout and could hang a scheduled scan forever.
             let plugins = ScanController.defaultPlugins
             await ScanProgressTracker.shared.start(scanID: scanID, total: plugins.count)
-            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: plugins, app: app)
+            // Bypass the plugin cache: monitor mode must see the live state of
+            // each upstream so net-new findings can be diffed against the
+            // previous run. Cached results would silently mask new accounts /
+            // breaches / abuse reports surfaced since the last scan.
+            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: plugins, app: app, useCache: false)
 
             // Monitor-mode diff and per-channel notifications are
             // scheduled-scan specific, so they run here after the shared

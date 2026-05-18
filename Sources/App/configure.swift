@@ -85,6 +85,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateSharedReports())
     app.migrations.add(HashAPIKeyColumn())
     app.migrations.add(HashSharedReportTokens())
+    app.migrations.add(CreatePluginCache())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
 

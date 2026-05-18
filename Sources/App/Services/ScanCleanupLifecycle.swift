@@ -68,6 +68,16 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 } catch {
                     app.logger.error("CleanupJob: audit log cleanup failed: \(error)")
                 }
+
+                // Plugin cache — drop entries past their TTL. The indexed
+                // expires_at column makes this an O(log n) range delete.
+                do {
+                    try await PluginCacheEntry.query(on: db)
+                        .filter(\.$expiresAt < now)
+                        .delete()
+                } catch {
+                    app.logger.error("CleanupJob: plugin cache cleanup failed: \(error)")
+                }
             }
         }
     }
