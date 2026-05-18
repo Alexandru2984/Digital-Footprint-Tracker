@@ -1,0 +1,35 @@
+[Unit]
+Description=swift-vapor PostgreSQL daily backup
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+After=postgresql.service network-online.target
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=micu
+Group=micu
+WorkingDirectory=/home/micu/swift+vapor
+ExecStart=/home/micu/swift+vapor/scripts/backup.sh
+
+# Modest hardening — the script only needs to read .env, talk to local PG,
+# and write into /home/micu/swift-vapor-backups. Nothing else.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/micu/swift-vapor-backups
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+
+# Resource ceilings — pg_dump compressing a multi-GB database can spike.
+# These match swift-vapor.service's posture: high enough to never abort a
+# legitimate dump, low enough to flag runaway behaviour.
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
