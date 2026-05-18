@@ -138,7 +138,10 @@ PostgreSQL
 
 ## API Reference
 
-Full OpenAPI spec is served at **`/openapi.yaml`** and rendered in-app.
+The full OpenAPI 3 spec is served at **`/openapi.yaml`** and rendered as an
+interactive explorer at **`/docs/`** (Swagger UI, bundled locally — no CDN).
+Open it in a browser to try requests against the live API straight from the
+page (cookie auth is persisted across reloads).
 
 ### Core
 - `POST /api/scan` — start scan or return cached result. `{ "input": "...", "force": false }`

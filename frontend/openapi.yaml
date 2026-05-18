@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.0.0"
+  version: "1.1.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -474,3 +474,119 @@ paths:
             application/yaml:
               schema:
                 type: string
+
+  /auth/settings:
+    patch:
+      summary: Update notification channels + alert preferences
+      description: |
+        Partial update — any field omitted is left unchanged. Webhook URLs
+        are validated as public HTTPS (SSRF-protected); Telegram tokens are
+        encrypted at rest when `ENCRYPTION_KEY` is configured.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                discordWebhookURL: { type: string, format: uri, nullable: true }
+                telegramBotToken:  { type: string, nullable: true, description: "<bot_id>:<secret>" }
+                telegramChatID:    { type: string, nullable: true }
+                slackWebhookURL:   { type: string, format: uri, nullable: true }
+                verboseAlerts:
+                  type: boolean
+                  description: When true, send a notification for every completed scheduled scan (not just diff alerts).
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error (e.g. invalid Telegram token format or webhook targeting an internal host)
+        '401':
+          description: Not authenticated
+
+  /account/export:
+    get:
+      summary: Export the caller's entire account data (GDPR)
+      description: |
+        Returns a JSON bundle containing the profile (no secrets), all scans
+        with their results, scheduled scans, tags, notifications, API-key
+        metadata (no hashes), and the caller's own audit log entries.
+        Streamed with `Content-Disposition: attachment`.
+      tags: [Account]
+      responses:
+        '200':
+          description: JSON bundle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exportedAt:    { type: integer, format: int64 }
+                  formatVersion: { type: integer }
+                  profile:       { type: object }
+                  scans:         { type: array,  items: { $ref: '#/components/schemas/Scan' } }
+                  scheduled:     { type: array,  items: { type: object } }
+                  tags:          { type: array,  items: { type: object } }
+                  notifications: { type: array,  items: { type: object } }
+                  apiKeys:       { type: array,  items: { type: object } }
+                  auditLog:      { type: array,  items: { type: object } }
+        '401':
+          description: Not authenticated
+        '429':
+          description: Rate limit (5 exports per 10 minutes per IP)
+
+  /account:
+    delete:
+      summary: Permanently delete the caller's account (GDPR)
+      description: |
+        Two-step confirmation: the request body must echo the caller's own
+        username back, case-insensitive. Admin accounts cannot self-delete.
+        Cascades through scans, results, shared reports, scheduled scans,
+        tags, notifications, and API keys. Audit log entries are kept but
+        anonymized (`user_id` cleared) for compliance.
+      tags: [Account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmUsername]
+              properties:
+                confirmUsername:
+                  type: string
+                  description: Must equal the logged-in username (case-insensitive).
+      responses:
+        '204':
+          description: Account deleted; session destroyed
+        '400':
+          description: confirmUsername does not match
+        '401':
+          description: Not authenticated
+        '403':
+          description: Admin self-deletion is refused
+        '429':
+          description: Rate limit (5 attempts per 10 minutes per IP)
+
+  /health:
+    get:
+      summary: Liveness probe
+      description: Returns 200 with current status and DB reachability. Used by container orchestrators and the systemd watchdog.
+      tags: [Meta]
+      security: []
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:    { type: string, example: ok }
+                  db:        { type: string, example: ok }
+                  timestamp: { type: string, format: date-time }
