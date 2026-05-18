@@ -55,17 +55,31 @@ jobs:
       group: deploy-vps
       cancel-in-progress: false
     steps:
-      - name: Load deploy key into ssh-agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-
-      - name: Trust VPS host key
+      # The deploy key is stored base64-encoded as a single-line secret so the
+      # GitHub Secrets UI cannot corrupt PEM line endings on copy-paste — the
+      # earlier OpenSSH-format secret reliably produced `error in libcrypto`
+      # from ssh-add. Decoding inside the workflow guarantees the bytes
+      # ssh-add sees match the bytes ssh-keygen wrote on the VPS.
+      - name: Set up SSH
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY_B64: ${{ secrets.DEPLOY_SSH_KEY_B64 }}
+          DEPLOY_HOST:        ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT:        ${{ secrets.DEPLOY_PORT }}
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Strip every whitespace char (newlines/spaces/tabs) before decoding
+          # so accidental copy-paste line-wrapping in the GitHub Secrets UI
+          # can't corrupt the resulting binary — base64 itself never contains
+          # whitespace, so stripping is always safe.
+          echo "$DEPLOY_SSH_KEY_B64" | tr -d '[:space:]' | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Sanity-check: ssh-keygen -y emits the public half. If decoding
+          # produced garbage, this fails loudly before we waste a job slot.
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
+
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
@@ -78,4 +92,4 @@ jobs:
         # set, so sshd runs scripts/deploy.sh regardless of what we send —
         # the trailing "deploy" word is just a harmless placeholder.
         run: |
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" deploy
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" deploy
