@@ -164,7 +164,20 @@ Full OpenAPI spec is served at **`/openapi.yaml`** and rendered in-app.
 
 ## Local Setup
 
-### Prerequisites
+### Option A: Docker (zero local toolchain)
+
+```bash
+cp .env.docker.example .env        # then edit values (passwords + ENCRYPTION_KEY)
+docker compose up -d --build       # builds image, starts Postgres + app
+open http://localhost:8085
+```
+
+The app container runs read-only, dropped capabilities, non-root user, with `/tmp` on tmpfs.
+Postgres data persists in the `pgdata` named volume.
+
+### Option B: Native build
+
+#### Prerequisites
 - Swift 6 toolchain
 - PostgreSQL
 - Python 3 + [holehe](https://github.com/megadose/holehe) (`pip install holehe`)

@@ -1,0 +1,37 @@
+# VCS
+.git/
+.gitignore
+.gitattributes
+
+# Swift build artefacts — must be rebuilt inside the container
+.build/
+.swiftpm/
+Packages/
+
+# Local env / secrets — never bake these into an image
+.env
+.env.*
+!.env.docker.example
+
+# Local backups / archives
+*.tar
+*.tar.gz
+*.tar.zst
+*.bak
+*.bak.*
+
+# Logs
+*.log
+
+# Editor / OS junk
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Docs are useful in the repo but not at runtime; excluding cuts build context.
+docs/
+CONTRIBUTING.md
+
+# Tests are only needed by the build stage if we ran `swift test`. We don't.
+Tests/

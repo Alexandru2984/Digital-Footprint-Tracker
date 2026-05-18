@@ -1,32 +1,77 @@
-version: '3.9'
+# Compose v2 — `version:` key is no longer required and triggers a warning.
+#
+# Quick start:
+#   1. cp .env.docker.example .env  &&  edit values (especially the *_PASSWORD
+#      and ENCRYPTION_KEY entries — defaults will refuse to start).
+#   2. docker compose up -d --build
+#   3. visit http://localhost:${APP_PORT:-8085}
+#
+# The app container is read-only with /tmp on tmpfs and all capabilities dropped.
+# If you need to debug, comment out the `read_only` / `cap_drop` lines.
 
 services:
   app:
     build: .
-    ports:
-      - "8080:8080"
+    image: swift-vapor:local
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgres://footprint:footprint@db:5432/footprint
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: changeme
+      # DB connection — values here override anything in .env so the app
+      # always points at the compose-managed Postgres.
+      DATABASE_HOST: db
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-footprint}
+      DATABASE_USERNAME: ${POSTGRES_USER:-footprint}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+      # First-boot admin bootstrap. App refuses to create the admin without these.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME in .env}
+      ADMIN_EMAIL:    ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+
+      # Token encryption (API keys + integration secrets). 64 hex chars.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+
+      # CORS / cookie origin — must match how users reach the app.
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8085}
+    ports:
+      - "${APP_PORT:-8085}:8080"
     depends_on:
       db:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      # holehe writes a per-process $HOME here; PDF generation drops temp files
+      # here; EmailService stages the netrc file here. 64 MB is plenty.
+      - /tmp:size=64m,mode=1777
 
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: footprint
-      POSTGRES_USER: footprint
-      POSTGRES_PASSWORD: footprint
+      POSTGRES_DB:       ${POSTGRES_DB:-footprint}
+      POSTGRES_USER:     ${POSTGRES_USER:-footprint}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U footprint"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-footprint} -d $${POSTGRES_DB:-footprint}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    # Postgres needs to write to its data dir; only harden the surface area.
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:

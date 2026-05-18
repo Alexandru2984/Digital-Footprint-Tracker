@@ -1,0 +1,308 @@
+# Security
+
+This document records the security posture of **Digital Footprint Tracker**:
+the trust boundaries the system relies on, the threats considered and how
+each one is mitigated in the deployed code, what is intentionally out of
+scope, and how to report a vulnerability.
+
+It is intended to be read alongside the code — every claim below points to
+the specific file (and where helpful, the commit) that implements the
+mitigation. If the claim and the code disagree, the code is the source of
+truth and this document is the bug.
+
+---
+
+## Reporting a Vulnerability
+
+If you believe you have found a security issue in this project:
+
+- Email **alex_mihai984@yahoo.com** with the subject line `SECURITY:`.
+- Please include: affected URL / endpoint, reproduction steps, expected vs.
+  actual behaviour, and the version (commit hash) you reproduced against.
+- I will acknowledge within 72 hours and aim to ship a fix or mitigation
+  within 14 days. Coordinated disclosure is appreciated — please do not
+  publish details before the fix is deployed.
+- There is no bug-bounty programme; this is a single-maintainer project.
+  Public credit in the README is offered if you would like it.
+
+---
+
+## Trust Model
+
+### Data flow
+
+```
+[Internet]
+    │
+    ▼
+[Cloudflare]            ── TLS termination, DDoS / bot filtering, WAF
+    │
+    ▼
+[nginx :443]            ── rate limiting (limit_req_zone), CSP, HSTS,
+    │                       X-Frame-Options, security headers,
+    │                       strips inbound CF-Connecting-IP / X-Real-IP
+    │
+    ▼
+[Vapor :8085]           ── Sessions middleware, APIKeyMiddleware,
+    │                       CSRFMiddleware, CORSMiddleware
+    │
+    ├── PostgreSQL      ── Fluent ORM (parameterised queries)
+    │
+    └── Plugin egress   ── SSRFGuard + URLRequest timeouts
+            │
+            ▼
+        External APIs (HIBP, Shodan, VirusTotal, AbuseIPDB,
+        GitHub, Telegram, ip-api.com, 481 Sherlock sites,
+        SMTP relay, user webhook destinations)
+```
+
+### Trust levels
+
+| Actor                | What they can do                                                                                  | How abuse is contained                                                                                       |
+|----------------------|---------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| Anonymous visitor    | View landing page, `GET /api/stats`, `GET /api/share/:token`                                      | Per-IP rate limits at nginx + Vapor; no PII exposed; share tokens are 192-bit and hashed at rest             |
+| Registered user      | Create scans, view their own results, export, schedule, tag, configure webhooks, mint API keys    | Charset whitelist + SSRF guard on every input; per-user rate limits; ownership check on every fetch          |
+| Admin user           | View all scans (with PII masked), audit log, metrics                                              | Seeded from `.env` only; `isAdmin` check at every admin endpoint; every privileged action is audit-logged    |
+| Plugin output        | Returns `rawData` strings that the server persists and renders                                    | Byte cap 8 KB; `source`/`type` cap 64 chars; `confidenceScore` clamped `[0.0, 1.0]`; HTML-escaped on render  |
+| Webhook destination  | Receives `scan.completed` JSON or notification payloads                                           | SSRF guard rejects internal hosts; HTTPS-only required for user-supplied URLs; 10 s timeout                  |
+| External plugin host | Receives outbound HTTP from this server                                                           | URLRequest timeouts (10–15 s); URLSession is system TLS; no client secrets sent except per-plugin API keys   |
+
+What is **explicitly not trusted**: any HTTP header that a client could
+inject. `X-Forwarded-For` is never used as a source of truth — see
+`Request.clientIP` (`Sources/App/Services/RequestContext.swift`) which
+trusts `CF-Connecting-IP` (set by Cloudflare, stripped from inbound) then
+`X-Real-IP` (set by nginx, stripped from inbound), and falls back to the
+socket peer address.
+
+---
+
+## Threats Considered and Their Mitigations
+
+### Web layer (browser ↔ server)
+
+| Threat                          | Mitigation                                                                                       | Reference                                              |
+|---------------------------------|--------------------------------------------------------------------------------------------------|--------------------------------------------------------|
+| TLS interception                | Cloudflare TLS + Let's Encrypt on nginx                                                          | `/etc/nginx/sites-enabled/swift.micutu.com`            |
+| HSTS downgrade                  | `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`                        | nginx                                                  |
+| Clickjacking                    | `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'`                                         | nginx                                                  |
+| MIME sniffing                   | `X-Content-Type-Options: nosniff`                                                                | nginx                                                  |
+| Reflected XSS                   | CSP `default-src 'self'`, `script-src 'self'` plus three pinned inline-script SHA-256 hashes      | nginx                                                  |
+| **Stored XSS** (diff modal)     | All API values interpolated into `innerHTML` pass through `escapeHtml`                            | `frontend/index.html` `mkSection`; `frontend/admin.js` |
+| CSRF                            | `SameSite=Strict` cookies + `CSRFMiddleware` (Origin/Referer check on POST/PUT/PATCH/DELETE)     | `configure.swift`, `Sources/App/Middleware/CSRFMiddleware.swift` |
+| Camera / mic / geolocation      | `Permissions-Policy: camera=(), microphone=(), geolocation=()`                                   | nginx                                                  |
+| Third-party CDN takeover        | All frontend dependencies bundled locally (d3.min.js, leaflet.css/js, tailwind.css). CSP allows only `'self'` and two specific analytics origins | `frontend/`, nginx                       |
+
+### Authentication & sessions
+
+| Threat                              | Mitigation                                                                                                                                  | Reference                                          |
+|-------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
+| Brute-force login                   | BCrypt cost 12; `AuthRateLimiter` caps 10 attempts per IP per 5 min on `/auth/login` and `/auth/register`                                   | `Sources/App/Services/AuthRateLimiter.swift`       |
+| Timing-based user enumeration       | `login` always runs `req.password.async.verify`, falling back to a precomputed dummy BCrypt hash so response time is constant                | `AuthController.swift` (`dummyPasswordHash`)       |
+| Register-form user enumeration      | Single generic `409` message for both "username taken" and "email taken"; both DB queries run concurrently for constant response time      | `AuthController.register`                          |
+| Session hijacking                   | Cookie flags: `Secure=true`, `HTTPOnly=true`, `SameSite=Strict`                                                                             | `configure.swift`                                  |
+| Session fixation                    | `req.session.data = .init()` before binding `userID` at login/register                                                                      | `AuthController.swift`                             |
+| **In-memory session leak**          | Sessions persisted to PostgreSQL via Fluent (`SessionRecord`); restart-survivable; heap-bounded                                              | `configure.swift` (`.use(.fluent)`)                |
+| **Bearer API key → session leak**   | Bearer auth writes to `req.storage[AuthedUserIDStorageKey]` (request-scoped) instead of `session.data`; stateless, no per-call memory entry  | `Sources/App/Middleware/APIKeyMiddleware.swift`    |
+| API key brute force                 | Tokens stored as SHA-256 hashes (`HashAPIKeyColumn` migration); exact-match indexed DB lookup                                                | `Sources/App/Models/APIKey.swift`                  |
+| API key hash leakage in list        | Previously returned first 8 hex chars of the key hash; now masked as `•••`                                                                 | `APIKeyController.swift`                           |
+| Share-link token brute force        | Tokens are 192 bits of `SystemRandomNumberGenerator` output; stored as SHA-256 hashes; configurable expiry; optional Bcrypt password gate    | `ShareController.swift`, `HashSharedReportTokens` migration |
+
+### Authorization
+
+| Threat                                        | Mitigation                                                                                                                                    | Reference                                                                                  |
+|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| IDOR — read another user's scan               | Ownership check `scan.user_id == currentUser.id` on every fetch path (results, stream, export, report, share, diff)                          | `ScanController`, `ExportController`, `ReportController`, `ShareController`, `DiffController` |
+| IDOR — anonymous-scan access by non-admins    | Scans without an owner fall through to `currentUser.isAdmin` gate                                                                              | same files                                                                                 |
+| Admin escalation                              | `user.isAdmin` re-checked at each `/admin/*` route                                                                                            | `AdminController`, `UserController`, `HealthController.metrics`                            |
+| Tag / share / API-key reuse across users      | Every `Tag.find` / `SharedReport.find` / `APIKey.find` is followed by an explicit `entity.user.id == currentUser.id` check                    | `TagController`, `ShareController`, `APIKeyController`                                     |
+
+### Input validation
+
+| Threat                                       | Mitigation                                                                                                                                                       | Reference                                                                  |
+|----------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| SQL injection                                | All data access via Fluent's parameterised query builder. The handful of raw SQL queries (StatsController, dashboard top-sources, hash migrations) take no user input | all controllers                                                            |
+| Command injection (holehe subprocess)        | Strict regex `^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,64}$` applied before any subprocess argument substitution; subprocess `environment` is explicit and minimal     | `BulkEmailPlugin.swift`                                                    |
+| Mail header injection                        | CR/LF/NUL stripped from `From`, `To`, `Subject`; MIME message built with explicit CRLF separators                                                                 | `EmailService.swift`                                                       |
+| **Charset bypass on `/scan/bulk`**           | `InputValidator.validateScanInput` (charset whitelist + length cap + SSRF guard) applied uniformly                                                                | `Sources/App/Services/InputValidator.swift`, `BulkScanController.swift`    |
+| **Charset bypass on `/scheduled-scans`**     | Same `InputValidator` at create time **and** at run time in `ScheduledScanRunner` (defense in depth: rejects rows inserted before validator existed)              | `ScheduledScanController.swift`, `ScheduledScanRunner.swift`               |
+| Tag colour CSS injection                     | Strict `^#[0-9a-f]{6}$` validation; lowercase-normalised                                                                                                          | `TagController.swift`                                                      |
+| Telegram bot-token format                    | `^[0-9]+:[A-Za-z0-9_-]{30,}$`, length ≤ 100, before encryption                                                                                                    | `AuthController.updateSettings`                                            |
+| Webhook URL injection                        | `validateWebhookURL`: HTTPS only, SSRF guard on host                                                                                                              | `AuthController.swift`                                                     |
+
+### SSRF (server-side request forgery)
+
+The server initiates outbound HTTP from many places: scan plugins, webhook
+delivery, notification dispatch, ip-api.com proxy, scheduled-scan runner.
+Every one of them runs through the same guard.
+
+| Threat                                                       | Mitigation                                                                                                                                          | Reference                                                                                                            |
+|--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
+| Scan target = internal host                                  | `SSRFGuard.isInternalTarget` rejects loopback, RFC1918 (10/8, 172.16/12, 192.168/16), link-local 169.254/16 (AWS/GCP metadata), IPv6 fc/fd/fe80   | `Sources/App/Services/SSRFGuard.swift`, applied via `InputValidator`                                                 |
+| **SSRF bypass via scheduled scans**                          | `InputValidator` applied at create time and re-validated by `ScheduledScanRunner` on every cycle (covers rows inserted before validator existed)    | `ScheduledScanController.create`, `ScheduledScanRunner.runDueScans`                                                  |
+| Webhook URL → internal host                                  | `SSRFGuard.isInternalURL` rejects internal targets; `validateWebhookURL` enforces HTTPS                                                              | `AuthController.swift`, `ScanPluginRunner.fireWebhook`, `NotificationDispatcher.sendWebhook`                         |
+| Sherlock URL template typo → internal                        | `SSRFGuard.isInternalURL` re-applied on the resolved URL (after `{}` substitution) — defense in depth even though templates are project-controlled  | `BulkUsernamePlugin.swift`                                                                                           |
+| `/api/geolocate` as open HTTP proxy                          | Auth required, dedicated rate limit (30/min authed, 5/min anon), 4 KB body cap, JSON-array structural check before forwarding to ip-api.com         | `HealthController.geolocate`                                                                                         |
+
+The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
+`testSSRFGuardBlocksPrivateRanges`, `testSSRFGuardBlocksLinkLocalAndCloudMetadata`,
+`testSSRFGuardBlocksIPv6Private`, `testSSRFGuardAllowsPublicHosts`,
+`testSSRFGuardURLBlocksInternalHosts`, `testScanEndpointRejectsInternalTarget`.
+
+### Resource exhaustion and abuse
+
+| Threat                                            | Mitigation                                                                                                                          | Reference                                                                                                |
+|---------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
+| Plugin hang                                       | `ScanPluginRunner` enforces a 120 s `TaskGroup` deadline; cancels remaining plugins on timeout                                      | `Sources/App/Services/ScanPluginRunner.swift`                                                            |
+| Holehe subprocess hang                            | 60 s `DispatchSemaphore` kill timer on the subprocess termination handler                                                            | `BulkEmailPlugin.swift`                                                                                  |
+| Scheduled-scan hang                               | Routes through the same `ScanPluginRunner.run` — inherits the 120 s deadline                                                         | `ScheduledScanRunner.swift`                                                                              |
+| SSE connection flood                              | Global counter, hard cap 30 concurrent streams                                                                                       | `ScanController.streamResults`                                                                           |
+| `/scan` flood                                     | nginx `limit_req zone=scan_limit rate=10r/s burst=20`; Vapor `ScanRateLimiter` 3/min anon, 10/min authed (per real client IP)        | nginx, `ScanRateLimiter.swift`                                                                           |
+| `/auth/*` flood                                   | `AuthRateLimiter` 10 attempts / 5 min                                                                                                | `AuthRateLimiter.swift`                                                                                  |
+| `/api/*` generic flood                            | nginx `limit_req zone=api_limit rate=30r/s burst=50`                                                                                  | nginx                                                                                                    |
+| `/health` flood → DB-pool starvation              | `ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)`                                                                    | `HealthController.boot`                                                                                  |
+| `/share/:token` view-counter spam                 | `ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60)`                                                                     | `ShareController.boot`                                                                                   |
+| **Scheduled-scan multiplication**                 | Per-user cap of 20 active schedules; `429` on `POST /scheduled-scans` over the limit                                                  | `ScheduledScanController.create`                                                                         |
+| **PDF report stdout OOM**                         | 20 MB stdout cap with chunked streaming; subprocess `terminate()` if exceeded; `413` to client                                       | `ReportController.swift`                                                                                 |
+| **`/my-scans` / `/admin/scans` OOM**              | DB-level `.count()` + `.range()` pagination; search path bounded to 500 candidates                                                   | `UserController.swift`                                                                                   |
+| **`/admin/dashboard` top-source OOM**             | Raw SQL `GROUP BY source ORDER BY count DESC LIMIT 10` (same pattern as `StatsController`)                                            | `AdminController.dashboard`                                                                              |
+| Request body size                                 | nginx `client_max_body_size 10k` on `/api/*`; `/api/geolocate` 4 KB app-level cap                                                    | nginx, `HealthController.geolocate`                                                                      |
+
+### Secrets management
+
+| Threat                                       | Mitigation                                                                                                                              | Reference                                                                       |
+|----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| `.env` world-readable                        | Mode `0600` enforced manually                                                                                                            | `ls -la .env`                                                                   |
+| **SMTP credentials visible in `ps`**         | curl invoked with `--netrc-file /tmp/smtp-<uuid>.netrc` (mode `0600`, deleted on `defer`); never `--user user:pass` in argv               | `Sources/App/Services/EmailService.swift`                                       |
+| API keys plaintext at rest                   | SHA-256 hashed; raw token shown once on creation                                                                                          | `HashAPIKeyColumn` migration; `APIKey.swift`                                    |
+| Share-link tokens plaintext at rest          | SHA-256 hashed                                                                                                                           | `HashSharedReportTokens` migration; `SharedReport.swift`                         |
+| Telegram bot tokens plaintext at rest        | AES-256-GCM with random nonce when `ENCRYPTION_KEY` is configured; **fail-closed** if key is set but invalid (refuses to save)            | `Sources/App/Services/TokenEncryption.swift`, `AuthController.updateSettings`   |
+| Secrets in app logs                          | PII masked at INFO: `***@domain.com` for emails, `use***` for usernames                                                                  | `ScanController.scan`                                                           |
+| Secrets in audit log                         | Audit log stores `action` + truncated `target` (200 chars) + IP — never request bodies, never tokens                                      | `Sources/App/Services/AuditLogger.swift`                                        |
+
+### Data retention and privacy
+
+| Threat                                            | Mitigation                                                                                                                              | Reference                                                                  |
+|---------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| Indefinite scan retention                         | Daily `ScanCleanupLifecycle`: anonymous scans 30 d; per-user retention = `user.retentionDays ?? 30`                                      | `Sources/App/Services/ScanCleanupLifecycle.swift`                          |
+| **Retention policy bypass**                       | Cleanup no longer runs a hard 30-day global delete before per-user policy applies — fixed so 90/365-day users actually keep their data    | same file                                                                  |
+| Audit log unbounded growth                        | Daily prune of `audit_logs` rows older than 90 days                                                                                      | same file                                                                  |
+| Cross-user PII in admin views                     | `maskInput()` applied even for admin viewing `/admin/scans` (`***@domain.com`, `use***`)                                                  | `UserController.adminScans`                                                |
+
+### Infrastructure
+
+| Threat                                       | Mitigation                                                                                                                                                                                            | Reference                                                                            |
+|----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| Process escape on host                       | systemd hardening drop-in: `ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp`, `NoNewPrivileges`, `LockPersonality`, `RestrictSUIDSGID`, `ProtectKernelTunables/Modules/Logs/ControlGroups/Clock`, `ProtectProc=invisible`, `ProcSubset=pid`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`, `RestrictNamespaces`, `RestrictRealtime`, `SystemCallArchitectures=native`, `RemoveIPC` | `/etc/systemd/system/swift-vapor.service.d/10-hardening.conf`                        |
+| Running as root                              | `User=micu` / `Group=micu` in systemd unit                                                                                                                                                            | `/etc/systemd/system/swift-vapor.service`                                            |
+| Reverse-proxy header trust                   | nginx strips inbound `CF-Connecting-IP` / `X-Real-IP` and sets its own values; app reads via `Request.clientIP` helper                                                                                | nginx, `Sources/App/Services/RequestContext.swift`                                   |
+| Client IP spoofing in rate-limit / audit     | Resolution order: `CF-Connecting-IP` → `X-Real-IP` → socket peer; raw `X-Forwarded-For` never trusted                                                                                                 | `Request.clientIP` (used by `ScanRateLimiter`, `AuthRateLimiter`, `AuditLogger`, `ScanController.scan`) |
+| Service exposure score                       | `systemd-analyze security swift-vapor` returns `5.2 MEDIUM` (down from 9.x UNSAFE pre-hardening)                                                                                                       | run the command on the host                                                          |
+
+---
+
+## Recent Security Audit (May 2026)
+
+A line-by-line security review was performed across the entire backend
+(`Sources/App/`), the frontend SPA (`frontend/index.html`,
+`frontend/admin.js`), the nginx vhost, and the systemd unit. **30 findings**
+were filed:
+
+| Severity     | Count | Status                                                                                                  |
+|--------------|------:|---------------------------------------------------------------------------------------------------------|
+| 🚨 Critical | 1     | Fixed                                                                                                   |
+| 🔴 High     | 11    | Fixed                                                                                                   |
+| 🟡 Medium   | 19    | 16 fixed; 3 intentionally skipped — 2 incidental in higher-severity fixes, 1 cosmetic (M-19)            |
+| 🟢 Low      | 8     | 2 fixed (L-1, L-6); 6 deferred with documented rationale                                                |
+| 🔵 Info     | 14    | I-1 (systemd hardening) and I-13 (audit retention) actioned; rest were already in place pre-audit       |
+
+Selected fixes (every one of these is a separate commit, viewable via
+`git log --grep='fix(security)'`):
+
+- **`fix(security): make Bearer API key auth stateless`** — `APIKeyMiddleware`
+  wrote to in-memory sessions on every Bearer request → unbounded memory
+  growth. Migrated to request-scoped `req.storage`.
+- **`fix(security): close SSRF bypass via scheduled scans`** — input
+  validation extracted to `InputValidator` and applied uniformly across
+  `/scan`, `/scan/bulk`, and `/scheduled-scans` (create + run time).
+- **`fix(security): escape user-controlled data in diff modal`** —
+  stored XSS via `r.rawData` interpolated into `innerHTML` without
+  escaping; now via `escapeHtml`.
+- **`fix(security): harden /api/geolocate`** — was an unauthenticated
+  open HTTP proxy to ip-api.com; now auth + rate limit + body cap +
+  JSON shape check.
+- **`fix(security): write SMTP credentials to a private netrc file`** —
+  curl creds were visible in `ps`; now mode-0600 `--netrc-file`.
+- **`fix(security): respect per-user retentionDays in cleanup job`** —
+  global 30-day delete ran before per-user retention, destroying data
+  of users with 90/365-day retention.
+- **`fix(security): equalise /auth/login response time`** — BCrypt verify
+  now always runs (dummy hash if user missing) to block timing-based
+  username enumeration.
+- **`fix(security): unify register error message`** — single 409
+  message + concurrent uniqueness checks; no more enumeration via the
+  `Username taken` / `Email registered` distinction.
+- **`fix(security): persist sessions in PostgreSQL via Fluent`** —
+  sessions survive restart and are heap-bounded rather than
+  memory-resident.
+- **`hardening: bundle Leaflet locally + remove unpkg from CSP +
+  systemd hardening drop-in`** — eliminates CDN supply-chain risk and
+  applies process isolation directives.
+
+### Out-of-scope deliberate skips
+
+These are documented choices, not oversights:
+
+- **Email-verification registration flow.** Today registration succeeds
+  immediately; combined with the unified `409` we leak existence of an
+  account when a probe tuple `(random_username, victim_email)` collides.
+  Closing this fully requires a token-confirmation flow and SMTP-deliverable
+  guarantee that the project does not yet have.
+- **MFA / TOTP.** Single-user admin, low-volume site. Cost > benefit.
+- **Formal coordinated-disclosure programme / bug bounty.** Single
+  maintainer.
+- **Audit-log immutability.** `audit_logs` is a regular Postgres table —
+  an admin could delete rows. Append-only enforcement would require a
+  separate database role or external WORM storage.
+- **HTTPS to ip-api.com.** ip-api's free tier is HTTP-only; the call is
+  server-to-server through a public IP (no PII in the body — just IP
+  addresses already returned by other plugin scans).
+- **Cross-DB-dialect-portable hash migrations.** `HashAPIKeyColumn` and
+  `HashSharedReportTokens` use PostgreSQL-specific DDL
+  (`ADD COLUMN IF NOT EXISTS`, `ALTER COLUMN SET NOT NULL`,
+  `ADD CONSTRAINT`). Tests use SQLite and skip those migrations; no test
+  currently exercises the affected models. Documented in
+  `Tests/AppTests/AppTests.swift`.
+- **`MemoryDenyWriteExecute=yes` in systemd hardening.** Swift's runtime
+  may JIT or use writable-executable mappings in some configurations;
+  enabling this would need empirical validation under load.
+
+---
+
+## Operator Configuration Checklist
+
+For anyone deploying this stack on their own host:
+
+- [ ] `.env` permissions are `0600`
+- [ ] `ADMIN_PASSWORD` is a high-entropy value (not the example)
+- [ ] `ENCRYPTION_KEY`, if set, is exactly 64 hex characters (32 bytes).
+      Setting an invalid value is detected and the request to save
+      encrypted fields returns `500` rather than silently storing
+      plaintext.
+- [ ] `ALLOWED_ORIGIN` in production matches the exact public origin
+- [ ] nginx CSP `script-src` SHA-256 hashes are regenerated after any
+      change to the inline `<script>` block (see deployment notes in
+      README)
+- [ ] Cloudflare proxy (orange-cloud) is enabled on the public DNS record
+- [ ] Let's Encrypt auto-renewal is configured
+- [ ] systemd hardening drop-in is in place — verify with
+      `systemctl cat swift-vapor` (should include
+      `10-hardening.conf`) and `systemd-analyze security swift-vapor`
+      (target ≤ 6.0)
+- [ ] No stray `.env.bak*` files in the working directory (gitignored
+      but they accumulate locally)
+- [ ] The `swift-vapor.service` runs as a non-root user
+
+---
+
+*Last reviewed: 2026-05-17. Material change to this document should
+accompany the corresponding code change in the same commit.*
