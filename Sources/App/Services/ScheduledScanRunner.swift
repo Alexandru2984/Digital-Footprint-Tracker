@@ -101,6 +101,11 @@ private func runDueScans(app: Application) async {
                 .sort(\.$createdAt, .descending)
                 .first()
 
+            // Whether monitor mode emitted a diff alert this cycle. Used to
+            // suppress the verbose "complete" alert below — no need to ping
+            // the user twice for the same run.
+            var firedDiffAlert = false
+
             if let prev = previousScan, let prevID = prev.id {
                 let prevResults = (try? await App.Result.query(on: db).filter(\.$scan.$id == prevID).all()) ?? []
                 let prevFingerprints = Set(prevResults.map { "\($0.source):\($0.type):\(String($0.rawData.prefix(200)))" })
@@ -108,29 +113,54 @@ private func runDueScans(app: Application) async {
                     !prevFingerprints.contains("\(r.source):\(r.type):\(String(r.rawData.prefix(200)))")
                 }
                 if !newResults.isEmpty {
+                    // Build an actionable summary line: the top distinct sources
+                    // where new findings appeared, capped to keep messages short
+                    // enough for Telegram + SMS-style channels. Order-preserving
+                    // dedup so the highest-confidence source surfaces first.
+                    var seen = Set<String>()
+                    let distinctSources = newResults
+                        .map { $0.source }
+                        .filter { seen.insert($0).inserted }
+                    let preview = distinctSources.prefix(5).joined(separator: ", ")
+                    let remainder = max(0, distinctSources.count - 5)
+                    let sourceLine = remainder > 0 ? "\(preview), +\(remainder) more" : preview
+
                     let notification = ScanNotification(
                         userID: userID,
                         scanID: scanID,
-                        message: "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}",
+                        message: "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)",
                         newResultsCount: newResults.count
                     )
                     try? await notification.save(on: db)
 
                     if let monitorUser = try? await User.find(userID, on: db) {
                         let risk = RiskScorer.compute(results: allResults)
+                        let body = """
+                        Your monitored target '\(input)' has \(newResults.count) new result(s).
+                        Sources: \(sourceLine)
+                        Risk: \(risk.level.rawValue) (\(risk.value)/100).
+                        """
                         await NotificationDispatcher.notify(
                             user: monitorUser,
-                            title: "Monitor Alert: New results for \(String(input.prefix(30)))",
-                            message: "Your monitored target '\(input)' has \(newResults.count) new result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
+                            title: "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))",
+                            message: body,
                             scanID: scanID,
                             app: app
                         )
+                        firedDiffAlert = true
                     }
-                    app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)'")
+                    app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)' — \(sourceLine)")
                 }
             }
 
-            if let user = try? await User.find(userID, on: db) {
+            // Completion notification — silent by default. Users who actually
+            // want a per-run heartbeat opt-in via `verboseAlerts`. This stops
+            // the per-target-per-day spam that the unconditional notify was
+            // producing for everyone (one alert per scheduled target per run,
+            // regardless of whether anything changed).
+            if !firedDiffAlert,
+               let user = try? await User.find(userID, on: db),
+               user.verboseAlerts {
                 let risk = RiskScorer.compute(results: allResults)
                 await NotificationDispatcher.notify(
                     user: user,

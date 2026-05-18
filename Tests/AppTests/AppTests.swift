@@ -44,6 +44,7 @@ private func makeApp() async throws -> Application {
     // and are intentionally skipped here. No test in this suite exercises the
     // APIKey or SharedReport models, so the pre-hash schema is sufficient.
     app.migrations.add(CreatePluginCache())
+    app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 

@@ -37,6 +37,12 @@ final class User: Model, Content {
     @OptionalField(key: "slack_webhook_url")
     var slackWebhookURL: String?
 
+    /// Opt-in: when true, the user receives a notification for every completed
+    /// scheduled scan. When false (default), they're only notified when monitor
+    /// mode detects net-new findings.
+    @Field(key: "verbose_alerts")
+    var verboseAlerts: Bool
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -45,7 +51,7 @@ final class User: Model, Content {
 
     init() { }
 
-    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil) {
+    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false) {
         self.id = id
         self.username = username
         self.email = email
@@ -57,6 +63,7 @@ final class User: Model, Content {
         self.telegramBotToken = telegramBotToken
         self.telegramChatID = telegramChatID
         self.slackWebhookURL = slackWebhookURL
+        self.verboseAlerts = verboseAlerts
     }
 }
 
@@ -78,6 +85,7 @@ extension User {
         let slackConfigured: Bool
         // Chat ID is not a secret (just a numeric ID), safe to return
         let telegramChatID: String?
+        let verboseAlerts: Bool
     }
 
     func toPublic() -> Public {
@@ -92,7 +100,8 @@ extension User {
             discordConfigured: discordWebhookURL != nil,
             telegramConfigured: telegramBotToken != nil,
             slackConfigured: slackWebhookURL != nil,
-            telegramChatID: telegramChatID
+            telegramChatID: telegramChatID,
+            verboseAlerts: verboseAlerts
         )
     }
 }

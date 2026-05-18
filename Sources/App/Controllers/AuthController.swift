@@ -170,6 +170,7 @@ struct AuthController: RouteCollection {
             let telegramBotToken: String?
             let telegramChatID: String?
             let slackWebhookURL: String?
+            let verboseAlerts: Bool?
         }
         let body = try req.content.decode(Body.self)
         if let url = body.discordWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
@@ -209,6 +210,7 @@ struct AuthController: RouteCollection {
         }
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
         user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
+        if let verbose = body.verboseAlerts { user.verboseAlerts = verbose }
         try await user.save(on: req.db)
         AuditLogger.log(req: req, action: "update_settings", target: user.username)
         return user.toPublic()
