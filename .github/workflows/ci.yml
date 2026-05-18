@@ -40,3 +40,30 @@ jobs:
         uses: norio-nomura/action-swiftlint@3.2.1
         with:
           args: --reporter github-actions-logging
+
+  deploy:
+    name: Deploy to VPS
+    needs: [test, lint]
+    # Only push events on main trigger a deploy. Pull requests run the
+    # test + lint jobs above but never reach this job.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # No concurrency overlap — if a second push lands while one deploy is
+    # mid-flight, the second waits for the first to finish so we don't
+    # have two `git pull + swift build` racing on the same checkout.
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port:     ${{ secrets.DEPLOY_PORT }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          # The script field is IGNORED on the VPS side: the authorized_keys
+          # entry for the deploy key has `command="..."` set, so sshd always
+          # runs scripts/deploy.sh regardless. We still send a placeholder
+          # because appleboy/ssh-action requires the field.
+          script: deploy
