@@ -47,10 +47,17 @@ function_body_length:
   warning: 80
   error: 150
 
-force_cast:    warning
-force_try:     warning
+force_cast:       warning
+force_try:        warning
 force_unwrapping: warning
-large_tuple:   warning
+
+# Tuples are configurable by *member count*, not severity. The map form below
+# sets both thresholds explicitly — without it the default `error: 3` fires on
+# any tuple with 3+ members (e.g. the (scanID, input, source, resultType)
+# entityMap row in CorrelationController) and fails CI as an error.
+large_tuple:
+  warning: 3
+  error:   6
 
 excluded:
   - .build
