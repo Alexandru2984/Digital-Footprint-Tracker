@@ -95,8 +95,11 @@ public func configure(_ app: Application) async throws {
 
     // Seed admin user from environment variables if not already present.
     let adminUsername = Environment.get("ADMIN_USERNAME") ?? "admin"
-    let adminEmail    = Environment.get("ADMIN_EMAIL")    ?? "admin@localhost"
+    let adminEmail = Environment.get("ADMIN_EMAIL") ?? "admin@localhost"
     if let adminPassword = Environment.get("ADMIN_PASSWORD") {
+        // .first_where targets Swift collections; this is a Fluent DB query
+        // where .filter(...).first() is the canonical async lookup pattern.
+        // swiftlint:disable:next first_where
         let existing = try await User.query(on: app.db).filter(\.$username == adminUsername).first()
         if existing == nil {
             let hash = try await app.password.async.hash(adminPassword)

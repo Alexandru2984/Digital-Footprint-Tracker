@@ -6,7 +6,7 @@ func routes(_ app: Application) throws {
     }
 
     // Serve OpenAPI specification
-    app.get("openapi.yaml") { req throws -> Response in
+    app.get("openapi.yaml") { _ throws -> Response in
         let yamlPath = Environment.get("OPENAPI_PATH")
             ?? "/home/micu/swift+vapor/frontend/openapi.yaml"
         guard FileManager.default.fileExists(atPath: yamlPath),

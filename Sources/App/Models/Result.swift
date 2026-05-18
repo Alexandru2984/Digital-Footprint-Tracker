@@ -3,7 +3,7 @@ import Vapor
 
 final class Result: Model, Content {
     static let schema = "results"
-    
+
     @ID(key: .id)
     var id: UUID?
 
