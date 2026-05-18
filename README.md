@@ -5,7 +5,40 @@
 [![Swift](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
 [![Live Demo](https://img.shields.io/badge/demo-swift.micutu.com-success.svg)](https://swift.micutu.com)
 
-A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on a hardened Linux VPS. Scans an email address, username, domain, IP, or phone number across 500+ sources in parallel, streams results live via SSE, and visualises them as an interactive force-directed identity graph. Ships with full authentication, an admin panel, API keys, scheduled scans, webhooks, multi-channel notifications, shareable reports, and an audit log.
+**OSINT aggregation engine** that scans an email address, username, domain, IP,
+or phone number across 500+ sources in parallel, streams results live via
+Server-Sent Events, and renders them as an interactive force-directed identity
+graph.
+
+🔗 **Live demo:** <https://swift.micutu.com>  ·  **Interactive API:** <https://swift.micutu.com/docs/>
+
+---
+
+## Highlights
+
+- **Production-deployed** on a hardened Ubuntu VPS — nginx + Cloudflare in
+  front, systemd-managed with capability dropping and `ProtectSystem=strict`,
+  daily `pg_dump` with 7-day rotation. Recent third-party-style security audit
+  surfaced 30+ findings (1 Critical, 11 High, 19 Medium); all fixed — see
+  [`SECURITY.md`](SECURITY.md).
+- **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
+  deadline; results streamed live via SSE as each plugin completes.
+- **Cross-plugin result cache** with per-plugin TTL (1 h for volatile threat
+  intel, 24 h for breach data) — cuts external API calls dramatically on
+  repeated scans of the same target.
+- **GDPR self-service** — every user can export their full account data
+  (`GET /account/export`) or permanently delete it with confirmation-gated
+  `DELETE /account`.
+- **Prometheus `/metrics`** endpoint (text exposition 0.0.4) — scan counts by
+  status, cache hit/miss ratio, notifications dispatched by channel. Bearer
+  token auth via `METRICS_TOKEN` env var so scrapers don't need an admin
+  session.
+- **Multi-channel monitoring** for scheduled scans — Discord, Telegram, Slack,
+  email, generic webhook — silent by default, with enriched diff messages
+  that list which sources surfaced new findings.
+- **Hermetic test suite** running on every push (`swift test` in CI with
+  in-memory SQLite, 30/30 passing), SwiftLint enforced, OpenAPI 3 spec
+  rendered as a hosted Swagger UI.
 
 ---
 
@@ -14,13 +47,14 @@ A production-grade **OSINT aggregation engine** built with **Swift + Vapor** on 
 | Layer | Technology |
 |---|---|
 | Backend | Swift 6 + Vapor 4 (async/await, `TaskGroup` concurrency) |
-| Database | PostgreSQL (Fluent ORM, 18 migrations) |
-| Frontend | Vanilla JS + Tailwind CSS + D3.js v7 |
-| Reverse proxy | nginx (rate limiting, security headers, CSP) |
-| Deployment | systemd (`swift-vapor.service`) on Ubuntu VPS |
-| Network | Cloudflare DNS + proxy (DDoS shield, TLS) |
+| Database | PostgreSQL (Fluent ORM, 19 migrations) |
+| Frontend | Vanilla JS + Tailwind CSS + D3.js v7 + Leaflet |
+| Reverse proxy | nginx (rate limiting, CSP, HSTS, security headers) |
+| Deployment | systemd (`swift-vapor.service`) on Ubuntu VPS, optional Docker Compose |
+| Network | Cloudflare DNS + proxy (DDoS shield, TLS termination) |
+| Observability | Prometheus-compatible `/metrics`, structured `swift-log` |
 | Email | Raw SMTP (Mailcow / SendGrid compatible) |
-| Tests | XCTest (27 tests, all passing) |
+| Tests + Lint | XCTest (30 tests passing), SwiftLint, GitHub Actions CI |
 
 ---
 
@@ -328,6 +362,33 @@ Trigger an on-demand backup or run the script directly:
 sudo systemctl start swift-vapor-backup.service        # via systemd
 scripts/backup.sh                                       # direct, same output
 ```
+
+### Prometheus scraping
+
+`/metrics` exposes counters + gauges in Prometheus text format
+(`text/plain; version=0.0.4`). Set `METRICS_TOKEN` in `.env` to a random
+secret, then point your Prometheus at it:
+
+```yaml
+scrape_configs:
+  - job_name: swift-vapor
+    metrics_path: /metrics
+    scheme: https
+    static_configs:
+      - targets: [swift.micutu.com]
+    authorization:
+      type: Bearer
+      credentials: <value of METRICS_TOKEN from .env>
+```
+
+Available series: `swift_vapor_scans`, `swift_vapor_scans_by_status{status="..."}`,
+`swift_vapor_scans_last_24h`, `swift_vapor_users`, `swift_vapor_results`,
+`swift_vapor_scheduled_scans_active`, `swift_vapor_plugin_cache_rows`,
+`swift_vapor_plugin_cache_hits_total`, `swift_vapor_plugin_cache_misses_total`,
+`swift_vapor_notifications_sent_total{channel="..."}`.
+
+If `METRICS_TOKEN` is unset, the endpoint falls back to requiring an admin
+session cookie (legacy behaviour).
 
 ---
 

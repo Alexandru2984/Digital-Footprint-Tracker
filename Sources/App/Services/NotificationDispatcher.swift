@@ -12,6 +12,7 @@ struct NotificationDispatcher {
             var payload: [String: Any] = ["title": title, "message": message]
             if let sid = scanID { payload["scanID"] = sid.uuidString }
             await sendWebhook(url: url, payload: payload, app: app)
+            await MetricsRegistry.shared.incNotificationSent(channel: "webhook")
         }
         // 2. Discord
         if let discordURL = user.discordWebhookURL, let url = URL(string: discordURL) {
@@ -23,10 +24,12 @@ struct NotificationDispatcher {
             ]
             let payload: [String: Any] = ["embeds": [embed]]
             await sendWebhook(url: url, payload: payload, app: app)
+            await MetricsRegistry.shared.incNotificationSent(channel: "discord")
         }
         // 3. Telegram
         if let token = user.telegramBotToken, let chatID = user.telegramChatID, !token.isEmpty, !chatID.isEmpty {
             await sendTelegram(token: token, chatID: chatID, text: "**\(title)**\n\(message)", app: app)
+            await MetricsRegistry.shared.incNotificationSent(channel: "telegram")
         }
         // 4. Slack
         if let slackURL = user.slackWebhookURL, let url = URL(string: slackURL) {
@@ -36,9 +39,11 @@ struct NotificationDispatcher {
                 ]
             ]
             await sendWebhook(url: url, payload: payload, app: app)
+            await MetricsRegistry.shared.incNotificationSent(channel: "slack")
         }
         // 5. Email
         await EmailService.send(to: user.email, subject: title, body: message, app: app)
+        await MetricsRegistry.shared.incNotificationSent(channel: "email")
     }
 
     private static func sendWebhook(url: URL, payload: [String: Any], app: Application) async {

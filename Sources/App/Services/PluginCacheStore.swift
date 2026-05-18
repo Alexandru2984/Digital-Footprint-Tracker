@@ -60,20 +60,31 @@ enum PluginCacheStore {
     static func lookup(pluginName: String, input: String, on db: Database) async -> [PluginResult]? {
         guard isEnabled else { return nil }
         let h = hash(input)
-        do {
-            guard let entry = try await PluginCacheEntry.query(on: db)
-                .filter(\.$pluginName == pluginName)
-                .filter(\.$targetHash == h)
-                .first()
-            else { return nil }
-            guard entry.expiresAt > Date() else { return nil }
-            guard let data = entry.payload.data(using: .utf8),
-                  let decoded = try? JSONDecoder().decode([PluginResult].self, from: data)
-            else { return nil }
-            return decoded
-        } catch {
-            return nil
+        let result: [PluginResult]? = await {
+            do {
+                guard let entry = try await PluginCacheEntry.query(on: db)
+                    .filter(\.$pluginName == pluginName)
+                    .filter(\.$targetHash == h)
+                    .first()
+                else { return nil }
+                guard entry.expiresAt > Date() else { return nil }
+                guard let data = entry.payload.data(using: .utf8),
+                      let decoded = try? JSONDecoder().decode([PluginResult].self, from: data)
+                else { return nil }
+                return decoded
+            } catch {
+                return nil
+            }
+        }()
+        // Bump hit/miss counters so `/metrics` can surface cache effectiveness.
+        // Disabled paths (PLUGIN_CACHE_DISABLED=true) are excluded above, so
+        // this only counts real lookup attempts.
+        if result != nil {
+            await MetricsRegistry.shared.incPluginCacheHit()
+        } else {
+            await MetricsRegistry.shared.incPluginCacheMiss()
         }
+        return result
     }
 
     /// Persists plugin output for the plugin's TTL. Failures are swallowed —
