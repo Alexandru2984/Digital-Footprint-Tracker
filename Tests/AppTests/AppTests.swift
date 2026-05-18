@@ -419,4 +419,65 @@ final class AppTests: XCTestCase {
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         )
     }
+
+    // MARK: - GDPR self-service
+
+    func testAccountExportRequiresAuth() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        try await app.test(.GET, "/account/export") { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        }
+    }
+
+    func testAccountDeleteRequiresAuth() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        try await app.test(.DELETE, "/account", beforeRequest: { req in
+            try req.content.encode(["confirmUsername": "anyone"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+    }
+
+    func testAccountDeleteRejectsMismatchedConfirmation() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/auth/register", beforeRequest: { req in
+            try req.content.encode(["username": "gdpruser", "email": "g@example.com", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        var cookie = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            try req.content.encode(["username": "gdpruser", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            if let raw = res.headers.first(name: "set-cookie"),
+               let pair = raw.split(separator: ";").first {
+                cookie = String(pair)
+            }
+        })
+
+        // Wrong username → 400, account NOT deleted.
+        try await app.test(.DELETE, "/account", beforeRequest: { req in
+            try req.content.encode(["confirmUsername": "someoneelse"], as: .json)
+            if !cookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: cookie) }
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest,
+                "Account delete must reject a mismatched confirmUsername to prevent accidental wipe via session theft alone.")
+        })
+
+        // Session is still valid and the account row was NOT deleted. We
+        // probe via /auth/me instead of /account/export because the test DB
+        // intentionally skips the PostgreSQL-only HashAPIKeyColumn migration
+        // — the export query would hit a missing column in SQLite.
+        try await app.test(.GET, "/auth/me", beforeRequest: { req in
+            if !cookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: cookie) }
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok,
+                "Account must still exist after the rejected delete attempt.")
+        })
+    }
 }

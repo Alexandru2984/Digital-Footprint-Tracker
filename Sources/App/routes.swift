@@ -62,4 +62,7 @@ func routes(_ app: Application) throws {
 
     let bulkScanController = BulkScanController()
     try app.register(collection: bulkScanController)
+
+    let accountController = AccountController()
+    try app.register(collection: accountController)
 }
