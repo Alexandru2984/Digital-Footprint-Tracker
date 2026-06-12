@@ -47,17 +47,20 @@ struct NotificationDispatcher {
     }
 
     private static func sendWebhook(url: URL, payload: [String: Any], app: Application) async {
+        // Cheap structural reject first; SafeHTTP adds the DNS-resolution and
+        // redirect-chain checks that defeat rebinding-style SSRF bypasses.
         guard !SSRFGuard.isInternalURL(url) else {
             app.logger.warning("Blocked outbound webhook to internal host: \(url.host ?? url.absoluteString)")
             return
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var urlReq = URLRequest(url: url)
-        urlReq.httpMethod = "POST"
-        urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlReq.httpBody = data
-        urlReq.timeoutInterval = 10
-        _ = try? await URLSession.shared.data(for: urlReq)
+        do {
+            try await SafeHTTP.shared.post(url: url, body: data)
+        } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
+            app.logger.warning("Blocked outbound webhook: \(url.host ?? url.absoluteString) resolved to an internal address.")
+        } catch {
+            app.logger.debug("Webhook delivery to \(url.host ?? "?") failed: \(error)")
+        }
     }
 
     private static func sendTelegram(token: String, chatID: String, text: String, app: Application) async {

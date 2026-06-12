@@ -6,9 +6,11 @@ func routes(_ app: Application) throws {
     }
 
     // Serve OpenAPI specification
-    app.get("openapi.yaml") { _ throws -> Response in
+    app.get("openapi.yaml") { req throws -> Response in
+        // Default resolves relative to the app's working directory instead of a
+        // machine-specific absolute path; OPENAPI_PATH still overrides.
         let yamlPath = Environment.get("OPENAPI_PATH")
-            ?? "/home/micu/swift+vapor/frontend/openapi.yaml"
+            ?? req.application.directory.workingDirectory + "frontend/openapi.yaml"
         guard FileManager.default.fileExists(atPath: yamlPath),
               let content = try? String(contentsOfFile: yamlPath, encoding: .utf8) else {
             throw Abort(.notFound)

@@ -89,6 +89,9 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddVerboseAlertsToUser())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
+    // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
+    // never expires them itself). Must run after SessionRecord.migration.
+    app.migrations.add(AddSessionCreatedAt())
 
     // Run migrations automatically
     try await app.autoMigrate()

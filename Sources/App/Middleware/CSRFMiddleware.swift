@@ -20,12 +20,15 @@ struct CSRFMiddleware: AsyncMiddleware {
         else {
             return try await next.respond(to: request)
         }
-        let allowed = [
-            Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com",
-            "http://localhost:8085",
-            "http://127.0.0.1:8085"
-        ]
-        guard allowed.contains(where: { origin.hasPrefix($0) }) else {
+        // Compare the parsed *host* exactly, not a string prefix. A prefix check
+        // (`origin.hasPrefix("https://swift.micutu.com")`) is defeated by an
+        // attacker origin like `https://swift.micutu.com.evil.com`. A request
+        // whose Origin/Referer is present but unparseable (e.g. the literal
+        // "null" from a sandboxed iframe) yields no host and is rejected.
+        let allowedHost = URL(string: Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com")?.host
+            ?? "swift.micutu.com"
+        let allowedHosts: Set<String> = [allowedHost, "localhost", "127.0.0.1"]
+        guard let originHost = URL(string: origin)?.host, allowedHosts.contains(originHost) else {
             throw Abort(.forbidden, reason: "Cross-origin request blocked.")
         }
         return try await next.respond(to: request)

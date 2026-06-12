@@ -150,13 +150,12 @@ enum ScanPluginRunner {
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
         ]
         guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        var request = URLRequest(url: hookURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        request.timeoutInterval = 10
         do {
-            _ = try await URLSession.shared.data(for: request)
+            // SafeHTTP re-checks DNS resolution and blocks redirects to internal
+            // hosts, on top of the structural guard above.
+            try await SafeHTTP.shared.post(url: hookURL, body: body)
+        } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
+            logger.warning("Webhook delivery to \(url) blocked: resolved to an internal address.")
         } catch {
             logger.warning("Webhook delivery to \(url) failed: \(error)")
         }

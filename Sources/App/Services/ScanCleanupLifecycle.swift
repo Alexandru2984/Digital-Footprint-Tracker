@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import SQLKit
 
 /// Deletes scans (and their results via cascade) older than 30 days.
 /// Runs once per day in a detached background task for the lifetime of the app.
@@ -77,6 +78,20 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                         .delete()
                 } catch {
                     app.logger.error("CleanupJob: plugin cache cleanup failed: \(error)")
+                }
+
+                // Session rows — the .fluent driver never expires them
+                // server-side. Prune anything older than 30 days so the
+                // _fluent_sessions table doesn't grow without bound. Guarded:
+                // the created_at column comes from a best-effort migration that
+                // may be absent on some engines.
+                if let sql = db as? SQLDatabase {
+                    let sessionCutoff = now.addingTimeInterval(-30 * 86400)
+                    do {
+                        try await sql.raw("DELETE FROM _fluent_sessions WHERE created_at < \(bind: sessionCutoff)").run()
+                    } catch {
+                        app.logger.error("CleanupJob: session cleanup failed: \(error)")
+                    }
                 }
             }
         }

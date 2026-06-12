@@ -11,8 +11,14 @@ struct ShareController: RouteCollection {
         // Public endpoint that increments view_count on each hit — rate-limit
         // per IP so a script with a known token cannot inflate viewCount or
         // spam-write the DB.
-        noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
-            .get("share", ":token", use: viewShare)
+        //
+        // GET serves password-free reports and signals 401 when a password is
+        // required. POST carries the password in a JSON body: browsers drop the
+        // body of a GET (Fetch spec), so a password-protected share is only
+        // viewable via POST — the GET-with-body variant never worked client-side.
+        let limited = noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
+        limited.get("share", ":token", use: viewShare)
+        limited.post("share", ":token", use: viewShare)
     }
 
     struct CreateShareRequest: Content {

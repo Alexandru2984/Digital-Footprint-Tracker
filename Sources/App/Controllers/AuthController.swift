@@ -252,4 +252,10 @@ private func validateWebhookURL(_ rawURL: String) throws {
     guard !SSRFGuard.isInternalURL(url) else {
         throw Abort(.badRequest, reason: "Webhook URL must not target an internal or private host.")
     }
+    // Resolve the host now and reject names that point at internal space. This
+    // is best-effort (DNS can change after save — the outbound SafeHTTP path
+    // re-checks at delivery time), but it catches the obvious cases up front.
+    guard let host = url.host, !SSRFGuard.resolvesToInternal(host) else {
+        throw Abort(.badRequest, reason: "Webhook URL must not resolve to an internal or private host.")
+    }
 }

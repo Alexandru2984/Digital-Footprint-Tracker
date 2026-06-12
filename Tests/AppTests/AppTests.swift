@@ -22,6 +22,10 @@ private func makeApp() async throws -> Application {
 
     app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
+    // Mirror production so the CSRF origin check is exercised by tests. It is a
+    // no-op for requests without an Origin/Referer header (the existing tests),
+    // and blocks cross-origin POST/PUT/PATCH/DELETE.
+    app.middleware.use(CSRFMiddleware())
 
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
@@ -387,6 +391,92 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .badRequest,
                 "Scan endpoint must reject internal/private targets to prevent SSRF")
+        })
+    }
+
+    // Numeric IP obfuscation: decimal / hex / short / IPv4-mapped forms all
+    // decode to internal addresses and must be blocked when used as a URL host.
+    func testSSRFGuardBlocksNumericIPObfuscation() throws {
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://2130706433/"))),     "decimal 127.0.0.1")
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://0x7f000001/"))),      "hex 127.0.0.1")
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://127.1/"))),           "short-form 127.0.0.1")
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://0.0.0.0/"))),         "0.0.0.0/8")
+        XCTAssertTrue(SSRFGuard.isInternalURL(try XCTUnwrap(URL(string: "http://[::ffff:127.0.0.1]/"))), "IPv4-mapped loopback")
+        XCTAssertTrue(SSRFGuard.isInternalTarget("100.64.0.1"), "CGNAT 100.64/10")
+    }
+
+    // A bare numeric *username* (scan input) must NOT be misread as an integer
+    // IP by the structural check — that would block legitimate OSINT.
+    func testSSRFGuardDoesNotMisreadNumericUsername() {
+        XCTAssertFalse(SSRFGuard.isInternalTarget("12345"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("2130706433"))
+    }
+
+    // MARK: - CSRF origin check
+
+    func testCSRFBlocksLookalikeOrigin() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        // hasPrefix would have let this through; an exact host match must not.
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "csrfblock"], as: .json)
+            req.headers.replaceOrAdd(name: "Origin", value: "https://swift.micutu.com.evil.com")
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .forbidden, "Look-alike cross-origin host must be blocked")
+        })
+    }
+
+    func testCSRFAllowsLegitimateOrigin() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "csrfallow"], as: .json)
+            req.headers.replaceOrAdd(name: "Origin", value: "https://swift.micutu.com")
+        }, afterResponse: { res in
+            XCTAssertNotEqual(res.status, .forbidden, "Legitimate origin must pass the CSRF check")
+        })
+    }
+
+    // MARK: - Cross-tenant dedup isolation
+
+    func testDedupDoesNotLeakAcrossOwners() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Register + login user A.
+        try await app.test(.POST, "/auth/register", beforeRequest: { req in
+            try req.content.encode(["username": "ownerA", "email": "a@example.com", "password": "password123"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+
+        var cookieA = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            try req.content.encode(["username": "ownerA", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first {
+                cookieA = String(pair)
+            }
+        })
+
+        // A scans a target.
+        var aScanID: UUID?
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "sharedtarget"], as: .json)
+            req.headers.replaceOrAdd(name: "Cookie", value: cookieA)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            aScanID = try res.content.decode(ScanResponse.self).scanID
+        })
+        let ownedID = try XCTUnwrap(aScanID)
+
+        // An anonymous caller scanning the same input must get a fresh scan —
+        // never user A's scan ID (or results) served from the dedup path.
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "sharedtarget"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertNotEqual(body.scanID, ownedID,
+                "Anonymous dedup must not return another user's scan")
         })
     }
 

@@ -2354,8 +2354,10 @@
                     if (resp.status === 401) {
                         const pw = prompt('This report is password-protected. Enter password:');
                         if (!pw) return;
+                        // POST: browsers drop the body of a GET, so the password
+                        // must travel via POST to reach the server.
                         const resp2 = await fetch('/api/share/' + shareToken, {
-                            method: 'GET',
+                            method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ password: pw })
                         });

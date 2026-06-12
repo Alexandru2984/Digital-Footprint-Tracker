@@ -28,7 +28,7 @@ struct ScanResponse: Content {
 
 /// Global counter of active SSE connections. Prevents a burst of open streams
 /// from exhausting the PostgreSQL connection pool (default max: 100 connections).
-private let activeSSEConnections = NIOAtomic<Int>.makeAtomic(value: 0)
+private let activeSSEConnections = NIOLockedValueBox<Int>(0)
 private let maxSSEConnections = 30
 
 struct ScanController: RouteCollection {
@@ -124,12 +124,24 @@ struct ScanController: RouteCollection {
         // A scan older than 7 days is considered stale; a fresh scan will be started.
         let staleThreshold = Date().addingTimeInterval(-7 * 24 * 3600)
 
-        // Dedupe: if a pending scan already exists for this input, return it immediately
-        // so we don't spin up redundant parallel plugin tasks.
-        if let pendingScan = try await Scan.query(on: req.db)
+        // Resolve the caller up front: dedup and reuse must be scoped to the
+        // requester's own scans (or, for anonymous callers, to other anonymous
+        // scans). Returning another user's scan — including its results inline —
+        // is a cross-tenant leak; the ownership checks in getResults/stream are
+        // bypassed entirely by serving a foreign scan from this POST.
+        let userID = try await req.currentUser()?.id
+
+        // Dedupe: if a pending scan already exists for this input AND this owner,
+        // return it immediately so we don't spin up redundant plugin tasks.
+        var pendingQuery = Scan.query(on: req.db)
             .filter(\.$input == input)
             .filter(\.$statusRaw == ScanStatus.pending.rawValue)
-            .first() {
+        if let userID {
+            pendingQuery = pendingQuery.filter(\.$user.$id == userID)
+        } else {
+            pendingQuery = pendingQuery.filter(\.$user.$id == nil)
+        }
+        if let pendingScan = try await pendingQuery.first() {
             return ScanResponse(
                 scanID: pendingScan.id!,
                 input: pendingScan.input,
@@ -140,27 +152,32 @@ struct ScanController: RouteCollection {
             )
         }
 
-        // Reuse a recent completed scan unless force=true or the data is stale.
-        if !forceScan,
-           let existingScan = try await Scan.query(on: req.db)
-               .filter(\.$input == input)
-               .filter(\.$statusRaw != ScanStatus.failed.rawValue)
-               .with(\.$results)
-               .sort(\.$createdAt, .descending)
-               .first(),
-           let createdAt = existingScan.createdAt,
-           createdAt > staleThreshold {
-            return ScanResponse(
-                scanID: existingScan.id!,
-                input: existingScan.input,
-                status: existingScan.status.rawValue,
-                results: existingScan.results,
-                completedAt: existingScan.completedAt.map { $0.timeIntervalSince1970 },
-                scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 }
-            )
+        // Reuse a recent completed scan of the SAME owner unless force=true or stale.
+        if !forceScan {
+            var reuseQuery = Scan.query(on: req.db)
+                .filter(\.$input == input)
+                .filter(\.$statusRaw != ScanStatus.failed.rawValue)
+            if let userID {
+                reuseQuery = reuseQuery.filter(\.$user.$id == userID)
+            } else {
+                reuseQuery = reuseQuery.filter(\.$user.$id == nil)
+            }
+            if let existingScan = try await reuseQuery
+                .with(\.$results)
+                .sort(\.$createdAt, .descending)
+                .first(),
+               let createdAt = existingScan.createdAt,
+               createdAt > staleThreshold {
+                return ScanResponse(
+                    scanID: existingScan.id!,
+                    input: existingScan.input,
+                    status: existingScan.status.rawValue,
+                    results: existingScan.results,
+                    completedAt: existingScan.completedAt.map { $0.timeIntervalSince1970 },
+                    scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 }
+                )
+            }
         }
-
-        let userID = try await req.currentUser()?.id
 
         let normalized = input
         let newScan = Scan(input: normalized, userID: userID)
@@ -255,9 +272,9 @@ struct ScanController: RouteCollection {
         }
 
         // Enforce a global cap on concurrent SSE connections to protect the DB pool.
-        let current = activeSSEConnections.add(1)
+        let current = activeSSEConnections.withLockedValue { $0 += 1; return $0 }
         guard current <= maxSSEConnections else {
-            activeSSEConnections.sub(1)
+            activeSSEConnections.withLockedValue { $0 -= 1 }
             throw Abort(.serviceUnavailable, reason: "Too many active streams; please retry shortly.")
         }
 
@@ -272,7 +289,7 @@ struct ScanController: RouteCollection {
         let encoder = JSONEncoder()
 
         let body = Response.Body(managedAsyncStream: { writer in
-            defer { activeSSEConnections.sub(1) }
+            defer { activeSSEConnections.withLockedValue { $0 -= 1 } }
             var lastCount = 0
 
             for _ in 0..<90 {

@@ -41,12 +41,20 @@ struct APIKeyMiddleware: AsyncMiddleware {
                 if let apiKey = try? await APIKey.query(on: request.db).filter(\.$keyHash == hash).first() {
                     // Stateless: attach to request storage only — no session write.
                     request.authedUserID = apiKey.$user.id
-                    let keyID = apiKey.id
-                    Task {
-                        if let id = keyID,
-                           let k = try? await APIKey.find(id, on: request.application.db) {
-                            k.lastUsedAt = Date()
-                            try? await k.save(on: request.application.db)
+                    // Debounce the lastUsedAt touch: at most one write per minute
+                    // per key. Previously this fired a detached find+save on EVERY
+                    // authenticated request — a DB write per read, unbounded under
+                    // sustained API traffic. A targeted UPDATE also avoids the
+                    // redundant re-fetch of a row already in hand.
+                    let now = Date()
+                    let shouldTouch = apiKey.lastUsedAt.map { now.timeIntervalSince($0) > 60 } ?? true
+                    if shouldTouch, let keyID = apiKey.id {
+                        let db = request.application.db
+                        Task {
+                            try? await APIKey.query(on: db)
+                                .filter(\.$id == keyID)
+                                .set(\.$lastUsedAt, to: now)
+                                .update()
                         }
                     }
                 }
