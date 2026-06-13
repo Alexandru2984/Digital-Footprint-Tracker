@@ -71,13 +71,31 @@ struct UsernamePlugin: FootprintPlugin {
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
             if let tw = user?.twitter_username, !tw.isEmpty { meta["twitter"] = tw }
 
-            return [PluginResult(
+            var results = [PluginResult(
                 source: name,
                 type: "account_presence",
                 confidenceScore: 1.0,
                 rawData: parts.joined(separator: " | "),
                 metadata: meta
             )]
+
+            // Pivot: harvest emails from the user's public push events — commit
+            // author addresses are exposed there. Best-effort; skipped on a
+            // rate-limit or parse failure so it never breaks the profile result.
+            if let evURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/events/public"),
+               let evResp = await PluginHTTP.request(evURL, headers: ["Accept": "application/vnd.github+json"]),
+               evResp.status == 200 {
+                for email in Self.extractCommitEmails(from: evResp.data).prefix(5) {
+                    results.append(PluginResult(
+                        source: "GitHub:commits",
+                        type: "email",
+                        confidenceScore: 0.9,
+                        rawData: "Email exposed in public commits: \(email)",
+                        metadata: ["email": email, "platform": "github", "username": cleanedUsername]
+                    ))
+                }
+            }
+            return results
         } else if resp.status == 404 {
             return []
         } else {
@@ -88,5 +106,27 @@ struct UsernamePlugin: FootprintPlugin {
                 rawData: "GitHub API limit reached or returned status: \(resp.status)"
             )]
         }
+    }
+
+    /// Extracts distinct real commit-author emails from a GitHub public-events
+    /// JSON payload (PushEvent commits). GitHub `noreply` addresses are dropped.
+    /// Pure + internal so it's unit-testable offline.
+    static func extractCommitEmails(from data: Data) -> [String] {
+        guard let events = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        var emails = Set<String>()
+        for event in events {
+            guard (event["type"] as? String) == "PushEvent",
+                  let payload = event["payload"] as? [String: Any],
+                  let commits = payload["commits"] as? [[String: Any]] else { continue }
+            for commit in commits {
+                guard let author = commit["author"] as? [String: Any],
+                      let email = (author["email"] as? String)?.lowercased() else { continue }
+                if email.hasSuffix("@users.noreply.github.com") { continue }
+                if email.range(of: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", options: .regularExpression) != nil {
+                    emails.insert(email)
+                }
+            }
+        }
+        return emails.sorted()
     }
 }

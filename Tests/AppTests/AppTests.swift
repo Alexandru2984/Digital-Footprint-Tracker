@@ -520,6 +520,45 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(heavy.contains { $0.origin == .variant })
     }
 
+    // MARK: - Source enrichment (Gravatar profile, GitHub commit emails)
+
+    func testGravatarParsesProfileAndLinkedAccounts() {
+        let json = """
+        {"entry":[{
+          "displayName":"Jane Roe","preferredUsername":"janer",
+          "profileUrl":"https://gravatar.com/janer","currentLocation":"Berlin",
+          "accounts":[
+            {"shortname":"twitter","username":"janer_x","url":"https://twitter.com/janer_x","verified":"true"},
+            {"shortname":"github","username":"janer","url":"https://github.com/janer","verified":"false"}
+          ]
+        }]}
+        """
+        let results = GravatarPlugin.parseProfile(Data(json.utf8), email: "jane@example.com", avatarURL: "https://en.gravatar.com/avatar/x")
+        let r = try? XCTUnwrap(results)
+        XCTAssertEqual(r?.count, 3, "profile + 2 linked accounts")
+        XCTAssertEqual(r?.first?.metadata?["name"], "Jane Roe")
+        XCTAssertTrue(r?.contains { $0.source == "Gravatar:twitter" && $0.confidenceScore > 0.9 } ?? false,
+            "Verified linked account scores higher")
+    }
+
+    func testGravatarReturnsNilForJunk() {
+        XCTAssertNil(GravatarPlugin.parseProfile(Data("not json".utf8), email: "x@y.com", avatarURL: "u"))
+    }
+
+    func testGitHubExtractsCommitEmailsAndDropsNoreply() {
+        let json = """
+        [
+          {"type":"PushEvent","payload":{"commits":[
+            {"author":{"email":"Real.Dev@Example.com","name":"Real Dev"}},
+            {"author":{"email":"12345+janer@users.noreply.github.com","name":"janer"}}
+          ]}},
+          {"type":"WatchEvent","payload":{}}
+        ]
+        """
+        let emails = UsernamePlugin.extractCommitEmails(from: Data(json.utf8))
+        XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
+    }
+
     // MARK: - Risk scoring
 
     private func mkResult(_ type: String, _ confidence: Double, source: String = "src", raw: String = "data") -> App.Result {
