@@ -559,6 +559,21 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
     }
 
+    // MARK: - Email intelligence
+
+    func testEmailIntelDetectsDisposable() {
+        XCTAssertTrue(EmailIntelPlugin.isDisposable("mailinator.com"))
+        XCTAssertTrue(EmailIntelPlugin.isDisposable("GuerrillaMail.com"))
+        XCTAssertFalse(EmailIntelPlugin.isDisposable("gmail.com"))
+    }
+
+    func testEmailIntelFingerprintsProvider() {
+        XCTAssertEqual(EmailIntelPlugin.mxProvider(["aspmx.l.google.com"]), "Google (Gmail / Workspace)")
+        XCTAssertEqual(EmailIntelPlugin.mxProvider(["example-com.mail.protection.outlook.com"]), "Microsoft (Outlook / 365)")
+        XCTAssertEqual(EmailIntelPlugin.mxProvider(["mail.protonmail.ch"]), "Proton Mail")
+        XCTAssertNil(EmailIntelPlugin.mxProvider(["mail.self-hosted.example"]))
+    }
+
     // MARK: - DNS over HTTPS
 
     func testDoHParsesAnswersAndFiltersByType() {

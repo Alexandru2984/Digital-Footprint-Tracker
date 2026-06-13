@@ -35,6 +35,7 @@ struct ScanController: RouteCollection {
     static let defaultPlugins: [any FootprintPlugin] = [
         GravatarPlugin(),
         HaveIBeenPwnedPlugin(),
+        EmailIntelPlugin(),
         UsernamePlugin(),
         GitLabPlugin(),
         RedditPlugin(),
