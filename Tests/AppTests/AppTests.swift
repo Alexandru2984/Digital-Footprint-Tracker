@@ -559,6 +559,29 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
     }
 
+    // MARK: - Wayback / Internet Archive
+
+    func testWaybackParsesCDXCountAndRange() {
+        let json = """
+        [["timestamp"],["20180102000000"],["20100315120000"],["20221231235959"]]
+        """
+        let (count, first, last) = WaybackPlugin.parseCDX(Data(json.utf8))
+        XCTAssertEqual(count, 3)
+        XCTAssertEqual(first, "20100315120000")
+        XCTAssertEqual(last, "20221231235959")
+    }
+
+    func testWaybackEmptyCDX() {
+        let (count, first, last) = WaybackPlugin.parseCDX(Data("[[\"timestamp\"]]".utf8))
+        XCTAssertEqual(count, 0)
+        XCTAssertNil(first)
+        XCTAssertNil(last)
+    }
+
+    func testWaybackFormatsTimestamp() {
+        XCTAssertEqual(WaybackPlugin.formatTimestamp("20100315123456"), "2010-03-15")
+    }
+
     // MARK: - Email intelligence
 
     func testEmailIntelDetectsDisposable() {

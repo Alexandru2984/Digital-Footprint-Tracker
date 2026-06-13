@@ -54,6 +54,7 @@ struct ScanController: RouteCollection {
         BulkEmailPlugin(),
         CrtShPlugin(),
         WhoisPlugin(),
+        WaybackPlugin(),
         ShodanPlugin(),
         VirusTotalPlugin(),
         AbuseIPDBPlugin(),
