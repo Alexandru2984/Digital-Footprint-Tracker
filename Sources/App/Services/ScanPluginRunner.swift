@@ -19,7 +19,10 @@ enum ScanPluginRunner {
     ///   `(plugin.name, sha256(input))`, and fresh runs are written back.
     ///   Scheduled scans pass `false` because monitor mode is specifically
     ///   about detecting *new* findings — a cache hit would mask them.
-    static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application, useCache: Bool = true) async {
+    /// - Parameter pivotDepth: how many transitive pivot rounds to run after the
+    ///   main round (default 1). Authenticated interactive scans pass 2 for a
+    ///   deeper chain; anonymous and scheduled scans keep 1 to bound cost.
+    static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application, useCache: Bool = true, pivotDepth: Int = 1) async {
         // In the test environment there are no external services to reach,
         // and the background URLSession calls generate SIGPIPE when the app
         // shuts down immediately after the test. Skip execution entirely.
@@ -42,26 +45,33 @@ enum ScanPluginRunner {
             app: app, db: db, useCache: useCache
         )
 
-        // Round 2 — transitive pivot: re-scan identifiers discovered in round 1
-        // (commit emails, linked handles, …) with the LIGHT plugins only (the
-        // 480-site sweep is excluded to stay fast). Bounded to a single round and
-        // a small candidate cap so the chain can't explode.
-        let alreadyScanned = Set(candidates.map { $0.value.lowercased() })
-        let pivots = PivotExtractor.candidates(from: round1.collected, alreadyScanned: alreadyScanned)
-        var round2Success = 0
-        if !pivots.isEmpty {
-            let lightPlugins = plugins.filter { !$0.heavy }
+        // Transitive pivot rounds: re-scan identifiers discovered in the previous
+        // round (commit emails, linked handles, …) with the LIGHT plugins only
+        // (the 480-site sweep is excluded to stay fast). Each round mines only the
+        // *new* results and a small candidate cap, so the chain can't explode;
+        // `pivotDepth` rounds run at most.
+        var alreadyScanned = Set(candidates.map { $0.value.lowercased() })
+        var frontier = round1.collected
+        let lightPlugins = plugins.filter { !$0.heavy }
+        var pivotSuccess = 0
+        var levelsLeft = max(0, pivotDepth)
+        while levelsLeft > 0 {
+            let pivots = PivotExtractor.candidates(from: frontier, alreadyScanned: alreadyScanned)
+            guard !pivots.isEmpty else { break }
+            alreadyScanned.formUnion(pivots)
             let pivotCandidates = pivots.map { TargetDeriver.Candidate(value: $0, origin: .pivoted) }
-            let round2 = await runRound(
+            let round = await runRound(
                 plugins: lightPlugins, candidates: pivotCandidates, scanID: scanID,
                 deadline: 45, expectedUnits: lightPlugins.count, reportProgress: false,
                 app: app, db: db, useCache: useCache
             )
-            round2Success = round2.success
-            app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies)")
+            pivotSuccess += round.success
+            frontier = round.collected
+            levelsLeft -= 1
+            app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies); \(levelsLeft) level(s) left")
         }
 
-        let successCount = round1.success + round2Success
+        let successCount = round1.success + pivotSuccess
         let timedOut = round1.timedOut
 
         do {

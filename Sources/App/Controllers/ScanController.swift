@@ -179,8 +179,10 @@ struct ScanController: RouteCollection {
         await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
 
         // Run plugins in the background so the HTTP request returns immediately.
+        // Authenticated users get a deeper transitive pivot (2 rounds vs 1).
+        let pivotDepth = userID != nil ? 2 : 1
         Task {
-            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app)
+            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app, pivotDepth: pivotDepth)
         }
 
         return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil, scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 })
