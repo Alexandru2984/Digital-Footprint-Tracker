@@ -43,12 +43,23 @@ sudo /bin/systemctl restart swift-vapor.service
 # surfaced in the action's log rather than only when the next user
 # request 502s.
 echo "[deploy] waiting for healthcheck"
+healthy=0
 for i in 1 2 3 4 5 6 7 8 9 10; do
     if curl -fsS --max-time 2 http://127.0.0.1:8085/health > /dev/null; then
         echo "[deploy] healthy after ${i}s"
-        exit 0
+        healthy=1
+        break
     fi
     sleep 1
 done
-echo "[deploy] healthcheck did not pass within 10s — investigate" >&2
-exit 1
+if [[ "$healthy" -ne 1 ]]; then
+    echo "[deploy] healthcheck did not pass within 10s — investigate" >&2
+    exit 1
+fi
+
+# Keep the nginx CSP script-src hashes in lockstep with the just-deployed
+# inline frontend scripts. Idempotent; validates with `nginx -t` and rolls
+# back on failure. Without this, any change to the inline <script> is blocked
+# by the stale hash and the SPA breaks.
+echo "[deploy] syncing nginx CSP hashes"
+/home/micu/swift+vapor/scripts/update-csp-hashes.sh
