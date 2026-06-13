@@ -559,6 +559,29 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
     }
 
+    // MARK: - DNS over HTTPS
+
+    func testDoHParsesAnswersAndFiltersByType() {
+        let json = """
+        {"Status":0,"Answer":[
+          {"name":"x.com","type":1,"data":"1.2.3.4"},
+          {"name":"x.com","type":5,"data":"cname.x.com"},
+          {"name":"x.com","type":1,"data":"5.6.7.8"}
+        ]}
+        """
+        XCTAssertEqual(DoHResolver.parse(Data(json.utf8), type: "A"), ["1.2.3.4", "5.6.7.8"],
+            "Only A (type 1) answers, CNAME filtered out")
+    }
+
+    func testDoHMxHostStripsPriorityAndTrailingDot() {
+        XCTAssertEqual(DoHResolver.mxHost("10 mail.example.com."), "mail.example.com")
+    }
+
+    func testDoHReverseIPv4Name() {
+        XCTAssertEqual(DoHResolver.reverseIPv4Name("1.2.3.4"), "4.3.2.1.in-addr.arpa")
+        XCTAssertNil(DoHResolver.reverseIPv4Name("not.an.ip.x"))
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {

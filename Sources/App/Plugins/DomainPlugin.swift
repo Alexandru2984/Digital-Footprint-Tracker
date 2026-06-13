@@ -33,54 +33,44 @@ struct DomainPlugin: FootprintPlugin {
 
         var results: [PluginResult] = []
 
-        // ── A records ───────────────────────────────────────────────────────────
+        // ── A records (DNS-over-HTTPS) ───────────────────────────────────────────
         var resolvedIPs: [String] = []
-        if let aOut = runDig(args: [target, "A", "+short", "+time=3", "+tries=1"], app: app) {
-            let ips = aOut.components(separatedBy: .newlines)
-                         .map { $0.trimmingCharacters(in: .whitespaces) }
-                         .filter { !$0.isEmpty && !$0.hasPrefix(";") }
-            resolvedIPs = ips
-            if !ips.isEmpty {
-                results.append(PluginResult(
-                    source: "DomainDNS",
-                    type: "dns_a_record",
-                    confidenceScore: 1.0,
-                    rawData: "A records for \(target): \(ips.joined(separator: ", "))",
-                    metadata: ["domain": target, "ip": ips[0]]
-                ))
-            }
+        let aRecords = await DoHResolver.resolve(target, type: "A")
+            .filter { $0.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil }
+        if !aRecords.isEmpty {
+            resolvedIPs = aRecords
+            results.append(PluginResult(
+                source: "DomainDNS",
+                type: "dns_a_record",
+                confidenceScore: 1.0,
+                rawData: "A records for \(target): \(aRecords.joined(separator: ", "))",
+                metadata: ["domain": target, "ip": aRecords[0]]
+            ))
         }
 
         // ── MX records ──────────────────────────────────────────────────────────
-        if let mxOut = runDig(args: [target, "MX", "+short", "+time=3", "+tries=1"], app: app) {
-            let mx = mxOut.components(separatedBy: .newlines)
-                          .map { $0.trimmingCharacters(in: .whitespaces) }
-                          .filter { !$0.isEmpty && !$0.hasPrefix(";") }
-            if !mx.isEmpty {
-                results.append(PluginResult(
-                    source: "DomainDNS",
-                    type: "dns_mx_record",
-                    confidenceScore: 0.95,
-                    rawData: "MX records for \(target): \(mx.joined(separator: "; "))",
-                    metadata: ["domain": target]
-                ))
-            }
+        let mxHosts = await DoHResolver.resolve(target, type: "MX").map { DoHResolver.mxHost($0) }.filter { !$0.isEmpty }
+        if !mxHosts.isEmpty {
+            results.append(PluginResult(
+                source: "DomainDNS",
+                type: "dns_mx_record",
+                confidenceScore: 0.95,
+                rawData: "MX records for \(target): \(mxHosts.joined(separator: "; "))",
+                metadata: ["domain": target]
+            ))
         }
 
         // ── TXT / SPF records ───────────────────────────────────────────────────
-        if let txtOut = runDig(args: [target, "TXT", "+short", "+time=3", "+tries=1"], app: app) {
-            let spf = txtOut.components(separatedBy: .newlines)
-                            .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
-                            .filter { $0.lowercased().hasPrefix("v=spf") || $0.lowercased().contains("dmarc") }
-            if !spf.isEmpty {
-                results.append(PluginResult(
-                    source: "DomainDNS",
-                    type: "dns_spf_record",
-                    confidenceScore: 0.9,
-                    rawData: "Email security records for \(target): \(spf.joined(separator: " | "))",
-                    metadata: ["domain": target]
-                ))
-            }
+        let spf = await DoHResolver.resolve(target, type: "TXT")
+            .filter { $0.lowercased().hasPrefix("v=spf") || $0.lowercased().contains("dmarc") }
+        if !spf.isEmpty {
+            results.append(PluginResult(
+                source: "DomainDNS",
+                type: "dns_spf_record",
+                confidenceScore: 0.9,
+                rawData: "Email security records for \(target): \(spf.joined(separator: " | "))",
+                metadata: ["domain": target]
+            ))
         }
 
         // ── WHOIS ────────────────────────────────────────────────────────────────
@@ -106,8 +96,9 @@ struct DomainPlugin: FootprintPlugin {
 
         // ── Reverse DNS (PTR) for IPs ────────────────────────────────────────────
         let isIP = target.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil
-        if isIP, let ptrOut = runDig(args: ["-x", target, "+short", "+time=3", "+tries=1"], app: app) {
-            let ptr = ptrOut.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isIP, let revName = DoHResolver.reverseIPv4Name(target),
+           let ptrRaw = await DoHResolver.resolve(revName, type: "PTR").first {
+            let ptr = ptrRaw.hasSuffix(".") ? String(ptrRaw.dropLast()) : ptrRaw
             if !ptr.isEmpty {
                 results.append(PluginResult(
                     source: "DomainDNS",
@@ -192,10 +183,6 @@ struct DomainPlugin: FootprintPlugin {
     }
 
     // MARK: - Subprocess helpers
-
-    private func runDig(args: [String], app: Application) -> String? {
-        return runProcess(path: "/usr/bin/dig", args: args, timeout: 8, app: app)
-    }
 
     private func runWhois(target: String, app: Application) -> String? {
         // Sanitise: whois only accepts hostname chars (already guaranteed by
