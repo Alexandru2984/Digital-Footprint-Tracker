@@ -536,6 +536,8 @@
 
             <!-- Results Tab Content -->
             <div id="results-tab-content" class="flex flex-col gap-4 pt-2">
+                <!-- Synthesized identity profile (populated from /api/identity/:id) -->
+                <div id="identity-panel" class="hidden"></div>
                 <!-- Empty State / No findings -->
                 <div id="empty-state" class="hidden text-center py-12 bg-dark-800 rounded-xl border border-dark-700 border-dashed">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-slate-500 mb-4">
@@ -1005,7 +1007,9 @@
             const derived = !!meta.derivedFrom || /^\[via /.test(result.rawData || '');
             if (derived) {
                 const badge = document.createElement('span');
-                badge.className = 'text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30';
+                // Inline styles: the compiled tailwind.css is purged, so new
+                // utility classes (amber, arbitrary sizes) would not exist.
+                badge.style.cssText = 'margin-left:8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:4px;background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.35);';
                 badge.textContent = 'inferred';
                 badge.title = (typeof meta.derivedFrom === 'string') ? meta.derivedFrom : 'Derived from another identifier';
                 card.querySelector('.js-source').insertAdjacentElement('afterend', badge);
@@ -1016,14 +1020,14 @@
             const chipKeys = Object.keys(meta).filter(k => k !== 'derivedFrom');
             if (chipKeys.length) {
                 const chips = document.createElement('div');
-                chips.className = 'flex flex-wrap gap-1.5 mb-3';
+                chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;';
                 chipKeys.slice(0, 8).forEach(k => {
                     const v = meta[k];
                     if (v === null || v === undefined || v === '') return;
                     const chip = document.createElement('span');
-                    chip.className = 'text-[11px] px-2 py-0.5 rounded bg-dark-700 border border-dark-600 text-slate-300';
+                    chip.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#1f2937;border:1px solid #374151;color:#cbd5e1;';
                     const key = document.createElement('span');
-                    key.className = 'text-slate-500';
+                    key.style.color = '#64748b';
                     key.textContent = k + ': ';
                     chip.appendChild(key);
                     chip.appendChild(document.createTextNode(String(v).slice(0, 60)));
@@ -1096,6 +1100,81 @@
             }
         }
 
+        // Fetches and renders the synthesized identity profile for a scan.
+        function loadIdentity(scanID) {
+            const panel = document.getElementById('identity-panel');
+            if (!panel || !scanID) return;
+            fetch('/api/identity/' + encodeURIComponent(scanID), { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null)
+                .then(p => { if (p) renderIdentity(panel, p); else panel.classList.add('hidden'); })
+                .catch(() => panel.classList.add('hidden'));
+        }
+
+        // All colours are inline: the compiled tailwind.css is purged and would
+        // not contain any new utility classes used here.
+        function renderIdentity(panel, p) {
+            const hasData = p.likelyName || (p.emails || []).length || (p.handles || []).length ||
+                            (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length;
+            if (!hasData) { panel.classList.add('hidden'); return; }
+            panel.innerHTML = '';
+            panel.style.cssText = 'background:#111827;border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px;';
+
+            const head = document.createElement('div');
+            head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;';
+            const title = document.createElement('span');
+            title.style.cssText = 'font-weight:700;color:#e2e8f0;';
+            title.textContent = '🧬 Synthesized Identity';
+            head.appendChild(title);
+            if (typeof p.riskScore === 'number') {
+                const riskColors = { critical: '#f87171', high: '#fb923c', medium: '#facc15', low: '#4ade80' };
+                const c = riskColors[(p.riskLevel || '').toLowerCase()] || '#94a3b8';
+                const risk = document.createElement('span');
+                risk.style.cssText = 'font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid ' + c + '66;color:' + c + ';background:' + c + '1a;';
+                risk.textContent = 'Risk ' + p.riskScore + ' · ' + (p.riskLevel || '');
+                head.appendChild(risk);
+            }
+            panel.appendChild(head);
+
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:1fr;gap:6px 24px;font-size:14px;';
+            if (window.matchMedia && window.matchMedia('(min-width:768px)').matches) grid.style.gridTemplateColumns = '1fr 1fr';
+
+            function chip(text) {
+                const c = document.createElement('span');
+                c.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#1f2937;border:1px solid #374151;color:#cbd5e1;';
+                c.textContent = text; return c;
+            }
+            function row(label, node) {
+                const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:8px;align-items:flex-start;';
+                const l = document.createElement('span'); l.style.cssText = 'color:#64748b;flex-shrink:0;min-width:64px;'; l.textContent = label;
+                r.appendChild(l); r.appendChild(node); grid.appendChild(r);
+            }
+            function chipRow(label, items) {
+                const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+                items.forEach(t => wrap.appendChild(chip(String(t).slice(0, 80))));
+                row(label, wrap);
+            }
+            function textRow(label, text) {
+                const n = document.createElement('span'); n.style.cssText = 'color:#e2e8f0;word-break:break-all;'; n.textContent = text;
+                row(label, n);
+            }
+
+            if (p.likelyName) textRow('Name', p.likelyName);
+            if ((p.locations || []).length) textRow('Location', p.locations.join(', '));
+            if ((p.organizations || []).length) textRow('Org', p.organizations.join(', '));
+            if ((p.emails || []).length) chipRow('Emails', p.emails);
+            if ((p.phones || []).length) chipRow('Phones', p.phones);
+            if ((p.handles || []).length) chipRow('Handles', p.handles.slice(0, 12).map(h => h.handle + ' (' + (h.platforms || []).length + ')'));
+            if ((p.confirmedAccounts || []).length) {
+                chipRow('Accounts', Array.from(new Set(p.confirmedAccounts.map(a => a.platform))).slice(0, 16));
+            }
+            if ((p.breaches || []).length) chipRow('Breaches', p.breaches.slice(0, 12));
+            if ((p.exposedIPs || []).length) chipRow('IPs', p.exposedIPs.slice(0, 8));
+
+            panel.appendChild(grid);
+            panel.classList.remove('hidden');
+        }
+
         function displayResults(data) {
             setScanningState(false);
             lastScanData = data;
@@ -1112,6 +1191,7 @@
             }
 
             reRenderGrid();
+            loadIdentity(data.scanID);
             saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
             // Refresh graph if user has the graph tab open.
             if (activeResultsTab === 'graph') renderD3Graph(data);
@@ -1128,6 +1208,8 @@
             scanIdDisplay.textContent = scanID;
             emptyState.classList.add('hidden');
             resultsGrid.classList.remove('hidden');
+            const idPanel = document.getElementById('identity-panel');
+            if (idPanel) idPanel.classList.add('hidden'); // hide stale profile until the new scan settles
 
             // Show and reset the progress bar
             document.getElementById('scan-progress').classList.remove('hidden');
@@ -1211,6 +1293,8 @@
                             saveToHistory(d.scanID, d.input, d.results ? d.results.length : 0);
                         })
                         .catch(() => {});
+                    // Synthesized identity profile (after the pivot round settles).
+                    loadIdentity(scanID);
                 } catch (_) {}
             });
 
