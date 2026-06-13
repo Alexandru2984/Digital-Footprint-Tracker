@@ -30,6 +30,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
+    app.migrations.add(AddResultMetadata())
     app.migrations.add(AddInputIndex())
     app.migrations.add(CreateUser())
     app.migrations.add(AddUserIDToScans())
@@ -532,6 +533,34 @@ final class AppTests: XCTestCase {
             mkResult("data_breach", 1.0, source: "hibp", raw: "X")
         ]).value
         XCTAssertEqual(one, dup, "Identical findings must not double-count")
+    }
+
+    // MARK: - Structured result metadata
+
+    // Cache entries serialized before `metadata` existed must still decode
+    // (the field is optional → decodeIfPresent yields nil).
+    func testPluginResultDecodesLegacyCacheWithoutMetadata() throws {
+        let legacy = #"{"source":"github","type":"account_presence","confidenceScore":1.0,"rawData":"x"}"#
+        let pr = try JSONDecoder().decode(PluginResult.self, from: Data(legacy.utf8))
+        XCTAssertEqual(pr.source, "github")
+        XCTAssertNil(pr.metadata)
+    }
+
+    func testPluginResultMetadataRoundTrips() throws {
+        let pr = PluginResult(source: "github", type: "account_presence", confidenceScore: 1.0,
+                              rawData: "x", metadata: ["platform": "github", "username": "alice"])
+        let back = try JSONDecoder().decode(PluginResult.self, from: JSONEncoder().encode(pr))
+        XCTAssertEqual(back.metadata?["username"], "alice")
+    }
+
+    func testResultMetadataObjectDecodesStoredJSON() {
+        let withMeta = App.Result(scanID: UUID(), source: "github", type: "account_presence",
+                                  confidenceScore: 1.0, rawData: "x",
+                                  metadata: #"{"platform":"github","username":"alice"}"#)
+        XCTAssertEqual(withMeta.metadataObject?["username"], "alice")
+
+        let without = App.Result(scanID: UUID(), source: "s", type: "t", confidenceScore: 0.5, rawData: "x")
+        XCTAssertNil(without.metadataObject)
     }
 
     // MARK: - Cross-tenant dedup isolation

@@ -72,12 +72,22 @@ enum ScanPluginRunner {
                             let cappedRawData = pr.rawData.count > 8192
                                 ? String(pr.rawData.prefix(8192)) + "… [truncated]"
                                 : pr.rawData
+                            // Serialise structured metadata to JSON; drop it if
+                            // empty or implausibly large (defensive cap).
+                            let metadataJSON: String? = pr.metadata.flatMap { dict -> String? in
+                                guard !dict.isEmpty,
+                                      let data = try? JSONEncoder().encode(dict),
+                                      let json = String(data: data, encoding: .utf8),
+                                      json.count <= 4096 else { return nil }
+                                return json
+                            }
                             let result = Result(
                                 scanID: scanID,
                                 source: String(pr.source.prefix(64)),
                                 type: String(pr.type.prefix(64)),
                                 confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
-                                rawData: cappedRawData
+                                rawData: cappedRawData,
+                                metadata: metadataJSON
                             )
                             try await result.save(on: db)
                         }

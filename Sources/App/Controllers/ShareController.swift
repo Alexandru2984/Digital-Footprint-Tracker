@@ -54,6 +54,7 @@ struct ShareController: RouteCollection {
             let type: String
             let confidenceScore: Double
             let rawData: String
+            let metadata: [String: String]?
         }
         let scan: ScanDTO
         let results: [ResultDTO]
@@ -191,7 +192,8 @@ struct ShareController: RouteCollection {
                     source: r.source,
                     type: r.type,
                     confidenceScore: r.confidenceScore,
-                    rawData: r.rawData
+                    rawData: r.rawData,
+                    metadata: r.metadataObject
                 )
             },
             sharedAt: share.createdAt.map { $0.timeIntervalSince1970 },

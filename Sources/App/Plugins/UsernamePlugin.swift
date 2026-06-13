@@ -59,11 +59,24 @@ struct UsernamePlugin: FootprintPlugin {
             parts.append("Followers: \(user?.followers ?? 0)")
             if let created = user?.created_at?.prefix(4) { parts.append("Joined: \(created)") }
 
+            // Structured entities for correlation / export.
+            var meta: [String: String] = [
+                "platform": "github",
+                "username": cleanedUsername,
+                "profileURL": "https://github.com/\(cleanedUsername)"
+            ]
+            if let n = user?.name, !n.isEmpty            { meta["name"] = n }
+            if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
+            if let co = user?.company, !co.isEmpty       { meta["company"] = co }
+            if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
+            if let tw = user?.twitter_username, !tw.isEmpty { meta["twitter"] = tw }
+
             return [PluginResult(
                 source: name,
                 type: "account_presence",
                 confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: meta
             )]
         } else if resp.status == 404 {
             return []

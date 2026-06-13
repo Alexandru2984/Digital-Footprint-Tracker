@@ -70,6 +70,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
+    app.migrations.add(AddResultMetadata())
     app.migrations.add(AddInputIndex())
     app.migrations.add(CreateUser())
     app.migrations.add(AddUserIDToScans())

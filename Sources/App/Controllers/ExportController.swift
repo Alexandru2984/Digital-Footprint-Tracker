@@ -36,13 +36,17 @@ struct ExportController: RouteCollection {
             "riskLevel": risk.level.rawValue,
             "scannedAt": scan.createdAt.map { $0.timeIntervalSince1970 } as Any,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
-            "results": scan.results.map { r in [
-                "id": r.id?.uuidString ?? "",
-                "source": r.source,
-                "type": r.type,
-                "confidenceScore": r.confidenceScore,
-                "rawData": r.rawData
-            ] as [String: Any] }
+            "results": scan.results.map { r -> [String: Any] in
+                var row: [String: Any] = [
+                    "id": r.id?.uuidString ?? "",
+                    "source": r.source,
+                    "type": r.type,
+                    "confidenceScore": r.confidenceScore,
+                    "rawData": r.rawData
+                ]
+                if let meta = r.metadataObject { row["metadata"] = meta }
+                return row
+            }
         ]
 
         let jsonData = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])

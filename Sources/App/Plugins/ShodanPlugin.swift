@@ -22,24 +22,26 @@ struct ShodanPlugin: FootprintPlugin {
         var results: [PluginResult] = []
         for match in matches.prefix(10) {
             var parts: [String] = []
-            if let ip = match["ip_str"] as? String { parts.append("IP: \(ip)") }
-            if let port = match["port"] as? Int { parts.append("Port: \(port)") }
-            if let transport = match["transport"] as? String { parts.append(transport.uppercased()) }
-            if let org = match["org"] as? String { parts.append("Org: \(org)") }
+            var meta: [String: String] = [:]
+            if let ip = match["ip_str"] as? String { parts.append("IP: \(ip)"); meta["ip"] = ip }
+            if let port = match["port"] as? Int { parts.append("Port: \(port)"); meta["port"] = String(port) }
+            if let transport = match["transport"] as? String { parts.append(transport.uppercased()); meta["transport"] = transport }
+            if let org = match["org"] as? String { parts.append("Org: \(org)"); meta["org"] = org }
             if let country = (match["location"] as? [String: Any])?["country_name"] as? String {
-                parts.append("Country: \(country)")
+                parts.append("Country: \(country)"); meta["country"] = country
             }
             if let vulns = match["vulns"] as? [String: Any], !vulns.isEmpty {
                 let cves = vulns.keys.prefix(3).joined(separator: ", ")
-                parts.append("CVEs: \(cves)")
+                parts.append("CVEs: \(cves)"); meta["cves"] = cves
             }
-            if let product = match["product"] as? String { parts.append("Product: \(product)") }
+            if let product = match["product"] as? String { parts.append("Product: \(product)"); meta["product"] = product }
             if !parts.isEmpty {
                 results.append(PluginResult(
                     source: "Shodan",
                     type: "exposed_service",
                     confidenceScore: 0.9,
-                    rawData: parts.joined(separator: " | ")
+                    rawData: parts.joined(separator: " | "),
+                    metadata: meta
                 ))
             }
         }

@@ -63,11 +63,23 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
             "\(b.Name) (\(b.BreachDate), \(b.PwnCount) accounts)"
         }.joined(separator: "; ")
 
+        // Structured entities: breach names + the distinct data classes exposed
+        // (passwords, emails, …) — high-signal for both scoring and export.
+        var meta: [String: String] = [
+            "breachCount": String(breaches.count),
+            "breaches": breaches.map { $0.Name }.prefix(30).joined(separator: ", ")
+        ]
+        let dataClasses = Set(breaches.flatMap { $0.DataClasses }).sorted()
+        if !dataClasses.isEmpty {
+            meta["dataClasses"] = dataClasses.prefix(20).joined(separator: ", ")
+        }
+
         return [PluginResult(
             source: name,
             type: "data_breach",
             confidenceScore: 1.0,
-            rawData: "Found in \(breaches.count) breach(es): \(summary)"
+            rawData: "Found in \(breaches.count) breach(es): \(summary)",
+            metadata: meta
         )]
     }
 }

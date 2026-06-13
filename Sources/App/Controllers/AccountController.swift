@@ -59,12 +59,16 @@ struct AccountController: RouteCollection {
                 "riskLevel":     risk.level.rawValue,
                 "scannedAt":     s.createdAt.map { $0.timeIntervalSince1970 } as Any,
                 "completedAt":   s.completedAt.map { $0.timeIntervalSince1970 } as Any,
-                "results":       s.results.map { r -> [String: Any] in [
-                    "source":          r.source,
-                    "type":            r.type,
-                    "confidenceScore": r.confidenceScore,
-                    "rawData":         r.rawData
-                ] }
+                "results":       s.results.map { r -> [String: Any] in
+                    var row: [String: Any] = [
+                        "source":          r.source,
+                        "type":            r.type,
+                        "confidenceScore": r.confidenceScore,
+                        "rawData":         r.rawData
+                    ]
+                    if let meta = r.metadataObject { row["metadata"] = meta }
+                    return row
+                }
             ]
         }
 

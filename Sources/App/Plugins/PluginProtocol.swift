@@ -28,4 +28,16 @@ struct PluginResult: Sendable, Codable {
     let type: String
     let confidenceScore: Double
     let rawData: String
+    /// Optional structured entities for correlation / machine-readable export
+    /// (e.g. ["platform": "github", "username": "alice", "location": "NYC"]).
+    /// Optional so cached JSON written before this field existed still decodes.
+    let metadata: [String: String]?
+
+    init(source: String, type: String, confidenceScore: Double, rawData: String, metadata: [String: String]? = nil) {
+        self.source = source
+        self.type = type
+        self.confidenceScore = confidenceScore
+        self.rawData = rawData
+        self.metadata = metadata
+    }
 }
