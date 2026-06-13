@@ -32,87 +32,37 @@ enum ScanPluginRunner {
             return
         }
 
-        var successCount = 0
-        var failureCount = 0
-        var timedOut = false
-
-        enum PluginOutcome {
-            case success(pluginName: String)
-            case failure(pluginName: String)
-            case timeout
-        }
-
-        // Derive scan candidates from the input — e.g. an email yields its
-        // local-part as a username candidate so username-gated plugins (Steam,
-        // Reddit, GitHub, the Sherlock sweep, …) are reached even when the user
-        // scanned an email. See TargetDeriver.
+        // Round 1: full plugin set on the input and its derived candidates
+        // (e.g. an email yields its local-part as a username so username-gated
+        // plugins are reached). See TargetDeriver.
         let candidates = TargetDeriver.candidates(for: input)
+        let round1 = await runRound(
+            plugins: plugins, candidates: candidates, scanID: scanID,
+            deadline: 120, expectedUnits: plugins.count, reportProgress: true,
+            app: app, db: db, useCache: useCache
+        )
 
-        await withTaskGroup(of: PluginOutcome.self) { group in
-            // Timeout sentinel: cancels all plugins if 120 s elapse.
-            group.addTask {
-                try? await Task.sleep(for: .seconds(120))
-                return .timeout
-            }
-
-            for plugin in plugins {
-                let pName = plugin.name
-                let pTTL = plugin.cacheTTL
-                // Heavy plugins (the 480-site sweep) skip speculative variants so
-                // fan-out can't trigger several expensive runs in one task.
-                let pCandidates = plugin.heavy ? candidates.filter { $0.origin.heavyEligible } : candidates
-                group.addTask {
-                    guard !Task.isCancelled else { return .failure(pluginName: pName) }
-                    do {
-                        // Run the plugin once per candidate input. Plugins
-                        // self-gate by input shape, so the email-aware ones skip
-                        // a derived username and the username-aware ones skip the
-                        // email — each does its real work once. Cache keys include
-                        // the candidate, so a derived username shares cache with a
-                        // direct scan of that username.
-                        for candidate in pCandidates {
-                            let cInput = candidate.value
-                            let raw: [PluginResult]
-                            if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
-                                raw = cached
-                            } else {
-                                let fresh = try await plugin.scan(input: cInput, on: app)
-                                if useCache {
-                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: fresh, ttl: pTTL, on: db, logger: app.logger)
-                                }
-                                raw = fresh
-                            }
-                            for pr in raw {
-                                try await persist(pr, origin: candidate.origin, scanID: scanID, on: db)
-                            }
-                        }
-                        return .success(pluginName: pName)
-                    } catch {
-                        app.logger.error("Plugin \(pName) failed: \(error)")
-                        return .failure(pluginName: pName)
-                    }
-                }
-            }
-
-            var pluginsDone = 0
-            var allPluginsCompleted = false
-            for await outcome in group {
-                switch outcome {
-                case .timeout:
-                    if !allPluginsCompleted { timedOut = true; group.cancelAll() }
-                case .success(let name):
-                    successCount += 1; pluginsDone += 1
-                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                case .failure(let name):
-                    failureCount += 1; pluginsDone += 1
-                    await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name)
-                }
-                if !allPluginsCompleted && pluginsDone == plugins.count {
-                    allPluginsCompleted = true
-                    group.cancelAll()
-                }
-            }
+        // Round 2 — transitive pivot: re-scan identifiers discovered in round 1
+        // (commit emails, linked handles, …) with the LIGHT plugins only (the
+        // 480-site sweep is excluded to stay fast). Bounded to a single round and
+        // a small candidate cap so the chain can't explode.
+        let alreadyScanned = Set(candidates.map { $0.value.lowercased() })
+        let pivots = PivotExtractor.candidates(from: round1.collected, alreadyScanned: alreadyScanned)
+        var round2Success = 0
+        if !pivots.isEmpty {
+            let lightPlugins = plugins.filter { !$0.heavy }
+            let pivotCandidates = pivots.map { TargetDeriver.Candidate(value: $0, origin: .pivoted) }
+            let round2 = await runRound(
+                plugins: lightPlugins, candidates: pivotCandidates, scanID: scanID,
+                deadline: 45, expectedUnits: lightPlugins.count, reportProgress: false,
+                app: app, db: db, useCache: useCache
+            )
+            round2Success = round2.success
+            app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies)")
         }
+
+        let successCount = round1.success + round2Success
+        let timedOut = round1.timedOut
 
         do {
             if let scan = try await Scan.find(scanID, on: db) {
@@ -148,6 +98,94 @@ enum ScanPluginRunner {
         } catch {
             app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
         }
+    }
+
+    /// Runs `plugins` over `candidates` concurrently under a `deadline`, persists
+    /// each result (with its candidate origin), and returns the raw results
+    /// (for pivot mining) plus success/failure/timeout aggregates.
+    private static func runRound(
+        plugins: [any FootprintPlugin],
+        candidates: [TargetDeriver.Candidate],
+        scanID: UUID,
+        deadline: Double,
+        expectedUnits: Int,
+        reportProgress: Bool,
+        app: Application,
+        db: Database,
+        useCache: Bool
+    ) async -> (collected: [PluginResult], success: Int, failure: Int, timedOut: Bool) {
+
+        enum Outcome {
+            case done(name: String, succeeded: Bool, results: [PluginResult])
+            case timeout
+        }
+
+        var collected: [PluginResult] = []
+        var success = 0
+        var failure = 0
+        var timedOut = false
+
+        await withTaskGroup(of: Outcome.self) { group in
+            group.addTask {
+                try? await Task.sleep(for: .seconds(deadline))
+                return .timeout
+            }
+
+            for plugin in plugins {
+                let pName = plugin.name
+                let pTTL = plugin.cacheTTL
+                // Heavy plugins (the 480-site sweep) skip non-heavy-eligible
+                // candidates so fan-out can't trigger several expensive runs.
+                let pCandidates = plugin.heavy ? candidates.filter { $0.origin.heavyEligible } : candidates
+                group.addTask {
+                    guard !Task.isCancelled else { return .done(name: pName, succeeded: false, results: []) }
+                    do {
+                        var produced: [PluginResult] = []
+                        for candidate in pCandidates {
+                            let cInput = candidate.value
+                            let raw: [PluginResult]
+                            if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
+                                raw = cached
+                            } else {
+                                let fresh = try await plugin.scan(input: cInput, on: app)
+                                if useCache {
+                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: fresh, ttl: pTTL, on: db, logger: app.logger)
+                                }
+                                raw = fresh
+                            }
+                            for pr in raw {
+                                try await persist(pr, origin: candidate.origin, scanID: scanID, on: db)
+                                produced.append(pr)
+                            }
+                        }
+                        return .done(name: pName, succeeded: true, results: produced)
+                    } catch {
+                        app.logger.error("Plugin \(pName) failed: \(error)")
+                        return .done(name: pName, succeeded: false, results: [])
+                    }
+                }
+            }
+
+            var pluginsDone = 0
+            var allDone = false
+            for await outcome in group {
+                switch outcome {
+                case .timeout:
+                    if !allDone { timedOut = true; group.cancelAll() }
+                case .done(let name, let succeeded, let results):
+                    if succeeded { success += 1 } else { failure += 1 }
+                    pluginsDone += 1
+                    collected.append(contentsOf: results)
+                    if reportProgress { await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name) }
+                }
+                if !allDone && pluginsDone == expectedUnits {
+                    allDone = true
+                    group.cancelAll()
+                }
+            }
+        }
+
+        return (collected, success, failure, timedOut)
     }
 
     /// Persists one plugin result. Derived findings (a username inferred from an

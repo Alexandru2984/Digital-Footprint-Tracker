@@ -559,6 +559,37 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
     }
 
+    // MARK: - Transitive pivot
+
+    func testPivotExtractorFindsNewIdentities() {
+        let results = [
+            PluginResult(source: "GitHubAccountCheck", type: "account_presence", confidenceScore: 1.0,
+                         rawData: "x", metadata: ["platform": "github", "username": "alice"]),
+            PluginResult(source: "GitHub:commits", type: "email", confidenceScore: 0.9,
+                         rawData: "x", metadata: ["email": "real.dev@example.com", "username": "alice"]),
+            PluginResult(source: "Gravatar:twitter", type: "identity_proof", confidenceScore: 0.95,
+                         rawData: "x", metadata: ["platform": "twitter", "username": "alice_x"])
+        ]
+        let pivots = PivotExtractor.candidates(from: results, alreadyScanned: ["alice"])
+        XCTAssertTrue(pivots.contains("real.dev@example.com"), "harvested email becomes a pivot")
+        XCTAssertTrue(pivots.contains("alice_x"), "linked handle becomes a pivot")
+        XCTAssertFalse(pivots.contains("alice"), "already-scanned identity is excluded")
+    }
+
+    func testPivotExtractorRespectsCap() {
+        let results = (0..<20).map {
+            PluginResult(source: "s", type: "email", confidenceScore: 1.0, rawData: "x",
+                         metadata: ["email": "user\($0)@example.com"])
+        }
+        XCTAssertEqual(PivotExtractor.candidates(from: results, alreadyScanned: []).count, PivotExtractor.maxPivots)
+    }
+
+    func testPivotedOriginIsDiscountedAndNotHeavy() {
+        XCTAssertEqual(TargetDeriver.Origin.pivoted.confidenceFactor, 0.6, accuracy: 0.001)
+        XCTAssertFalse(TargetDeriver.Origin.pivoted.heavyEligible, "pivots never trigger the heavy sweep")
+        XCTAssertTrue(TargetDeriver.Origin.pivoted.derived)
+    }
+
     // MARK: - Risk scoring
 
     private func mkResult(_ type: String, _ confidence: Double, source: String = "src", raw: String = "data") -> App.Result {

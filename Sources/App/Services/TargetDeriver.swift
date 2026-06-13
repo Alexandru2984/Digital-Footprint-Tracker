@@ -19,12 +19,14 @@ enum TargetDeriver {
         case primary          // the original input
         case emailLocalPart   // the local-part of an email — a strong inference
         case variant          // a separator/dot variant — a weaker guess
+        case pivoted          // an entity discovered by a first-round finding
 
         var derived: Bool { self != .primary }
 
         /// Heavy plugins (e.g. the Sherlock sweep) run only on these origins, so
-        /// fan-out can't multiply an expensive run across speculative variants.
-        var heavyEligible: Bool { self != .variant }
+        /// fan-out can't multiply an expensive run across speculative variants or
+        /// the second-round pivot set.
+        var heavyEligible: Bool { self == .primary || self == .emailLocalPart }
 
         /// Multiplier applied to a finding's confidence: derived links are real
         /// accounts but inferred ownership.
@@ -33,6 +35,7 @@ enum TargetDeriver {
             case .primary:        return 1.0
             case .emailLocalPart: return 0.75
             case .variant:        return 0.6
+            case .pivoted:        return 0.6
             }
         }
 
@@ -42,6 +45,7 @@ enum TargetDeriver {
             case .primary:        return nil
             case .emailLocalPart: return "[via email local-part]"
             case .variant:        return "[via derived variant]"
+            case .pivoted:        return "[via pivot]"
             }
         }
     }
