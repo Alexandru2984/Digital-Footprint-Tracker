@@ -657,6 +657,37 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.resultCount, 0)
     }
 
+    // MARK: - GraphML export
+
+    func testIdentityGraphMLExport() {
+        let profile = IdentitySynthesizer.IdentityProfile(
+            likelyName: "Alice Roe",
+            names: ["Alice Roe"],
+            locations: ["Berlin"],
+            organizations: ["Acme & Co"],   // ampersand must be XML-escaped
+            emails: ["alice@example.com"],
+            phones: [],
+            handles: [IdentitySynthesizer.HandleUse(handle: "alice", platforms: ["github", "twitter"], confidence: 0.95)],
+            confirmedAccounts: [IdentitySynthesizer.Account(platform: "github", reference: "https://github.com/alice", confidence: 1.0)],
+            breaches: ["Adobe"],
+            exposedIPs: [],
+            riskScore: 40,
+            riskLevel: "Medium",
+            resultCount: 6
+        )
+        let xml = IdentityGraph.graphml(from: profile, target: "alice@example.com")
+
+        XCTAssertTrue(xml.hasPrefix("<?xml"))
+        XCTAssertTrue(xml.contains("<graphml"))
+        XCTAssertTrue(xml.contains("</graphml>"))
+        XCTAssertTrue(xml.contains("attr.name=\"relationship\""))
+        XCTAssertTrue(xml.contains(">email<") || xml.contains("\">email</data>"), "email node typed")
+        XCTAssertTrue(xml.contains("likely-name"), "primary name marked")
+        XCTAssertTrue(xml.contains("Acme &amp; Co"), "ampersand escaped")
+        XCTAssertFalse(xml.contains("Acme & Co"), "no raw ampersand")
+        XCTAssertTrue(xml.contains("used-on"), "alias cross-links to the account mentioning it")
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {

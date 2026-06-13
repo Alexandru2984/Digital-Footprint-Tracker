@@ -124,3 +124,22 @@ enum IdentitySynthesizer {
         return s
     }
 }
+
+extension Scan {
+    /// Synthesize this scan's findings into a single identity profile. Requires
+    /// `results` to be eager-loaded (`.with(\.$results)`); shared by the identity
+    /// and graph-export endpoints so the mapping lives in one place.
+    func synthesizedIdentity() -> IdentitySynthesizer.IdentityProfile {
+        let risk = RiskScorer.compute(results: results)
+        let inputs = results.map {
+            IdentitySynthesizer.Input(
+                source: $0.source,
+                type: $0.type,
+                confidence: $0.confidenceScore,
+                metadata: $0.metadataObject ?? [:],
+                rawData: $0.rawData
+            )
+        }
+        return IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
+    }
+}

@@ -22,17 +22,6 @@ struct IdentityController: RouteCollection {
         }
 
         try await scan.authorizeRead(req)
-
-        let risk = RiskScorer.compute(results: scan.results)
-        let inputs = scan.results.map {
-            IdentitySynthesizer.Input(
-                source: $0.source,
-                type: $0.type,
-                confidence: $0.confidenceScore,
-                metadata: $0.metadataObject ?? [:],
-                rawData: $0.rawData
-            )
-        }
-        return IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
+        return scan.synthesizedIdentity()
     }
 }
