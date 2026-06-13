@@ -468,6 +468,72 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(RedditPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
     }
 
+    // MARK: - Risk scoring
+
+    private func mkResult(_ type: String, _ confidence: Double, source: String = "src", raw: String = "data") -> App.Result {
+        App.Result(scanID: UUID(), source: source, type: type, confidenceScore: confidence, rawData: raw)
+    }
+
+    func testRiskScorerEmptyIsLow() {
+        let s = RiskScorer.compute(results: [])
+        XCTAssertEqual(s.value, 0)
+        XCTAssertEqual(s.level, .low)
+    }
+
+    // The regression that motivated the rewrite: HIBP's "no breaches found"
+    // result (type breach_check, confidence 1.0) must contribute ZERO risk.
+    func testRiskScorerCleanBreachCheckIsZeroRisk() {
+        let s = RiskScorer.compute(results: [mkResult("breach_check", 1.0, raw: "No breaches found.")])
+        XCTAssertEqual(s.value, 0, "A clean breach check must not add risk")
+    }
+
+    // And it must not inflate a score built from real (account) findings.
+    func testRiskScorerCleanCheckDoesNotInflate() {
+        let accounts = (0..<5).map { mkResult("account_presence", 0.9, source: "s\($0)", raw: "acct \($0)") }
+        let withClean = accounts + [mkResult("breach_check", 1.0, raw: "No breaches found.")]
+        XCTAssertEqual(RiskScorer.compute(results: accounts).value,
+                       RiskScorer.compute(results: withClean).value,
+                       "A clean breach check must not change the score")
+    }
+
+    func testRiskScorerConfirmedBreachIsAtLeastMedium() {
+        let s = RiskScorer.compute(results: [mkResult("data_breach", 1.0, raw: "Found in 3 breaches")])
+        XCTAssertGreaterThanOrEqual(s.value, 25, "A confirmed breach should reach at least Medium")
+    }
+
+    // A single breach must outweigh a large pile of public account presences.
+    func testRiskScorerBreachOutweighsManyAccounts() {
+        let breach = RiskScorer.compute(results: [mkResult("data_breach", 1.0)])
+        let accounts = RiskScorer.compute(results: (0..<20).map {
+            mkResult("account_presence", 0.9, source: "s\($0)", raw: "acct \($0)")
+        })
+        XCTAssertGreaterThan(breach.value, accounts.value,
+            "One breach should score higher than 20 social accounts")
+    }
+
+    // Account presence saturates: 50 profiles aren't dramatically worse than 10,
+    // and account presence alone never escalates past the Low band.
+    func testRiskScorerAccountPresenceSaturates() {
+        let ten = RiskScorer.compute(results: (0..<10).map {
+            mkResult("account_presence", 1.0, source: "s\($0)", raw: "a\($0)")
+        }).value
+        let fifty = RiskScorer.compute(results: (0..<50).map {
+            mkResult("account_presence", 1.0, source: "s\($0)", raw: "a\($0)")
+        }).value
+        XCTAssertLessThanOrEqual(fifty - ten, 3, "Account category must saturate")
+        XCTAssertLessThan(fifty, 25, "Public accounts alone should stay in the Low band")
+    }
+
+    // Exact-duplicate findings (same source+type+rawData) are counted once.
+    func testRiskScorerDeduplicatesIdenticalFindings() {
+        let one = RiskScorer.compute(results: [mkResult("data_breach", 1.0, source: "hibp", raw: "X")]).value
+        let dup = RiskScorer.compute(results: [
+            mkResult("data_breach", 1.0, source: "hibp", raw: "X"),
+            mkResult("data_breach", 1.0, source: "hibp", raw: "X")
+        ]).value
+        XCTAssertEqual(one, dup, "Identical findings must not double-count")
+    }
+
     // MARK: - Cross-tenant dedup isolation
 
     func testDedupDoesNotLeakAcrossOwners() async throws {
