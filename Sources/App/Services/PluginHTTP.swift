@@ -45,6 +45,13 @@ enum PluginHTTP {
         timeout: TimeInterval = 15,
         maxRetries: Int = 2
     ) async -> Response? {
+        // Politeness: space out requests to the same host so the candidate
+        // fan-out (which may hit one API several times per scan) doesn't burst.
+        if let host = url.host {
+            let wait = await HostThrottle.shared.reserve(host)
+            if wait > 0 { await sleep(seconds: wait) }
+        }
+
         var attempt = 0
         while true {
             if Task.isCancelled { return nil }
@@ -90,5 +97,26 @@ enum PluginHTTP {
 
     private static func sleep(seconds: Double) async {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+}
+
+/// Spaces outbound requests to the same host so the candidate fan-out (which can
+/// hit one API several times for a single scan) stays polite and avoids tripping
+/// upstream rate limits or IP blocks. Distinct hosts never wait on each other.
+private actor HostThrottle {
+    static let shared = HostThrottle()
+    private var nextAllowed: [String: Date] = [:]
+    private let minInterval: TimeInterval = 0.25
+
+    /// Reserves the next slot for `host` and returns how long the caller should
+    /// wait before issuing the request.
+    func reserve(_ host: String) -> TimeInterval {
+        let now = Date()
+        let slot = max(now, nextAllowed[host] ?? now)
+        nextAllowed[host] = slot.addingTimeInterval(minInterval)
+        if nextAllowed.count > 512 {
+            nextAllowed = nextAllowed.filter { $0.value > now }
+        }
+        return slot.timeIntervalSince(now)
     }
 }
