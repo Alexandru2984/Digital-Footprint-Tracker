@@ -64,7 +64,13 @@ struct ScanController: RouteCollection {
 
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
-        noCache.grouped(ScanRateLimiter()).post("scan", use: scan)
+        // Two stacked windows: a per-minute burst cap and an hourly sustained cap.
+        // The hourly window is far stricter for anonymous callers (15/h vs 200/h)
+        // so logged-out users can scan but can't hammer the box. Cloudflare fronts
+        // bot/DDoS filtering ahead of this.
+        noCache.grouped(ScanRateLimiter(anonMax: 15, authedMax: 200, windowSeconds: 3600))
+               .grouped(ScanRateLimiter())
+               .post("scan", use: scan)
         noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("results", ":id", use: getResults)
         noCache.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60)).get("stream", ":id", use: streamResults)
         noCache.get("plugins", use: listPlugins)
@@ -179,8 +185,9 @@ struct ScanController: RouteCollection {
         await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
 
         // Run plugins in the background so the HTTP request returns immediately.
-        // Authenticated users get a deeper transitive pivot (2 rounds vs 1).
-        let pivotDepth = userID != nil ? 2 : 1
+        // Transitive pivot is the expensive multiplier, so it's account-only:
+        // authenticated scans get 2 rounds, anonymous scans get none.
+        let pivotDepth = userID != nil ? 2 : 0
         Task {
             await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app, pivotDepth: pivotDepth)
         }
@@ -201,17 +208,9 @@ struct ScanController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found")
         }
 
-        // If the scan belongs to a specific user, only that user may fetch it.
-        // Anonymous scans (no owner) are restricted to admins only.
-        if let ownerID = scan.$user.id {
-            guard let currentUser = try await req.currentUser(), currentUser.id == ownerID else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        } else {
-            guard let currentUser = try await req.currentUser(), currentUser.isAdmin else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        }
+        // Owned scans are owner-only; anonymous scans are readable by anyone
+        // holding the unguessable scanID (capability access). See Scan.authorizeRead.
+        try await scan.authorizeRead(req)
 
         return ScanResponse(
             scanID: scan.id!,
@@ -236,17 +235,9 @@ struct ScanController: RouteCollection {
         guard let scan = try await Scan.find(scanID, on: req.db) else {
             throw Abort(.notFound, reason: "Scan not found.")
         }
-        // Enforce ownership: only the scan's owner may subscribe to its SSE stream.
-        // Anonymous scans (no owner) are restricted to admins only.
-        if let ownerID = scan.$user.id {
-            guard let me = try await req.currentUser(), me.id == ownerID else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        } else {
-            guard let me = try await req.currentUser(), me.isAdmin else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        }
+        // Owned scans are owner-only; anonymous scans are readable by anyone
+        // holding the unguessable scanID (capability access).
+        try await scan.authorizeRead(req)
 
         // Enforce a global cap on concurrent SSE connections to protect the DB pool.
         let current = activeSSEConnections.withLockedValue { $0 += 1; return $0 }

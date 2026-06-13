@@ -14,17 +14,9 @@ struct ExportController: RouteCollection {
         guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
             throw Abort(.notFound, reason: "Scan not found.")
         }
-        // Enforce ownership: only the scan's owner may export it.
-        // Anonymous scans (no owner) are restricted to admins only.
-        if let ownerID = scan.$user.id {
-            guard let me = try await req.currentUser(), me.id == ownerID else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        } else {
-            guard let me = try await req.currentUser(), me.isAdmin else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        }
+        // Owned scans are owner-only; anonymous scans are readable by anyone
+        // holding the unguessable scanID (capability access).
+        try await scan.authorizeRead(req)
         AuditLogger.log(req: req, action: "export_json", target: scan.input)
 
         let risk = RiskScorer.compute(results: scan.results)

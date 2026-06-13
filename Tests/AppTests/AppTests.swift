@@ -858,6 +858,54 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(entities.contains { $0.value == "shared.example.com" && $0.type == "domain" && $0.occurrences.count == 2 })
     }
 
+    // MARK: - Anonymous scan access (capability)
+
+    func testAnonymousCanReadOwnScanByCapability() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        var scanID: UUID?
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "capabilitytest"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            scanID = try res.content.decode(ScanResponse.self).scanID
+        })
+        let id = try XCTUnwrap(scanID)
+
+        // No auth: an ownerless scan is readable by anyone holding its ID.
+        try await app.test(.GET, "/results/\(id.uuidString)") { res in
+            XCTAssertEqual(res.status, .ok, "Anonymous scan must be readable by capability")
+        }
+    }
+
+    func testOwnedScanNotReadableAnonymously() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/auth/register", beforeRequest: { req in
+            try req.content.encode(["username": "owner2", "email": "o2@example.com", "password": "password123"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        var cookie = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            try req.content.encode(["username": "owner2", "password": "password123"], as: .json)
+        }, afterResponse: { res in
+            if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first { cookie = String(pair) }
+        })
+
+        var scanID: UUID?
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "ownedscan"], as: .json)
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in scanID = try res.content.decode(ScanResponse.self).scanID })
+        let id = try XCTUnwrap(scanID)
+
+        // No cookie: an owned scan stays private to its owner.
+        try await app.test(.GET, "/results/\(id.uuidString)") { res in
+            XCTAssertEqual(res.status, .forbidden, "Owned scans must not be readable anonymously")
+        }
+    }
+
     // MARK: - Cross-tenant dedup isolation
 
     func testDedupDoesNotLeakAcrossOwners() async throws {

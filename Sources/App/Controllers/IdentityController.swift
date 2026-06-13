@@ -21,15 +21,7 @@ struct IdentityController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
 
-        if let ownerID = scan.$user.id {
-            guard let me = try await req.currentUser(), me.id == ownerID else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        } else {
-            guard let me = try await req.currentUser(), me.isAdmin else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        }
+        try await scan.authorizeRead(req)
 
         let risk = RiskScorer.compute(results: scan.results)
         let inputs = scan.results.map {
