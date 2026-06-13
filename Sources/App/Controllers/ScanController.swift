@@ -56,6 +56,7 @@ struct ScanController: RouteCollection {
         WhoisPlugin(),
         WaybackPlugin(),
         ShodanPlugin(),
+        InternetDBPlugin(),
         VirusTotalPlugin(),
         AbuseIPDBPlugin(),
         PassiveDNSPlugin()

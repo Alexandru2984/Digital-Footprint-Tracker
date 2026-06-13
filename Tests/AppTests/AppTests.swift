@@ -688,6 +688,44 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(xml.contains("used-on"), "alias cross-links to the account mentioning it")
     }
 
+    // MARK: - InternetDB (free Shodan-grade exposure)
+
+    func testInternetDBParse() {
+        let json = #"""
+        {"ip":"1.2.3.4","ports":[443,22,80],"cpes":["cpe:/a:nginx:nginx"],
+         "hostnames":["host.example.com"],"tags":["cloud"],
+         "vulns":["CVE-2021-1234","CVE-2020-5678"]}
+        """#.data(using: .utf8)!
+        let results = InternetDBPlugin.parse(json, ip: "1.2.3.4")
+        XCTAssertEqual(results.count, 3, "ports + vulns + cpes → three findings")
+
+        let svc = results.first { $0.type == "exposed_service" }
+        XCTAssertEqual(svc?.metadata?["ports"], "22, 80, 443", "ports sorted + joined")
+        XCTAssertEqual(svc?.metadata?["ip"], "1.2.3.4")
+
+        let vuln = results.first { $0.type == "vulnerability" }
+        XCTAssertEqual(vuln?.metadata?["cve_count"], "2")
+        XCTAssertTrue(vuln?.metadata?["cves"]?.contains("CVE-2021-1234") ?? false)
+
+        XCTAssertTrue(results.contains { $0.type == "tech_stack" })
+
+        // A bare/empty record yields nothing (a clean host).
+        let empty = #"{"ip":"1.2.3.4","ports":[],"vulns":[],"cpes":[]}"#.data(using: .utf8)!
+        XCTAssertTrue(InternetDBPlugin.parse(empty, ip: "1.2.3.4").isEmpty)
+
+        // A CVE finding is scored as threat (non-zero risk).
+        XCTAssertGreaterThan(RiskScorer.compute(raw: [(0.95, "vulnerability")]).value, 0)
+    }
+
+    func testInternetDBResolveIPsFiltersPrivate() async {
+        let pub = await InternetDBPlugin.resolveIPs("8.8.8.8")
+        XCTAssertEqual(pub, ["8.8.8.8"], "a public IP passes straight through")
+        let priv = await InternetDBPlugin.resolveIPs("192.168.1.10")
+        XCTAssertTrue(priv.isEmpty, "RFC1918 address is dropped")
+        let loop = await InternetDBPlugin.resolveIPs("127.0.0.1")
+        XCTAssertTrue(loop.isEmpty, "loopback is dropped")
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {
