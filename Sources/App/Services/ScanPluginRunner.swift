@@ -113,11 +113,22 @@ enum ScanPluginRunner {
 
         do {
             if let scan = try await Scan.find(scanID, on: db) {
-                if timedOut {
-                    app.logger.warning("Scan \(scanID) exceeded 120-second deadline; marking failed")
-                    scan.status = .failed
+                // A scan is "completed" as soon as ANY plugin returned (even a
+                // timed-out scan keeps the results plugins already produced — they
+                // were persisted as they arrived). Only mark "failed" when nothing
+                // succeeded: every plugin errored, or the deadline hit before any
+                // finished. This stops a single slow plugin from burying real,
+                // already-saved findings under a "failed" badge.
+                if successCount > 0 {
+                    if timedOut {
+                        app.logger.warning("Scan \(scanID) hit the 120-second deadline; completing with \(successCount) partial result set(s)")
+                    }
+                    scan.status = .completed
                 } else {
-                    scan.status = (successCount == 0 && failureCount > 0) ? .failed : .completed
+                    if timedOut {
+                        app.logger.warning("Scan \(scanID) exceeded 120-second deadline with no results; marking failed")
+                    }
+                    scan.status = .failed
                 }
                 scan.completedAt = Date()
                 try await scan.save(on: db)
