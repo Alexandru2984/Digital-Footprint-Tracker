@@ -30,6 +30,15 @@ enum IdentitySynthesizer {
         let confidence: Double
     }
 
+    /// Attack-surface of a single exposed host: the open ports and known CVEs seen
+    /// on an IP (sourced from InternetDB / Shodan findings).
+    struct ServiceExposure: Content {
+        let ip: String
+        let ports: [String]
+        let cves: [String]
+        let hostnames: [String]
+    }
+
     struct IdentityProfile: Content {
         let likelyName: String?
         let names: [String]
@@ -41,6 +50,8 @@ enum IdentitySynthesizer {
         let confirmedAccounts: [Account]
         let breaches: [String]
         let exposedIPs: [String]
+        let exposedServices: [ServiceExposure]
+        let vulnerabilities: [String]
         let riskScore: Int
         let riskLevel: String
         let resultCount: Int
@@ -61,6 +72,10 @@ enum IdentitySynthesizer {
         var accountsByKey: [String: Account] = [:]
         var breaches = Set<String>()
         var ips = Set<String>()
+        var svcPorts: [String: Set<String>] = [:]
+        var svcCves: [String: Set<String>] = [:]
+        var svcHosts: [String: Set<String>] = [:]
+        var allCves = Set<String>()
 
         for inp in inputs {
             let m = inp.metadata
@@ -69,7 +84,13 @@ enum IdentitySynthesizer {
             if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { orgs.insert(o) }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
             if let p = nonEmpty(m["phone"]) { phones.insert(p) }
-            if let ip = nonEmpty(m["ip"]) { ips.insert(ip) }
+            if let ip = nonEmpty(m["ip"]) {
+                ips.insert(ip)
+                for port in csv(m["ports"]) { svcPorts[ip, default: []].insert(port) }
+                if let single = nonEmpty(m["port"]) { svcPorts[ip, default: []].insert(single) }
+                for cve in csv(m["cves"]) { svcCves[ip, default: []].insert(cve); allCves.insert(cve) }
+                for host in csv(m["hostnames"]) { svcHosts[ip, default: []].insert(host) }
+            }
 
             if let handle = nonEmpty(m["username"]) {
                 let platform = nonEmpty(m["platform"]) ?? inp.source
@@ -102,6 +123,17 @@ enum IdentitySynthesizer {
             return HandleUse(handle: handle, platforms: platforms.sorted(), confidence: boosted)
         }.sorted { ($0.platforms.count, $0.confidence) > ($1.platforms.count, $1.confidence) }
 
+        // Hosts with actual exposure (open ports and/or known CVEs), ports sorted numerically.
+        let serviceIPs = Set(svcPorts.keys).union(svcCves.keys)
+        let exposedServices = serviceIPs.sorted().map { ip in
+            ServiceExposure(
+                ip: ip,
+                ports: (svcPorts[ip] ?? []).sorted { (Int($0) ?? 0, $0) < (Int($1) ?? 0, $1) },
+                cves: (svcCves[ip] ?? []).sorted(),
+                hostnames: (svcHosts[ip] ?? []).sorted()
+            )
+        }
+
         return IdentityProfile(
             likelyName: likelyName,
             names: nameCounts.keys.sorted(),
@@ -113,6 +145,8 @@ enum IdentitySynthesizer {
             confirmedAccounts: accountsByKey.values.sorted { $0.confidence > $1.confidence },
             breaches: breaches.sorted(),
             exposedIPs: ips.sorted(),
+            exposedServices: exposedServices,
+            vulnerabilities: allCves.sorted(),
             riskScore: riskScore,
             riskLevel: riskLevel,
             resultCount: inputs.count
@@ -122,6 +156,12 @@ enum IdentitySynthesizer {
     private static func nonEmpty(_ s: String?) -> String? {
         guard let s, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return s
+    }
+
+    /// Splits a comma-separated metadata value ("22, 80, 443") into trimmed, non-empty parts.
+    private static func csv(_ s: String?) -> [String] {
+        guard let s = nonEmpty(s) else { return [] }
+        return s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 }
 

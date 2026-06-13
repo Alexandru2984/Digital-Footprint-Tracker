@@ -53,9 +53,35 @@ enum IdentityGraph {
         star(profile.emails, type: "email", rel: "email")
         star(profile.phones, type: "phone", rel: "phone")
         star(profile.breaches, type: "breach", rel: "breach")
-        star(profile.exposedIPs, type: "ip", rel: "exposed-ip")
         star(profile.locations, type: "location", rel: "location")
         star(profile.organizations, type: "organization", rel: "affiliation")
+
+        // Exposed IPs, with their open ports and known CVEs hanging off each host —
+        // the attack-surface depth (target → IP → {port, CVE}) that makes this graph
+        // worth importing instead of a flat list.
+        var ipIDs: [String: String] = [:]
+        func ipNode(_ ip: String) -> String {
+            if let existing = ipIDs[ip] { return existing }
+            let id = nextID()
+            node(id, ip, "ip")
+            edge(root, id, "exposed-ip")
+            ipIDs[ip] = id
+            return id
+        }
+        for ip in profile.exposedIPs { _ = ipNode(ip) }
+        for svc in profile.exposedServices {
+            let host = ipNode(svc.ip)
+            for port in svc.ports.prefix(25) {
+                let id = nextID()
+                node(id, port, "port")
+                edge(host, id, "open-port")
+            }
+            for cve in svc.cves.prefix(25) {
+                let id = nextID()
+                node(id, cve, "vuln")
+                edge(host, id, "vulnerable-to")
+            }
+        }
 
         // Aliases carry a confidence and may cross-link to accounts.
         var aliasIDs: [(handle: String, id: String)] = []

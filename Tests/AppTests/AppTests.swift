@@ -670,7 +670,10 @@ final class AppTests: XCTestCase {
             handles: [IdentitySynthesizer.HandleUse(handle: "alice", platforms: ["github", "twitter"], confidence: 0.95)],
             confirmedAccounts: [IdentitySynthesizer.Account(platform: "github", reference: "https://github.com/alice", confidence: 1.0)],
             breaches: ["Adobe"],
-            exposedIPs: [],
+            exposedIPs: ["1.2.3.4"],
+            exposedServices: [IdentitySynthesizer.ServiceExposure(
+                ip: "1.2.3.4", ports: ["22", "443"], cves: ["CVE-2021-1234"], hostnames: ["host.example.com"])],
+            vulnerabilities: ["CVE-2021-1234"],
             riskScore: 40,
             riskLevel: "Medium",
             resultCount: 6
@@ -686,6 +689,30 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(xml.contains("Acme &amp; Co"), "ampersand escaped")
         XCTAssertFalse(xml.contains("Acme & Co"), "no raw ampersand")
         XCTAssertTrue(xml.contains("used-on"), "alias cross-links to the account mentioning it")
+        XCTAssertTrue(xml.contains("open-port"), "ports hang off the IP host")
+        XCTAssertTrue(xml.contains("vulnerable-to"), "CVEs hang off the IP host")
+        XCTAssertTrue(xml.contains("CVE-2021-1234"), "CVE rendered as a node")
+    }
+
+    func testIdentitySynthesizerAggregatesInfraExposure() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
+              metadata: ["ip": "1.2.3.4", "ports": "443, 22, 80", "hostnames": "host.example.com"], rawData: "x"),
+            I(source: "InternetDB", type: "vulnerability", confidence: 0.95,
+              metadata: ["ip": "1.2.3.4", "cves": "CVE-2021-1234, CVE-2019-9999"], rawData: "x"),
+            I(source: "Shodan", type: "exposed_service", confidence: 0.9,
+              metadata: ["ip": "5.6.7.8", "port": "8443"], rawData: "x")
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 50, riskLevel: "High")
+
+        XCTAssertEqual(p.exposedIPs, ["1.2.3.4", "5.6.7.8"])
+        XCTAssertEqual(p.vulnerabilities, ["CVE-2019-9999", "CVE-2021-1234"], "all CVEs, deduped + sorted")
+
+        let host = p.exposedServices.first { $0.ip == "1.2.3.4" }
+        XCTAssertEqual(host?.ports, ["22", "80", "443"], "ports sorted numerically")
+        XCTAssertEqual(host?.cves.count, 2)
+        XCTAssertEqual(p.exposedServices.first { $0.ip == "5.6.7.8" }?.ports, ["8443"], "singular 'port' key also captured")
     }
 
     // MARK: - InternetDB (free Shodan-grade exposure)
