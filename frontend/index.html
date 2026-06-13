@@ -993,6 +993,46 @@
             card.querySelector('.js-copy-json').addEventListener('click', function() {
                 copyToClipboard(jsonStr, this);
             });
+
+            // Structured metadata: a JSON string from the Result model, or an
+            // object from the share/export DTOs. Parse defensively.
+            let meta = result.metadata;
+            if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch (e) { meta = null; } }
+            meta = (meta && typeof meta === 'object') ? meta : {};
+
+            // "Inferred" badge: a derived candidate (e.g. a username pivoted from
+            // an email local-part) carries a provenance marker.
+            const derived = !!meta.derivedFrom || /^\[via /.test(result.rawData || '');
+            if (derived) {
+                const badge = document.createElement('span');
+                badge.className = 'text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30';
+                badge.textContent = 'inferred';
+                badge.title = (typeof meta.derivedFrom === 'string') ? meta.derivedFrom : 'Derived from another identifier';
+                card.querySelector('.js-source').insertAdjacentElement('afterend', badge);
+            }
+
+            // Metadata chips for the salient structured fields (XSS-safe: values
+            // set via text nodes only).
+            const chipKeys = Object.keys(meta).filter(k => k !== 'derivedFrom');
+            if (chipKeys.length) {
+                const chips = document.createElement('div');
+                chips.className = 'flex flex-wrap gap-1.5 mb-3';
+                chipKeys.slice(0, 8).forEach(k => {
+                    const v = meta[k];
+                    if (v === null || v === undefined || v === '') return;
+                    const chip = document.createElement('span');
+                    chip.className = 'text-[11px] px-2 py-0.5 rounded bg-dark-700 border border-dark-600 text-slate-300';
+                    const key = document.createElement('span');
+                    key.className = 'text-slate-500';
+                    key.textContent = k + ': ';
+                    chip.appendChild(key);
+                    chip.appendChild(document.createTextNode(String(v).slice(0, 60)));
+                    chips.appendChild(chip);
+                });
+                const body = card.querySelector('.p-4');
+                if (body && chips.childNodes.length) body.insertBefore(chips, body.firstChild);
+            }
+
             return card;
         }
 
