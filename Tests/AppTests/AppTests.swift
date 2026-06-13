@@ -469,6 +469,38 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(RedditPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
     }
 
+    // MARK: - Target derivation (email → username pivot)
+
+    func testTargetDeriverUsernamePassesThrough() {
+        XCTAssertEqual(TargetDeriver.candidates(for: "johndoe"),
+                       [TargetDeriver.Candidate(value: "johndoe", derived: false)])
+    }
+
+    func testTargetDeriverEmailDerivesUsername() {
+        let c = TargetDeriver.candidates(for: "john.doe@gmail.com")
+        XCTAssertEqual(c.first, TargetDeriver.Candidate(value: "john.doe@gmail.com", derived: false))
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "john.doe", derived: true)))
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "johndoe", derived: true)),
+            "dot-stripped (Gmail) variant should be derived too")
+    }
+
+    func testTargetDeriverStripsPlusTag() {
+        let c = TargetDeriver.candidates(for: "alice+newsletter@example.com")
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "alice", derived: true)))
+        XCTAssertFalse(c.contains { $0.derived && $0.value.contains("+") }, "The +tag must be stripped from derived usernames")
+    }
+
+    func testTargetDeriverSkipsShortLocalPart() {
+        XCTAssertEqual(TargetDeriver.candidates(for: "ab@x.com"),
+                       [TargetDeriver.Candidate(value: "ab@x.com", derived: false)],
+                       "A too-short local-part yields no username candidate")
+    }
+
+    func testTargetDeriverDomainHasNoDerivation() {
+        XCTAssertEqual(TargetDeriver.candidates(for: "example.com"),
+                       [TargetDeriver.Candidate(value: "example.com", derived: false)])
+    }
+
     // MARK: - Risk scoring
 
     private func mkResult(_ type: String, _ confidence: Double, source: String = "src", raw: String = "data") -> App.Result {

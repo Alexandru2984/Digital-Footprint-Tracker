@@ -42,6 +42,12 @@ enum ScanPluginRunner {
             case timeout
         }
 
+        // Derive scan candidates from the input — e.g. an email yields its
+        // local-part as a username candidate so username-gated plugins (Steam,
+        // Reddit, GitHub, the Sherlock sweep, …) are reached even when the user
+        // scanned an email. See TargetDeriver.
+        let candidates = TargetDeriver.candidates(for: input)
+
         await withTaskGroup(of: PluginOutcome.self) { group in
             // Timeout sentinel: cancels all plugins if 120 s elapse.
             group.addTask {
@@ -55,41 +61,27 @@ enum ScanPluginRunner {
                 group.addTask {
                     guard !Task.isCancelled else { return .failure(pluginName: pName) }
                     do {
-                        // Cache lookup first. On hit we skip the network/CLI
-                        // call entirely; on miss we run the plugin and write
-                        // the result back under its own declared TTL.
-                        let pluginResults: [PluginResult]
-                        if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: input, on: db) {
-                            pluginResults = cached
-                        } else {
-                            let fresh = try await plugin.scan(input: input, on: app)
-                            if useCache {
-                                await PluginCacheStore.store(pluginName: pName, input: input, results: fresh, ttl: pTTL, on: db, logger: app.logger)
+                        // Run the plugin once per candidate input. Plugins
+                        // self-gate by input shape, so the email-aware ones skip
+                        // a derived username and the username-aware ones skip the
+                        // email — each does its real work once. Cache keys include
+                        // the candidate, so a derived username shares cache with a
+                        // direct scan of that username.
+                        for candidate in candidates {
+                            let cInput = candidate.value
+                            let raw: [PluginResult]
+                            if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
+                                raw = cached
+                            } else {
+                                let fresh = try await plugin.scan(input: cInput, on: app)
+                                if useCache {
+                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: fresh, ttl: pTTL, on: db, logger: app.logger)
+                                }
+                                raw = fresh
                             }
-                            pluginResults = fresh
-                        }
-                        for pr in pluginResults {
-                            let cappedRawData = pr.rawData.count > 8192
-                                ? String(pr.rawData.prefix(8192)) + "… [truncated]"
-                                : pr.rawData
-                            // Serialise structured metadata to JSON; drop it if
-                            // empty or implausibly large (defensive cap).
-                            let metadataJSON: String? = pr.metadata.flatMap { dict -> String? in
-                                guard !dict.isEmpty,
-                                      let data = try? JSONEncoder().encode(dict),
-                                      let json = String(data: data, encoding: .utf8),
-                                      json.count <= 4096 else { return nil }
-                                return json
+                            for pr in raw {
+                                try await persist(pr, derived: candidate.derived, scanID: scanID, on: db)
                             }
-                            let result = Result(
-                                scanID: scanID,
-                                source: String(pr.source.prefix(64)),
-                                type: String(pr.type.prefix(64)),
-                                confidenceScore: max(0.0, min(1.0, pr.confidenceScore)),
-                                rawData: cappedRawData,
-                                metadata: metadataJSON
-                            )
-                            try await result.save(on: db)
                         }
                         return .success(pluginName: pName)
                     } catch {
@@ -142,6 +134,38 @@ enum ScanPluginRunner {
         } catch {
             app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
         }
+    }
+
+    /// Persists one plugin result. Derived findings (e.g. a username inferred
+    /// from an email's local-part) get a reduced confidence and a `derivedFrom`
+    /// marker: the account certainly exists, but its link to the original target
+    /// is a strong inference, not a proven fact.
+    private static func persist(_ pr: PluginResult, derived: Bool, scanID: UUID, on db: Database) async throws {
+        let rawBase = derived ? "[via email local-part] " + pr.rawData : pr.rawData
+        let cappedRawData = rawBase.count > 8192 ? String(rawBase.prefix(8192)) + "… [truncated]" : rawBase
+
+        var metaDict = pr.metadata ?? [:]
+        if derived { metaDict["derivedFrom"] = "email-localpart" }
+        let metadataJSON: String?
+        if metaDict.isEmpty {
+            metadataJSON = nil
+        } else if let data = try? JSONEncoder().encode(metaDict),
+                  let json = String(data: data, encoding: .utf8), json.count <= 4096 {
+            metadataJSON = json
+        } else {
+            metadataJSON = nil
+        }
+
+        let confidence = max(0.0, min(1.0, pr.confidenceScore)) * (derived ? 0.75 : 1.0)
+        let result = Result(
+            scanID: scanID,
+            source: String(pr.source.prefix(64)),
+            type: String(pr.type.prefix(64)),
+            confidenceScore: confidence,
+            rawData: cappedRawData,
+            metadata: metadataJSON
+        )
+        try await result.save(on: db)
     }
 
     private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
