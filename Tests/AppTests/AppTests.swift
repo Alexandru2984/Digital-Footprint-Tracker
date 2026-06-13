@@ -563,6 +563,59 @@ final class AppTests: XCTestCase {
         XCTAssertNil(without.metadataObject)
     }
 
+    // MARK: - Correlation engine
+
+    private func summary(_ input: String, _ results: [Correlator.ResultEntry] = []) -> Correlator.ScanSummary {
+        Correlator.ScanSummary(id: UUID(), input: input, results: results)
+    }
+
+    func testCorrelatorRequiresTwoScans() {
+        XCTAssertTrue(Correlator.correlate([summary("alice@example.com")]).isEmpty)
+    }
+
+    func testCorrelatorIgnoresUnsharedEntities() {
+        let a = summary("alice@example.com")
+        let b = summary("bob@example.com")
+        XCTAssertTrue(Correlator.correlate([a, b]).isEmpty, "No shared entity → no correlation")
+    }
+
+    // The scan input itself is now a correlation anchor (it was ignored before):
+    // an email that is one scan's input and another scan's structured finding links them.
+    func testCorrelatorLinksInputToStructuredMetadata() {
+        let a = summary("alice@example.com")
+        let b = summary("aliceuser", [
+            Correlator.ResultEntry(source: "HaveIBeenPwned", type: "data_breach", rawData: "x",
+                                   metadata: ["email": "alice@example.com", "breachCount": "2"])
+        ])
+        let entities = Correlator.correlate([a, b])
+        let email = entities.first { $0.type == "email" && $0.value == "alice@example.com" }
+        XCTAssertEqual(email?.occurrences.count, 2, "Email should link both scans")
+    }
+
+    // Precise: a structured twitter handle links to a username scan — regex over
+    // the display string could not reliably extract this.
+    func testCorrelatorUsesStructuredMetadata() {
+        let a = summary("alicejones", [
+            Correlator.ResultEntry(source: "GitHubAccountCheck", type: "account_presence", rawData: "x",
+                                   metadata: ["platform": "github", "username": "alicejones", "twitter": "bobsmith"])
+        ])
+        let b = summary("bobsmith")
+        let entities = Correlator.correlate([a, b])
+        XCTAssertTrue(entities.contains { $0.value == "bobsmith" && $0.occurrences.count == 2 },
+            "Structured twitter handle should link to the username scan")
+    }
+
+    // Fallback: a plugin with no metadata still contributes via regex over rawData.
+    func testCorrelatorFallsBackToRegex() {
+        let a = summary("targetalpha", [
+            Correlator.ResultEntry(source: "SomePlugin", type: "paste_exposure",
+                                   rawData: "leaked credential for shared@example.com here", metadata: nil)
+        ])
+        let b = summary("shared@example.com")
+        let entities = Correlator.correlate([a, b])
+        XCTAssertTrue(entities.contains { $0.value == "shared@example.com" && $0.occurrences.count == 2 })
+    }
+
     // MARK: - Cross-tenant dedup isolation
 
     func testDedupDoesNotLeakAcrossOwners() async throws {
