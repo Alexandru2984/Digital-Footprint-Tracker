@@ -1118,7 +1118,8 @@
         // not contain any new utility classes used here.
         function renderIdentity(panel, p) {
             const hasData = p.likelyName || (p.emails || []).length || (p.handles || []).length ||
-                            (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length;
+                            (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length ||
+                            (p.exposedIPs || []).length || (p.exposedServices || []).length || (p.vulnerabilities || []).length;
             if (!hasData) { panel.classList.add('hidden'); return; }
             panel.innerHTML = '';
             panel.style.cssText = 'background:#111827;border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px;';
@@ -1148,6 +1149,11 @@
                 c.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#1f2937;border:1px solid #374151;color:#cbd5e1;';
                 c.textContent = text; return c;
             }
+            function dangerChip(text) {
+                const c = document.createElement('span');
+                c.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#7f1d1d33;border:1px solid #ef444466;color:#fca5a5;';
+                c.textContent = text; return c;
+            }
             function row(label, node) {
                 const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:8px;align-items:flex-start;';
                 const l = document.createElement('span'); l.style.cssText = 'color:#64748b;flex-shrink:0;min-width:64px;'; l.textContent = label;
@@ -1174,6 +1180,16 @@
             }
             if ((p.breaches || []).length) chipRow('Breaches', p.breaches.slice(0, 12));
             if ((p.exposedIPs || []).length) chipRow('IPs', p.exposedIPs.slice(0, 8));
+            if ((p.exposedServices || []).length) {
+                chipRow('Ports', p.exposedServices.slice(0, 8).map(s =>
+                    s.ip + (s.ports && s.ports.length ? ' → ' + s.ports.slice(0, 12).join(',') : '')));
+            }
+            if ((p.vulnerabilities || []).length) {
+                const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+                p.vulnerabilities.slice(0, 16).forEach(v => wrap.appendChild(dangerChip(v)));
+                if (p.vulnerabilities.length > 16) wrap.appendChild(chip('+' + (p.vulnerabilities.length - 16) + ' more'));
+                row('CVEs', wrap);
+            }
 
             panel.appendChild(grid);
             panel.classList.remove('hidden');
