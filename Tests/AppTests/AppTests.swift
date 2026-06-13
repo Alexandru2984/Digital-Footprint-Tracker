@@ -437,6 +437,37 @@ final class AppTests: XCTestCase {
         })
     }
 
+    // MARK: - OSINT engine: plugin metadata coherence
+
+    // Every shipping plugin must declare an honest description — not the
+    // protocol's generic "OSINT plugin" fallback. This is what regressed
+    // silently before: ~17 of 24 plugins fell through a name-keyed switch.
+    func testAllPluginsHaveHonestDescriptions() {
+        for plugin in ScanController.defaultPlugins {
+            XCTAssertFalse(plugin.description.isEmpty, "\(plugin.name) has an empty description")
+            XCTAssertNotEqual(plugin.description, "OSINT plugin",
+                "\(plugin.name) is still using the generic fallback description")
+        }
+    }
+
+    // Plugin names double as cache keys and selection identifiers — they must be unique.
+    func testPluginNamesAreUnique() {
+        let names = ScanController.defaultPlugins.map { $0.name }
+        XCTAssertEqual(names.count, Set(names).count, "Duplicate plugin name(s): \(names)")
+    }
+
+    // cacheTTL now lives on each plugin. Verify the tuned values land where they
+    // should and that an un-overridden plugin keeps the 1-hour default — the old
+    // central map silently dropped these to the default via key mismatches.
+    func testPluginCacheTTLsAreDeclaredPerPlugin() {
+        XCTAssertEqual(HaveIBeenPwnedPlugin().cacheTTL, 86_400, "HIBP breach data should cache 24h")
+        XCTAssertEqual(BulkUsernamePlugin().cacheTTL, 21_600, "Sherlock username sweep should cache 6h")
+        XCTAssertEqual(WhoisPlugin().cacheTTL, 14_400, "WHOIS should cache 4h")
+        XCTAssertEqual(PhonePlugin().cacheTTL, 86_400, "Phone carrier data should cache 24h")
+        // A plugin that doesn't override keeps the protocol default.
+        XCTAssertEqual(RedditPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
+    }
+
     // MARK: - Cross-tenant dedup isolation
 
     func testDedupDoesNotLeakAcrossOwners() async throws {

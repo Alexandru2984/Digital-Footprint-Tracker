@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct ShodanPlugin: FootprintPlugin {
     let name = "Shodan"
+    let description = "Exposed ports and services (requires API key)"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard let apiKey = Environment.get("SHODAN_API_KEY"), !apiKey.isEmpty else { return [] }
@@ -13,13 +14,8 @@ struct ShodanPlugin: FootprintPlugin {
         let query = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
         guard let url = URL(string: "https://api.shodan.io/shodan/host/search?key=\(apiKey)&query=\(query)&minify=true") else { return [] }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue("DigitalFootprintTracker/1.0", forHTTPHeaderField: "User-Agent")
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let resp = await PluginHTTP.request(url), resp.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let matches = json["matches"] as? [[String: Any]],
               !matches.isEmpty else { return [] }
 

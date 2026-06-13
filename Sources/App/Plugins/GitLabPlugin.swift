@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct GitLabPlugin: FootprintPlugin {
     let name = "GitLabAccountCheck"
+    let description = "GitLab profile lookup"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

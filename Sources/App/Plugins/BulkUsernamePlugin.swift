@@ -70,6 +70,8 @@ struct SherlockData: Decodable {
 
 struct BulkUsernamePlugin: FootprintPlugin {
     let name = "BulkOSINT"
+    let description = "Username presence across 480+ platforms (Sherlock)"
+    let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
 
     // Load JSON into memory
     private let sites: [String: SherlockSite]

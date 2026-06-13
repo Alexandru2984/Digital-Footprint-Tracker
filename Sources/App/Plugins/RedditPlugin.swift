@@ -10,6 +10,7 @@ import Foundation
 /// and safe to call from background tasks that may outlive the app in tests.
 struct RedditPlugin: FootprintPlugin {
     let name = "Reddit"
+    let description = "Reddit account lookup"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

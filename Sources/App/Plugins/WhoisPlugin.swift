@@ -6,6 +6,8 @@ import FoundationNetworking
 
 struct WhoisPlugin: FootprintPlugin {
     let name = "WHOIS"
+    let description = "RDAP / WHOIS domain registration info"
+    let cacheTTL: TimeInterval = 14_400 // 4 h
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"),

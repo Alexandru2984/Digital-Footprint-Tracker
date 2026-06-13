@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct AbuseIPDBPlugin: FootprintPlugin {
     let name = "AbuseIPDB"
+    let description = "IP abuse reputation score (requires API key)"
 
     private static let ipRegex = try! NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 
@@ -18,14 +19,11 @@ struct AbuseIPDBPlugin: FootprintPlugin {
         let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
         guard let url = URL(string: "https://api.abuseipdb.com/api/v2/check?ipAddress=\(encoded)&maxAgeInDays=90&verbose") else { return [] }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue(apiKey, forHTTPHeaderField: "Key")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        guard let (responseData, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+        guard let resp = await PluginHTTP.request(url, headers: [
+            "Key": apiKey,
+            "Accept": "application/json"
+        ]), resp.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any] else { return [] }
 
         let abuseScore   = dataDict["abuseConfidenceScore"] as? Int ?? 0

@@ -70,37 +70,10 @@ struct ScanController: RouteCollection {
 
     @Sendable
     func listPlugins(req: Request) async throws -> [PluginInfo] {
-        return self.plugins.map { PluginInfo(name: $0.name, description: descriptionFor($0.name)) }
-    }
-
-    private func descriptionFor(_ name: String) -> String {
-        switch name {
-        case "Gravatar": return "Profile picture lookup by email"
-        case "HaveIBeenPwned": return "Email breach database check"
-        case "Username": return "Username presence on 50+ platforms"
-        case "GitLab": return "GitLab profile search"
-        case "Reddit": return "Reddit account lookup"
-        case "Twitter": return "Twitter/X profile search"
-        case "Keybase": return "Keybase identity lookup"
-        case "Telegram": return "Telegram username search"
-        case "Mastodon": return "Mastodon account search"
-        case "HackerNews": return "Hacker News profile lookup"
-        case "Steam": return "Steam profile search"
-        case "Npm": return "NPM package author lookup"
-        case "PyPI": return "PyPI package author lookup"
-        case "Pastebin": return "Pastebin content search"
-        case "Phone": return "Phone number OSINT"
-        case "DomainOSINT": return "DNS records, WHOIS, SSL info"
-        case "BulkUsername": return "Sherlock: 480+ platform username check"
-        case "BulkEmail": return "Holehe: email-to-account correlation"
-        case "CrtSh": return "Certificate Transparency subdomain enumeration"
-        case "Whois": return "RDAP domain registration info"
-        case "Shodan": return "Exposed ports and services (requires API key)"
-        case "VirusTotal": return "Malware/reputation check for domains and IPs (requires API key)"
-        case "AbuseIPDB": return "IP abuse reputation score (requires API key)"
-        case "PassiveDNS": return "Historical DNS and subdomain discovery"
-        default: return "OSINT plugin"
-        }
+        // Description now lives on each plugin (FootprintPlugin.description). The
+        // old central switch keyed off `.name`, but most names had drifted from
+        // its cases, so ~17 of 24 plugins silently fell back to "OSINT plugin".
+        return self.plugins.map { PluginInfo(name: $0.name, description: $0.description) }
     }
 
     @Sendable

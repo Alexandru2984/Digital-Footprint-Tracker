@@ -51,19 +51,20 @@ enum ScanPluginRunner {
 
             for plugin in plugins {
                 let pName = plugin.name
+                let pTTL = plugin.cacheTTL
                 group.addTask {
                     guard !Task.isCancelled else { return .failure(pluginName: pName) }
                     do {
                         // Cache lookup first. On hit we skip the network/CLI
                         // call entirely; on miss we run the plugin and write
-                        // the result back under its per-plugin TTL.
+                        // the result back under its own declared TTL.
                         let pluginResults: [PluginResult]
                         if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: input, on: db) {
                             pluginResults = cached
                         } else {
                             let fresh = try await plugin.scan(input: input, on: app)
                             if useCache {
-                                await PluginCacheStore.store(pluginName: pName, input: input, results: fresh, on: db, logger: app.logger)
+                                await PluginCacheStore.store(pluginName: pName, input: input, results: fresh, ttl: pTTL, on: db, logger: app.logger)
                             }
                             pluginResults = fresh
                         }

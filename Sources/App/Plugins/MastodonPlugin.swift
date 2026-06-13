@@ -15,6 +15,7 @@ import FoundationNetworking
 /// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
 struct MastodonPlugin: FootprintPlugin {
     let name = "MastodonOSINT"
+    let description = "Mastodon account search (mastodon.social)"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

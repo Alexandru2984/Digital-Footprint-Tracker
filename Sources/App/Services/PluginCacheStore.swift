@@ -9,8 +9,12 @@ import Foundation
 ///
 /// Design:
 ///   • Cache key = (plugin_name, sha256(lowercased + trimmed input)).
-///   • TTLs are per-plugin (see `ttls` below). Volatile data (threat intel)
-///     expires in minutes; stable data (geo, phone carrier) expires in a day.
+///   • TTL is supplied by the caller from the plugin's own `cacheTTL` property
+///     (see `FootprintPlugin`). It used to live in a central name→TTL map here,
+///     which silently fell back to the default whenever a plugin's `name` didn't
+///     match a key — and most keys had drifted out of sync, so tuned TTLs (e.g.
+///     HIBP's 24h) were never applied. Per-plugin declaration removes that class
+///     of bug entirely.
 ///   • Best-effort: any DB error during lookup/store is swallowed — a cache
 ///     miss just makes the plugin re-run. Never block a scan on cache I/O.
 ///   • Scheduled scans bypass the cache (see ScanPluginRunner.run) because
@@ -18,35 +22,8 @@ import Foundation
 ///   • Set PLUGIN_CACHE_DISABLED=true to opt-out entirely (debugging).
 enum PluginCacheStore {
 
-    // ─── TTL policy ─────────────────────────────────────────────────────────
-    // Keys must match the plugin's `.name`. Anything not listed gets defaultTTL.
-    private static let ttls: [String: TimeInterval] = [
-        // Email + breach data — slow-moving.
-        "BulkEmailOSINT":   86_400,   // 24 h
-        "HIBP":             86_400,
-        "EmailReputation":  86_400,
-        // Username presence — accounts can churn but mostly persist.
-        "Sherlock":         21_600,   //  6 h
-        "BulkUsernameOSINT":21_600,
-        // IP threat intel — fastest-changing.
-        "Shodan":            3_600,   //  1 h
-        "AbuseIPDB":         3_600,
-        "VirusTotal":        3_600,
-        // Geolocation / phone / WHOIS / DNS / CT-logs — very stable.
-        "Geolocate":        86_400,
-        "AbstractPhone":    86_400,
-        "WHOIS":            14_400,   //  4 h
-        "DNS":              14_400,
-        "CrtSh":            14_400,
-    ]
-    private static let defaultTTL: TimeInterval = 3_600
-
     static var isEnabled: Bool {
         (Environment.get("PLUGIN_CACHE_DISABLED")?.lowercased() != "true")
-    }
-
-    static func ttl(for pluginName: String) -> TimeInterval {
-        ttls[pluginName] ?? defaultTTL
     }
 
     /// Normalize before hashing so "user@x.com" and "  USER@X.com " share a cache row.
@@ -87,15 +64,16 @@ enum PluginCacheStore {
         return result
     }
 
-    /// Persists plugin output for the plugin's TTL. Failures are swallowed —
-    /// the cache is non-critical; a write error just means a future re-run.
-    static func store(pluginName: String, input: String, results: [PluginResult], on db: Database, logger: Logger) async {
+    /// Persists plugin output for `ttl` seconds (the plugin's own `cacheTTL`).
+    /// Failures are swallowed — the cache is non-critical; a write error just
+    /// means a future re-run.
+    static func store(pluginName: String, input: String, results: [PluginResult], ttl: TimeInterval, on db: Database, logger: Logger) async {
         guard isEnabled else { return }
         let h = hash(input)
         guard let body = try? JSONEncoder().encode(results),
               let payload = String(data: body, encoding: .utf8)
         else { return }
-        let expires = Date().addingTimeInterval(ttl(for: pluginName))
+        let expires = Date().addingTimeInterval(ttl)
 
         // Delete-then-insert keeps the upsert dialect-neutral. The unique
         // constraint guards against concurrent inserts of the same key.

@@ -8,6 +8,7 @@ import FoundationNetworking
 /// Uses the public PyPI JSON API — no API key required.
 struct PyPIPlugin: FootprintPlugin {
     let name = "PyPIPackages"
+    let description = "PyPI package author lookup"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

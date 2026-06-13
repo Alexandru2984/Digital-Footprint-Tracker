@@ -8,6 +8,7 @@ import FoundationNetworking
 /// Uses the public npm search API — no API key required.
 struct NpmPlugin: FootprintPlugin {
     let name = "NpmPackages"
+    let description = "npm package author lookup"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

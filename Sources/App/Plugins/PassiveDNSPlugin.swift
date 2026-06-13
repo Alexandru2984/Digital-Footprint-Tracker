@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct PassiveDNSPlugin: FootprintPlugin {
     let name = "PassiveDNS"
+    let description = "Historical DNS and subdomain discovery"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains(".") && !input.contains("@") else { return [] }

@@ -14,6 +14,7 @@ import FoundationNetworking
 /// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
 struct KeybasePlugin: FootprintPlugin {
     let name = "KeybaseOSINT"
+    let description = "Keybase identity lookup (cross-platform proofs)"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

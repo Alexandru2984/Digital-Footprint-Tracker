@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct VirusTotalPlugin: FootprintPlugin {
     let name = "VirusTotal"
+    let description = "Malware/reputation check for domains and IPs (requires API key)"
 
     private static let ipRegex = try! NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 
@@ -24,13 +25,9 @@ struct VirusTotalPlugin: FootprintPlugin {
 
     private func scanDomain(_ domain: String, apiKey: String) async -> [PluginResult] {
         guard let url = URL(string: "https://www.virustotal.com/api/v3/domains/\(domain)") else { return [] }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue(apiKey, forHTTPHeaderField: "x-apikey")
 
-        guard let (responseData, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey]), resp.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any],
               let attributes = dataDict["attributes"] as? [String: Any] else { return [] }
 
@@ -50,13 +47,9 @@ struct VirusTotalPlugin: FootprintPlugin {
 
     private func scanIP(_ ip: String, apiKey: String) async -> [PluginResult] {
         guard let url = URL(string: "https://www.virustotal.com/api/v3/ip_addresses/\(ip)") else { return [] }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        request.setValue(apiKey, forHTTPHeaderField: "x-apikey")
 
-        guard let (responseData, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey]), resp.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any],
               let attributes = dataDict["attributes"] as? [String: Any] else { return [] }
 

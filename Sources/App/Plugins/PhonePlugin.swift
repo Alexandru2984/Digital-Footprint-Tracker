@@ -18,6 +18,8 @@ import FoundationNetworking
 /// and safe to call from background tasks that may outlive the app in tests.
 struct PhonePlugin: FootprintPlugin {
     let name = "PhoneOSINT"
+    let description = "Phone number OSINT (carrier, region)"
+    let cacheTTL: TimeInterval = 86_400 // carrier/region data is very stable
 
     // Matches E.164 (+…) or raw digit strings, 7–15 digits total.
     private static let phoneRegex = try! NSRegularExpression(

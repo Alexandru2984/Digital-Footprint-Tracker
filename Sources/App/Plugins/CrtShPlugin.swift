@@ -6,6 +6,8 @@ import FoundationNetworking
 
 struct CrtShPlugin: FootprintPlugin {
     let name = "CertificateTransparency"
+    let description = "Certificate Transparency subdomain enumeration (crt.sh)"
+    let cacheTTL: TimeInterval = 14_400 // 4 h
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"),

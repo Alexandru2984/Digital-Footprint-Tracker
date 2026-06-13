@@ -8,6 +8,7 @@ import FoundationNetworking
 /// Returns karma, account age, and submission count — no API key required.
 struct HackerNewsPlugin: FootprintPlugin {
     let name = "HackerNews"
+    let description = "Hacker News profile lookup"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

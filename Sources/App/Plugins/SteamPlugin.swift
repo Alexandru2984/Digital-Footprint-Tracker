@@ -8,6 +8,7 @@ import FoundationNetworking
 /// No API key required — Steam exposes ?xml=1 on community profile pages.
 struct SteamPlugin: FootprintPlugin {
     let name = "SteamAccountCheck"
+    let description = "Steam profile search (vanity URL)"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

@@ -17,6 +17,7 @@ import FoundationNetworking
 /// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
 struct TelegramPlugin: FootprintPlugin {
     let name = "TelegramOSINT"
+    let description = "Telegram username / channel search"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

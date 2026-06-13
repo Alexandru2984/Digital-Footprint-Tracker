@@ -14,6 +14,7 @@ import FoundationNetworking
 /// Uses URLSession (Foundation) — lifecycle-independent, safe from asyncShutdown races.
 struct PastebinPlugin: FootprintPlugin {
     let name = "PastebinOSINT"
+    let description = "Pastebin / paste-site content search"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)

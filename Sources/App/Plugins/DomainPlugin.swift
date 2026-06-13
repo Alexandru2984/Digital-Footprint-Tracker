@@ -14,6 +14,8 @@ import FoundationNetworking
 /// matching the pattern used in BulkEmailPlugin for holehe.
 struct DomainPlugin: FootprintPlugin {
     let name = "DomainOSINT"
+    let description = "DNS records, WHOIS, SSL info"
+    let cacheTTL: TimeInterval = 14_400 // 4 h
 
     // Basic domain/IP regex. Intentionally loose — input has already been
     // sanitised by ScanController's character whitelist.
