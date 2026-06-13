@@ -174,7 +174,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
                 let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 let finalTrim = finalURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 if finalTrim.hasPrefix(errTrim) { return nil }
-                return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.8, rawData: "Account found (redirect-based). Profile: \(targetURL)")
+                return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.8,
+                                    rawData: "Account found (redirect-based). Profile: \(targetURL)",
+                                    metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
             }
 
             guard let url = URL(string: targetURL),
@@ -190,7 +192,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
 
             if siteData.errorType == "status_code" {
                 if http.statusCode == 200 {
-                    return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5, rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)")
+                    return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5,
+                                        rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)",
+                                        metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
                 }
             } else if siteData.errorType == "message" {
                 if http.statusCode == 200 {
@@ -206,7 +210,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
                         }
                     }
                     if !notFound {
-                        return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.9, rawData: "Account found (message-based)! Profile: \(targetURL)")
+                        return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.9,
+                                            rawData: "Account found (message-based)! Profile: \(targetURL)",
+                                            metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
                     }
                 }
             }

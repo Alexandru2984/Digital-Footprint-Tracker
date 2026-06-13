@@ -98,15 +98,27 @@ enum Correlator {
         return out
     }
 
-    /// Maps known metadata keys to correlation entity types.
+    /// Maps known metadata keys to correlation entity types. Platform-handle
+    /// keys (e.g. Keybase identity proofs, a GitHub-linked twitter) all collapse
+    /// to `username` so the same handle on different platforms correlates.
     private static let keyToType: [String: String] = [
         "email": "email",
         "username": "username",
         "twitter": "username",
+        "github": "username",
+        "reddit": "username",
+        "hackernews": "username",
+        "mastodon": "username",
+        "gitlab": "username",
+        "steam": "username",
+        "telegram": "username",
+        "facebook": "username",
+        "instagram": "username",
         "phone": "phone",
         "phonenumber": "phone",
         "ip": "ip",
         "domain": "domain",
+        "subdomain": "domain",
         "location": "location",
         "company": "org",
         "org": "org",

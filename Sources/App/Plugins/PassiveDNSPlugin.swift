@@ -35,7 +35,8 @@ struct PassiveDNSPlugin: FootprintPlugin {
                 source: "PassiveDNS",
                 type: "subdomain_ip",
                 confidenceScore: 0.85,
-                rawData: "Subdomain: \(hostname) → IP: \(ip)"
+                rawData: "Subdomain: \(hostname) → IP: \(ip)",
+                metadata: ["subdomain": hostname, "ip": ip]
             ))
         }
         return results

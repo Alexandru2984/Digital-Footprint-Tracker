@@ -69,7 +69,8 @@ struct TwitterPlugin: FootprintPlugin {
                 source: "Twitter",
                 type: "social_media",
                 confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: ["platform": "twitter", "username": username, "profileURL": "https://x.com/\(username)"]
             )]
         } catch {
             return []

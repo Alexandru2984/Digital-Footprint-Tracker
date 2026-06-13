@@ -61,11 +61,20 @@ struct KeybasePlugin: FootprintPlugin {
                 profileParts.append("Bio: \(truncBio)")
             }
 
+            var profileMeta: [String: String] = [
+                "platform": "keybase",
+                "username": username.lowercased(),
+                "profileURL": "https://keybase.io/\(username.lowercased())"
+            ]
+            if !fullName.isEmpty { profileMeta["name"] = fullName }
+            if !location.isEmpty { profileMeta["location"] = location }
+
             results.append(PluginResult(
                 source: "Keybase",
                 type: "account_presence",
                 confidenceScore: 1.0,
-                rawData: profileParts.joined(separator: " | ")
+                rawData: profileParts.joined(separator: " | "),
+                metadata: profileMeta
             ))
 
             // Cross-platform identity proofs — the OSINT gold
@@ -73,6 +82,9 @@ struct KeybasePlugin: FootprintPlugin {
                let allProofs = proofsSummary["all"] as? [[String: Any]], !allProofs.isEmpty {
 
                 var proofLines: [String] = []
+                // Map each proof type (github, twitter, reddit, …) to the proven
+                // handle — these become precise cross-platform correlation anchors.
+                var proofMeta: [String: String] = ["platform": "keybase", "username": username.lowercased()]
                 for proof in allProofs {
                     let proofType    = proof["proof_type"] as? String ?? "unknown"
                     let nametxt      = proof["nametxt"]    as? String ?? ""
@@ -82,6 +94,8 @@ struct KeybasePlugin: FootprintPlugin {
                             ? "\(proofType): \(nametxt)"
                             : "\(proofType): \(nametxt) (\(serviceURL))"
                         proofLines.append(line)
+                        let key = proofType.lowercased()
+                        if proofMeta[key] == nil { proofMeta[key] = nametxt }
                     }
                 }
 
@@ -90,7 +104,8 @@ struct KeybasePlugin: FootprintPlugin {
                         source: "Keybase",
                         type: "identity_proof",
                         confidenceScore: 0.98,
-                        rawData: "Keybase identity proofs for \(username): \(proofLines.joined(separator: " | "))"
+                        rawData: "Keybase identity proofs for \(username): \(proofLines.joined(separator: " | "))",
+                        metadata: proofMeta
                     ))
                 }
             }
@@ -99,21 +114,26 @@ struct KeybasePlugin: FootprintPlugin {
             if let cryptocurrency = user["cryptocurrency_addresses"] as? [String: Any],
                !cryptocurrency.isEmpty {
                 var walletParts: [String] = []
+                var firstAddress: String?
                 for (coin, addrs) in cryptocurrency {
                     if let addrList = addrs as? [[String: Any]] {
                         for addr in addrList {
                             if let address = addr["address"] as? String {
                                 walletParts.append("\(coin.uppercased()): \(address)")
+                                if firstAddress == nil { firstAddress = address }
                             }
                         }
                     }
                 }
                 if !walletParts.isEmpty {
+                    var walletMeta: [String: String] = ["platform": "keybase", "username": username.lowercased()]
+                    if let w = firstAddress { walletMeta["wallet"] = w }
                     results.append(PluginResult(
                         source: "Keybase",
                         type: "crypto_wallet",
                         confidenceScore: 0.99,
-                        rawData: "Cryptocurrency addresses linked to \(username): \(walletParts.joined(separator: " | "))"
+                        rawData: "Cryptocurrency addresses linked to \(username): \(walletParts.joined(separator: " | "))",
+                        metadata: walletMeta
                     ))
                 }
             }

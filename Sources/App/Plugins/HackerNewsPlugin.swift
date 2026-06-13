@@ -59,7 +59,9 @@ struct HackerNewsPlugin: FootprintPlugin {
                 source: name,
                 type: "account_presence",
                 confidenceScore: confidence,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: ["platform": "hackernews", "username": id,
+                           "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
             )]
         } catch {
             return []

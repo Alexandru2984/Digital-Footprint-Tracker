@@ -46,7 +46,8 @@ struct PhonePlugin: FootprintPlugin {
                 type: "phone_number",
                 confidenceScore: 0.4,
                 rawData: "Input looks like a phone number (\(digits) digits). " +
-                    "Set ABSTRACT_PHONE_API_KEY in .env for carrier/country lookup."
+                    "Set ABSTRACT_PHONE_API_KEY in .env for carrier/country lookup.",
+                metadata: ["phone": e164]
             )]
         }
 
@@ -73,7 +74,8 @@ struct PhonePlugin: FootprintPlugin {
                     source: "PhoneOSINT",
                     type: "phone_number",
                     confidenceScore: 0.3,
-                    rawData: "Phone number \(intl) appears invalid or unassigned."
+                    rawData: "Phone number \(intl) appears invalid or unassigned.",
+                    metadata: ["phone": intl]
                 )]
             }
 
@@ -81,7 +83,8 @@ struct PhonePlugin: FootprintPlugin {
                 source: "PhoneOSINT",
                 type: "phone_number",
                 confidenceScore: 0.95,
-                rawData: "Phone \(intl) — Country: \(country), Carrier: \(carrier), Type: \(type)"
+                rawData: "Phone \(intl) — Country: \(country), Carrier: \(carrier), Type: \(type)",
+                metadata: ["phone": intl, "country": country, "carrier": carrier]
             )]
         } catch {
             return []

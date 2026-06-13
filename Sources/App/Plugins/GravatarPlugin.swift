@@ -28,7 +28,8 @@ struct GravatarPlugin: FootprintPlugin {
             source: name,
             type: "avatar_presence",
             confidenceScore: 1.0,
-            rawData: "Gravatar found! URL: \(urlString)"
+            rawData: "Gravatar found! URL: \(urlString)",
+            metadata: ["email": cleanedEmail, "profileURL": urlString]
         )]
     }
 }

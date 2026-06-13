@@ -46,7 +46,8 @@ struct CrtShPlugin: FootprintPlugin {
                 source: "crt.sh",
                 type: "subdomain",
                 confidenceScore: 0.9,
-                rawData: cleaned
+                rawData: cleaned,
+                metadata: ["subdomain": cleaned, "domain": domain]
             ))
         }
         return results

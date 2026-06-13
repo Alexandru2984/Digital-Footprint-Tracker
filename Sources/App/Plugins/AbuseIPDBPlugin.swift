@@ -35,6 +35,7 @@ struct AbuseIPDBPlugin: FootprintPlugin {
         let rawData = "AbuseIPDB: \(input) | abuse score: \(abuseScore)% | reports: \(totalReports) | country: \(countryCode) | ISP: \(isp) | type: \(usageType)"
 
         let confidence = max(0.1, min(1.0, Double(abuseScore) / 100.0))
-        return [PluginResult(source: "AbuseIPDB", type: "ip_abuse", confidenceScore: confidence, rawData: rawData)]
+        return [PluginResult(source: "AbuseIPDB", type: "ip_abuse", confidenceScore: confidence, rawData: rawData,
+                             metadata: ["ip": input, "country": countryCode, "org": isp, "abuseScore": String(abuseScore)])]
     }
 }

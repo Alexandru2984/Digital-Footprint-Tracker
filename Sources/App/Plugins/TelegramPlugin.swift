@@ -105,7 +105,8 @@ struct TelegramPlugin: FootprintPlugin {
                 source: "Telegram",
                 type: "social_media",
                 confidenceScore: 0.9,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: ["platform": "telegram", "username": username, "profileURL": "https://t.me/\(username)"]
             )]
         } catch {
             return []

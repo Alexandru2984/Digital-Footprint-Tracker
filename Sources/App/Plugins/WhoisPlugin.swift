@@ -75,7 +75,8 @@ struct WhoisPlugin: FootprintPlugin {
             source: "RDAP/WHOIS",
             type: "domain_registration",
             confidenceScore: 0.95,
-            rawData: info.joined(separator: " | ")
+            rawData: info.joined(separator: " | "),
+            metadata: ["domain": domain]
         )]
     }
 }

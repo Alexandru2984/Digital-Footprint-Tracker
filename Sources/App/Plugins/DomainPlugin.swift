@@ -45,7 +45,8 @@ struct DomainPlugin: FootprintPlugin {
                     source: "DomainDNS",
                     type: "dns_a_record",
                     confidenceScore: 1.0,
-                    rawData: "A records for \(target): \(ips.joined(separator: ", "))"
+                    rawData: "A records for \(target): \(ips.joined(separator: ", "))",
+                    metadata: ["domain": target, "ip": ips[0]]
                 ))
             }
         }
@@ -60,7 +61,8 @@ struct DomainPlugin: FootprintPlugin {
                     source: "DomainDNS",
                     type: "dns_mx_record",
                     confidenceScore: 0.95,
-                    rawData: "MX records for \(target): \(mx.joined(separator: "; "))"
+                    rawData: "MX records for \(target): \(mx.joined(separator: "; "))",
+                    metadata: ["domain": target]
                 ))
             }
         }
@@ -75,7 +77,8 @@ struct DomainPlugin: FootprintPlugin {
                     source: "DomainDNS",
                     type: "dns_spf_record",
                     confidenceScore: 0.9,
-                    rawData: "Email security records for \(target): \(spf.joined(separator: " | "))"
+                    rawData: "Email security records for \(target): \(spf.joined(separator: " | "))",
+                    metadata: ["domain": target]
                 ))
             }
         }
@@ -95,7 +98,8 @@ struct DomainPlugin: FootprintPlugin {
                     source: "DomainWHOIS",
                     type: "whois_record",
                     confidenceScore: 0.85,
-                    rawData: "WHOIS for \(target): \(interesting.joined(separator: " | "))"
+                    rawData: "WHOIS for \(target): \(interesting.joined(separator: " | "))",
+                    metadata: ["domain": target]
                 ))
             }
         }
@@ -109,7 +113,8 @@ struct DomainPlugin: FootprintPlugin {
                     source: "DomainDNS",
                     type: "dns_ptr_record",
                     confidenceScore: 0.9,
-                    rawData: "Reverse DNS for \(target): \(ptr)"
+                    rawData: "Reverse DNS for \(target): \(ptr)",
+                    metadata: ["ip": target, "domain": ptr]
                 ))
             }
         }
@@ -173,11 +178,15 @@ struct DomainPlugin: FootprintPlugin {
             if let isp = geo.isp, !isp.isEmpty              { parts.append("ISP: \(isp)") }
             if let org = geo.org, !org.isEmpty, org != geo.isp { parts.append("Org: \(org)") }
             if let asn = geo.as, !asn.isEmpty               { parts.append("ASN: \(asn)") }
+            var meta: [String: String] = ["ip": ip]
+            if let country = geo.country, !country.isEmpty { meta["country"] = country }
+            if let isp = geo.isp, !isp.isEmpty             { meta["org"] = isp }
             return PluginResult(
                 source: "DomainGeo",
                 type: "ip_geolocation",
                 confidenceScore: 0.95,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: meta
             )
         }
     }

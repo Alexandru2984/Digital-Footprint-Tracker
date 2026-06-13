@@ -66,7 +66,8 @@ struct PastebinPlugin: FootprintPlugin {
                     source: "PastebinOSINT",
                     type: "paste_exposure",
                     confidenceScore: 0.95,
-                    rawData: "\(email) found in \(count) paste(s). Sources: \(uniqueSources.isEmpty ? "various" : uniqueSources). Earliest: \(oldest)"
+                    rawData: "\(email) found in \(count) paste(s). Sources: \(uniqueSources.isEmpty ? "various" : uniqueSources). Earliest: \(oldest)",
+                    metadata: ["email": email, "pasteCount": String(count)]
                 )]
             case 404:
                 // 404 means "not found in pastes" — not an error.
@@ -109,7 +110,8 @@ struct PastebinPlugin: FootprintPlugin {
                 source: "PastebinOSINT",
                 type: "paste_exposure",
                 confidenceScore: 0.85,
-                rawData: "Pastebin public profile found for \"\(username)\": https://pastebin.com/u/\(username)"
+                rawData: "Pastebin public profile found for \"\(username)\": https://pastebin.com/u/\(username)",
+                metadata: ["platform": "pastebin", "username": username, "profileURL": "https://pastebin.com/u/\(username)"]
             )]
         } catch {
             return []

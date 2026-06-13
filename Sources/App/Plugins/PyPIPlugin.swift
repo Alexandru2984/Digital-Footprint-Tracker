@@ -50,7 +50,9 @@ struct PyPIPlugin: FootprintPlugin {
                 source: name,
                 type: "developer_identity",
                 confidenceScore: packageNames.isEmpty ? 0.7 : 0.95,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: ["platform": "pypi", "username": username,
+                           "profileURL": "https://pypi.org/user/\(username)/"]
             )]
         } catch {
             return []

@@ -616,6 +616,29 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(entities.contains { $0.value == "shared@example.com" && $0.occurrences.count == 2 })
     }
 
+    // A Keybase identity proof exposing a github handle links to a username scan.
+    func testCorrelatorLinksPlatformProofHandles() {
+        let a = summary("alicekb", [
+            Correlator.ResultEntry(source: "Keybase", type: "identity_proof", rawData: "proofs",
+                                   metadata: ["platform": "keybase", "github": "devhandle"])
+        ])
+        let b = summary("devhandle")
+        let entities = Correlator.correlate([a, b])
+        XCTAssertTrue(entities.contains { $0.value == "devhandle" && $0.type == "username" && $0.occurrences.count == 2 },
+            "A platform proof handle should link to a username scan")
+    }
+
+    // A discovered subdomain links to a domain scanned directly.
+    func testCorrelatorLinksSubdomainToDomainInput() {
+        let a = summary("shared.example.com")
+        let b = summary("otherinput", [
+            Correlator.ResultEntry(source: "crt.sh", type: "subdomain", rawData: "shared.example.com",
+                                   metadata: ["subdomain": "shared.example.com", "domain": "example.com"])
+        ])
+        let entities = Correlator.correlate([a, b])
+        XCTAssertTrue(entities.contains { $0.value == "shared.example.com" && $0.type == "domain" && $0.occurrences.count == 2 })
+    }
+
     // MARK: - Cross-tenant dedup isolation
 
     func testDedupDoesNotLeakAcrossOwners() async throws {

@@ -58,11 +58,20 @@ struct SteamPlugin: FootprintPlugin {
                 }
             }
 
+            var meta: [String: String] = [
+                "platform": "steam",
+                "username": username,
+                "profileURL": "https://steamcommunity.com/id/\(username)",
+                "steamID64": steamID
+            ]
+            if let location = extractTag("location", from: xml) { meta["location"] = location }
+
             return [PluginResult(
                 source: name,
                 type: "account_presence",
                 confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: meta
             )]
         } catch {
             return []

@@ -50,11 +50,22 @@ struct GitLabPlugin: FootprintPlugin {
             if let followers = user.followers                   { parts.append("Followers: \(followers)") }
             if let year = user.created_at?.prefix(4)           { parts.append("Joined: \(year)") }
 
+            var meta: [String: String] = [
+                "platform": "gitlab",
+                "username": user.username ?? username,
+                "profileURL": user.web_url ?? "https://gitlab.com/\(username)"
+            ]
+            if let n = user.name, !n.isEmpty             { meta["name"] = n }
+            if let loc = user.location, !loc.isEmpty     { meta["location"] = loc }
+            if let org = user.organization, !org.isEmpty { meta["company"] = org }
+            if let web = user.website_url, !web.isEmpty  { meta["blog"] = web }
+
             return [PluginResult(
                 source: name,
                 type: "account_presence",
                 confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: meta
             )]
         } catch {
             return []

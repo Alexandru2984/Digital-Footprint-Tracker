@@ -60,7 +60,8 @@ struct NpmPlugin: FootprintPlugin {
                 source: name,
                 type: "developer_identity",
                 confidenceScore: 0.9,
-                rawData: "npm maintainer: \(username) | \(result.total) package(s) found | Top: \(packageList)"
+                rawData: "npm maintainer: \(username) | \(result.total) package(s) found | Top: \(packageList)",
+                metadata: ["platform": "npm", "username": username]
             )]
         } catch {
             return []

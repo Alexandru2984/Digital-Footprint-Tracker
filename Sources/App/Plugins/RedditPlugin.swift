@@ -24,20 +24,24 @@ struct RedditPlugin: FootprintPlugin {
         do {
             let (_, response) = try await URLSession.shared.data(for: req)
             guard let http = response as? HTTPURLResponse else { return [] }
+            let meta = ["platform": "reddit", "username": username,
+                        "profileURL": "https://www.reddit.com/user/\(username)"]
             switch http.statusCode {
             case 200:
                 return [PluginResult(
                     source: "Reddit",
                     type: "account_presence",
                     confidenceScore: 1.0,
-                    rawData: "Reddit account found. Profile: https://www.reddit.com/user/\(username)"
+                    rawData: "Reddit account found. Profile: https://www.reddit.com/user/\(username)",
+                    metadata: meta
                 )]
             case 403:
                 return [PluginResult(
                     source: "Reddit",
                     type: "account_presence",
                     confidenceScore: 0.9,
-                    rawData: "Reddit account exists but is suspended/banned. Profile: https://www.reddit.com/user/\(username)"
+                    rawData: "Reddit account exists but is suspended/banned. Profile: https://www.reddit.com/user/\(username)",
+                    metadata: meta
                 )]
             default:
                 return []

@@ -69,7 +69,8 @@ struct MastodonPlugin: FootprintPlugin {
                 source: "Mastodon",
                 type: "social_media",
                 confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | ")
+                rawData: parts.joined(separator: " | "),
+                metadata: ["platform": "mastodon", "username": acct, "profileURL": profileURL]
             )]
         } catch {
             return []

@@ -104,7 +104,8 @@ struct BulkEmailPlugin: FootprintPlugin {
                             source: site,
                             type: "account_presence",
                             confidenceScore: 1.0,
-                            rawData: "Account registered with email on \(site) (detected via recovery flow)"
+                            rawData: "Account registered with email on \(site) (detected via recovery flow)",
+                            metadata: ["email": cleanedEmail, "platform": site]
                         )
                     )
                 }
