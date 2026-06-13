@@ -473,32 +473,51 @@ final class AppTests: XCTestCase {
 
     func testTargetDeriverUsernamePassesThrough() {
         XCTAssertEqual(TargetDeriver.candidates(for: "johndoe"),
-                       [TargetDeriver.Candidate(value: "johndoe", derived: false)])
+                       [TargetDeriver.Candidate(value: "johndoe", origin: .primary)])
     }
 
     func testTargetDeriverEmailDerivesUsername() {
         let c = TargetDeriver.candidates(for: "john.doe@gmail.com")
-        XCTAssertEqual(c.first, TargetDeriver.Candidate(value: "john.doe@gmail.com", derived: false))
-        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "john.doe", derived: true)))
-        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "johndoe", derived: true)),
-            "dot-stripped (Gmail) variant should be derived too")
+        XCTAssertEqual(c.first, TargetDeriver.Candidate(value: "john.doe@gmail.com", origin: .primary))
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "john.doe", origin: .emailLocalPart)))
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "johndoe", origin: .variant)),
+            "dot-stripped (Gmail) form should be a variant")
     }
 
     func testTargetDeriverStripsPlusTag() {
         let c = TargetDeriver.candidates(for: "alice+newsletter@example.com")
-        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "alice", derived: true)))
-        XCTAssertFalse(c.contains { $0.derived && $0.value.contains("+") }, "The +tag must be stripped from derived usernames")
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "alice", origin: .emailLocalPart)))
+        XCTAssertFalse(c.contains { $0.origin.derived && $0.value.contains("+") }, "The +tag must be stripped")
     }
 
     func testTargetDeriverSkipsShortLocalPart() {
         XCTAssertEqual(TargetDeriver.candidates(for: "ab@x.com"),
-                       [TargetDeriver.Candidate(value: "ab@x.com", derived: false)],
+                       [TargetDeriver.Candidate(value: "ab@x.com", origin: .primary)],
                        "A too-short local-part yields no username candidate")
     }
 
     func testTargetDeriverDomainHasNoDerivation() {
         XCTAssertEqual(TargetDeriver.candidates(for: "example.com"),
-                       [TargetDeriver.Candidate(value: "example.com", derived: false)])
+                       [TargetDeriver.Candidate(value: "example.com", origin: .primary)])
+    }
+
+    // Username with a separator → sibling-handle variants (no dotted forms, so
+    // domains are never derived from). Variants are weaker guesses.
+    func testTargetDeriverUsernameSeparatorVariants() {
+        let c = TargetDeriver.candidates(for: "john_doe")
+        XCTAssertEqual(c.first, TargetDeriver.Candidate(value: "john_doe", origin: .primary))
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "johndoe", origin: .variant)), "separator-stripped")
+        XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "john-doe", origin: .variant)), "separator-swapped")
+    }
+
+    // Heavy plugins run only on heavy-eligible candidates so the 480-site sweep
+    // is bounded to one run: the email local-part is eligible, variants are not.
+    func testTargetDeriverHeavyEligibilityBoundsFanOut() {
+        let c = TargetDeriver.candidates(for: "john.doe@gmail.com")
+        let heavy = c.filter { $0.origin.heavyEligible }
+        XCTAssertEqual(heavy.count, 2, "primary + email local-part only (variant excluded)")
+        XCTAssertTrue(heavy.contains(TargetDeriver.Candidate(value: "john.doe", origin: .emailLocalPart)))
+        XCTAssertFalse(heavy.contains { $0.origin == .variant })
     }
 
     // MARK: - Risk scoring

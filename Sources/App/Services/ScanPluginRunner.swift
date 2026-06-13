@@ -58,6 +58,9 @@ enum ScanPluginRunner {
             for plugin in plugins {
                 let pName = plugin.name
                 let pTTL = plugin.cacheTTL
+                // Heavy plugins (the 480-site sweep) skip speculative variants so
+                // fan-out can't trigger several expensive runs in one task.
+                let pCandidates = plugin.heavy ? candidates.filter { $0.origin.heavyEligible } : candidates
                 group.addTask {
                     guard !Task.isCancelled else { return .failure(pluginName: pName) }
                     do {
@@ -67,7 +70,7 @@ enum ScanPluginRunner {
                         // email — each does its real work once. Cache keys include
                         // the candidate, so a derived username shares cache with a
                         // direct scan of that username.
-                        for candidate in candidates {
+                        for candidate in pCandidates {
                             let cInput = candidate.value
                             let raw: [PluginResult]
                             if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
@@ -80,7 +83,7 @@ enum ScanPluginRunner {
                                 raw = fresh
                             }
                             for pr in raw {
-                                try await persist(pr, derived: candidate.derived, scanID: scanID, on: db)
+                                try await persist(pr, origin: candidate.origin, scanID: scanID, on: db)
                             }
                         }
                         return .success(pluginName: pName)
@@ -147,16 +150,17 @@ enum ScanPluginRunner {
         }
     }
 
-    /// Persists one plugin result. Derived findings (e.g. a username inferred
-    /// from an email's local-part) get a reduced confidence and a `derivedFrom`
-    /// marker: the account certainly exists, but its link to the original target
-    /// is a strong inference, not a proven fact.
-    private static func persist(_ pr: PluginResult, derived: Bool, scanID: UUID, on db: Database) async throws {
-        let rawBase = derived ? "[via email local-part] " + pr.rawData : pr.rawData
+    /// Persists one plugin result. Derived findings (a username inferred from an
+    /// email local-part, or a username variant) get a confidence discount and a
+    /// provenance note/marker: the account exists, but its link to the original
+    /// target is an inference, not a proven fact — the strength of which depends
+    /// on the candidate's `origin`.
+    private static func persist(_ pr: PluginResult, origin: TargetDeriver.Origin, scanID: UUID, on db: Database) async throws {
+        let rawBase = origin.note.map { "\($0) \(pr.rawData)" } ?? pr.rawData
         let cappedRawData = rawBase.count > 8192 ? String(rawBase.prefix(8192)) + "… [truncated]" : rawBase
 
         var metaDict = pr.metadata ?? [:]
-        if derived { metaDict["derivedFrom"] = "email-localpart" }
+        if origin.derived { metaDict["derivedFrom"] = origin.note ?? "derived" }
         let metadataJSON: String?
         if metaDict.isEmpty {
             metadataJSON = nil
@@ -167,7 +171,7 @@ enum ScanPluginRunner {
             metadataJSON = nil
         }
 
-        let confidence = max(0.0, min(1.0, pr.confidenceScore)) * (derived ? 0.75 : 1.0)
+        let confidence = max(0.0, min(1.0, pr.confidenceScore)) * origin.confidenceFactor
         let result = Result(
             scanID: scanID,
             source: String(pr.source.prefix(64)),

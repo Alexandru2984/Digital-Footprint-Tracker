@@ -14,6 +14,11 @@ protocol FootprintPlugin: Sendable {
     /// failed to match a renamed plugin).
     var cacheTTL: TimeInterval { get }
 
+    /// Expensive plugins (many outbound requests per run) set this true so the
+    /// candidate fan-out runs them on at most one derived candidate instead of
+    /// every speculative variant — see `TargetDeriver.Origin.heavyEligible`.
+    var heavy: Bool { get }
+
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
@@ -21,6 +26,7 @@ protocol FootprintPlugin: Sendable {
 extension FootprintPlugin {
     var description: String { "OSINT plugin" }
     var cacheTTL: TimeInterval { 3600 } // 1 hour
+    var heavy: Bool { false }
 }
 
 struct PluginResult: Sendable, Codable {

@@ -72,6 +72,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
     let name = "BulkOSINT"
     let description = "Username presence across 480+ platforms (Sherlock)"
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
+    let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
     private let sites: [String: SherlockSite]
