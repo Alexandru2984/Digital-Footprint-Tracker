@@ -620,6 +620,43 @@ final class AppTests: XCTestCase {
         XCTAssertNil(DoHResolver.reverseIPv4Name("not.an.ip.x"))
     }
 
+    // MARK: - Identity synthesis
+
+    func testIdentitySynthesizerBuildsProfile() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHubAccountCheck", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "alice", "name": "Alice Roe",
+                         "profileURL": "https://github.com/alice", "location": "Berlin"], rawData: "x"),
+            I(source: "GitHub:commits", type: "email", confidence: 0.9,
+              metadata: ["email": "Alice@Example.com"], rawData: "x"),
+            I(source: "Gravatar:twitter", type: "identity_proof", confidence: 0.95,
+              metadata: ["platform": "twitter", "username": "alice"], rawData: "x"),
+            I(source: "HaveIBeenPwned", type: "data_breach", confidence: 1.0,
+              metadata: ["breaches": "Adobe, LinkedIn"], rawData: "x")
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 40, riskLevel: "Medium")
+
+        XCTAssertEqual(p.likelyName, "Alice Roe")
+        XCTAssertEqual(p.locations, ["Berlin"])
+        XCTAssertTrue(p.emails.contains("alice@example.com"), "email lowercased + deduped")
+        XCTAssertTrue(p.breaches.contains("Adobe") && p.breaches.contains("LinkedIn"))
+        XCTAssertEqual(p.riskScore, 40)
+
+        let alice = p.handles.first { $0.handle == "alice" }
+        XCTAssertEqual(alice?.platforms, ["github", "twitter"], "handle seen on both platforms")
+        XCTAssertGreaterThan(alice?.confidence ?? 0, 0.95, "cross-platform confirmation boosts confidence")
+
+        XCTAssertEqual(p.confirmedAccounts.count, 2, "github + twitter accounts, deduped")
+    }
+
+    func testIdentitySynthesizerEmpty() {
+        let p = IdentitySynthesizer.synthesize(from: [], riskScore: 0, riskLevel: "Low")
+        XCTAssertNil(p.likelyName)
+        XCTAssertTrue(p.handles.isEmpty)
+        XCTAssertEqual(p.resultCount, 0)
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {

@@ -50,6 +50,9 @@ func routes(_ app: Application) throws {
     let correlationController = CorrelationController()
     try app.register(collection: correlationController)
 
+    let identityController = IdentityController()
+    try app.register(collection: identityController)
+
     let notificationController = NotificationController()
     try app.register(collection: notificationController)
 
