@@ -785,6 +785,45 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(AttackSurfacePlugin.isPublicIPv4("not-an-ip"))
     }
 
+    // MARK: - Web posture (security-header grading)
+
+    func testWebPostureGrading() {
+        // Fully hardened → grade A, nothing missing, server fingerprinted.
+        let strong = WebPosture.analyze(headers: [
+            "strict-transport-security": "max-age=63072000",
+            "content-security-policy": "default-src 'self'",
+            "x-frame-options": "DENY",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "permissions-policy": "geolocation=()",
+            "server": "nginx", "x-powered-by": "Express"
+        ])
+        XCTAssertEqual(strong.grade, "A")
+        XCTAssertTrue(strong.missing.isEmpty)
+        XCTAssertEqual(strong.server, "nginx / Express")
+
+        // Naked response → grade F, all six missing.
+        let weak = WebPosture.analyze(headers: ["server": "Apache"])
+        XCTAssertEqual(weak.grade, "F")
+        XCTAssertEqual(weak.missing.count, 6)
+        XCTAssertEqual(weak.server, "Apache")
+
+        // Missing only the two heaviest (HSTS + CSP): 3 of 7 weight present → grade D.
+        let partial = WebPosture.analyze(headers: [
+            "x-frame-options": "SAMEORIGIN",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "strict-origin",
+            "permissions-policy": "camera=()"
+        ])
+        XCTAssertEqual(partial.grade, "D")
+        XCTAssertTrue(partial.missing.contains("HSTS") && partial.missing.contains("CSP"))
+        XCTAssertNil(partial.server, "no Server/X-Powered-By → no fingerprint")
+
+        // An empty header value counts as missing, not present.
+        let blank = WebPosture.analyze(headers: ["content-security-policy": "  "])
+        XCTAssertTrue(blank.missing.contains("CSP"))
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {

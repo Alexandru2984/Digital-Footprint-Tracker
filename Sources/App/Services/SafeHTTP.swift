@@ -46,6 +46,35 @@ final class SafeHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         _ = try await session.data(for: req)
     }
 
+    /// Response metadata from a guarded GET — enough for header/posture analysis.
+    struct Response: Sendable {
+        let status: Int
+        let headers: [String: String]   // header names lowercased
+        let finalURL: URL?
+    }
+
+    /// GET `url` and return its status + response headers, with the same SSRF
+    /// protection as `post` (pre-flight DNS check + redirect re-validation). Used by
+    /// the web-posture plugin to inspect security headers on a user-supplied host.
+    func get(url: URL, timeout: TimeInterval = 10) async throws -> Response {
+        guard let host = url.host, !host.isEmpty else { throw SafeHTTPError.badURL }
+        guard !SSRFGuard.resolvesToInternal(host) else { throw SafeHTTPError.blockedInternalHost }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = timeout
+        req.setValue("Digital-Footprint-Tracker/1.0 (+https://swift.micutu.com)", forHTTPHeaderField: "User-Agent")
+
+        let (_, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { throw SafeHTTPError.badURL }
+
+        var headers: [String: String] = [:]
+        for (key, value) in http.allHeaderFields {
+            headers[String(describing: key).lowercased()] = String(describing: value)
+        }
+        return Response(status: http.statusCode, headers: headers, finalURL: http.url)
+    }
+
     // MARK: - URLSessionTaskDelegate
 
     /// Re-validate the destination of every redirect; refuse to follow one that
