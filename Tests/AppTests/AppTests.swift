@@ -753,6 +753,38 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(loop.isEmpty, "loopback is dropped")
     }
 
+    // MARK: - Attack surface (whole-footprint exposure)
+
+    func testCrtShParsesAndDedupesSubdomains() {
+        // name_value often packs several SANs into one entry, newline-separated,
+        // including wildcards and duplicates.
+        let json = #"""
+        [{"name_value":"*.example.com\nwww.example.com"},
+         {"name_value":"WWW.example.com"},
+         {"name_value":"api.example.com\nmail.example.com"},
+         {"name_value":"not-a-host"}]
+        """#.data(using: .utf8)!
+        let subs = CrtShPlugin.parseSubdomains(json, limit: 50)
+        XCTAssertEqual(subs, ["example.com", "www.example.com", "api.example.com", "mail.example.com"],
+                       "wildcards stripped, lowercased, deduped, non-hosts dropped, order preserved")
+        XCTAssertEqual(CrtShPlugin.parseSubdomains(json, limit: 2).count, 2, "limit honoured")
+        XCTAssertEqual(CrtShPlugin.normalizeDomain("https://Example.com/path"), "example.com")
+    }
+
+    func testAttackSurfaceHostListAndIPFilter() {
+        let hosts = AttackSurfacePlugin.hostList(
+            apex: "example.com",
+            subdomains: ["www.example.com", "example.com", "api.example.com"],
+            limit: 3)
+        XCTAssertEqual(hosts, ["example.com", "www.example.com", "api.example.com"],
+                       "apex first, deduped, capped")
+
+        XCTAssertTrue(AttackSurfacePlugin.isPublicIPv4("8.8.8.8"))
+        XCTAssertFalse(AttackSurfacePlugin.isPublicIPv4("10.0.0.1"))
+        XCTAssertFalse(AttackSurfacePlugin.isPublicIPv4("169.254.169.254"), "metadata endpoint rejected")
+        XCTAssertFalse(AttackSurfacePlugin.isPublicIPv4("not-an-ip"))
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {
