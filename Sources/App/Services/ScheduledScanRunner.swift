@@ -112,6 +112,14 @@ private func runDueScans(app: Application) async {
                 let newResults = allResults.filter { r in
                     !prevFingerprints.contains("\(r.source):\(r.type):\(String(r.rawData.prefix(200)))")
                 }
+                // Attack-surface delta: lead the alert with newly opened ports / CVEs /
+                // subdomains when present — far more actionable than a source list.
+                let toInput: (App.Result) -> IdentitySynthesizer.Input = {
+                    IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                              metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
+                }
+                let exposureDelta = ExposureDiff.between(previous: prevResults.map(toInput), current: allResults.map(toInput))
+                let exposureLine = exposureDelta.hasExposureChange ? exposureDelta.headline : ""
                 if !newResults.isEmpty {
                     // Build an actionable summary line: the top distinct sources
                     // where new findings appeared, capped to keep messages short
@@ -128,28 +136,32 @@ private func runDueScans(app: Application) async {
                     let notification = ScanNotification(
                         userID: userID,
                         scanID: scanID,
-                        message: "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)",
+                        message: exposureLine.isEmpty
+                            ? "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)"
+                            : "🚨 New exposure for \u{201C}\(String(input.prefix(30)))\u{201D}: \(exposureLine)",
                         newResultsCount: newResults.count
                     )
                     try? await notification.save(on: db)
 
                     if let monitorUser = try? await User.find(userID, on: db) {
                         let risk = RiskScorer.compute(results: allResults)
-                        let body = """
-                        Your monitored target '\(input)' has \(newResults.count) new result(s).
-                        Sources: \(sourceLine)
-                        Risk: \(risk.level.rawValue) (\(risk.value)/100).
-                        """
+                        var body = "Your monitored target '\(input)' has \(newResults.count) new result(s).\n"
+                        if !exposureLine.isEmpty { body += "New exposure: \(exposureLine)\n" }
+                        body += "Sources: \(sourceLine)\nRisk: \(risk.level.rawValue) (\(risk.value)/100)."
+                        let title = exposureLine.isEmpty
+                            ? "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
+                            : "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
                         await NotificationDispatcher.notify(
                             user: monitorUser,
-                            title: "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))",
+                            title: title,
                             message: body,
                             scanID: scanID,
                             app: app
                         )
                         firedDiffAlert = true
                     }
-                    app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)' — \(sourceLine)")
+                    let logSummary = exposureLine.isEmpty ? sourceLine : exposureLine
+                    app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)' — \(logSummary)")
                 }
             }
 
