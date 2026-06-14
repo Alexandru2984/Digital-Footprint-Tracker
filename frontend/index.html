@@ -544,6 +544,8 @@
 
             <!-- Results Tab Content -->
             <div id="results-tab-content" class="flex flex-col gap-4 pt-2">
+                <!-- Exposure delta vs the previous scan (owner-only; /api/scans/:id/exposure-diff) -->
+                <div id="exposure-diff-banner" class="hidden"></div>
                 <!-- Synthesized identity profile (populated from /api/identity/:id) -->
                 <div id="identity-panel" class="hidden"></div>
                 <!-- Empty State / No findings -->
@@ -1111,6 +1113,60 @@
             }
         }
 
+        // Fetches the attack-surface delta vs the previous scan of this target and
+        // renders a banner. Owner-only endpoint: 401/404 (anonymous or shared view)
+        // just leaves the banner hidden.
+        function loadExposureDiff(scanID) {
+            const banner = document.getElementById('exposure-diff-banner');
+            if (!banner || !scanID) return;
+            banner.classList.add('hidden');
+            fetch('/api/scans/' + encodeURIComponent(scanID) + '/exposure-diff', { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d && d.previous) renderExposureDiff(banner, d); })
+                .catch(() => {});
+        }
+
+        function renderExposureDiff(banner, d) {
+            const delta = d.delta || {};
+            const portCount = (delta.newPorts || []).reduce((n, h) => n + (h.ports || []).length, 0);
+            const worse = (delta.gradeChanges || []).filter(g => g.from && g.to > g.from);
+            const better = (delta.gradeChanges || []).filter(g => !g.from || g.to <= g.from);
+            const additions = portCount + (delta.newCVEs || []).length + (delta.newSubdomains || []).length + worse.length;
+            const removals = (delta.closedPorts || []).reduce((n, h) => n + (h.ports || []).length, 0)
+                + (delta.resolvedCVEs || []).length + (delta.removedSubdomains || []).length + better.length;
+
+            banner.innerHTML = '';
+            // Worsening = red/amber accent; only improvements/none = green.
+            const accent = additions > 0 ? '#f59e0b' : '#10b981';
+            banner.style.cssText = 'background:' + accent + '14;border:1px solid ' + accent + '55;border-radius:12px;padding:12px 14px;';
+
+            const head = document.createElement('div');
+            head.style.cssText = 'font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+            const when = d.previous && d.previous.scannedAt ? formatRelativeDate(new Date(d.previous.scannedAt * 1000)) : 'previous scan';
+            head.textContent = additions > 0
+                ? '⚠ Attack-surface changes since ' + when
+                : (removals > 0 ? '✓ Surface reduced since ' + when : '✓ No exposure changes since ' + when);
+            banner.appendChild(head);
+
+            const list = document.createElement('div');
+            list.style.cssText = 'display:flex;flex-direction:column;gap:3px;margin-top:8px;font-size:13px;';
+            const line = (text, color) => {
+                const el = document.createElement('div'); el.style.cssText = 'color:' + (color || '#cbd5e1') + ';word-break:break-word;'; el.textContent = text; list.appendChild(el);
+            };
+            (delta.newPorts || []).forEach(h => line('🔓 New ports — ' + h.ip + ': ' + (h.ports || []).join(', '), '#fca5a5'));
+            if ((delta.newCVEs || []).length) line('🐛 New CVEs — ' + delta.newCVEs.slice(0, 6).join(', ') + (delta.newCVEs.length > 6 ? ' +' + (delta.newCVEs.length - 6) : ''), '#fca5a5');
+            if ((delta.newSubdomains || []).length) line('🌐 New subdomains — ' + delta.newSubdomains.slice(0, 8).join(', ') + (delta.newSubdomains.length > 8 ? ' +' + (delta.newSubdomains.length - 8) : ''), '#fcd34d');
+            worse.forEach(g => line('📉 ' + g.domain + ' posture ' + g.from + '→' + g.to, '#fca5a5'));
+            // Improvements, secondary.
+            (delta.closedPorts || []).forEach(h => line('✓ Closed ports — ' + h.ip + ': ' + (h.ports || []).join(', '), '#86efac'));
+            if ((delta.resolvedCVEs || []).length) line('✓ Resolved CVEs — ' + delta.resolvedCVEs.slice(0, 6).join(', '), '#86efac');
+            if ((delta.removedSubdomains || []).length) line('✓ Removed subdomains — ' + delta.removedSubdomains.slice(0, 8).join(', '), '#86efac');
+            better.forEach(g => line('📈 ' + g.domain + ' posture ' + (g.from || '?') + '→' + g.to, '#86efac'));
+
+            if (list.children.length) banner.appendChild(list);
+            banner.classList.remove('hidden');
+        }
+
         // Fetches and renders the synthesized identity profile for a scan.
         function loadIdentity(scanID) {
             const panel = document.getElementById('identity-panel');
@@ -1219,6 +1275,7 @@
 
             reRenderGrid();
             loadIdentity(data.scanID);
+            loadExposureDiff(data.scanID);
             saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
             // Refresh graph / surface if the user has that tab open.
             if (activeResultsTab === 'graph') renderD3Graph(data);
