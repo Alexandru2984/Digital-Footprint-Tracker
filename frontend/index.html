@@ -536,6 +536,10 @@
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
                     MAP
                 </button>
+                <button id="tab-surface" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
+                    SURFACE
+                </button>
             </div>
 
             <!-- Results Tab Content -->
@@ -557,6 +561,9 @@
                     <!-- Result Cards will be injected here -->
                 </div>
             </div>
+
+            <!-- Attack Surface Tab Content -->
+            <div id="surface-tab-content" class="hidden flex-col gap-3 pt-2"></div>
 
             <!-- Graph Tab Content -->
             <div id="graph-tab-content" class="hidden flex-col gap-3 pt-2">
@@ -1213,8 +1220,9 @@
             reRenderGrid();
             loadIdentity(data.scanID);
             saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
-            // Refresh graph if user has the graph tab open.
+            // Refresh graph / surface if the user has that tab open.
             if (activeResultsTab === 'graph') renderD3Graph(data);
+            if (activeResultsTab === 'surface') renderAttackSurface(data);
         }
 
         // Per-session SSE streaming: streams results as they arrive from the server.
@@ -1704,16 +1712,23 @@
             const resContent = document.getElementById('results-tab-content');
             const grContent  = document.getElementById('graph-tab-content');
             const mapContent = document.getElementById('map-tab-content');
+            const surfContent = document.getElementById('surface-tab-content');
             const tabRes     = document.getElementById('tab-results');
             const tabGrp     = document.getElementById('tab-graph');
             const tabMap     = document.getElementById('tab-map');
+            const tabSurf    = document.getElementById('tab-surface');
             if (!resContent || !grContent || !tabRes || !tabGrp) return;
             // Hide all, deactivate all tabs
             resContent.classList.add('hidden'); resContent.classList.remove('flex');
             grContent.classList.add('hidden');  grContent.classList.remove('flex');
             if (mapContent) { mapContent.classList.add('hidden'); mapContent.classList.remove('flex'); }
-            [tabRes, tabGrp, tabMap].forEach(t => { if(t) { t.classList.remove('border-brand-500','text-brand-400'); t.classList.add('border-transparent','text-slate-500'); }});
-            if (tab === 'graph') {
+            if (surfContent) { surfContent.classList.add('hidden'); surfContent.classList.remove('flex'); }
+            [tabRes, tabGrp, tabMap, tabSurf].forEach(t => { if(t) { t.classList.remove('border-brand-500','text-brand-400'); t.classList.add('border-transparent','text-slate-500'); }});
+            if (tab === 'surface') {
+                if (surfContent) { surfContent.classList.remove('hidden'); surfContent.classList.add('flex'); }
+                if (tabSurf) { tabSurf.classList.add('border-brand-500', 'text-brand-400'); tabSurf.classList.remove('border-transparent', 'text-slate-500'); }
+                if (lastScanData) renderAttackSurface(lastScanData);
+            } else if (tab === 'graph') {
                 grContent.classList.remove('hidden');
                 grContent.classList.add('flex');
                 tabGrp.classList.add('border-brand-500', 'text-brand-400');
@@ -1734,11 +1749,126 @@
         document.getElementById('tab-results').addEventListener('click', () => switchResultsTab('results'));
         document.getElementById('tab-graph').addEventListener('click', () => switchResultsTab('graph'));
         document.getElementById('tab-map').addEventListener('click', () => switchResultsTab('map'));
+        document.getElementById('tab-surface').addEventListener('click', () => switchResultsTab('surface'));
 
         document.getElementById('toggle-graph-btn').addEventListener('click', () => {
             if (resultsPanel.classList.contains('hidden')) return;
             switchResultsTab(activeResultsTab === 'graph' ? 'results' : 'graph');
         });
+
+        // ─── ATTACK SURFACE TAB ──────────────────────────────────────────────────
+        // Host-centric rollup of the infrastructure findings: each IP with its
+        // hostnames, open ports and CVEs; web-posture grade per domain; discovered
+        // subdomains. Built entirely from the results payload (inline-styled because
+        // the precompiled tailwind build is purged of arbitrary classes).
+        function renderAttackSurface(scanData) {
+            const root = document.getElementById('surface-tab-content');
+            if (!root) return;
+            root.innerHTML = '';
+            const results = (scanData && scanData.results) || [];
+            const splitCsv = s => (s || '').split(',').map(x => x.trim()).filter(Boolean);
+
+            const hosts = {};    // ip -> { names:Set, ports:Set, cves:Set, geo:'' }
+            const posture = {};  // domain -> { grade, missing, present, https, server }
+            const subs = new Set();
+            const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
+            const dom = d => posture[d] || (posture[d] = {});
+
+            results.forEach(r => {
+                const m = r.metadata || {};
+                if (m.ip) {
+                    const h = host(m.ip);
+                    splitCsv(m.ports).forEach(p => h.ports.add(p));
+                    if (m.port) h.ports.add(String(m.port));
+                    splitCsv(m.cves).forEach(c => h.cves.add(c));
+                    splitCsv(m.hostnames).forEach(n => h.names.add(n));
+                    if (m.subdomain) h.names.add(m.subdomain);
+                    if (r.type === 'ip_geolocation') {
+                        const bits = [m.country, m.org].filter(Boolean);
+                        if (bits.length) h.geo = bits.join(' · ');
+                    }
+                }
+                if ((r.type === 'subdomain' || r.type === 'subdomain_ip') && m.subdomain) subs.add(m.subdomain);
+                if (m.domain && r.type === 'security_headers') {
+                    const d = dom(m.domain); d.grade = m.grade; d.missing = m.missing; d.present = m.present; d.https = m.https;
+                }
+                if (m.domain && r.type === 'insecure_transport') dom(m.domain).https = 'no';
+                if (m.domain && r.type === 'tech_stack' && m.server) dom(m.domain).server = m.server;
+            });
+
+            const ipList = Object.keys(hosts);
+            const domList = Object.keys(posture);
+            if (!ipList.length && !domList.length && !subs.size) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
+                empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
+                root.appendChild(empty);
+                return;
+            }
+
+            const card = () => { const c = document.createElement('div'); c.style.cssText = 'background:#111827;border:1px solid #1f2937;border-radius:12px;padding:14px;'; return c; };
+            const chipWrap = () => { const w = document.createElement('div'); w.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;'; return w; };
+            const gradeColor = g => ({ A:'#4ade80', B:'#a3e635', C:'#facc15', D:'#fb923c', E:'#f87171', F:'#ef4444' }[g] || '#94a3b8');
+            function chip(text, kind) {
+                const styles = {
+                    base: 'background:#1f2937;border:1px solid #374151;color:#cbd5e1;',
+                    port: 'background:#0c4a6e33;border:1px solid #0ea5e966;color:#7dd3fc;',
+                    cve:  'background:#7f1d1d33;border:1px solid #ef444466;color:#fca5a5;'
+                };
+                const c = document.createElement('span');
+                c.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;font-family:monospace;' + (styles[kind] || styles.base);
+                c.textContent = text; return c;
+            }
+            function sectionTitle(t, sub) {
+                const h = document.createElement('div'); h.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
+                const s = document.createElement('span'); s.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;'; s.textContent = t; h.appendChild(s);
+                if (sub) { const c = document.createElement('span'); c.style.cssText = 'color:#64748b;font-size:12px;'; c.textContent = sub; h.appendChild(c); }
+                return h;
+            }
+            function labelled(text, color) {
+                const l = document.createElement('div'); l.style.cssText = 'font-size:11px;color:' + (color || '#64748b') + ';margin-top:8px;'; l.textContent = text; return l;
+            }
+
+            if (ipList.length) {
+                root.appendChild(sectionTitle('Exposed Hosts', ipList.length + (ipList.length === 1 ? ' host' : ' hosts')));
+                ipList.sort().forEach(ip => {
+                    const h = hosts[ip]; const c = card();
+                    const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
+                    const ipEl = document.createElement('span'); ipEl.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;'; ipEl.textContent = ip; head.appendChild(ipEl);
+                    if (h.geo) { const g = document.createElement('span'); g.style.cssText = 'font-size:12px;color:#94a3b8;'; g.textContent = h.geo; head.appendChild(g); }
+                    c.appendChild(head);
+                    if (h.names.size) { const n = document.createElement('div'); n.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:4px;word-break:break-all;'; n.textContent = Array.from(h.names).slice(0, 12).join(', '); c.appendChild(n); }
+                    if (h.ports.size) { c.appendChild(labelled('OPEN PORTS')); const w = chipWrap(); Array.from(h.ports).sort((a, b) => (+a || 0) - (+b || 0)).forEach(p => w.appendChild(chip(p, 'port'))); c.appendChild(w); }
+                    if (h.cves.size) { c.appendChild(labelled(h.cves.size + ' KNOWN CVE' + (h.cves.size === 1 ? '' : 's'), '#fca5a5')); const w = chipWrap(); Array.from(h.cves).sort().slice(0, 30).forEach(cv => w.appendChild(chip(cv, 'cve'))); c.appendChild(w); }
+                    root.appendChild(c);
+                });
+            }
+
+            if (domList.length) {
+                root.appendChild(sectionTitle('Web Posture', null));
+                domList.sort().forEach(d => {
+                    const p = posture[d]; const c = card();
+                    const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+                    if (p.grade) { const col = gradeColor(p.grade); const b = document.createElement('span'); b.style.cssText = 'font-weight:800;font-size:16px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:' + col + ';border:1px solid ' + col + '66;background:' + col + '1a;'; b.textContent = p.grade; head.appendChild(b); }
+                    const de = document.createElement('span'); de.style.cssText = 'font-family:monospace;color:#e2e8f0;font-weight:700;word-break:break-all;'; de.textContent = d; head.appendChild(de);
+                    if (p.https === 'no') { const w = document.createElement('span'); w.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#7f1d1d33;border:1px solid #ef444466;color:#fca5a5;'; w.textContent = 'NO HTTPS'; head.appendChild(w); }
+                    c.appendChild(head);
+                    if (p.server) { const s = document.createElement('div'); s.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:6px;'; s.textContent = 'Server: ' + p.server; c.appendChild(s); }
+                    const missing = splitCsv(p.missing);
+                    if (missing.length) { c.appendChild(labelled('MISSING HEADERS')); const w = chipWrap(); missing.forEach(mi => w.appendChild(chip(mi, 'cve'))); c.appendChild(w); }
+                    root.appendChild(c);
+                });
+            }
+
+            if (subs.size) {
+                root.appendChild(sectionTitle('Subdomains', subs.size + ' discovered'));
+                const c = card(); const w = chipWrap(); w.style.marginTop = '0';
+                Array.from(subs).sort().slice(0, 60).forEach(s => w.appendChild(chip(s, 'base')));
+                c.appendChild(w);
+                if (subs.size > 60) { const more = document.createElement('div'); more.style.cssText = 'font-size:11px;color:#64748b;margin-top:6px;'; more.textContent = '+' + (subs.size - 60) + ' more'; c.appendChild(more); }
+                root.appendChild(c);
+            }
+        }
 
         function renderD3Graph(scanData) {
             if (!window.d3) return;
