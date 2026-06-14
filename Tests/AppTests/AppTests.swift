@@ -824,6 +824,56 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(blank.missing.contains("CSP"))
     }
 
+    // MARK: - Exposure diff (attack-surface change detection)
+
+    private func diffInput(_ type: String, _ meta: [String: String]) -> IdentitySynthesizer.Input {
+        IdentitySynthesizer.Input(source: "x", type: type, confidence: 0.9, metadata: meta, rawData: "x")
+    }
+
+    func testExposureDiffDetectsWorseningExposure() {
+        let prev = [
+            diffInput("exposed_service", ["ip": "1.2.3.4", "ports": "22, 80"]),
+            diffInput("vulnerability", ["ip": "1.2.3.4", "cves": "CVE-2020-1"]),
+            diffInput("subdomain", ["subdomain": "www.example.com"]),
+            diffInput("security_headers", ["domain": "example.com", "grade": "B"])
+        ]
+        let cur = [
+            diffInput("exposed_service", ["ip": "1.2.3.4", "ports": "22, 80, 3389"]),
+            diffInput("vulnerability", ["ip": "1.2.3.4", "cves": "CVE-2020-1, CVE-2024-9"]),
+            diffInput("subdomain", ["subdomain": "www.example.com"]),
+            diffInput("subdomain", ["subdomain": "admin.example.com"]),
+            diffInput("security_headers", ["domain": "example.com", "grade": "D"])
+        ]
+        let d = ExposureDiff.between(previous: prev, current: cur)
+
+        XCTAssertEqual(d.newPorts.first?.ip, "1.2.3.4")
+        XCTAssertEqual(d.newPorts.first?.ports, ["3389"], "only the newly opened port")
+        XCTAssertTrue(d.newCVEs.contains { $0.contains("CVE-2024-9") && $0.contains("1.2.3.4") })
+        XCTAssertEqual(d.newSubdomains, ["admin.example.com"])
+        XCTAssertEqual(d.gradeChanges.first.map { "\($0.from ?? "?")→\($0.to)" }, "B→D")
+        XCTAssertTrue(d.worsenedGrades, "B→D is a regression")
+        XCTAssertTrue(d.hasExposureChange)
+        XCTAssertFalse(d.headline.isEmpty)
+    }
+
+    func testExposureDiffIdenticalIsEmptyAndFirstScanHasNoBaseline() {
+        let snap = [
+            diffInput("exposed_service", ["ip": "9.9.9.9", "ports": "443"]),
+            diffInput("vulnerability", ["ip": "9.9.9.9", "cves": "CVE-1"])
+        ]
+        let same = ExposureDiff.between(previous: snap, current: snap)
+        XCTAssertTrue(same.isEmpty)
+        XCTAssertFalse(same.hasExposureChange)
+
+        // An improving grade is a change but not a regression.
+        let better = ExposureDiff.between(
+            previous: [diffInput("security_headers", ["domain": "x.io", "grade": "D"])],
+            current:  [diffInput("security_headers", ["domain": "x.io", "grade": "A"])])
+        XCTAssertEqual(better.gradeChanges.count, 1)
+        XCTAssertFalse(better.worsenedGrades, "D→A is an improvement, not a regression")
+        XCTAssertFalse(better.hasExposureChange)
+    }
+
     // MARK: - Transitive pivot
 
     func testPivotExtractorFindsNewIdentities() {
