@@ -462,6 +462,150 @@ paths:
         '404':
           description: Scan not found
 
+  /identity/{id}:
+    get:
+      summary: Synthesized identity profile
+      description: >
+        Collapses a scan's findings into one identity (likely name, emails, handles,
+        confirmed accounts, breaches, exposed data classes, and exposed hosts with
+        their open ports/CVEs) plus an overall risk. Capability access: owned scans
+        are owner-only; anonymous scans are readable by anyone holding the scan ID.
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Identity profile
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Scan not found
+
+  /scans/{id}/exposure-diff:
+    get:
+      summary: Attack-surface change vs the previous scan
+      description: >
+        New/closed ports, new/resolved CVEs, new/removed subdomains and web-posture
+        grade shifts versus the previous completed scan of the same target. Owner-only.
+        `previous` is null and `delta` empty on a first scan (no baseline).
+      tags: [Scan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Exposure delta
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Authentication required
+        '404':
+          description: Scan not found
+
+  /export/{id}:
+    get:
+      summary: Export scan as JSON
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: JSON export (attachment)
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Scan not found
+
+  /export/{id}/graph:
+    get:
+      summary: Export identity as a GraphML relationship graph
+      description: GraphML (Gephi / yEd / Cytoscape / Maltego) of the synthesized identity and attack surface.
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: GraphML document
+          content:
+            application/graphml+xml:
+              schema:
+                type: string
+        '404':
+          description: Scan not found
+
+  /export/{id}/report:
+    get:
+      summary: Executive report (Markdown)
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Markdown report (attachment)
+          content:
+            text/markdown:
+              schema:
+                type: string
+        '404':
+          description: Scan not found
+
+  /export/{id}/report.html:
+    get:
+      summary: Executive report (print-ready HTML)
+      description: Self-contained, styled HTML for the browser's "Save as PDF".
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: HTML report
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Scan not found
+
   /openapi.yaml:
     get:
       summary: OpenAPI specification (this document)
