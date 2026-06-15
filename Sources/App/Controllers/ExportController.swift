@@ -6,6 +6,7 @@ struct ExportController: RouteCollection {
         routes.get("export", ":id", use: exportJSON)
         routes.get("export", ":id", "graph", use: exportGraphML)
         routes.get("export", ":id", "report", use: exportReport)
+        routes.get("export", ":id", "report.html", use: exportReportHTML)
     }
 
     @Sendable
@@ -84,19 +85,44 @@ struct ExportController: RouteCollection {
         try await scan.authorizeRead(req)
         AuditLogger.log(req: req, action: "export_report", target: scan.input)
 
+        let (profile, surface) = Self.reportModel(for: scan)
+        let md = ExecutiveReport.markdown(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+        headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(scan.input)).md\"")
+        return Response(status: .ok, headers: headers, body: .init(string: md))
+    }
+
+    /// GET /export/:id/report.html — the same executive report as a self-contained,
+    /// print-ready HTML document (browser "Save as PDF"). Inline so it opens in a tab.
+    @Sendable
+    func exportReportHTML(req: Request) async throws -> Response {
+        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
+            throw Abort(.badRequest, reason: "Invalid scan ID.")
+        }
+        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
+            throw Abort(.notFound, reason: "Scan not found.")
+        }
+        try await scan.authorizeRead(req)
+        AuditLogger.log(req: req, action: "export_report_html", target: scan.input)
+
+        let (profile, surface) = Self.reportModel(for: scan)
+        let html = ExecutiveReportHTML.html(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: html))
+    }
+
+    /// Builds the synthesized identity and attack-surface snapshot for a scan's
+    /// results — shared by the Markdown and HTML report renderers.
+    private static func reportModel(for scan: Scan) -> (IdentitySynthesizer.IdentityProfile, ExposureDiff.Snapshot) {
         let risk = RiskScorer.compute(results: scan.results)
         let inputs = scan.results.map {
             IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
                                       metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
         }
         let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
-        let md = ExecutiveReport.markdown(input: scan.input, profile: profile,
-                                          surface: ExposureDiff.snapshot(from: inputs),
-                                          generatedAt: Date())
-        var headers = HTTPHeaders()
-        headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
-        headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(scan.input)).md\"")
-        return Response(status: .ok, headers: headers, body: .init(string: md))
+        return (profile, ExposureDiff.snapshot(from: inputs))
     }
 
     /// Filesystem-safe filename fragment derived from the scan input.

@@ -730,6 +730,30 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(md.contains("admin.example.com"), "subdomain listed")
     }
 
+    func testExecutiveReportHTMLEscapesAndStructures() {
+        typealias I = IdentitySynthesizer.Input
+        // A hostile "name" must not break out into live markup.
+        let inputs = [
+            I(source: "x", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "alice",
+                         "name": "<script>alert(1)</script>", "profileURL": "https://github.com/alice"], rawData: "x"),
+            I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
+              metadata: ["ip": "1.2.3.4", "ports": "443"], rawData: "x")
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 30, riskLevel: "Medium")
+        let html = ExecutiveReportHTML.html(input: "ex&ample.com", profile: profile,
+                                            surface: ExposureDiff.snapshot(from: inputs),
+                                            generatedAt: Date(timeIntervalSince1970: 0))
+
+        XCTAssertTrue(html.hasPrefix("<!DOCTYPE html>"))
+        XCTAssertTrue(html.contains("</html>"))
+        XCTAssertFalse(html.contains("<script>alert(1)</script>"), "hostile name must be escaped")
+        XCTAssertTrue(html.contains("&lt;script&gt;"), "name rendered as escaped text")
+        XCTAssertTrue(html.contains("ex&amp;ample.com"), "ampersand in target escaped")
+        XCTAssertTrue(html.contains("risk-medium"), "risk level styled")
+        XCTAssertTrue(html.contains("<table>") && html.contains("1.2.3.4"), "attack-surface table present")
+    }
+
     func testIdentitySynthesizerAggregatesInfraExposure() {
         typealias I = IdentitySynthesizer.Input
         let inputs = [
