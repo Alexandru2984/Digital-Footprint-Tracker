@@ -127,7 +127,7 @@
         @media print {
             .scan-line, #search-panel, #history-panel, #status-terminal,
             footer, .js-copy-json, #copy-scan-id, #export-json-btn,
-            #export-pdf-btn, #export-graph-btn, #share-btn, #clear-history-btn { display: none !important; }
+            #export-pdf-btn, #export-graph-btn, #export-report-btn, #share-btn, #clear-history-btn { display: none !important; }
             #results-panel { display: flex !important; }
             body { background-color: #fff !important; color: #000 !important; }
             .bg-dark-800, .bg-dark-900, .bg-\[#0b1120\] { background: #f4f4f4 !important; }
@@ -508,6 +508,10 @@
                     <button id="export-graph-btn" title="Export relationship graph (GraphML — opens in Gephi / yEd / Maltego)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         GRAPHML
+                    </button>
+                    <button id="export-report-btn" title="Download executive report (Markdown)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+                        REPORT
                     </button>
                     <button id="export-pdf-btn" title="Print / Save as PDF" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
@@ -1630,6 +1634,16 @@
             if (!lastScanData) return;
             const a = document.createElement('a');
             a.href = '/api/export/' + encodeURIComponent(lastScanData.scanID) + '/graph';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // ─── EXPORT REPORT (Markdown) ─────────────────────────────────────────────
+        document.getElementById('export-report-btn').addEventListener('click', () => {
+            if (!lastScanData) return;
+            const a = document.createElement('a');
+            a.href = '/api/export/' + encodeURIComponent(lastScanData.scanID) + '/report';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
