@@ -633,7 +633,7 @@ final class AppTests: XCTestCase {
             I(source: "Gravatar:twitter", type: "identity_proof", confidence: 0.95,
               metadata: ["platform": "twitter", "username": "alice"], rawData: "x"),
             I(source: "HaveIBeenPwned", type: "data_breach", confidence: 1.0,
-              metadata: ["breaches": "Adobe, LinkedIn"], rawData: "x")
+              metadata: ["breaches": "Adobe, LinkedIn", "dataClasses": "Email addresses, Passwords, Usernames"], rawData: "x")
         ]
         let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 40, riskLevel: "Medium")
 
@@ -641,6 +641,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.locations, ["Berlin"])
         XCTAssertTrue(p.emails.contains("alice@example.com"), "email lowercased + deduped")
         XCTAssertTrue(p.breaches.contains("Adobe") && p.breaches.contains("LinkedIn"))
+        XCTAssertEqual(p.exposedDataClasses, ["Email addresses", "Passwords", "Usernames"], "leaked data categories, sorted + deduped")
         XCTAssertEqual(p.riskScore, 40)
 
         let alice = p.handles.first { $0.handle == "alice" }
@@ -670,6 +671,7 @@ final class AppTests: XCTestCase {
             handles: [IdentitySynthesizer.HandleUse(handle: "alice", platforms: ["github", "twitter"], confidence: 0.95)],
             confirmedAccounts: [IdentitySynthesizer.Account(platform: "github", reference: "https://github.com/alice", confidence: 1.0)],
             breaches: ["Adobe"],
+            exposedDataClasses: ["Email addresses", "Passwords"],
             exposedIPs: ["1.2.3.4"],
             exposedServices: [IdentitySynthesizer.ServiceExposure(
                 ip: "1.2.3.4", ports: ["22", "443"], cves: ["CVE-2021-1234"], hostnames: ["host.example.com"])],

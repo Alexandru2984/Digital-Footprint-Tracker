@@ -49,6 +49,7 @@ enum IdentitySynthesizer {
         let handles: [HandleUse]
         let confirmedAccounts: [Account]
         let breaches: [String]
+        let exposedDataClasses: [String]
         let exposedIPs: [String]
         let exposedServices: [ServiceExposure]
         let vulnerabilities: [String]
@@ -71,6 +72,7 @@ enum IdentitySynthesizer {
         var handleConfidence: [String: Double] = [:]
         var accountsByKey: [String: Account] = [:]
         var breaches = Set<String>()
+        var dataClasses = Set<String>()
         var ips = Set<String>()
         var svcPorts: [String: Set<String>] = [:]
         var svcCves: [String: Set<String>] = [:]
@@ -108,11 +110,11 @@ enum IdentitySynthesizer {
                 }
             }
 
-            if inp.type == "data_breach", let list = nonEmpty(m["breaches"]) {
-                for b in list.split(separator: ",") {
-                    let name = b.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty { breaches.insert(name) }
-                }
+            if inp.type == "data_breach" {
+                for name in csv(m["breaches"]) { breaches.insert(name) }
+                // Categories of data leaked (passwords, phone numbers, …) — what the
+                // breaches actually exposed, not just their names.
+                for dc in csv(m["dataClasses"]) { dataClasses.insert(dc) }
             }
         }
 
@@ -144,6 +146,7 @@ enum IdentitySynthesizer {
             handles: handles,
             confirmedAccounts: accountsByKey.values.sorted { $0.confidence > $1.confidence },
             breaches: breaches.sorted(),
+            exposedDataClasses: dataClasses.sorted(),
             exposedIPs: ips.sorted(),
             exposedServices: exposedServices,
             vulnerabilities: allCves.sorted(),
