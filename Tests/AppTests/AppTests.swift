@@ -694,6 +694,37 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(xml.contains("CVE-2021-1234"), "CVE rendered as a node")
     }
 
+    func testExecutiveReportMarkdown() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "alice", "name": "Alice Roe",
+                         "profileURL": "https://github.com/alice"], rawData: "x"),
+            I(source: "HIBP", type: "data_breach", confidence: 1.0, metadata: ["breaches": "Adobe, LinkedIn"], rawData: "x"),
+            I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
+              metadata: ["ip": "1.2.3.4", "ports": "22, 443"], rawData: "x"),
+            I(source: "InternetDB", type: "vulnerability", confidence: 0.95,
+              metadata: ["ip": "1.2.3.4", "cves": "CVE-2024-9"], rawData: "x"),
+            I(source: "crt.sh", type: "subdomain", confidence: 0.9, metadata: ["subdomain": "admin.example.com"], rawData: "x"),
+            I(source: "WebPosture", type: "security_headers", confidence: 0.8, metadata: ["domain": "example.com", "grade": "D"], rawData: "x")
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 55, riskLevel: "High")
+        let md = ExecutiveReport.markdown(input: "example.com", profile: profile,
+                                          surface: ExposureDiff.snapshot(from: inputs),
+                                          generatedAt: Date(timeIntervalSince1970: 0))
+
+        XCTAssertTrue(md.hasPrefix("# Digital Footprint Report — example.com"))
+        XCTAssertTrue(md.contains("1970-01-01 00:00 UTC"), "deterministic UTC timestamp")
+        XCTAssertTrue(md.contains("High (55/100)"))
+        XCTAssertTrue(md.contains("## Executive summary"))
+        XCTAssertTrue(md.contains("Alice Roe"), "likely name surfaced")
+        XCTAssertTrue(md.contains("Adobe") && md.contains("LinkedIn"), "breaches listed")
+        XCTAssertTrue(md.contains("## Attack surface") && md.contains("1.2.3.4"))
+        XCTAssertTrue(md.contains("CVE-2024-9"))
+        XCTAssertTrue(md.contains("| Domain | Grade |") && md.contains("| example.com | D |"))
+        XCTAssertTrue(md.contains("admin.example.com"), "subdomain listed")
+    }
+
     func testIdentitySynthesizerAggregatesInfraExposure() {
         typealias I = IdentitySynthesizer.Input
         let inputs = [

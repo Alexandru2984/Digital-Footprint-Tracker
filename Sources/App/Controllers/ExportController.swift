@@ -5,6 +5,7 @@ struct ExportController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.get("export", ":id", use: exportJSON)
         routes.get("export", ":id", "graph", use: exportGraphML)
+        routes.get("export", ":id", "report", use: exportReport)
     }
 
     @Sendable
@@ -67,6 +68,35 @@ struct ExportController: RouteCollection {
         headers.add(name: .contentType, value: "application/graphml+xml; charset=utf-8")
         headers.add(name: .contentDisposition, value: "attachment; filename=\"graph-\(Self.safeName(scan.input)).graphml\"")
         return Response(status: .ok, headers: headers, body: .init(string: xml))
+    }
+
+    /// GET /export/:id/report — a shareable Markdown executive report: identity,
+    /// attack surface (hosts → ports/CVEs, posture, subdomains), breaches and risk.
+    /// Same capability rules as the rest; pure Swift, no Python/subprocess dependency.
+    @Sendable
+    func exportReport(req: Request) async throws -> Response {
+        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
+            throw Abort(.badRequest, reason: "Invalid scan ID.")
+        }
+        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
+            throw Abort(.notFound, reason: "Scan not found.")
+        }
+        try await scan.authorizeRead(req)
+        AuditLogger.log(req: req, action: "export_report", target: scan.input)
+
+        let risk = RiskScorer.compute(results: scan.results)
+        let inputs = scan.results.map {
+            IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                      metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
+        }
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
+        let md = ExecutiveReport.markdown(input: scan.input, profile: profile,
+                                          surface: ExposureDiff.snapshot(from: inputs),
+                                          generatedAt: Date())
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+        headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(scan.input)).md\"")
+        return Response(status: .ok, headers: headers, body: .init(string: md))
     }
 
     /// Filesystem-safe filename fragment derived from the scan input.
