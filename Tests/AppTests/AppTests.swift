@@ -694,6 +694,7 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(xml.contains("open-port"), "ports hang off the IP host")
         XCTAssertTrue(xml.contains("vulnerable-to"), "CVEs hang off the IP host")
         XCTAssertTrue(xml.contains("CVE-2021-1234"), "CVE rendered as a node")
+        XCTAssertTrue(xml.contains("exposed-data") && xml.contains("Passwords"), "leaked data classes as nodes")
     }
 
     func testExecutiveReportMarkdown() {
@@ -702,7 +703,8 @@ final class AppTests: XCTestCase {
             I(source: "GitHub", type: "account_presence", confidence: 1.0,
               metadata: ["platform": "github", "username": "alice", "name": "Alice Roe",
                          "profileURL": "https://github.com/alice"], rawData: "x"),
-            I(source: "HIBP", type: "data_breach", confidence: 1.0, metadata: ["breaches": "Adobe, LinkedIn"], rawData: "x"),
+            I(source: "HIBP", type: "data_breach", confidence: 1.0,
+              metadata: ["breaches": "Adobe, LinkedIn", "dataClasses": "Passwords, Phone numbers"], rawData: "x"),
             I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
               metadata: ["ip": "1.2.3.4", "ports": "22, 443"], rawData: "x"),
             I(source: "InternetDB", type: "vulnerability", confidence: 0.95,
@@ -721,6 +723,7 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(md.contains("## Executive summary"))
         XCTAssertTrue(md.contains("Alice Roe"), "likely name surfaced")
         XCTAssertTrue(md.contains("Adobe") && md.contains("LinkedIn"), "breaches listed")
+        XCTAssertTrue(md.contains("Exposed data classes:") && md.contains("Passwords"), "leaked data categories surfaced")
         XCTAssertTrue(md.contains("## Attack surface") && md.contains("1.2.3.4"))
         XCTAssertTrue(md.contains("CVE-2024-9"))
         XCTAssertTrue(md.contains("| Domain | Grade |") && md.contains("| example.com | D |"))

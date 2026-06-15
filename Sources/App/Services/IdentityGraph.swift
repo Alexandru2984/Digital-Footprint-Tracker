@@ -53,6 +53,7 @@ enum IdentityGraph {
         star(profile.emails, type: "email", rel: "email")
         star(profile.phones, type: "phone", rel: "phone")
         star(profile.breaches, type: "breach", rel: "breach")
+        star(profile.exposedDataClasses, type: "data-class", rel: "exposed-data")
         star(profile.locations, type: "location", rel: "location")
         star(profile.organizations, type: "organization", rel: "affiliation")
 

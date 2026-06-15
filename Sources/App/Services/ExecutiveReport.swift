@@ -51,8 +51,14 @@ enum ExecutiveReport {
         }
 
         // ── Breaches ──────────────────────────────────────────────────────────────
-        if !profile.breaches.isEmpty {
-            out += "## Breaches\n\n" + profile.breaches.map { "- \(line($0))" }.joined(separator: "\n") + "\n\n"
+        if !profile.breaches.isEmpty || !profile.exposedDataClasses.isEmpty {
+            out += "## Breaches\n\n"
+            if !profile.breaches.isEmpty {
+                out += profile.breaches.map { "- \(line($0))" }.joined(separator: "\n") + "\n\n"
+            }
+            if !profile.exposedDataClasses.isEmpty {
+                out += "**Exposed data classes:** \(joined(profile.exposedDataClasses))\n\n"
+            }
         }
 
         // ── Attack surface ────────────────────────────────────────────────────────
@@ -97,6 +103,9 @@ enum ExecutiveReport {
         }
         if !profile.breaches.isEmpty {
             s.append("The target appears in \(profile.breaches.count) known breach(es): \(joined(profile.breaches.prefix(5).map { $0 })).")
+        }
+        if !profile.exposedDataClasses.isEmpty {
+            s.append("Leaked data categories include \(joined(profile.exposedDataClasses.prefix(6).map { $0 })).")
         }
         let totalPorts = surface.portsByIP.values.reduce(0) { $0 + $1.count }
         let totalCVEs = surface.cvesByIP.values.reduce(0) { $0 + $1.count }
