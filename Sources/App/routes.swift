@@ -53,6 +53,9 @@ func routes(_ app: Application) throws {
     let identityController = IdentityController()
     try app.register(collection: identityController)
 
+    let diffController = DiffController()
+    try app.register(collection: diffController)
+
     let notificationController = NotificationController()
     try app.register(collection: notificationController)
 
