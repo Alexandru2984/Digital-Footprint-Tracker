@@ -140,11 +140,12 @@ Every one of them runs through the same guard.
 | Threat                                                       | Mitigation                                                                                                                                          | Reference                                                                                                            |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
 | Scan target = internal host                                  | `SSRFGuard.isInternalTarget`/`isInternalURL` reject loopback, RFC1918 (10/8, 172.16/12, 192.168/16), link-local 169.254/16 (cloud metadata), 0.0.0.0/8, CGNAT 100.64/10, IPv6 `::1`/fc/fd/fe80 and IPv4-mapped IPv6; URL hosts also catch numeric obfuscation (decimal `2130706433`, hex, short `127.1`) | `Sources/App/Services/SSRFGuard.swift`, applied via `InputValidator`                                                 |
-| **DNS rebinding / host resolves to internal**                | `SafeHTTP` resolves the destination — and every redirect hop — via `getaddrinfo` and refuses if **any** answer is private/loopback/link-local (fail-closed). All user-controlled outbound (webhook + every notification channel) routes through it; redirects to internal hosts are blocked mid-chain | `Sources/App/Services/SafeHTTP.swift`, `SSRFGuard.resolvesToInternal`                                                |
+| **DNS rebinding / host resolves to internal**                | `SafeHTTP` resolves the destination — and every redirect hop — via `getaddrinfo` and refuses if **any** answer is private/loopback/link-local (fail-closed). All user-controlled outbound (webhook, every notification channel, and the WebPosture security-header probe) routes through it; redirects to internal hosts are blocked mid-chain | `Sources/App/Services/SafeHTTP.swift`, `SSRFGuard.resolvesToInternal`                                                |
 | **SSRF bypass via scheduled scans**                          | `InputValidator` applied at create time and re-validated by `ScheduledScanRunner` on every cycle (covers rows inserted before validator existed)    | `ScheduledScanController.create`, `ScheduledScanRunner.runDueScans`                                                  |
 | Webhook URL → internal host                                  | `validateWebhookURL` enforces HTTPS + structural `isInternalURL` + a resolve-time `resolvesToInternal` check at save; delivery goes through `SafeHTTP` (resolution + redirect guard above)                | `AuthController.swift`, `ScanPluginRunner.fireWebhook`, `NotificationDispatcher.sendWebhook`                         |
 | Sherlock URL template typo → internal                        | `SSRFGuard.isInternalURL` re-applied on the resolved URL (after `{}` substitution) — defense in depth even though templates are project-controlled  | `BulkUsernamePlugin.swift`                                                                                           |
 | Plugin egress to fixed public APIs                           | Routed through `PluginHTTP` (one pooled session, consistent UA, retry/backoff on 429/5xx, per-host throttle). DNS resolved over HTTPS (Cloudflare DoH) rather than a `dig` subprocess | `Sources/App/Services/PluginHTTP.swift`, `Sources/App/Services/DoHResolver.swift`                                   |
+| Attack-surface fetch / IP interpolation                      | `WebPosture` fetches only hosts matching `^[a-z0-9.\-]+$` and only via `SafeHTTP.get` (resolution + redirect guard). `InternetDB`/`AttackSurface` interpolate only IPs that passed `isPublicIPv4` (regex + `!isInternalHostname`) into the **fixed** Shodan/crt.sh hosts' path — destination host is never user-controlled, and the upstream `InputValidator` charset (`@._+-` only) blocks query-string injection | `WebPosturePlugin.swift`, `InternetDBPlugin.swift`, `AttackSurfacePlugin.swift`                                     |
 | `/api/geolocate` as open HTTP proxy                          | Auth required, dedicated rate limit (30/min authed, 5/min anon), 4 KB body cap, JSON-array structural check before forwarding to ip-api.com         | `HealthController.geolocate`                                                                                         |
 
 The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
@@ -283,6 +284,39 @@ expansion) shipped these security-relevant changes — each a separate commit:
 
 New outbound surfaces (Cloudflare DoH, web.archive.org, Gravatar profile JSON,
 GitHub events) all go through `PluginHTTP`/`SafeHTTP` and the same SSRF guard.
+
+### Attack-surface, monitoring & reporting pass — security review
+
+A further expansion (Shodan-grade exposure via InternetDB, whole-footprint
+attack-surface mapping, web-posture grading, exposure-diff monitoring, and
+shareable Markdown/HTML reports) was audited end-to-end; no exploitable issues
+were found. The relevant properties:
+
+- **New fixed-host egress.** `InternetDB` (`internetdb.shodan.io`), the `crt.sh`
+  enumerator and `AttackSurface` target hosts the project controls; only IPs that
+  passed `isPublicIPv4` (dotted-quad regex + `!SSRFGuard.isInternalHostname`) are
+  interpolated into a URL path, and the upstream `InputValidator` charset
+  (`@._+-` only) makes query-string injection impossible. All route through
+  `PluginHTTP`.
+- **New user-controlled egress.** `WebPosture` fetches the scan target's web host
+  to grade its security headers; it restricts the host to `^[a-z0-9.\-]+$` and
+  fetches **only** via `SafeHTTP.get`, which inherits the same pre-flight
+  resolution + redirect re-validation as webhook delivery (SSRF fail-closed).
+- **Server-rendered HTML report is XSS-safe.** `GET /export/:id/report.html`
+  reflects scan data into a same-origin page; every interpolated value is
+  HTML-escaped (`& < > " '`), all dynamic data lands in text context (no
+  attribute / `href` / `<script>` sinks), and the document carries inline
+  `<style>` only — no inline script. The SPA opens it with
+  `window.open(…, 'noopener')`. Verified by `testExecutiveReportHTMLEscapesAndStructures`.
+- **Exports & identity are capability-gated.** Every `/export/:id*` and
+  `/identity/:id` handler calls `Scan.authorizeRead`; `/scans/:id/exposure-diff`
+  is owner-only and diffs only the requester's own prior scans of the same input.
+
+Accepted low-severity notes (defense-in-depth, not exploitable): `SafeHTTP.get`
+reads the full response body (bounded by the 15 s resource timeout, as
+`SafeHTTP.post` already does); the **Markdown** report does not neutralise
+Markdown link syntax in cell text — the print-ready **HTML** report (the default
+UI path) is fully escaped, and Markdown viewers sanitise `javascript:` links.
 
 ### Out-of-scope deliberate skips
 
