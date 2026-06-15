@@ -509,7 +509,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         GRAPHML
                     </button>
-                    <button id="export-report-btn" title="Download executive report (Markdown)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-report-btn" title="Open print-ready executive report (Save as PDF)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
                         REPORT
                     </button>
@@ -1186,7 +1186,8 @@
         function renderIdentity(panel, p) {
             const hasData = p.likelyName || (p.emails || []).length || (p.handles || []).length ||
                             (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length ||
-                            (p.exposedIPs || []).length || (p.exposedServices || []).length || (p.vulnerabilities || []).length;
+                            (p.exposedIPs || []).length || (p.exposedServices || []).length || (p.vulnerabilities || []).length ||
+                            (p.exposedDataClasses || []).length;
             if (!hasData) { panel.classList.add('hidden'); return; }
             panel.innerHTML = '';
             panel.style.cssText = 'background:#111827;border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px;';
@@ -1246,6 +1247,11 @@
                 chipRow('Accounts', Array.from(new Set(p.confirmedAccounts.map(a => a.platform))).slice(0, 16));
             }
             if ((p.breaches || []).length) chipRow('Breaches', p.breaches.slice(0, 12));
+            if ((p.exposedDataClasses || []).length) {
+                const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+                p.exposedDataClasses.slice(0, 16).forEach(dc => wrap.appendChild(dangerChip(dc)));
+                row('Exposed data', wrap);
+            }
             if ((p.exposedIPs || []).length) chipRow('IPs', p.exposedIPs.slice(0, 8));
             if ((p.exposedServices || []).length) {
                 chipRow('Ports', p.exposedServices.slice(0, 8).map(s =>
@@ -1639,14 +1645,12 @@
             document.body.removeChild(a);
         });
 
-        // ─── EXPORT REPORT (Markdown) ─────────────────────────────────────────────
+        // ─── EXPORT REPORT (print-ready HTML; Ctrl+P → PDF) ───────────────────────
+        // Opens the server-rendered report in a new tab. The raw Markdown is still
+        // available at /api/export/:id/report for scripting.
         document.getElementById('export-report-btn').addEventListener('click', () => {
             if (!lastScanData) return;
-            const a = document.createElement('a');
-            a.href = '/api/export/' + encodeURIComponent(lastScanData.scanID) + '/report';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            window.open('/api/export/' + encodeURIComponent(lastScanData.scanID) + '/report.html', '_blank', 'noopener');
         });
 
         // ─── EXPORT PDF ───────────────────────────────────────────────────────────
