@@ -146,7 +146,8 @@ enum RiskScorer {
             return .noise
         case "data_breach", "paste_exposure":
             return .breach
-        case "exposed_service", "vulnerability", "ip_abuse", "ip_reputation", "domain_reputation":
+        case "exposed_service", "vulnerability", "ip_abuse", "ip_reputation", "domain_reputation",
+             "lookalike_domain":
             return .threat
         case "identity_proof", "developer_identity":
             return .identity

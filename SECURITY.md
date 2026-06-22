@@ -298,6 +298,12 @@ were found. The relevant properties:
   interpolated into a URL path, and the upstream `InputValidator` charset
   (`@._+-` only) makes query-string injection impossible. All route through
   `PluginHTTP`.
+- **Typosquat lookalike recon stays on a fixed host.** `Typosquat` generates
+  permutations of the target domain and resolves each only via `DoHResolver`
+  (Cloudflare DoH, `cloudflare-dns.com` — project-controlled), with the candidate
+  carried as the `name` query param, never as the request host. Permutations are
+  validated as RFC-1123 hostnames before any lookup and the lookup count is capped
+  (`maxCandidates`), so there is no SSRF surface and no unbounded fan-out.
 - **New user-controlled egress.** `WebPosture` fetches the scan target's web host
   to grade its security headers; it restricts the host to `^[a-z0-9.\-]+$` and
   fetches **only** via `SafeHTTP.get`, which inherits the same pre-flight

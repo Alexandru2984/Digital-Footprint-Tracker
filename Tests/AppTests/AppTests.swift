@@ -1023,6 +1023,44 @@ final class AppTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(s.value, 25, "A confirmed breach should reach at least Medium")
     }
 
+    // A live lookalike domain is impersonation/phishing infrastructure — it must
+    // score in the threat band, well above a plain DNS/infra record.
+    func testRiskScorerLookalikeDomainCountsAsThreat() {
+        let lookalike = RiskScorer.compute(raw: [(0.6, "lookalike_domain")]).value
+        let infra = RiskScorer.compute(raw: [(0.6, "subdomain")]).value
+        XCTAssertGreaterThan(lookalike, infra,
+            "A live lookalike domain is an impersonation threat, not mere infrastructure")
+    }
+
+    // MARK: - Typosquat permutations (pure / offline)
+
+    func testTyposquatPermutationsAreValidLookalikes() {
+        let base = TyposquatPlugin.Base(sld: "example", tld: "com")
+        let perms = TyposquatPlugin.permutations(of: base)
+        XCTAssertFalse(perms.isEmpty)
+        XCTAssertLessThanOrEqual(perms.count, TyposquatPlugin.maxCandidates)
+
+        let domains = perms.map { $0.domain }
+        XCTAssertFalse(domains.contains("example.com"), "The base domain must never be a candidate")
+        XCTAssertEqual(Set(domains).count, domains.count, "Candidates must be deduped")
+        for d in domains {
+            XCTAssertTrue(TyposquatPlugin.isValidHostname(d), "\(d) is not a valid hostname")
+        }
+        // Round-robin interleaving guarantees each technique's first item lands
+        // within the cap: a TLD swap and a transposition are both expected.
+        XCTAssertTrue(domains.contains("example.net"), "Expected TLD-swap lookalike example.net")
+        XCTAssertTrue(domains.contains("xeample.com"), "Expected transposition lookalike xeample.com")
+    }
+
+    func testTyposquatRejectsNonRegistrableHosts() {
+        XCTAssertNil(TyposquatPlugin.registrable("1.2.3.4"), "An IPv4 has no registrable typo surface")
+        XCTAssertNil(TyposquatPlugin.registrable("localhost"), "A single label is not registrable")
+        XCTAssertNil(TyposquatPlugin.registrable("a.com"), "A one-char SLD has no useful permutations")
+        XCTAssertEqual(TyposquatPlugin.registrable("www.example.com"),
+                       TyposquatPlugin.Base(sld: "example", tld: "com"),
+                       "Host should fold to its registrable sld.tld")
+    }
+
     // A single breach must outweigh a large pile of public account presences.
     func testRiskScorerBreachOutweighsManyAccounts() {
         let breach = RiskScorer.compute(results: [mkResult("data_breach", 1.0)])
