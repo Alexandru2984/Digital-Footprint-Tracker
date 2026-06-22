@@ -115,8 +115,13 @@ struct ScanController: RouteCollection {
         // bypassed entirely by serving a foreign scan from this POST.
         let userID = try await req.currentUser()?.id
 
-        // Dedupe: if a pending scan already exists for this input AND this owner,
-        // return it immediately so we don't spin up redundant plugin tasks.
+        // Dedupe: if an *in-flight* pending scan already exists for this input AND
+        // this owner, return it so we don't spin up redundant plugin tasks. But a
+        // pending scan whose runner died mid-flight (e.g. a process crash) would stay
+        // pending forever and block every future scan of that input — so only reuse
+        // one young enough to plausibly still be running (the runner deadline is
+        // ~120s), and reap an older orphan to `.failed` before starting fresh.
+        let inFlightCutoff = Date().addingTimeInterval(-180)
         var pendingQuery = Scan.query(on: req.db)
             .filter(\.$input == input)
             .filter(\.$statusRaw == ScanStatus.pending.rawValue)
@@ -125,15 +130,21 @@ struct ScanController: RouteCollection {
         } else {
             pendingQuery = pendingQuery.filter(\.$user.$id == nil)
         }
-        if let pendingScan = try await pendingQuery.first() {
-            return ScanResponse(
-                scanID: pendingScan.id!,
-                input: pendingScan.input,
-                status: pendingScan.status.rawValue,
-                results: [],
-                completedAt: nil,
-                scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
-            )
+        if let pendingScan = try await pendingQuery.sort(\.$createdAt, .descending).first() {
+            if let createdAt = pendingScan.createdAt, createdAt > inFlightCutoff {
+                return ScanResponse(
+                    scanID: pendingScan.id!,
+                    input: pendingScan.input,
+                    status: pendingScan.status.rawValue,
+                    results: [],
+                    completedAt: nil,
+                    scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
+                )
+            }
+            // Orphaned: the runner is gone. Reap so it stops blocking this input and
+            // stops surfacing as a perpetually-pending scan, then fall through to start fresh.
+            pendingScan.status = .failed
+            try? await pendingScan.save(on: req.db)
         }
 
         // Reuse a recent completed scan of the SAME owner unless force=true or stale.

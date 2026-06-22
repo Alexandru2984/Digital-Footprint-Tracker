@@ -195,6 +195,31 @@ final class AppTests: XCTestCase {
         })
     }
 
+    // An orphaned pending scan (its runner died mid-flight, e.g. a process crash)
+    // must NOT be reused forever — it is reaped to .failed and a fresh scan starts.
+    func testOrphanedPendingScanIsReapedNotReused() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Seed an anonymous pending scan well past the ~120s in-flight window.
+        let orphan = Scan(input: "orphantarget", userID: nil)
+        try await orphan.save(on: app.db)
+        orphan.createdAt = Date().addingTimeInterval(-600)
+        try await orphan.save(on: app.db)
+        let orphanID = try XCTUnwrap(orphan.id)
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(["input": "orphantarget"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertNotEqual(body.scanID, orphanID, "an orphaned pending scan must not be reused")
+        })
+
+        let reaped = try await Scan.find(orphanID, on: app.db)
+        XCTAssertEqual(reaped?.status, .failed, "the orphaned pending scan is reaped to .failed")
+    }
+
     // MARK: - GET /results/:id
 
     func testGetResultsReturns404ForUnknownID() async throws {
