@@ -35,3 +35,27 @@ extension Request {
         return remoteAddress?.ipAddress ?? "unknown"
     }
 }
+
+/// IP anonymisation for anything persisted (audit log, exports).
+///
+/// Privacy-first: we keep enough of the address to correlate abuse from the same
+/// network (an IPv4 /24, an IPv6 /48) but drop the host-precise bits that would
+/// pin the record to one machine/person. The full IP is still used transiently
+/// for rate limiting — only the *stored* value is coarsened.
+enum IPPrivacy {
+    static func anonymize(_ ip: String) -> String {
+        let trimmed = ip.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != "unknown" else { return trimmed }
+        // IPv4 → zero the final octet (/24).
+        if !trimmed.contains(":") {
+            let parts = trimmed.split(separator: ".", omittingEmptySubsequences: false)
+            if parts.count == 4 { return "\(parts[0]).\(parts[1]).\(parts[2]).0" }
+            return trimmed
+        }
+        // IPv6 → keep the first three hextets (/48), drop the rest.
+        let groups = trimmed.split(separator: ":", omittingEmptySubsequences: false)
+        let kept = groups.prefix(3).filter { !$0.isEmpty }
+        guard !kept.isEmpty else { return "::" }
+        return kept.joined(separator: ":") + "::"
+    }
+}

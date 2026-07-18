@@ -10,7 +10,10 @@ struct AuditLogger {
         // hand off to a detached Task. `req` may be invalidated by the time
         // the task runs; locals are safe.
         let userID = req.authenticatedUserID
-        let clientIP = req.clientIP
+        // Store an anonymised IP (/24 or /48) — enough for abuse correlation,
+        // not enough to pin the record to one host. The full IP is only used
+        // transiently for rate limiting, never persisted.
+        let clientIP = IPPrivacy.anonymize(req.clientIP)
         let db = req.db
         let logger = req.logger
         Task {
