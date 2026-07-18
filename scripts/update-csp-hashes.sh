@@ -15,7 +15,10 @@
 
 set -euo pipefail
 
-VHOST="${SWIFT_VHOST:-/etc/nginx/sites-enabled/swift.micutu.com}"
+# The CSP now lives in a shared snippet that BOTH the clearnet vhost and the Tor
+# onion vhost `include`, so rewriting it here keeps script-src hashes in lockstep
+# across both entry points from a single place.
+VHOST="${SWIFT_VHOST:-/etc/nginx/snippets/swift-csp.conf}"
 FRONTEND="${SWIFT_FRONTEND:-/home/micu/swift+vapor/frontend}"
 
 [ -f "$VHOST" ]    || { echo "[csp] vhost not found: $VHOST" >&2; exit 1; }

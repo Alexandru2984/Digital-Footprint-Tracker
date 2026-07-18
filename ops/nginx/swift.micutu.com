@@ -14,7 +14,8 @@ server {
     add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
     add_header X-Robots-Tag              "noindex, nofollow" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-P6jxeShbsOVGCsOCvmVV2w5OdSL6EeigGhKpOIjgLmA=' 'sha256-DqniND5uUJCZH8Rba0Pl2MotJjMB+4OEgKI/cThzeSg=' 'sha256-C186Ihkl90gJgpfSXdDuV+UBFagxzDxeNwrToscwOpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' ; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+    include snippets/swift-csp.conf;
+    add_header Onion-Location "http://5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion$request_uri" always;
 
     # ── Static frontend ───────────────────────────────────────────────────────
     location /robots.txt {
