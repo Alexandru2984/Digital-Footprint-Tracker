@@ -88,6 +88,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(HashSharedReportTokens())
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
+    app.migrations.add(AddAccountSecurityToUsers())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
     // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
@@ -107,7 +108,7 @@ public func configure(_ app: Application) async throws {
         let existing = try await User.query(on: app.db).filter(\.$username == adminUsername).first()
         if existing == nil {
             let hash = try await app.password.async.hash(adminPassword)
-            let admin = User(username: adminUsername, email: adminEmail, passwordHash: hash, isAdmin: true)
+            let admin = User(username: adminUsername, email: adminEmail, passwordHash: hash, isAdmin: true, emailVerified: true)
             try await admin.save(on: app.db)
             app.logger.notice("Admin user '\(adminUsername)' created.")
         }

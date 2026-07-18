@@ -29,6 +29,9 @@ func routes(_ app: Application) throws {
     let authController = AuthController()
     try app.register(collection: authController)
 
+    let twoFactorController = TwoFactorController()
+    try app.register(collection: twoFactorController)
+
     let userController = UserController()
     try app.register(collection: userController)
 

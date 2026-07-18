@@ -43,6 +43,30 @@ final class User: Model, Content {
     @Field(key: "verbose_alerts")
     var verboseAlerts: Bool
 
+    // ── Two-factor authentication (TOTP) ──────────────────────────────────
+    /// Base32 TOTP secret, encrypted at rest (see `TokenEncryption`). Set during
+    /// setup; `totpEnabled` stays false until the user proves possession.
+    @OptionalField(key: "totp_secret")
+    var totpSecret: String?
+
+    @Field(key: "totp_enabled")
+    var totpEnabled: Bool
+
+    /// JSON array of SHA-256-hashed one-time recovery codes. Consumed on use.
+    @OptionalField(key: "totp_recovery_codes")
+    var totpRecoveryCodes: String?
+
+    // ── Email verification ────────────────────────────────────────────────
+    @Field(key: "email_verified")
+    var emailVerified: Bool
+
+    /// SHA-256 hash of the pending verification token (raw token only in the email).
+    @OptionalField(key: "email_verification_token")
+    var emailVerificationToken: String?
+
+    @OptionalField(key: "email_verification_expires")
+    var emailVerificationExpires: Date?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -51,7 +75,7 @@ final class User: Model, Content {
 
     init() { }
 
-    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false) {
+    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false, emailVerified: Bool = false) {
         self.id = id
         self.username = username
         self.email = email
@@ -64,6 +88,8 @@ final class User: Model, Content {
         self.telegramChatID = telegramChatID
         self.slackWebhookURL = slackWebhookURL
         self.verboseAlerts = verboseAlerts
+        self.totpEnabled = false
+        self.emailVerified = emailVerified
     }
 }
 
@@ -86,6 +112,8 @@ extension User {
         // Chat ID is not a secret (just a numeric ID), safe to return
         let telegramChatID: String?
         let verboseAlerts: Bool
+        let twoFactorEnabled: Bool
+        let emailVerified: Bool
     }
 
     func toPublic() -> Public {
@@ -101,7 +129,9 @@ extension User {
             telegramConfigured: telegramBotToken != nil,
             slackConfigured: slackWebhookURL != nil,
             telegramChatID: telegramChatID,
-            verboseAlerts: verboseAlerts
+            verboseAlerts: verboseAlerts,
+            twoFactorEnabled: totpEnabled,
+            emailVerified: emailVerified
         )
     }
 }

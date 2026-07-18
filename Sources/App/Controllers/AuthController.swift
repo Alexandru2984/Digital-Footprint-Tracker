@@ -12,6 +12,14 @@ struct LoginRequest: Content {
     let password: String
 }
 
+/// Login result: either the authenticated user, or a signal that a second
+/// factor is required. When `twoFactorRequired` is true the session holds a
+/// short-lived pending marker and the client must call `/auth/2fa/verify`.
+struct LoginResponse: Content {
+    let twoFactorRequired: Bool
+    let user: User.Public?
+}
+
 struct AuthController: RouteCollection {
 
     /// Precomputed BCrypt hash used to keep login response time independent of
@@ -36,6 +44,8 @@ struct AuthController: RouteCollection {
         limited.post("login", use: login)
         auth.post("logout", use: logout)
         auth.get("me", use: me)
+        auth.get("verify-email", use: verifyEmail)
+        limited.post("resend-verification", use: resendVerification)
         auth.post("webhook", use: setWebhook)
         auth.post("retention", use: setRetention)
         auth.patch("settings", use: updateSettings)
@@ -59,6 +69,9 @@ struct AuthController: RouteCollection {
         guard body.password.count >= 8 else {
             throw Abort(.badRequest, reason: "Password must be at least 8 characters.")
         }
+        // Offline weak-password rejection — no third-party HIBP call, honours the
+        // privacy-first stance. Blocks the passwords attackers try first.
+        try PasswordStrength.validate(body.password, username: body.username, email: body.email)
 
         // Uniqueness check. Both queries run concurrently and the response
         // returns a single generic reason regardless of which constraint
@@ -82,6 +95,10 @@ struct AuthController: RouteCollection {
 
         AuditLogger.log(req: req, action: "register", target: body.username)
 
+        // Issue an email-verification token (raw in the email, hash at rest) and
+        // send the link. Best-effort: a mail failure must not fail registration.
+        await sendVerificationEmail(for: user, req: req)
+
         // Regenerate session to prevent session fixation: clear any pre-auth data
         // before binding the authenticated user ID to this session.
         req.session.data = .init()
@@ -90,8 +107,82 @@ struct AuthController: RouteCollection {
         return user.toPublic()
     }
 
+    // MARK: - Email verification
+
+    /// Generate + persist a fresh verification token and email the link.
+    private func sendVerificationEmail(for user: User, req: Request) async {
+        // 32 random bytes as hex (URL-safe, no encoding pitfalls). Only the hash
+        // is stored; the raw token lives only in the email link.
+        let rawToken = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+        user.emailVerificationToken = sha256Hex(rawToken)
+        user.emailVerificationExpires = Date().addingTimeInterval(24 * 3600)
+        try? await user.save(on: req.db)
+
+        let base = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
+        let link = "\(base)/api/auth/verify-email?token=\(rawToken)"
+        let body = """
+        Hi \(user.username),
+
+        Confirm your email address for the OSINT Footprint Tracker by opening:
+
+        \(link)
+
+        This link expires in 24 hours. If you didn't create an account, ignore this email.
+        """
+        await EmailService.send(to: user.email, subject: "Verify your email", body: body, app: req.application)
+    }
+
+    /// GET /auth/verify-email?token=… — clicked from the email, so it returns a
+    /// small HTML page rather than JSON.
     @Sendable
-    func login(req: Request) async throws -> User.Public {
+    func verifyEmail(req: Request) async throws -> Response {
+        let token = try req.query.get(String.self, at: "token")
+        let hash = sha256Hex(token)
+        let user = try await User.query(on: req.db)
+            .filter(\.$emailVerificationToken == hash)
+            .first()
+        let ok: Bool
+        if let user, let exp = user.emailVerificationExpires, exp > Date() {
+            user.emailVerified = true
+            user.emailVerificationToken = nil
+            user.emailVerificationExpires = nil
+            try await user.save(on: req.db)
+            AuditLogger.log(req: req, action: "email_verified", target: user.username)
+            ok = true
+        } else {
+            ok = false
+        }
+        let title = ok ? "Email verified ✓" : "Verification failed"
+        let msg = ok
+            ? "Your email address is confirmed. You can close this tab and return to the app."
+            : "This verification link is invalid or has expired. Sign in and request a new one."
+        let html = """
+        <!doctype html><html lang="en"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>\(title)</title></head>
+        <body style="font-family:system-ui,sans-serif;background:#0f172a;color:#f8fafc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">
+        <div style="max-width:28rem;padding:2rem;text-align:center">
+        <h1 style="color:\(ok ? "#10b981" : "#f87171")">\(title)</h1>
+        <p style="color:#cbd5e1">\(msg)</p>
+        <a href="/" style="color:#10b981">← Back to the app</a>
+        </div></body></html>
+        """
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: ok ? .ok : .badRequest, headers: headers, body: .init(string: html))
+    }
+
+    /// POST /auth/resend-verification — authenticated; re-sends the link.
+    @Sendable
+    func resendVerification(req: Request) async throws -> HTTPStatus {
+        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        guard !user.emailVerified else { throw Abort(.badRequest, reason: "Email is already verified.") }
+        await sendVerificationEmail(for: user, req: req)
+        return .accepted
+    }
+
+    @Sendable
+    func login(req: Request) async throws -> LoginResponse {
         let body = try req.content.decode(LoginRequest.self)
 
         let existingUser = try await User.query(on: req.db)
@@ -109,11 +200,21 @@ struct AuthController: RouteCollection {
             throw Abort(.unauthorized, reason: "Invalid username or password.")
         }
 
+        // If the account has 2FA, do NOT authenticate yet. Stash a short-lived
+        // pending marker (cleared on success/timeout in TwoFactorController) and
+        // ask the client for the second factor.
+        if user.totpEnabled {
+            req.session.data = .init()
+            req.session.data["pending2FAUserID"] = user.id?.uuidString
+            req.session.data["pending2FAAt"] = String(Date().timeIntervalSince1970)
+            return LoginResponse(twoFactorRequired: true, user: nil)
+        }
+
         // Regenerate session to prevent session fixation.
         req.session.data = .init()
         req.session.data["userID"] = user.id?.uuidString
         AuditLogger.log(req: req, action: "login", target: body.username)
-        return user.toPublic()
+        return LoginResponse(twoFactorRequired: false, user: user.toPublic())
     }
 
     @Sendable

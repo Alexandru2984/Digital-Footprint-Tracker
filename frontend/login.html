@@ -52,6 +52,18 @@
                 </button>
             </form>
 
+            <!-- Second factor (shown when the account has 2FA enabled) -->
+            <form id="twofa-form" class="hidden flex-col gap-4">
+                <p class="text-xs text-slate-400">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+                <input type="text" id="twofa-code" inputmode="numeric" autocomplete="one-time-code"
+                       class="bg-dark-900 border border-dark-700 text-white text-center tracking-[0.3em] text-lg rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none"
+                       placeholder="123456">
+                <button type="submit" id="twofa-btn"
+                        class="w-full text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:ring-brand-500/50 font-bold rounded-lg text-sm px-5 py-3 text-center transition-colors">
+                    VERIFY
+                </button>
+            </form>
+
             <p class="text-center text-xs text-slate-500 mt-4">
                 No account? <a href="/register.html" class="text-brand-400 hover:text-brand-300 transition-colors">Register here</a>
             </p>
@@ -62,10 +74,12 @@
     </div>
 
     <script>
+        const errEl = document.getElementById('error-msg');
+        function showErr(msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); }
+
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('submit-btn');
-            const errEl = document.getElementById('error-msg');
             btn.textContent = 'LOGGING IN...';
             btn.disabled = true;
             errEl.classList.add('hidden');
@@ -81,18 +95,53 @@
                     })
                 });
                 if (res.ok) {
-                    window.location.href = '/';
+                    const data = await res.json().catch(() => ({}));
+                    if (data.twoFactorRequired) {
+                        // Swap to the second-factor form.
+                        document.getElementById('login-form').classList.add('hidden');
+                        const t = document.getElementById('twofa-form');
+                        t.classList.remove('hidden'); t.classList.add('flex');
+                        document.getElementById('twofa-code').focus();
+                    } else {
+                        window.location.href = '/';
+                    }
                 } else {
                     const data = await res.json().catch(() => ({}));
-                    errEl.textContent = data.reason || 'Invalid username or password.';
-                    errEl.classList.remove('hidden');
+                    showErr(data.reason || 'Invalid username or password.');
                     btn.textContent = 'LOGIN';
                     btn.disabled = false;
                 }
             } catch (e) {
-                errEl.textContent = 'Network error. Please try again.';
-                errEl.classList.remove('hidden');
+                showErr('Network error. Please try again.');
                 btn.textContent = 'LOGIN';
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('twofa-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('twofa-btn');
+            btn.textContent = 'VERIFYING...';
+            btn.disabled = true;
+            errEl.classList.add('hidden');
+            try {
+                const res = await fetch('/api/auth/2fa/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ code: document.getElementById('twofa-code').value })
+                });
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    const data = await res.json().catch(() => ({}));
+                    showErr(data.reason || 'Invalid code.');
+                    btn.textContent = 'VERIFY';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                showErr('Network error. Please try again.');
+                btn.textContent = 'VERIFY';
                 btn.disabled = false;
             }
         });

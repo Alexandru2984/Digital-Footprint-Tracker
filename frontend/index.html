@@ -332,7 +332,52 @@
               </div>
               <p id="notif-settings-msg" class="text-[10px] mt-1 hidden"></p>
             </div>
+            <!-- Two-factor authentication -->
+            <div class="mt-3 border-t border-dark-700 pt-3">
+              <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🔐 Two-Factor Auth</p>
+              <p class="text-[10px] text-slate-500 mb-2">Protect your account with a TOTP authenticator app (Aegis, Google Authenticator, 1Password…).</p>
+              <div id="twofa-status" class="text-[11px] text-slate-400 mb-2">Loading…</div>
+
+              <!-- Disabled → offer enable -->
+              <div id="twofa-enable-block" class="hidden">
+                <button id="twofa-start-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Enable 2FA</button>
+              </div>
+
+              <!-- Setup wizard -->
+              <div id="twofa-setup-block" class="hidden space-y-2">
+                <p class="text-[10px] text-slate-500">Add this secret to your authenticator (manual / key entry):</p>
+                <code id="twofa-secret" class="block bg-dark-900 border border-dark-700 rounded px-2 py-1.5 text-[11px] text-brand-400 break-all select-all"></code>
+                <p class="text-[10px] text-slate-600 break-all">Or paste this URI: <span id="twofa-uri" class="text-slate-500"></span></p>
+                <label class="block text-[10px] text-slate-500 uppercase tracking-wide mt-1">Enter the 6-digit code to confirm</label>
+                <input type="text" id="twofa-confirm-code" inputmode="numeric" placeholder="123456" class="w-full bg-dark-900 border border-dark-700 text-white text-center tracking-[0.2em] text-sm rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
+                <div class="flex gap-2">
+                  <button id="twofa-confirm-btn" class="flex-grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded">Confirm & Enable</button>
+                  <button id="twofa-cancel-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Cancel</button>
+                </div>
+              </div>
+
+              <!-- Recovery codes (shown once) -->
+              <div id="twofa-recovery-block" class="hidden mt-2">
+                <p class="text-[10px] text-amber-400 mb-1">⚠ Save these recovery codes now — each works once and they won't be shown again.</p>
+                <pre id="twofa-recovery-codes" class="bg-dark-900 border border-amber-700/40 rounded px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap select-all"></pre>
+                <button id="twofa-recovery-done-btn" class="mt-1 text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded">I've saved them</button>
+              </div>
+
+              <!-- Enabled → offer disable -->
+              <div id="twofa-disable-block" class="hidden space-y-2">
+                <input type="password" id="twofa-disable-pass" placeholder="Confirm with your password" autocomplete="current-password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
+                <button id="twofa-disable-btn" class="text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded">Disable 2FA</button>
+              </div>
+              <p id="twofa-msg" class="text-[10px] mt-1 hidden"></p>
+            </div>
         </section>
+
+        <!-- Email verification banner (shown for unverified accounts) -->
+        <div id="email-verify-banner" class="hidden items-center gap-3 bg-amber-900/25 border border-amber-700/50 rounded-lg px-4 py-2.5 mb-6 text-xs text-amber-300">
+            <span>✉ Please verify your email address to secure your account.</span>
+            <button id="resend-verify-btn" class="ml-auto px-3 py-1 bg-amber-700/40 hover:bg-amber-700/60 rounded text-amber-200 transition-colors whitespace-nowrap">Resend email</button>
+            <span id="resend-verify-msg" class="hidden"></span>
+        </div>
 
         <!-- Search Panel -->
         <section class="bg-dark-800 border border-dark-700 rounded-xl p-6 shadow-xl mb-8 relative overflow-hidden" id="search-panel">
@@ -2171,15 +2216,100 @@
                     if (!window._notifInterval) {
                         window._notifInterval = setInterval(loadNotifications, 30000);
                     }
+                    // Account security UI (2FA state + email-verification banner).
+                    refreshTwoFactorUI();
+                    const banner = document.getElementById('email-verify-banner');
+                    if (currentUser.emailVerified === false) {
+                        banner.classList.remove('hidden'); banner.classList.add('flex');
+                    } else {
+                        banner.classList.add('hidden'); banner.classList.remove('flex');
+                    }
                 } else {
                     currentUser = null;
                     document.getElementById('auth-logged-out').classList.remove('hidden');
                     document.getElementById('auth-logged-in').classList.add('hidden');
+                    document.getElementById('email-verify-banner').classList.add('hidden');
                 }
             } catch (e) {
                 document.getElementById('auth-logged-out').classList.remove('hidden');
             }
         }
+
+        // ─── Account security: 2FA + email verification ───────────────────────────
+        function twofaMsg(text, ok) {
+            const el = document.getElementById('twofa-msg');
+            el.textContent = text; el.classList.remove('hidden');
+            el.className = 'text-[10px] mt-1 ' + (ok ? 'text-brand-400' : 'text-red-400');
+        }
+        function showTwofaBlock(id) {
+            ['twofa-enable-block','twofa-setup-block','twofa-recovery-block','twofa-disable-block']
+                .forEach(b => document.getElementById(b).classList.add('hidden'));
+            if (id) document.getElementById(id).classList.remove('hidden');
+        }
+        function refreshTwoFactorUI() {
+            if (!currentUser) return;
+            const status = document.getElementById('twofa-status');
+            if (currentUser.twoFactorEnabled) {
+                status.innerHTML = '<span class="text-brand-400">● Enabled</span> — your account is protected by 2FA.';
+                showTwofaBlock('twofa-disable-block');
+            } else {
+                status.innerHTML = '<span class="text-slate-500">○ Disabled</span> — add a second factor for stronger protection.';
+                showTwofaBlock('twofa-enable-block');
+            }
+            document.getElementById('twofa-msg').classList.add('hidden');
+        }
+        document.getElementById('twofa-start-btn')?.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/auth/2fa/setup', { method: 'POST', credentials: 'include' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) return twofaMsg(data.reason || 'Setup failed.', false);
+                document.getElementById('twofa-secret').textContent = data.secret;
+                document.getElementById('twofa-uri').textContent = data.otpauthURI;
+                showTwofaBlock('twofa-setup-block');
+                document.getElementById('twofa-confirm-code').focus();
+            } catch { twofaMsg('Network error.', false); }
+        });
+        document.getElementById('twofa-cancel-btn')?.addEventListener('click', refreshTwoFactorUI);
+        document.getElementById('twofa-confirm-btn')?.addEventListener('click', async () => {
+            const code = document.getElementById('twofa-confirm-code').value.trim();
+            try {
+                const res = await fetch('/api/auth/2fa/enable', {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) return twofaMsg(data.reason || 'Incorrect code.', false);
+                document.getElementById('twofa-recovery-codes').textContent = (data.recoveryCodes || []).join('\n');
+                showTwofaBlock('twofa-recovery-block');
+                if (currentUser) currentUser.twoFactorEnabled = true;
+            } catch { twofaMsg('Network error.', false); }
+        });
+        document.getElementById('twofa-recovery-done-btn')?.addEventListener('click', refreshTwoFactorUI);
+        document.getElementById('twofa-disable-btn')?.addEventListener('click', async () => {
+            const password = document.getElementById('twofa-disable-pass').value;
+            if (!password) return twofaMsg('Enter your password to disable.', false);
+            try {
+                const res = await fetch('/api/auth/2fa/disable', {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) return twofaMsg(data.reason || 'Failed.', false);
+                document.getElementById('twofa-disable-pass').value = '';
+                if (currentUser) currentUser.twoFactorEnabled = false;
+                refreshTwoFactorUI();
+            } catch { twofaMsg('Network error.', false); }
+        });
+        document.getElementById('resend-verify-btn')?.addEventListener('click', async () => {
+            const msg = document.getElementById('resend-verify-msg');
+            try {
+                const res = await fetch('/api/auth/resend-verification', { method: 'POST', credentials: 'include' });
+                msg.textContent = res.ok ? '✓ Sent — check your inbox.' : 'Could not send.';
+            } catch { msg.textContent = 'Network error.'; }
+            msg.classList.remove('hidden');
+        });
 
         document.getElementById('logout-btn').addEventListener('click', async () => {
             await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
