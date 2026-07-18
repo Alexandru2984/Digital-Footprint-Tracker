@@ -14,7 +14,7 @@ server {
     add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
     add_header X-Robots-Tag              "noindex, nofollow" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-v/NV7R0aivQOsk4Ocysn9RMPfGaXLPOYQ9tcOXwz9BU=' 'sha256-HVMRInLymOUvzxk69s78aesdpKW0n08X2rajXAgffE8=' 'sha256-C186Ihkl90gJgpfSXdDuV+UBFagxzDxeNwrToscwOpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' ; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-P6jxeShbsOVGCsOCvmVV2w5OdSL6EeigGhKpOIjgLmA=' 'sha256-DqniND5uUJCZH8Rba0Pl2MotJjMB+4OEgKI/cThzeSg=' 'sha256-C186Ihkl90gJgpfSXdDuV+UBFagxzDxeNwrToscwOpc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' ; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" always;
 
     # ── Static frontend ───────────────────────────────────────────────────────
     location /robots.txt {
@@ -100,13 +100,6 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/swift.micutu.com/privkey.pem;
     include             /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
-    # OCSP stapling — server fetches the revocation status so the client never
-    # contacts the CA (privacy) and the TLS handshake is faster.
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    ssl_trusted_certificate /etc/letsencrypt/live/swift.micutu.com/chain.pem;
-    resolver 127.0.0.53 valid=300s;
-    resolver_timeout 5s;
 }
 
 server {
