@@ -7,14 +7,14 @@ import SQLKit
 /// only accounts created after this runs must verify.
 struct AddAccountSecurityToUsers: AsyncMigration {
     func prepare(on database: Database) async throws {
-        try await database.schema("users")
-            .field("totp_secret", .string)
-            .field("totp_enabled", .bool)
-            .field("totp_recovery_codes", .string)
-            .field("email_verified", .bool)
-            .field("email_verification_token", .string)
-            .field("email_verification_expires", .datetime)
-            .update()
+        // One field per `.update()` — SQLite (test DB) only allows a single
+        // ADD COLUMN per ALTER TABLE; a chained multi-field update is Postgres-only.
+        try await database.schema("users").field("totp_secret", .string).update()
+        try await database.schema("users").field("totp_enabled", .bool).update()
+        try await database.schema("users").field("totp_recovery_codes", .string).update()
+        try await database.schema("users").field("email_verified", .bool).update()
+        try await database.schema("users").field("email_verification_token", .string).update()
+        try await database.schema("users").field("email_verification_expires", .datetime).update()
 
         if let sql = database as? SQLDatabase {
             // Backfill so the NOT NULL columns are fully populated first.

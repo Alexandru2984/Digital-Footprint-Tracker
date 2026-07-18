@@ -50,6 +50,7 @@ private func makeApp() async throws -> Application {
     // APIKey or SharedReport models, so the pre-hash schema is sufficient.
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
+    app.migrations.add(AddAccountSecurityToUsers())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
@@ -246,14 +247,14 @@ final class AppTests: XCTestCase {
 
         // Register + login so the scan has an owner (IDOR fix requires ownership)
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "resultstest", "email": "rt@example.com", "password": "password123"], as: .json)
+            try req.content.encode(["username": "resultstest", "email": "rt@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
 
         var sessionCookie = ""
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
-            try req.content.encode(["username": "resultstest", "password": "password123"], as: .json)
+            try req.content.encode(["username": "resultstest", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             // Extract session cookie to replay on subsequent requests
             if let raw = res.headers.first(name: "set-cookie"),
@@ -321,14 +322,14 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
         // Register + login
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "testuser2", "email": "t2@example.com", "password": "password123"], as: .json)
+            try req.content.encode(["username": "testuser2", "email": "t2@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
         // After registration, the session cookie is set — my-scans should return paged response
         // For this test, just check structure
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
-            try req.content.encode(["username": "testuser2", "password": "password123"], as: .json)
+            try req.content.encode(["username": "testuser2", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { _ in })
         // Check my-scans structure
         // (full auth test with session cookies requires more complex setup; just verify auth flow works)
@@ -1224,11 +1225,11 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
 
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "owner2", "email": "o2@example.com", "password": "password123"], as: .json)
+            try req.content.encode(["username": "owner2", "email": "o2@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
         var cookie = ""
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
-            try req.content.encode(["username": "owner2", "password": "password123"], as: .json)
+            try req.content.encode(["username": "owner2", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first { cookie = String(pair) }
         })
@@ -1254,12 +1255,12 @@ final class AppTests: XCTestCase {
 
         // Register + login user A.
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "ownerA", "email": "a@example.com", "password": "password123"], as: .json)
+            try req.content.encode(["username": "ownerA", "email": "a@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
 
         var cookieA = ""
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
-            try req.content.encode(["username": "ownerA", "password": "password123"], as: .json)
+            try req.content.encode(["username": "ownerA", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first {
                 cookieA = String(pair)
@@ -1344,14 +1345,14 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
 
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "gdpruser", "email": "g@example.com", "password": "password123"], as: .json)
+            try req.content.encode(["username": "gdpruser", "email": "g@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
 
         var cookie = ""
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
-            try req.content.encode(["username": "gdpruser", "password": "password123"], as: .json)
+            try req.content.encode(["username": "gdpruser", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             if let raw = res.headers.first(name: "set-cookie"),
                let pair = raw.split(separator: ";").first {
@@ -1378,5 +1379,45 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(res.status, .ok,
                 "Account must still exist after the rejected delete attempt.")
         })
+    }
+
+    // MARK: - TOTP (2FA)
+
+    func testTOTPGenerateVerifyRoundTrip() throws {
+        let secret = TOTP.generateSecret()
+        XCTAssertGreaterThanOrEqual(secret.count, 32, "160-bit secret encodes to ≥32 base32 chars")
+        let code = try XCTUnwrap(TOTP.current(secret: secret))
+        XCTAssertEqual(code.count, 6)
+        XCTAssertTrue(TOTP.verify(code: code, secret: secret), "the current code must verify")
+        // A code from a step far outside the ±1 window must not verify.
+        let stale = try XCTUnwrap(TOTP.current(secret: secret, at: Date().addingTimeInterval(-600)))
+        XCTAssertFalse(TOTP.verify(code: stale, secret: secret), "a 10-minute-old code is outside the window")
+    }
+
+    func testTOTPKnownVectorRFC6238() throws {
+        // RFC 6238 test vector: secret "12345678901234567890" (ASCII) → base32
+        // GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ; at T=59s the SHA-1 TOTP is 94287082.
+        let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        let code = TOTP.current(secret: secret, at: Date(timeIntervalSince1970: 59))
+        XCTAssertEqual(code, "287082", "RFC 6238 SHA-1 6-digit vector at T=59")
+    }
+
+    func testRecoveryCodeHashingIsStable() throws {
+        let codes = RecoveryCodes.generate(count: 5)
+        XCTAssertEqual(codes.count, 5)
+        // Hash is case- and separator-insensitive so user formatting doesn't matter.
+        XCTAssertEqual(RecoveryCodes.hash(codes[0]), RecoveryCodes.hash(codes[0].uppercased()))
+        XCTAssertNotEqual(RecoveryCodes.hash(codes[0]), RecoveryCodes.hash(codes[1]))
+    }
+
+    // MARK: - Password strength
+
+    func testPasswordStrengthRejectsWeakAcceptsStrong() throws {
+        XCTAssertThrowsError(try PasswordStrength.validate("password123", username: "bob", email: "bob@x.com"))
+        XCTAssertThrowsError(try PasswordStrength.validate("12345678", username: "bob", email: "bob@x.com"))
+        XCTAssertThrowsError(try PasswordStrength.validate("aaaaaaaa", username: "bob", email: "bob@x.com"))
+        XCTAssertThrowsError(try PasswordStrength.validate("bob12345", username: "bob", email: "bob@x.com"),
+            "must reject a password containing the username")
+        XCTAssertNoThrow(try PasswordStrength.validate("Xk9mQ2vLp7wZ", username: "bob", email: "bob@x.com"))
     }
 }
