@@ -94,7 +94,7 @@ private func runDueScans(app: Application) async {
             // Monitor mode: diff against the previous completed scan for the
             // same (input, user) pair and notify on net-new findings.
             let previousScan = try? await Scan.query(on: db)
-                .filter(\.$input == input)
+                .filterInput(input)
                 .filter(\.$user.$id == userID)
                 .filter(\.$statusRaw == "completed")
                 .filter(\.$id != scanID)

@@ -51,6 +51,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
+    app.migrations.add(AddInputHashToScans())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 

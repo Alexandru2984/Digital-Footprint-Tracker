@@ -13,8 +13,28 @@ final class Scan: Model, Content {
     @ID(key: .id)
     var id: UUID?
 
+    /// Ciphertext at rest — the target identifier (email / username / domain /
+    /// phone) is the most sensitive metadata a scan carries: it names WHO is being
+    /// investigated. Read/written only through the computed `input` accessor.
     @Field(key: "input")
-    var input: String
+    var inputCipher: String
+
+    /// Blind index (HMAC of the normalized plaintext) so dedup / reuse / diff can
+    /// still look a scan up by input without the column being queryable in the
+    /// clear. Nil on rows created before encryption was introduced (those keep a
+    /// plaintext `input` and are matched by the legacy equality branch instead).
+    @OptionalField(key: "input_hash")
+    var inputHash: String?
+
+    /// Plaintext view of the target. Decrypts on read (legacy plaintext rows fall
+    /// through unchanged); on write, encrypts and refreshes the blind index.
+    var input: String {
+        get { FieldCrypto.decrypt(inputCipher) ?? inputCipher }
+        set {
+            inputCipher = FieldCrypto.encrypt(newValue)
+            inputHash = FieldCrypto.blindIndex(newValue)
+        }
+    }
 
     @Field(key: "status")
     var statusRaw: String
@@ -43,8 +63,21 @@ final class Scan: Model, Content {
 
     init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {
         self.id = id
-        self.input = input
+        self.input = input        // computed setter encrypts + sets the blind index
         self.statusRaw = status.rawValue
         self.$user.id = userID
+    }
+}
+
+extension QueryBuilder where Model == Scan {
+    /// Match a scan by its target input, transparently covering both encrypted
+    /// rows (looked up by blind index) and legacy plaintext rows (looked up by the
+    /// raw column). Use this instead of `filter(\.$input == …)`, which no longer
+    /// exists now that the column holds ciphertext.
+    func filterInput(_ plaintext: String) -> Self {
+        self.group(.or) { or in
+            or.filter(\.$inputHash == FieldCrypto.blindIndex(plaintext))
+            or.filter(\.$inputCipher == plaintext)
+        }
     }
 }

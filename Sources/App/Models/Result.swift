@@ -81,16 +81,11 @@ final class Result: Model, Content {
     /// Encrypt when a key is configured; otherwise store plaintext. Fail-open to
     /// plaintext on an unexpected encrypt error so a background scan never loses a
     /// finding (with a valid `ENCRYPTION_KEY` this path is unreachable).
-    static func encryptField(_ plaintext: String) -> String {
-        guard TokenEncryption.isAvailable() else { return plaintext }
-        return (try? TokenEncryption.encrypt(plaintext)) ?? plaintext
-    }
+    static func encryptField(_ plaintext: String) -> String { FieldCrypto.encrypt(plaintext) }
 
     /// Returns plaintext if `stored` is decryptable ciphertext, else nil (caller
     /// falls back to treating it as a legacy plaintext value).
-    static func decryptField(_ stored: String) -> String? {
-        TokenEncryption.decrypt(stored)
-    }
+    static func decryptField(_ stored: String) -> String? { FieldCrypto.decrypt(stored) }
 
     // MARK: - Codable (plaintext JSON, identical shape to the pre-encryption model)
 

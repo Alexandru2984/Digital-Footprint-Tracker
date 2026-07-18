@@ -56,7 +56,7 @@ struct DiffController: RouteCollection {
         }
 
         var query = Scan.query(on: req.db)
-            .filter(\.$input == scan.input)
+            .filterInput(scan.input)
             .filter(\.$user.$id == userID)
             .filter(\.$statusRaw == "completed")
             .filter(\.$id != id)

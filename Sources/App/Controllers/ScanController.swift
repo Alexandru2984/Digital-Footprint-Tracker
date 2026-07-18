@@ -124,7 +124,7 @@ struct ScanController: RouteCollection {
         // ~120s), and reap an older orphan to `.failed` before starting fresh.
         let inFlightCutoff = Date().addingTimeInterval(-180)
         var pendingQuery = Scan.query(on: req.db)
-            .filter(\.$input == input)
+            .filterInput(input)
             .filter(\.$statusRaw == ScanStatus.pending.rawValue)
         if let userID {
             pendingQuery = pendingQuery.filter(\.$user.$id == userID)
@@ -151,7 +151,7 @@ struct ScanController: RouteCollection {
         // Reuse a recent completed scan of the SAME owner unless force=true or stale.
         if !forceScan {
             var reuseQuery = Scan.query(on: req.db)
-                .filter(\.$input == input)
+                .filterInput(input)
                 .filter(\.$statusRaw != ScanStatus.failed.rawValue)
             if let userID {
                 reuseQuery = reuseQuery.filter(\.$user.$id == userID)
