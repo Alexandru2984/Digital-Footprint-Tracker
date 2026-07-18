@@ -1,0 +1,15 @@
+[Unit]
+Description=Swift Vapor Footprint Application
+After=network.target postgresql.service
+
+[Service]
+User=micu
+Group=micu
+WorkingDirectory=/home/micu/swift+vapor
+EnvironmentFile=/home/micu/swift+vapor/.env
+ExecStart=/home/micu/swift+vapor/.build/release/Run serve --env production --hostname 0.0.0.0 --port 8085
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
