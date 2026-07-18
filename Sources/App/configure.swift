@@ -115,6 +115,10 @@ public func configure(_ app: Application) async throws {
         app.logger.warning("ADMIN_PASSWORD not set — admin account will not be seeded.")
     }
 
+    // Load the offline GeoIP database once at boot (privacy: /api/geolocate
+    // resolves IPs from a local file instead of proxying them to a third party).
+    app.geoIP = GeoIP.open(app: app)
+
     // Register routes
     try routes(app)
 

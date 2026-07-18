@@ -16,21 +16,26 @@ struct HealthController: RouteCollection {
         routes.get("metrics", use: metrics)
         // Registered at /geolocate (not /api/geolocate) — nginx strips the /api/
         // prefix when forwarding, so the public URL remains /api/geolocate.
-        // Rate-limited to prevent abuse: this endpoint forwards request bodies
-        // to ip-api.com on the server's behalf.
+        // Rate-limited even though it's now fully offline (bounded CPU per call).
         routes.grouped(ScanRateLimiter(anonMax: 5, authedMax: 30, windowSeconds: 60))
             .post("geolocate", use: geolocate)
     }
 
-    /// Server-side proxy to ip-api.com/batch.
+    struct GeoQuery: Content { let query: String }
+
+    /// Resolve a batch of IPs against the **local** GeoLite2 database.
     ///
-    /// Hardened against abuse:
-    ///   • Authentication required — prevents anonymous abuse of the server as
-    ///     an open HTTP proxy and protects the project's ip-api.com quota.
-    ///   • 4 KB body cap — ip-api batch accepts up to 100 IPs; well under 4 KB.
-    ///   • JSON-array structural check — rejects garbage / oversized payloads
-    ///     before forwarding upstream.
-    @Sendable func geolocate(req: Request) async throws -> Response {
+    /// Privacy-first: this used to proxy the caller's list of IPs to
+    /// `http://ip-api.com` over cleartext HTTP — a third party (and any on-path
+    /// observer) learned exactly which hosts were being investigated. It now
+    /// answers from a memory-mapped file on disk; nothing leaves the box.
+    ///
+    ///   • Authentication required — geolocation is an account feature.
+    ///   • 4 KB body cap; JSON-array structural check; ≤ 100 entries.
+    ///   • Accepts `["1.2.3.4", …]` or `[{"query":"1.2.3.4"}, …]`.
+    ///   • Response shape matches the previous ip-api batch (status/query/lat/
+    ///     lon/city/regionName/country/countryCode) so the map UI is unchanged.
+    @Sendable func geolocate(req: Request) async throws -> [GeoIP.Location] {
         guard try await req.currentUser() != nil else {
             throw Abort(.unauthorized, reason: "Authentication required.")
         }
@@ -41,23 +46,22 @@ struct HealthController: RouteCollection {
             throw Abort(.payloadTooLarge, reason: "Body must be ≤ 4 KB.")
         }
         let bodyBytes = Data(bodyData.readableBytesView)
-        guard let json = try? JSONSerialization.jsonObject(with: bodyBytes),
-              json is [Any] else {
+        guard let top = try? JSONSerialization.jsonObject(with: bodyBytes), let arr = top as? [Any] else {
             throw Abort(.badRequest, reason: "Body must be a JSON array.")
         }
+        // Normalise both accepted shapes to a flat list of IP strings.
+        let queries: [String] = arr.prefix(100).compactMap { item in
+            if let s = item as? String { return s }
+            if let d = item as? [String: Any], let q = d["query"] as? String { return q }
+            return nil
+        }
 
-        var urlReq = URLRequest(url: URL(string: "http://ip-api.com/batch?fields=status,country,countryCode,regionName,city,isp,org,query")!)
-        urlReq.httpMethod = "POST"
-        urlReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlReq.httpBody = bodyBytes
-        urlReq.timeoutInterval = 10
-
-        let (data, _) = try await URLSession.shared.data(for: urlReq)
-        return Response(
-            status: .ok,
-            headers: HTTPHeaders([("Content-Type", "application/json")]),
-            body: .init(data: data)
-        )
+        guard let geo = req.application.geoIP else {
+            // No DB loaded — return all-fail rather than 500 so the UI degrades
+            // to "no map data" instead of erroring.
+            return queries.map { GeoIP.Location(query: $0, status: "fail") }
+        }
+        return queries.map { geo.lookup($0) }
     }
 
     @Sendable func health(req: Request) async throws -> Response {
