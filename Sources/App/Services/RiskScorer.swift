@@ -144,10 +144,16 @@ enum RiskScorer {
         // is the "no breaches found" case; `data_breach` is the real hit.
         case "breach_check", "api_rate_limit", "username_validation":
             return .noise
+        // Email-auth posture: the informational records + a locked-down result are
+        // zero-risk; only an actually-spoofable domain counts as exposure (below).
+        case "email_auth_ok", "email_auth_spf", "email_auth_dmarc", "email_auth_dkim",
+             "email_auth_mta_sts", "email_auth_spf_missing", "email_auth_dmarc_missing",
+             "dnssec_enabled", "dns_caa":
+            return .noise
         case "data_breach", "paste_exposure":
             return .breach
         case "exposed_service", "vulnerability", "ip_abuse", "ip_reputation", "domain_reputation",
-             "lookalike_domain":
+             "lookalike_domain", "email_spoofable":
             return .threat
         case "identity_proof", "developer_identity":
             return .identity

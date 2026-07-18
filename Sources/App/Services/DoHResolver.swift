@@ -8,7 +8,8 @@ enum DoHResolver {
     /// DNS record type → its numeric RR type, used to filter mixed answers
     /// (a query often returns CNAMEs alongside the requested type).
     private static let typeNumbers: [String: Int] = [
-        "A": 1, "NS": 2, "CNAME": 5, "PTR": 12, "MX": 15, "TXT": 16, "AAAA": 28
+        "A": 1, "NS": 2, "CNAME": 5, "SOA": 6, "PTR": 12, "MX": 15, "TXT": 16,
+        "AAAA": 28, "SRV": 33, "DS": 43, "DNSKEY": 48, "CAA": 257
     ]
 
     /// Resolves `name` records of `type` (e.g. "A", "MX", "TXT", "PTR"). Returns

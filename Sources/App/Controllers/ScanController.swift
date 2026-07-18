@@ -50,6 +50,7 @@ struct ScanController: RouteCollection {
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),
+        MailSecurityPlugin(),
         WebPosturePlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin(),

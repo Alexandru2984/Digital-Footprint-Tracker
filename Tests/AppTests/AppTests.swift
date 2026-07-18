@@ -1421,4 +1421,41 @@ final class AppTests: XCTestCase {
             "must reject a password containing the username")
         XCTAssertNoThrow(try PasswordStrength.validate("Xk9mQ2vLp7wZ", username: "bob", email: "bob@x.com"))
     }
+
+    // MARK: - Email authentication posture
+
+    func testSPFPolicyStrength() {
+        XCTAssertEqual(EmailAuth.spfPolicy("v=spf1 include:_spf.google.com -all")?.spoofable, false)
+        XCTAssertEqual(EmailAuth.spfPolicy("v=spf1 include:_spf.google.com ~all")?.spoofable, true)
+        XCTAssertEqual(EmailAuth.spfPolicy("v=spf1 mx ?all")?.spoofable, true)
+        XCTAssertEqual(EmailAuth.spfPolicy("v=spf1 mx")?.spoofable, true, "no explicit all ⇒ implicit neutral")
+        XCTAssertNil(EmailAuth.spfPolicy(nil))
+    }
+
+    func testDMARCPolicyEnforcement() {
+        XCTAssertEqual(EmailAuth.dmarcPolicy("v=DMARC1; p=reject; rua=mailto:a@b.com")?.enforced, true)
+        XCTAssertEqual(EmailAuth.dmarcPolicy("v=DMARC1; p=quarantine")?.enforced, true)
+        XCTAssertEqual(EmailAuth.dmarcPolicy("v=DMARC1; p=none")?.enforced, false)
+        XCTAssertNil(EmailAuth.dmarcPolicy(nil))
+    }
+
+    func testEmailAuthGrades() {
+        // Fully locked down → grade A, a clean (noise) headline.
+        let strong = EmailAuth.analyze(domain: "secure.example",
+            EmailAuth.Signals(spf: "v=spf1 -all", dmarc: "v=DMARC1; p=reject"))
+        XCTAssertTrue(strong.contains { $0.type == "email_auth_ok" })
+        XCTAssertFalse(strong.contains { $0.type == "email_spoofable" })
+
+        // Nothing configured → grade F, a spoofable exposure headline + missing findings.
+        let weak = EmailAuth.analyze(domain: "open.example", EmailAuth.Signals())
+        XCTAssertTrue(weak.contains { $0.type == "email_spoofable" && $0.metadata["grade"] == "F" })
+        XCTAssertTrue(weak.contains { $0.type == "email_auth_spf_missing" })
+        XCTAssertTrue(weak.contains { $0.type == "email_auth_dmarc_missing" })
+
+        // A spoofable domain must raise the risk score above a locked-down one.
+        func score(_ f: [EmailAuth.Finding]) -> Int {
+            RiskScorer.compute(raw: f.map { (confidence: $0.confidence, type: $0.type) }).value
+        }
+        XCTAssertGreaterThan(score(weak), score(strong))
+    }
 }
