@@ -19,6 +19,7 @@ struct InvestigationController: RouteCollection {
             one.get(use: get)
             one.put(use: update)
             one.delete(use: remove)
+            one.put("watch", use: watch)
         }
     }
 
@@ -29,6 +30,8 @@ struct InvestigationController: RouteCollection {
         let name: String
         let nodeCount: Int
         let updatedAt: Double?
+        let watched: Bool
+        let newCount: Int
     }
     struct Full: Content {
         let id: String
@@ -36,25 +39,32 @@ struct InvestigationController: RouteCollection {
         let data: String          // graph JSON, plaintext
         let createdAt: Double?
         let updatedAt: Double?
+        let watched: Bool
+        let watchInterval: String?
+        let lastCheckedAt: Double?
     }
 
     private func summary(_ inv: Investigation) -> Summary {
-        Summary(id: inv.id?.uuidString ?? "", name: inv.name,
-                nodeCount: Self.nodeCount(inv.data),
-                updatedAt: inv.updatedAt?.timeIntervalSince1970)
+        let (n, new) = Self.nodeStats(inv.data)
+        return Summary(id: inv.id?.uuidString ?? "", name: inv.name,
+                       nodeCount: n, updatedAt: inv.updatedAt?.timeIntervalSince1970,
+                       watched: inv.watched, newCount: new)
     }
     private func full(_ inv: Investigation) -> Full {
         Full(id: inv.id?.uuidString ?? "", name: inv.name, data: inv.data,
              createdAt: inv.createdAt?.timeIntervalSince1970,
-             updatedAt: inv.updatedAt?.timeIntervalSince1970)
+             updatedAt: inv.updatedAt?.timeIntervalSince1970,
+             watched: inv.watched, watchInterval: inv.watchInterval,
+             lastCheckedAt: inv.lastCheckedAt?.timeIntervalSince1970)
     }
 
-    /// Count nodes without trusting the client — parse the stored JSON.
-    private static func nodeCount(_ json: String) -> Int {
+    /// Count nodes (and how many are flagged `new`) without trusting the client.
+    private static func nodeStats(_ json: String) -> (count: Int, new: Int) {
         guard let data = json.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let nodes = obj["nodes"] as? [Any] else { return 0 }
-        return nodes.count
+              let nodes = obj["nodes"] as? [[String: Any]] else { return (0, 0) }
+        let new = nodes.filter { ($0["new"] as? Bool) == true }.count
+        return (nodes.count, new)
     }
 
     // MARK: - Handlers
@@ -128,6 +138,27 @@ struct InvestigationController: RouteCollection {
         let inv = try await owned(req)
         try await inv.delete(on: req.db)
         return .noContent
+    }
+
+    struct WatchBody: Content { let watched: Bool; let interval: String? }
+
+    /// Turn live monitoring on/off for a board. When enabled, the first check is
+    /// scheduled shortly after so the user sees it work.
+    @Sendable
+    func watch(req: Request) async throws -> Full {
+        let inv = try await owned(req)
+        let body = try req.content.decode(WatchBody.self)
+        inv.watched = body.watched
+        if body.watched {
+            inv.watchInterval = (body.interval == "weekly") ? "weekly" : "daily"
+            inv.nextCheckAt = Date().addingTimeInterval(60)   // first pass within a minute
+            AuditLogger.log(req: req, action: "investigation_watch_on", target: inv.name)
+        } else {
+            inv.nextCheckAt = nil
+            AuditLogger.log(req: req, action: "investigation_watch_off", target: inv.name)
+        }
+        try await inv.save(on: req.db)
+        return full(inv)
     }
 
     // MARK: - Helpers

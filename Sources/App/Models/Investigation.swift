@@ -30,6 +30,22 @@ final class Investigation: Model, Content {
         set { dataCipher = FieldCrypto.encrypt(newValue) }
     }
 
+    // ── Live monitoring ("watched" board) ─────────────────────────────────
+    /// When true, a background runner periodically re-scans the board's active
+    /// entities and merges any net-new nodes/edges (flagged `new` in the graph).
+    @Field(key: "watched")
+    var watched: Bool
+
+    /// "daily" | "weekly" — how often a watched board is re-checked.
+    @OptionalField(key: "watch_interval")
+    var watchInterval: String?
+
+    @OptionalField(key: "next_check_at")
+    var nextCheckAt: Date?
+
+    @OptionalField(key: "last_checked_at")
+    var lastCheckedAt: Date?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -43,5 +59,6 @@ final class Investigation: Model, Content {
         self.$user.id = userID
         self.name = name
         self.data = data   // computed setter encrypts
+        self.watched = false
     }
 }

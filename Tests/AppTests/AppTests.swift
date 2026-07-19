@@ -53,6 +53,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddAccountSecurityToUsers())
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
+    app.migrations.add(AddWatchToInvestigations())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
@@ -1549,5 +1550,31 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in
             XCTAssertEqual(try res.content.decode([InvestigationController.Summary].self).count, 0)
         })
+    }
+
+    // MARK: - Board graph enrichment (watch runner)
+
+    func testBoardGraphExtractAndMerge() throws {
+        let results = [
+            BoardGraph.ResultInput(source: "Reddit", type: "account_presence", rawData: "exists", metadata: ["username": "alice"]),
+            BoardGraph.ResultInput(source: "EmailIntel", type: "email", rawData: "x", metadata: ["email": "alice@proton.me"]),
+            BoardGraph.ResultInput(source: "HIBP", type: "data_breach", rawData: "LinkedIn 2012", metadata: ["name": "LinkedIn"]),
+            BoardGraph.ResultInput(source: "GitHub", type: "breach_check", rawData: "clean", metadata: [:])  // must be ignored
+        ]
+        let ex = BoardGraph.extract(rootId: "alice", results: results)
+        let ids = Set(ex.nodes.map { $0.id })
+        XCTAssertTrue(ids.contains("alice@proton.me"))
+        XCTAssertTrue(ids.contains("breach:linkedin"))
+        XCTAssertTrue(ex.nodes.contains { $0.etype == "account" && $0.label == "@Reddit" })
+        XCTAssertFalse(ids.contains { $0.contains("github") }, "breach_check (clean signal) must not create a node")
+        XCTAssertTrue(ex.nodes.allSatisfy { $0.new == true }, "freshly discovered nodes are flagged new")
+
+        // Merge into an existing graph dedupes and reports only genuinely-new nodes.
+        var graph = BoardGraph.Graph(nodes: [BoardGraph.Node(id: "alice@proton.me", label: nil, etype: "email", root: nil, expanded: nil, new: nil, x: nil, y: nil)], edges: [])
+        let added = BoardGraph.merge(into: &graph, nodes: ex.nodes, edges: ex.edges)
+        XCTAssertEqual(added, ex.nodes.count - 1, "the already-present email node is not counted as new")
+        // Round-trips through the on-disk JSON form.
+        let json = try XCTUnwrap(BoardGraph.encode(graph))
+        XCTAssertNotNil(BoardGraph.decode(json))
     }
 }

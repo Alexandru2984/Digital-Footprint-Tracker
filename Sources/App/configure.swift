@@ -91,6 +91,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddAccountSecurityToUsers())
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
+    app.migrations.add(AddWatchToInvestigations())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
     // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
@@ -130,4 +131,5 @@ public func configure(_ app: Application) async throws {
     // The task is tied to app lifetime via a lifecycle handler.
     app.lifecycle.use(ScanCleanupLifecycle())
     app.lifecycle.use(ScheduledScanRunner())
+    app.lifecycle.use(InvestigationWatchRunner())
 }
