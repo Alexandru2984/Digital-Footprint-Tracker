@@ -88,12 +88,53 @@
     return added;
   }
 
+  // ── named transforms per entity type (FlowSint-style enrichers) ───────────
+  // Each transform runs a focused subset of plugins instead of all 32, so an
+  // "email → breaches" pivot is fast and precise. Names are the API plugin names.
+  var TRANSFORMS = {
+    email: [
+      { label: 'Breaches', plugins: ['haveibeenpwned'] },
+      { label: 'Linked accounts', plugins: ['bulkemailosint'] },
+      { label: 'Gravatar', plugins: ['gravatarcheck'] },
+      { label: 'Email intel', plugins: ['emailintel'] },
+      { label: 'Pastes', plugins: ['pastebinosint'] }
+    ],
+    username: [
+      { label: 'Accounts (480+)', plugins: ['bulkosint'] },
+      { label: 'GitHub / GitLab', plugins: ['githubaccountcheck', 'gitlabaccountcheck'] },
+      { label: 'Social', plugins: ['reddit', 'twitterosint', 'mastodonosint', 'telegramosint', 'steamaccountcheck', 'hackernews', 'keybaseosint'] },
+      { label: 'Packages', plugins: ['npmpackages', 'pypipackages'] }
+    ],
+    domain: [
+      { label: 'DNS + WHOIS', plugins: ['domainosint', 'whois'] },
+      { label: 'Email security', plugins: ['mailsecurity'] },
+      { label: 'Subdomains', plugins: ['certificatetransparency', 'passivedns'] },
+      { label: 'Attack surface', plugins: ['attacksurface'] },
+      { label: 'Web posture', plugins: ['webposture'] },
+      { label: 'Exposed files', plugins: ['exposedfiles'] },
+      { label: 'Typosquats', plugins: ['typosquat'] },
+      { label: 'Reputation', plugins: ['virustotal'] }
+    ],
+    ip: [
+      { label: 'Ports & CVEs', plugins: ['internetdb', 'shodan'] },
+      { label: 'Reputation', plugins: ['abuseipdb', 'virustotal'] },
+      { label: 'DNS / Geo', plugins: ['domainosint'] }
+    ],
+    phone: [
+      { label: 'Phone OSINT', plugins: ['phoneosint'] }
+    ]
+  };
+
   // ── expand: scan an entity and grow the graph ─────────────────────────────
-  function expand(node) {
-    if (!node || node.expanded) return;
+  // `plugins` (optional) narrows the enrichers run — a named transform; omitted
+  // runs everything.
+  function expand(node, plugins, label) {
+    if (!node) return;
     node.expanded = true;
-    status('Expanding ' + node.label + ' …');
-    api('POST', '/scan', { input: node.id, force: false }).then(function (res) {
+    status((label ? label + ': ' : 'Expanding ') + node.label + ' …');
+    var body = { input: node.id, force: false };
+    if (plugins && plugins.length) body.plugins = plugins;
+    api('POST', '/scan', body).then(function (res) {
       if (!res.ok) throw new Error('scan rejected');
       return res.json();
     }).then(function (d) {
@@ -164,6 +205,59 @@
 
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
+  // ── export ────────────────────────────────────────────────────────────────
+  function download(content, filename, mime) {
+    var blob = new Blob([content], { type: mime });
+    var a = document.createElement('a');
+    a.download = filename; a.href = URL.createObjectURL(blob); document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function safeName() { return (board.name || 'board').replace(/[^a-z0-9._-]+/gi, '_'); }
+
+  /// GraphML for Maltego / Gephi / yEd. Node ids are index-based (values live in
+  /// the label) so entity strings with @/spaces stay valid XML.
+  function exportGraphML() {
+    if (!board.nodes.length) { status('Nothing to export.'); return; }
+    var idx = {}; board.nodes.forEach(function (n, i) { idx[n.id] = 'n' + i; });
+    var x = '<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n' +
+      '  <key id="label" for="node" attr.name="label" attr.type="string"/>\n' +
+      '  <key id="type" for="node" attr.name="type" attr.type="string"/>\n' +
+      '  <key id="rel" for="edge" attr.name="rel" attr.type="string"/>\n' +
+      '  <graph edgedefault="directed">\n';
+    board.nodes.forEach(function (n, i) {
+      x += '    <node id="n' + i + '"><data key="label">' + escapeHtml(n.label) + '</data><data key="type">' + escapeHtml(n.etype) + '</data></node>\n';
+    });
+    board.edges.forEach(function (e, i) {
+      var s = (typeof e.source === 'object' ? e.source.id : e.source), t = (typeof e.target === 'object' ? e.target.id : e.target);
+      if (idx[s] && idx[t]) x += '    <edge id="e' + i + '" source="' + idx[s] + '" target="' + idx[t] + '"><data key="rel">' + escapeHtml(e.rel) + '</data></edge>\n';
+    });
+    x += '  </graph>\n</graphml>\n';
+    download(x, safeName() + '.graphml', 'application/xml');
+    status('Exported GraphML.');
+  }
+
+  function exportPNG() {
+    var svg = document.getElementById('board-svg');
+    var W = svg.clientWidth || 800, H = svg.clientHeight || 500;
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', W); clone.setAttribute('height', H);
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', W); bg.setAttribute('height', H); bg.setAttribute('fill', '#0b1120');
+    clone.insertBefore(bg, clone.firstChild);
+    var data = new XMLSerializer().serializeToString(clone);
+    var img = new Image();
+    img.onload = function () {
+      var c = document.createElement('canvas'); c.width = W * 2; c.height = H * 2;
+      var ctx = c.getContext('2d'); ctx.scale(2, 2); ctx.drawImage(img, 0, 0);
+      var a = document.createElement('a'); a.download = safeName() + '.png'; a.href = c.toDataURL('image/png');
+      document.body.appendChild(a); a.click(); a.remove();
+      status('Exported PNG.');
+    };
+    img.onerror = function () { status('PNG export failed.'); };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
+  }
+
   // ── detail / actions panel ────────────────────────────────────────────────
   function detail(node) {
     var empty = document.getElementById('board-detail-empty');
@@ -171,13 +265,29 @@
     if (!node) { empty.classList.remove('hidden'); content.classList.add('hidden'); return; }
     empty.classList.add('hidden'); content.classList.remove('hidden');
     var canExpand = PIVOTABLE[node.etype];
-    content.innerHTML =
+    var transforms = TRANSFORMS[node.etype] || [];
+    var html =
       '<div class="text-sm text-white break-all mb-1">' + escapeHtml(node.label) + '</div>' +
-      '<div class="text-[11px] mb-3"><span style="color:' + color(node.etype) + '">●</span> ' + node.etype + (node.root ? ' · root' : '') + '</div>' +
-      (canExpand ? '<button id="board-expand-btn" class="w-full text-xs py-1.5 mb-2 bg-brand-600 hover:bg-brand-500 text-white rounded">' + (node.expanded ? '↻ Re-expand' : '⚡ Expand') + '</button>' : '<p class="text-[11px] text-slate-500 mb-2">Leaf node (not scannable).</p>') +
-      '<button id="board-remove-btn" class="w-full text-xs py-1.5 bg-dark-700 hover:bg-red-700/60 text-slate-300 rounded">Remove node</button>';
+      '<div class="text-[11px] mb-3"><span style="color:' + color(node.etype) + '">●</span> ' + node.etype + (node.root ? ' · root' : '') + '</div>';
+    if (canExpand) {
+      html += '<button id="board-expand-btn" class="w-full text-xs py-1.5 mb-2 bg-brand-600 hover:bg-brand-500 text-white rounded">' + (node.expanded ? '↻ Re-expand (all)' : '⚡ Expand (all)') + '</button>';
+      if (transforms.length) {
+        html += '<p class="text-[10px] text-slate-500 uppercase tracking-widest mt-3 mb-1">Transforms</p>';
+        transforms.forEach(function (t, i) {
+          html += '<button data-tf="' + i + '" class="board-tf-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-slate-300 rounded">↳ ' + escapeHtml(t.label) + '</button>';
+        });
+      }
+    } else {
+      html += '<p class="text-[11px] text-slate-500 mb-2">Leaf node (not scannable).</p>';
+    }
+    html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-dark-700 hover:bg-red-700/60 text-slate-300 rounded">Remove node</button>';
+    content.innerHTML = html;
+
     var eb = document.getElementById('board-expand-btn');
     if (eb) eb.onclick = function () { expand(node); };
+    Array.prototype.forEach.call(content.querySelectorAll('.board-tf-btn'), function (b) {
+      b.onclick = function () { var t = transforms[+b.getAttribute('data-tf')]; expand(node, t.plugins, t.label); };
+    });
     document.getElementById('board-remove-btn').onclick = function () { removeNode(node); };
   }
   function removeNode(node) {
@@ -257,6 +367,8 @@
     document.getElementById('board-new-btn').addEventListener('click', newBoard);
     document.getElementById('board-save-btn').addEventListener('click', saveBoard);
     document.getElementById('board-delete-btn').addEventListener('click', deleteBoard);
+    document.getElementById('board-export-graphml-btn').addEventListener('click', exportGraphML);
+    document.getElementById('board-export-png-btn').addEventListener('click', exportPNG);
     document.getElementById('board-list-select').addEventListener('change', function (e) { if (e.target.value) loadBoard(e.target.value); });
     function addFromInput() {
       var inp = document.getElementById('board-add-input');
