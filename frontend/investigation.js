@@ -215,24 +215,30 @@
     });
   }
   function scheduleSave() { dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(saveBoard, 1500); }
-  function saveBoard() {
-    if (!board.nodes.length && !board.id) return;
+  /// Persist (create or update); resolves with the board id.
+  function persist() {
     var name = (document.getElementById('board-name-input').value || board.name || 'Untitled').trim();
     board.name = name;
     var payload = { name: name, data: serialize() };
     if (board.id) {
-      api('PUT', '/investigations/' + board.id, payload).then(function (r) { status(r.ok ? 'Saved.' : 'Save failed.'); if (r.ok) dirty = false; });
-    } else {
-      api('POST', '/investigations', payload).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
-        if (d) { board.id = d.id; dirty = false; status('Saved.'); loadList(); }
-      });
+      return api('PUT', '/investigations/' + board.id, payload).then(function (r) { if (r.ok) dirty = false; return board.id; });
     }
+    return api('POST', '/investigations', payload).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (d) { board.id = d.id; dirty = false; loadList(); } return board.id;
+    });
+  }
+  function saveBoard() {
+    if (!board.nodes.length && !board.id) return Promise.resolve(null);
+    return persist().then(function (id) { status(id ? 'Saved.' : 'Save failed.'); return id; });
   }
   function loadList() {
     api('GET', '/investigations').then(function (r) { return r.ok ? r.json() : []; }).then(function (list) {
       var sel = document.getElementById('board-list-select');
       sel.innerHTML = '<option value="">— open a board —</option>' +
-        list.map(function (b) { return '<option value="' + b.id + '"' + (b.id === board.id ? ' selected' : '') + '>' + escapeHtml(b.name) + ' (' + b.nodeCount + ')</option>'; }).join('');
+        list.map(function (b) {
+          var badge = (b.watched ? ' 👁' : '') + (b.newCount ? ' ✨' + b.newCount : '');
+          return '<option value="' + b.id + '"' + (b.id === board.id ? ' selected' : '') + '>' + escapeHtml(b.name) + ' (' + b.nodeCount + ')' + badge + '</option>';
+        }).join('');
     });
   }
   // ── cross-board links ─────────────────────────────────────────────────────
@@ -283,16 +289,65 @@
       if (!d) return;
       var g = {};
       try { g = JSON.parse(d.data); } catch (e) { g = { nodes: [], edges: [] }; }
-      board = { id: d.id, name: d.name, nodes: g.nodes || [], edges: g.edges || [] };
+      board = { id: d.id, name: d.name, nodes: g.nodes || [], edges: g.edges || [], watched: !!d.watched, watchInterval: d.watchInterval || 'daily' };
       document.getElementById('board-name-input').value = d.name;
+      refreshWatchUI();
       status('Opened “' + d.name + '”.'); render(); setTimeout(fitToView, 900);
     });
   }
   function newBoard() {
-    board = { id: null, name: '', nodes: [], edges: [] };
+    board = { id: null, name: '', nodes: [], edges: [], watched: false, watchInterval: 'daily' };
     document.getElementById('board-name-input').value = '';
     document.getElementById('board-list-select').value = '';
+    refreshWatchUI();
     detail(null); status('New board.'); render();
+  }
+
+  // ── live monitoring (watch) + acknowledge-new ─────────────────────────────
+  function refreshWatchUI() {
+    var btn = document.getElementById('board-watch-btn');
+    var sel = document.getElementById('board-watch-interval');
+    if (!btn) return;
+    btn.textContent = board.watched ? ('👁 Watch: ' + (board.watchInterval || 'daily')) : '👁 Watch: off';
+    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+      (board.watched ? 'bg-brand-700/70 hover:bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+    sel.classList.toggle('hidden', !board.watched);
+    if (board.watched) sel.value = board.watchInterval || 'daily';
+  }
+  function toggleWatch() {
+    var turnOn = !board.watched;
+    var interval = document.getElementById('board-watch-interval').value || 'daily';
+    function apply() {
+      api('PUT', '/investigations/' + board.id + '/watch', { watched: turnOn, interval: interval })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d) { status('Watch update failed.'); return; }
+          board.watched = d.watched; board.watchInterval = d.watchInterval || 'daily';
+          refreshWatchUI(); loadList();
+          status(d.watched ? 'Watching — first check within a minute; alerts go to your notification channels.' : 'Watch off.');
+        });
+    }
+    if (!board.id) { status('Saving…'); persist().then(function (id) { if (id) apply(); else status('Save first.'); }); }
+    else apply();
+  }
+  function changeInterval() {
+    if (!board.watched || !board.id) return;
+    board.watchInterval = document.getElementById('board-watch-interval').value || 'daily';
+    api('PUT', '/investigations/' + board.id + '/watch', { watched: true, interval: board.watchInterval })
+      .then(function () { refreshWatchUI(); status('Interval: ' + board.watchInterval); });
+  }
+  function newCount() { return board.nodes.filter(function (n) { return n['new']; }).length; }
+  function refreshAckUI() {
+    var c = newCount();
+    var btn = document.getElementById('board-ack-btn');
+    if (!btn) return;
+    document.getElementById('board-ack-count').textContent = c;
+    btn.classList.toggle('hidden', c === 0);
+  }
+  function acknowledgeNew() {
+    board.nodes.forEach(function (n) { delete n['new']; });
+    refreshAckUI(); render(); scheduleSave();
+    status('New findings acknowledged.');
   }
   function deleteBoard() {
     if (!board.id) { newBoard(); return; }
@@ -459,12 +514,24 @@
     node.filter(function (d) { return anyShared(d.id); }).append('circle')
       .attr('r', function (d) { return radius(d) + 5; })
       .attr('fill', 'none').attr('stroke', '#f59e0b').attr('stroke-width', 1.2).attr('stroke-dasharray', '3,2');
+    // Lime pulsing ring = discovered since you last acknowledged (watch runner).
+    var pulse = node.filter(function (d) { return d['new']; }).append('circle')
+      .attr('r', function (d) { return radius(d) + 6; })
+      .attr('fill', 'none').attr('stroke', '#a3e635').attr('stroke-width', 2);
+    pulse.append('animate').attr('attributeName', 'r')
+      .attr('values', function (d) { var r = radius(d); return (r + 4) + ';' + (r + 9) + ';' + (r + 4); })
+      .attr('dur', '1.6s').attr('repeatCount', 'indefinite');
+    pulse.append('animate').attr('attributeName', 'opacity')
+      .attr('values', '0.9;0.3;0.9').attr('dur', '1.6s').attr('repeatCount', 'indefinite');
+
     node.append('circle').attr('r', radius).attr('fill', function (d) { return color(d.root ? 'root' : d.etype); })
-      .attr('stroke', '#0b1120').attr('stroke-width', 2);
+      .attr('stroke', function (d) { return d['new'] ? '#a3e635' : '#0b1120'; }).attr('stroke-width', 2);
     node.append('text').text(function (d) { return d.label; })
-      .attr('x', function (d) { return radius(d) + 4; }).attr('y', 4).attr('font-size', 10).attr('fill', '#cbd5e1');
+      .attr('x', function (d) { return radius(d) + 4; }).attr('y', 4).attr('font-size', 10)
+      .attr('fill', function (d) { return d['new'] ? '#d9f99d' : '#cbd5e1'; });
 
     renderFilters();
+    refreshAckUI();
 
     sim = d3.forceSimulation(vnodes)
       .force('link', d3.forceLink(vedges).id(function (d) { return d.id; }).distance(90).strength(0.4))
@@ -507,6 +574,9 @@
       document.getElementById('board-more').classList.toggle('open');
     });
     document.getElementById('board-fit-btn').addEventListener('click', fitToView);
+    document.getElementById('board-watch-btn').addEventListener('click', toggleWatch);
+    document.getElementById('board-watch-interval').addEventListener('change', changeInterval);
+    document.getElementById('board-ack-btn').addEventListener('click', acknowledgeNew);
     document.getElementById('board-labels-btn').addEventListener('click', function () {
       // auto → on → off → auto
       showEdgeLabels = (showEdgeLabels === null) ? true : (showEdgeLabels ? false : null);

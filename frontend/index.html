@@ -3348,6 +3348,7 @@
             <span class="text-sm font-bold text-brand-400 hidden sm:inline whitespace-nowrap">🕸 Boards</span>
             <select id="board-list-select" class="bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 flex-1 sm:flex-none sm:max-w-[200px] min-w-0"></select>
             <button id="board-save-btn" title="Save board" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded whitespace-nowrap">💾<span class="hidden sm:inline"> Save</span></button>
+            <button id="board-ack-btn" title="Acknowledge new findings" class="hidden text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded whitespace-nowrap">✨ <span id="board-ack-count">0</span> new</button>
             <button id="board-more-btn" title="More actions" class="md:hidden text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded">⋯</button>
             <span id="board-status" class="text-[11px] text-slate-500 ml-auto hidden md:inline truncate max-w-[280px]"></span>
             <button id="board-close-btn" title="Close" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">✕</button>
@@ -3359,6 +3360,12 @@
             <button id="board-delete-btn" class="text-xs px-3 py-1.5 bg-red-700/70 hover:bg-red-600 text-white rounded">Delete</button>
             <button id="board-fit-btn" title="Fit graph to view" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⤢ Fit</button>
             <button id="board-labels-btn" title="Toggle relationship labels" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Labels</button>
+            <span class="w-px h-5 bg-dark-700 mx-1"></span>
+            <button id="board-watch-btn" title="Re-scan this board's entities on a schedule and alert on new findings" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">👁 Watch: off</button>
+            <select id="board-watch-interval" class="hidden bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500">
+                <option value="daily">daily</option>
+                <option value="weekly">weekly</option>
+            </select>
             <button id="board-export-graphml-btn" title="Export as GraphML (Maltego / Gephi / yEd)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ GraphML</button>
             <button id="board-export-png-btn" title="Export as PNG" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ PNG</button>
         </div>
