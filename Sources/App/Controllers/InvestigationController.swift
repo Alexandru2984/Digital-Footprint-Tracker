@@ -12,6 +12,9 @@ struct InvestigationController: RouteCollection {
         let inv = routes.grouped("investigations")
         inv.get(use: list)
         inv.post(use: create)
+        // Constant path segment — registered before the `:id` group so it is never
+        // read as a board id.
+        inv.get("index", use: index)
         inv.group(":id") { one in
             one.get(use: get)
             one.put(use: update)
@@ -83,6 +86,29 @@ struct InvestigationController: RouteCollection {
     @Sendable
     func get(req: Request) async throws -> Full {
         full(try await owned(req))
+    }
+
+    /// Compact index of every board the caller owns: just the node ids per board.
+    /// Lets the UI spot entities shared across investigations (and offer to merge
+    /// them) in one request instead of fetching every board in full.
+    struct IndexEntry: Content { let id: String; let name: String; let nodes: [String] }
+
+    @Sendable
+    func index(req: Request) async throws -> [IndexEntry] {
+        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let boards = try await Investigation.query(on: req.db)
+            .filter(\.$user.$id == user.id!)
+            .all()
+        return boards.map { inv in
+            IndexEntry(id: inv.id?.uuidString ?? "", name: inv.name, nodes: Self.nodeIDs(inv.data))
+        }
+    }
+
+    private static func nodeIDs(_ json: String) -> [String] {
+        guard let d = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let nodes = obj["nodes"] as? [[String: Any]] else { return [] }
+        return nodes.compactMap { $0["id"] as? String }
     }
 
     struct UpdateBody: Content { let name: String?; let data: String? }

@@ -180,6 +180,48 @@
         list.map(function (b) { return '<option value="' + b.id + '"' + (b.id === board.id ? ' selected' : '') + '>' + escapeHtml(b.name) + ' (' + b.nodeCount + ')</option>'; }).join('');
     });
   }
+  // ── cross-board links ─────────────────────────────────────────────────────
+  // A compact index (board → node ids) lets us spot an entity that also appears
+  // in another investigation, and offer to pull that board in.
+  var boardIndex = [];
+  function loadIndex() {
+    return api('GET', '/investigations/index').then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (ix) { boardIndex = ix || []; return boardIndex; }).catch(function () { boardIndex = []; });
+  }
+  /// Other boards (not the current one) that contain `nodeId`.
+  function sharedWith(nodeId) {
+    return boardIndex.filter(function (b) {
+      return b.id !== board.id && (b.nodes || []).indexOf(nodeId) >= 0;
+    });
+  }
+  function anyShared(nodeId) { return sharedWith(nodeId).length > 0; }
+
+  /// Pull another board's nodes/edges into this one (dedup by node id).
+  function mergeBoard(otherId, otherName) {
+    api('GET', '/investigations/' + otherId).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return;
+      var g; try { g = JSON.parse(d.data); } catch (e) { return; }
+      var before = board.nodes.length;
+      (g.nodes || []).forEach(function (n) { addNode(n.id, n.label, n.etype, n.root); });
+      (g.edges || []).forEach(function (e) { addEdge(e.source, e.target, e.rel); });
+      status('Merged “' + otherName + '” (+' + (board.nodes.length - before) + ' nodes).');
+      detail(null); render(); scheduleSave();
+    });
+  }
+
+  /// Seed a brand-new board from a completed scan (target + its entities).
+  function seedFromScan(scan) {
+    if (!scan || !scan.input) { status('Run a scan first.'); return; }
+    newBoard();
+    board.name = 'Scan: ' + scan.input;
+    document.getElementById('board-name-input').value = board.name;
+    var root = addNode(scan.input, scan.input, inferType(scan.input), true);
+    root.expanded = true;
+    var n = mergeScan(scan.input, scan.results || []);
+    status('Seeded from scan — ' + n + ' entit' + (n === 1 ? 'y' : 'ies') + '.');
+    open(); render(); scheduleSave();
+  }
+
   function loadBoard(id) {
     if (!id) return;
     api('GET', '/investigations/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
@@ -280,8 +322,18 @@
     } else {
       html += '<p class="text-[11px] text-slate-500 mb-2">Leaf node (not scannable).</p>';
     }
+    var also = sharedWith(node.id);
+    if (also.length) {
+      html += '<p class="text-[10px] text-amber-400 uppercase tracking-widest mt-3 mb-1">Also in ' + also.length + ' other board' + (also.length > 1 ? 's' : '') + '</p>';
+      also.forEach(function (b, i) {
+        html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-amber-900/20 hover:bg-amber-900/40 border border-amber-700/40 text-amber-200 rounded">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
+      });
+    }
     html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-dark-700 hover:bg-red-700/60 text-slate-300 rounded">Remove node</button>';
     content.innerHTML = html;
+    Array.prototype.forEach.call(content.querySelectorAll('.board-merge-btn'), function (b) {
+      b.onclick = function () { var o = also[+b.getAttribute('data-merge')]; mergeBoard(o.id, o.name); };
+    });
 
     var eb = document.getElementById('board-expand-btn');
     if (eb) eb.onclick = function () { expand(node); };
@@ -330,6 +382,10 @@
       })
       .on('mouseout', function () { document.getElementById('board-graph-tooltip').classList.add('hidden'); });
 
+    // Amber dashed halo = this entity also exists in another investigation board.
+    node.filter(function (d) { return anyShared(d.id); }).append('circle')
+      .attr('r', function (d) { return radius(d) + 5; })
+      .attr('fill', 'none').attr('stroke', '#f59e0b').attr('stroke-width', 1.2).attr('stroke-dasharray', '3,2');
     node.append('circle').attr('r', radius).attr('fill', function (d) { return color(d.root ? 'root' : d.etype); })
       .attr('stroke', '#0b1120').attr('stroke-width', 2);
     node.append('text').text(function (d) { return d.label; })
@@ -352,7 +408,10 @@
   function open() {
     document.getElementById('board-overlay').classList.remove('hidden');
     document.getElementById('board-overlay').classList.add('flex');
-    loadList(); setTimeout(render, 60);
+    loadList();
+    // Refresh the cross-board index, then redraw so shared-entity halos show.
+    loadIndex().then(function () { render(); });
+    setTimeout(render, 60);
   }
   function close() {
     if (dirty) saveBoard();
@@ -379,7 +438,19 @@
     document.getElementById('board-add-btn').addEventListener('click', addFromInput);
     document.getElementById('board-add-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') addFromInput(); });
     document.getElementById('board-svg').addEventListener('click', function () { detail(null); });
+
+    // "🕸 BOARD" in the scan-results toolbar: seed a fresh board from the scan
+    // currently on screen. `lastScanData` is owned by the page's inline script.
+    var seedBtn = document.getElementById('seed-board-btn');
+    if (seedBtn) seedBtn.addEventListener('click', function () {
+      var scan = null;
+      try { scan = (typeof lastScanData !== 'undefined') ? lastScanData : null; } catch (e) { scan = null; }
+      seedFromScan(scan);
+    });
   }
+
+  // Small public surface so the page can drive the board too.
+  window.InvestigationBoards = { open: open, seedFromScan: seedFromScan };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();
