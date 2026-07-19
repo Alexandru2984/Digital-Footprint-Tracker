@@ -24,13 +24,21 @@ final class SafeHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
     enum SafeHTTPError: Error { case blockedInternalHost, badURL }
 
-    private lazy var session: URLSession = {
+    // Eagerly initialised (not `lazy`): a `lazy var` is not thread-safe, and a
+    // full scan runs several SafeHTTP users (WebPosture, ExposedFiles, …)
+    // concurrently — racing the first access could double-init or hang. Building
+    // it once in `init` removes that race. IUO because the delegate is `self`,
+    // which isn't available until after `super.init()`.
+    private var session: URLSession!
+
+    override init() {
+        super.init()
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 10
         cfg.timeoutIntervalForResource = 15
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
-    }()
+        session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }
 
     /// POST `body` to `url`. Throws `blockedInternalHost` if the destination (or
     /// any redirect hop) resolves to a private/loopback/link-local address.
@@ -51,28 +59,54 @@ final class SafeHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         let status: Int
         let headers: [String: String]   // header names lowercased
         let finalURL: URL?
+        /// First ~8 KB of the body decoded as UTF-8 (lossy) — enough to signature-
+        /// match exposed files without pulling a whole response into memory. Nil
+        /// unless the caller requested the body.
+        let bodyPrefix: String?
+
+        init(status: Int, headers: [String: String], finalURL: URL?, bodyPrefix: String? = nil) {
+            self.status = status
+            self.headers = headers
+            self.finalURL = finalURL
+            self.bodyPrefix = bodyPrefix
+        }
     }
 
     /// GET `url` and return its status + response headers, with the same SSRF
     /// protection as `post` (pre-flight DNS check + redirect re-validation). Used by
     /// the web-posture plugin to inspect security headers on a user-supplied host.
-    func get(url: URL, timeout: TimeInterval = 10) async throws -> Response {
+    /// - Parameter hostPreChecked: when true, skip the (blocking `getaddrinfo`)
+    ///   pre-flight DNS check because the caller already verified this exact host
+    ///   is public. Redirect hops are still re-validated by the delegate. Callers
+    ///   use this to fetch many paths on ONE already-checked host without firing a
+    ///   storm of concurrent blocking resolves that would starve the async pool.
+    func get(url: URL, timeout: TimeInterval = 10, wantBody: Bool = false, hostPreChecked: Bool = false) async throws -> Response {
         guard let host = url.host, !host.isEmpty else { throw SafeHTTPError.badURL }
-        guard !SSRFGuard.resolvesToInternal(host) else { throw SafeHTTPError.blockedInternalHost }
+        if !hostPreChecked {
+            guard !SSRFGuard.resolvesToInternal(host) else { throw SafeHTTPError.blockedInternalHost }
+        }
 
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.timeoutInterval = timeout
         req.setValue("Digital-Footprint-Tracker/1.0 (+https://swift.micutu.com)", forHTTPHeaderField: "User-Agent")
+        if wantBody {
+            // Only the first 8 KB is ever inspected. Ask for just that so a huge
+            // response (e.g. a multi-GB exposed DB dump) can't be buffered whole
+            // into memory. Servers that ignore Range fall back to a full body,
+            // still bounded by the resource timeout.
+            req.setValue("bytes=0-8191", forHTTPHeaderField: "Range")
+        }
 
-        let (_, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw SafeHTTPError.badURL }
 
         var headers: [String: String] = [:]
         for (key, value) in http.allHeaderFields {
             headers[String(describing: key).lowercased()] = String(describing: value)
         }
-        return Response(status: http.statusCode, headers: headers, finalURL: http.url)
+        let bodyPrefix = wantBody ? String(decoding: data.prefix(8192), as: UTF8.self) : nil
+        return Response(status: http.statusCode, headers: headers, finalURL: http.url, bodyPrefix: bodyPrefix)
     }
 
     // MARK: - URLSessionTaskDelegate

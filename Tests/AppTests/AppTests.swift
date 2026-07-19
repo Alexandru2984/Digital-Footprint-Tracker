@@ -1458,4 +1458,25 @@ final class AppTests: XCTestCase {
         }
         XCTAssertGreaterThan(score(weak), score(strong))
     }
+
+    // MARK: - Exposed-file detection (content-verified)
+
+    func testExposedFilesContentVerification() {
+        // Real signatures match.
+        XCTAssertNotNil(ExposedFiles.classify(path: "/.env", status: 200, body: "APP_KEY=secret\nDB_PASSWORD=hunter2\n"))
+        XCTAssertNotNil(ExposedFiles.classify(path: "/.git/HEAD", status: 200, body: "ref: refs/heads/main\n"))
+        XCTAssertNotNil(ExposedFiles.classify(path: "/.git/config", status: 200, body: "[core]\n\trepositoryformatversion = 0\n"))
+        XCTAssertNotNil(ExposedFiles.classify(path: "/backup.sql", status: 200, body: "CREATE TABLE users (id INT);"))
+
+        // SPA fallback (index.html served for every path) must NOT false-positive.
+        let spa = "<!doctype html><html><head><title>App</title></head><body></body></html>"
+        XCTAssertNil(ExposedFiles.classify(path: "/.env", status: 200, body: spa))
+        XCTAssertNil(ExposedFiles.classify(path: "/.git/config", status: 200, body: spa))
+
+        // 206 (partial content from a Range request) is accepted like 200.
+        XCTAssertNotNil(ExposedFiles.classify(path: "/.env", status: 206, body: "DB_PASSWORD=x\n"))
+        // Non-2xx never matches even with a real-looking body.
+        XCTAssertNil(ExposedFiles.classify(path: "/.env", status: 404, body: "DB_PASSWORD=x"))
+        XCTAssertNil(ExposedFiles.classify(path: "/.env", status: 403, body: "DB_PASSWORD=x"))
+    }
 }

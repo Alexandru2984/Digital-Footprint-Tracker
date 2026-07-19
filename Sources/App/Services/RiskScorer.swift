@@ -150,7 +150,7 @@ enum RiskScorer {
              "email_auth_mta_sts", "email_auth_spf_missing", "email_auth_dmarc_missing",
              "dnssec_enabled", "dns_caa":
             return .noise
-        case "data_breach", "paste_exposure":
+        case "data_breach", "paste_exposure", "exposed_file":
             return .breach
         case "exposed_service", "vulnerability", "ip_abuse", "ip_reputation", "domain_reputation",
              "lookalike_domain", "email_spoofable":
