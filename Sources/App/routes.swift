@@ -76,4 +76,7 @@ func routes(_ app: Application) throws {
 
     let accountController = AccountController()
     try app.register(collection: accountController)
+
+    let investigationController = InvestigationController()
+    try app.register(collection: investigationController)
 }

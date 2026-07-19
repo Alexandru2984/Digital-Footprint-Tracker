@@ -52,6 +52,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
     app.migrations.add(AddInputHashToScans())
+    app.migrations.add(CreateInvestigations())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
@@ -1478,5 +1479,75 @@ final class AppTests: XCTestCase {
         // Non-2xx never matches even with a real-looking body.
         XCTAssertNil(ExposedFiles.classify(path: "/.env", status: 404, body: "DB_PASSWORD=x"))
         XCTAssertNil(ExposedFiles.classify(path: "/.env", status: 403, body: "DB_PASSWORD=x"))
+    }
+
+    // MARK: - Investigation boards
+
+    func testInvestigationBoardLifecycleAndIsolation() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        func login(_ name: String) async throws -> String {
+            try await app.test(.POST, "/auth/register", beforeRequest: { req in
+                try req.content.encode(["username": name, "email": "\(name)@ex.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+            var cookie = ""
+            try await app.test(.POST, "/auth/login", beforeRequest: { req in
+                try req.content.encode(["username": name, "password": "Xk9mQ2vLp7wZ"], as: .json)
+            }, afterResponse: { res in
+                if let raw = res.headers.first(name: "set-cookie"), let p = raw.split(separator: ";").first { cookie = String(p) }
+            })
+            return cookie
+        }
+
+        let alice = try await login("alice")
+
+        // Create a board.
+        var boardID = ""
+        try await app.test(.POST, "/investigations", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: alice)
+            try req.content.encode(["name": "Case 1", "data": #"{"nodes":[{"id":"a"}],"edges":[]}"#], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            boardID = try res.content.decode(InvestigationController.Full.self).id
+            XCTAssertFalse(boardID.isEmpty)
+        })
+
+        // List shows it with the right node count.
+        try await app.test(.GET, "/investigations", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: alice)
+        }, afterResponse: { res in
+            let list = try res.content.decode([InvestigationController.Summary].self)
+            XCTAssertEqual(list.count, 1)
+            XCTAssertEqual(list.first?.nodeCount, 1)
+        })
+
+        // Update (grow the graph).
+        try await app.test(.PUT, "/investigations/\(boardID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: alice)
+            try req.content.encode(["data": #"{"nodes":[{"id":"a"},{"id":"b"}],"edges":[{"source":"a","target":"b"}]}"#], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(try res.content.decode(InvestigationController.Full.self).data.contains("\"b\""))
+        })
+
+        // Invalid data (no nodes/edges arrays) is rejected.
+        try await app.test(.PUT, "/investigations/\(boardID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: alice)
+            try req.content.encode(["data": "not json"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        // A different user cannot read Alice's board.
+        let bob = try await login("bob")
+        try await app.test(.GET, "/investigations/\(boardID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: bob)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .notFound) })
+
+        // Bob's own list is empty.
+        try await app.test(.GET, "/investigations", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: bob)
+        }, afterResponse: { res in
+            XCTAssertEqual(try res.content.decode([InvestigationController.Summary].self).count, 0)
+        })
     }
 }

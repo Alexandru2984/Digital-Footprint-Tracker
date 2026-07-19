@@ -90,6 +90,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
     app.migrations.add(AddInputHashToScans())
+    app.migrations.add(CreateInvestigations())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
     // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
