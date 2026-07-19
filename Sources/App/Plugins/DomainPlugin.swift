@@ -74,7 +74,7 @@ struct DomainPlugin: FootprintPlugin {
         }
 
         // ── WHOIS ────────────────────────────────────────────────────────────────
-        if let whoisOut = runWhois(target: target, app: app) {
+        if let whoisOut = await runWhois(target: target, app: app) {
             let lines = whoisOut.components(separatedBy: .newlines)
             let interesting = lines.filter { line in
                 let l = line.lowercased()
@@ -184,49 +184,51 @@ struct DomainPlugin: FootprintPlugin {
 
     // MARK: - Subprocess helpers
 
-    private func runWhois(target: String, app: Application) -> String? {
+    private func runWhois(target: String, app: Application) async -> String? {
         // Sanitise: whois only accepts hostname chars (already guaranteed by
         // the domain regex above, but being explicit here).
         guard target.range(of: #"^[a-zA-Z0-9.\-:]+$"#, options: .regularExpression) != nil else {
             return nil
         }
-        return runProcess(path: "/usr/bin/whois", args: [target], timeout: 15, app: app)
+        return await runProcess(path: "/usr/bin/whois", args: [target], timeout: 15, app: app)
     }
 
-    /// Runs a subprocess synchronously, killing it after `timeout` seconds.
-    /// Returns stdout as a String, or nil on failure / timeout.
-    private func runProcess(path: String, args: [String], timeout: Double, app: Application) -> String? {
+    /// Runs a subprocess, killing it after `timeout` seconds. Returns stdout as a
+    /// String, or nil on failure / timeout.
+    ///
+    /// All the blocking work (process wait + pipe read) runs on a GCD utility
+    /// thread and the `async` caller stays *suspended* via the continuation — it
+    /// never occupies a Swift cooperative thread. The previous version wrapped the
+    /// wait in `DispatchQueue.global().sync { … }`, which does NOT offload (`.sync`
+    /// runs on the calling thread): a slow `whois` then pinned a cooperative
+    /// thread, and enough concurrent scans starved the pool so hard that even the
+    /// runner's own 120 s deadline task couldn't resume — the whole scan hung.
+    private func runProcess(path: String, args: [String], timeout: Double, app: Application) async -> String? {
         guard FileManager.default.isExecutableFile(atPath: path) else { return nil }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = args
-        process.environment = ["PATH": "/usr/bin:/usr/local/bin", "HOME": "/tmp"]
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: path)
+                process.arguments = args
+                process.environment = ["PATH": "/usr/bin:/usr/local/bin", "HOME": "/tmp"]
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+                do { try process.run() } catch { cont.resume(returning: nil); return }
 
-        do { try process.run() } catch { return nil }
+                // Hard kill after `timeout` so a hung/slow whois can't block forever.
+                let killTimer = DispatchWorkItem { if process.isRunning { process.terminate() } }
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killTimer)
 
-        var output: String?
-
-        // Block on a background GCD thread so we never stall a Swift cooperative thread.
-        let sema = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in sema.signal() }
-
-        let killTimer = DispatchWorkItem {
-            if process.isRunning { process.terminate() }
+                // Read to EOF first (drains the pipe so a chatty process can't block
+                // on a full buffer), then reap. The kill timer bounds both.
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                killTimer.cancel()
+                cont.resume(returning: String(data: data, encoding: .utf8))
+            }
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killTimer)
-
-        DispatchQueue.global(qos: .utility).sync {
-            sema.wait()
-            killTimer.cancel()
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        output = String(data: data, encoding: .utf8)
-        return output
     }
 }
