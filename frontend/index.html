@@ -202,6 +202,7 @@
                     <button id="logout-btn" title="Logout" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-500 hover:text-red-400 hover:border-red-500/50 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
                     </button>
+                    <button id="boards-toggle-btn" title="Investigation boards" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">🕸</button>
                     <button id="settings-toggle-btn" title="Settings" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">⚙</button>
                     <button id="theme-toggle-btn" title="Toggle dark/light mode" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors" aria-label="Toggle theme">🌙</button>
                 </div>
@@ -3314,5 +3315,36 @@
         // Check auth state on page load.
         loadAuthState();
     </script>
+
+    <!-- ── Investigation Boards (FlowSint-style interactive relationship graph) ── -->
+    <div id="board-overlay" class="hidden fixed inset-0 z-[9500] bg-dark-900 flex-col">
+        <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-dark-700 bg-dark-800">
+            <span class="text-sm font-bold text-brand-400 mr-2">🕸 Investigation Boards</span>
+            <select id="board-list-select" class="bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 max-w-[200px]"></select>
+            <button id="board-new-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded">+ New</button>
+            <input id="board-name-input" placeholder="Board name" class="bg-dark-900 border border-dark-700 text-white text-xs rounded px-2 py-1.5 w-40 focus:outline-none focus:border-brand-500">
+            <button id="board-save-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded">Save</button>
+            <button id="board-delete-btn" class="text-xs px-3 py-1.5 bg-red-700/70 hover:bg-red-600 text-white rounded">Delete</button>
+            <span id="board-status" class="text-[11px] text-slate-500 ml-auto"></span>
+            <button id="board-close-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">✕ Close</button>
+        </div>
+        <div class="flex-grow flex overflow-hidden flex-col md:flex-row">
+            <div class="flex-grow relative" style="background:#0b1120">
+                <svg id="board-svg" style="width:100%;height:100%"></svg>
+                <div class="absolute top-2 left-2 flex gap-2 z-10">
+                    <input id="board-add-input" placeholder="add entity (email / username / domain / IP)" class="bg-dark-900/90 border border-dark-700 text-white text-xs rounded px-2 py-1.5 w-64 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                    <button id="board-add-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded whitespace-nowrap">+ Add</button>
+                </div>
+                <div id="board-hint" class="absolute inset-0 flex items-center justify-center text-slate-600 text-sm pointer-events-none">Add an entity, or open a saved board, then click a node → Expand to grow the graph.</div>
+                <div id="board-graph-tooltip" class="pointer-events-none absolute z-50 hidden bg-dark-900 border border-dark-600 text-[11px] text-slate-200 rounded px-2 py-1.5 max-w-xs shadow-xl" style="word-break:break-all"></div>
+            </div>
+            <div id="board-detail" class="w-full md:w-72 flex-shrink-0 border-t md:border-t-0 md:border-l border-dark-700 bg-dark-900 p-3 overflow-y-auto max-h-56 md:max-h-none">
+                <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2">Node</p>
+                <div id="board-detail-empty" class="text-xs text-slate-600">Click a node to inspect and expand it.</div>
+                <div id="board-detail-content" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/investigation.js"></script>
 </body>
 </html>
