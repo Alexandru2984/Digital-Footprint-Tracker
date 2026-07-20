@@ -10,6 +10,13 @@ public func configure(_ app: Application) async throws {
     // mid-write (common on Linux with long-lived connections).
     signal(SIGPIPE, SIG_IGN)
 
+    // JSON endpoints do not need request compression. Rejecting encoded bodies
+    // removes decompression-bomb CPU/memory amplification before routing.
+    app.http.server.configuration.requestDecompression = .disabled
+    // Keep the normal JSON surface deliberately small. Investigation graph
+    // create/update routes opt into a separate 1 MB collection ceiling.
+    app.routes.defaultMaxBodySize = "16kb"
+
     // A live deployment must never persist sensitive fields in plaintext merely
     // because ENCRYPTION_KEY is absent or malformed. Validate before connecting,
     // migrating, seeding, or serving any request.

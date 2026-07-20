@@ -62,6 +62,23 @@ server {
         proxy_set_header  CF-Connecting-IP  $remote_addr;
     }
 
+    # Investigation graphs are capped at 512 KB after JSON decoding. Their
+    # escaped JSON envelope can be larger, so only these routes receive 1 MB.
+    # Vapor independently enforces the same pre-decode collection ceiling.
+    location ^~ /api/investigations {
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 1m;
+
+        proxy_pass        http://127.0.0.1:8085/investigations;
+        proxy_http_version 1.1;
+        proxy_set_header  Host              $host;
+        proxy_set_header  X-Real-IP         $remote_addr;
+        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header  X-Forwarded-Proto $scheme;
+        proxy_set_header  CF-Connecting-IP  $remote_addr;
+    }
+
     # ── Health & Metrics (direct, no /api/ prefix) ─────────────────────────
     location /health {
         proxy_pass        http://127.0.0.1:8085/health;

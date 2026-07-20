@@ -15,13 +15,13 @@ struct InvestigationController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let inv = routes.grouped("investigations")
         inv.get(use: list)
-        inv.post(use: create)
+        inv.on(.POST, body: .collect(maxSize: "1mb"), use: create)
         // Constant path segment — registered before the `:id` group so it is never
         // read as a board id.
         inv.get("index", use: index)
         inv.group(":id") { one in
             one.get(use: get)
-            one.put(use: update)
+            one.on(.PUT, body: .collect(maxSize: "1mb"), use: update)
             one.delete(use: remove)
             one.put("watch", use: watch)
         }
