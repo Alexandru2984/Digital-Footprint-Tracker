@@ -360,29 +360,37 @@ Then update the `Content-Security-Policy` header in `/etc/nginx/sites-available/
 
 ### Database backups
 
-`scripts/backup.sh` runs `pg_dump | gzip` and writes a timestamped file to
-`/home/micu/swift-vapor-backups/`, rotating so the last 7 dumps are kept.
-Gzip is compression, not backup encryption; use encrypted storage or wrap the
-dump with a backup key that is not available to the application process.
+`scripts/backup.sh` streams `pg_dump | gzip` directly into authenticated
+AES-256 GPG encryption, then verifies decryption and gzip integrity before the
+partial file becomes a retained backup. No plaintext dump is written to disk.
+It writes to `/home/micu/swift-vapor-backups/` and keeps the last 7 encrypted
+dumps by default (`BACKUP_RETENTION` may be set from 1 to 365).
 The accompanying `swift-vapor-backup.service` + `.timer` units run it daily
 at 02:00 UTC with a 10-minute jitter and `Persistent=true` so a missed run
 catches up on next boot.
 
-Install once:
+Create a random encrypted systemd credential, then install the units once. The
+application service cannot read this backup passphrase:
 
 ```bash
+openssl rand -base64 48 | sudo systemd-creds encrypt --name=backup-passphrase - /etc/credstore.encrypted/swift-vapor-backup-passphrase
 sudo cp scripts/swift-vapor-backup.service scripts/swift-vapor-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now swift-vapor-backup.timer
 sudo systemctl list-timers swift-vapor-backup.timer    # confirm next trigger
 ```
 
-Trigger an on-demand backup or run the script directly:
+Trigger an on-demand backup and confirm that verification completed:
 
 ```bash
-sudo systemctl start swift-vapor-backup.service        # via systemd
-scripts/backup.sh                                       # direct, same output
+sudo systemctl start swift-vapor-backup.service
+sudo journalctl -u swift-vapor-backup.service -n 30 --no-pager
 ```
+
+Existing `.sql.gz` files are plaintext and are deliberately not deleted or
+rewritten by the new job. Re-encrypt and verify them during the controlled
+rollout. Keep at least one tested, encrypted copy off the VPS; local rotation
+alone does not cover disk loss or total host compromise.
 
 ### Prometheus scraping
 

@@ -10,20 +10,39 @@ User=micu
 Group=micu
 WorkingDirectory=/home/micu/swift+vapor
 ExecStart=/home/micu/swift+vapor/scripts/backup.sh
+LoadCredentialEncrypted=backup-passphrase:/etc/credstore.encrypted/swift-vapor-backup-passphrase
 
-# Modest hardening — the script only needs to read .env, talk to local PG,
-# and write into /home/micu/swift-vapor-backups. Nothing else.
+# The job sees this repository read-only, localhost, its private credential, and
+# the backup directory. It has no reason to inspect other homes or use internet.
 NoNewPrivileges=true
-ProtectSystem=full
-ProtectHome=read-only
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/micu/swift+vapor
 ReadWritePaths=/home/micu/swift-vapor-backups
 PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
 ProtectControlGroups=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
 
 # Resource ceilings — pg_dump compressing a multi-GB database can spike.
 # These match swift-vapor.service's posture: high enough to never abort a
