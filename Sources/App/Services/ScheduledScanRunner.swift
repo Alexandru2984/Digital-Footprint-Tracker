@@ -26,6 +26,7 @@ private func runDueScans(app: Application) async {
         due = try await ScheduledScan.query(on: db)
             .filter(\.$isActive == true)
             .filter(\.$nextRunAt <= now)
+            .limit(20)
             .all()
     } catch {
         app.logger.error("[ScheduledScanRunner] Failed to query scheduled scans: \(error)")
@@ -35,6 +36,12 @@ private func runDueScans(app: Application) async {
     for ss in due {
         let rawInput = ss.input
         let userID = ss.$user.id
+        guard let owner = try? await User.find(userID, on: db), owner.emailVerified else {
+            app.logger.warning("[ScheduledScanRunner] Disabling schedule \(ss.id?.uuidString ?? "?") for an unverified or missing owner.")
+            ss.isActive = false
+            try? await ss.save(on: db)
+            continue
+        }
         // Defense in depth: re-validate the stored input every cycle. Rows
         // inserted before validation was added (or via direct DB writes) are
         // skipped here instead of being dispatched to plugins.
@@ -78,13 +85,13 @@ private func runDueScans(app: Application) async {
             // results saved and status flipped to .completed / .failed
             // automatically. Avoids the previous bespoke TaskGroup which
             // had no timeout and could hang a scheduled scan forever.
-            let plugins = ScanController.defaultPlugins
+            let plugins = ScanController.backgroundPlugins
             await ScanProgressTracker.shared.start(scanID: scanID, total: plugins.count)
             // Bypass the plugin cache: monitor mode must see the live state of
             // each upstream so net-new findings can be diffed against the
             // previous run. Cached results would silently mask new accounts /
             // breaches / abuse reports surfaced since the last scan.
-            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: plugins, app: app, useCache: false)
+            await ScanPluginRunner.run(scanID: scanID, input: input, plugins: plugins, app: app, useCache: false, pivotDepth: 0)
 
             // Monitor-mode diff and per-channel notifications are
             // scheduled-scan specific, so they run here after the shared

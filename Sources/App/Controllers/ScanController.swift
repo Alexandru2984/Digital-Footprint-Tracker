@@ -66,6 +66,9 @@ struct ScanController: RouteCollection {
         AbuseIPDBPlugin(),
         PassiveDNSPlugin()
     ]
+    /// Recurring work runs without the high-fan-out plugins. Monitoring remains
+    /// useful while avoiding hundreds of outbound requests per target per cycle.
+    static let backgroundPlugins: [any FootprintPlugin] = defaultPlugins.filter { !$0.heavy }
     let plugins: [any FootprintPlugin] = ScanController.defaultPlugins
 
     func boot(routes: RoutesBuilder) throws {
@@ -107,7 +110,10 @@ struct ScanController: RouteCollection {
         }
         req.logger.info("Scan requested: input=\(logSafe) ip=\(clientIP)")
 
-        let forceScan = scanReq.force == true
+        let requestedPlugins = scanReq.plugins?.map { $0.lowercased() } ?? []
+        // A plugin-specific scan is not interchangeable with an earlier default
+        // scan, so never reuse/dedupe it solely by target.
+        let forceScan = scanReq.force == true || !requestedPlugins.isEmpty
         // A scan older than 7 days is considered stale; a fresh scan will be started.
         let staleThreshold = Date().addingTimeInterval(-7 * 24 * 3600)
 
@@ -116,7 +122,24 @@ struct ScanController: RouteCollection {
         // scans). Returning another user's scan — including its results inline —
         // is a cross-tenant leak; the ownership checks in getResults/stream are
         // bypassed entirely by serving a foreign scan from this POST.
-        let userID = try await req.currentUser()?.id
+        let currentUser = try await req.currentUser()
+        let userID = currentUser?.id
+
+        // Heavy plugins are reserved for verified accounts. Anonymous visitors
+        // and freshly-created throwaway accounts still get the light OSINT set,
+        // but cannot turn one request into hundreds of third-party fetches.
+        let eligiblePlugins = currentUser?.emailVerified == true
+            ? self.plugins
+            : self.plugins.filter { !$0.heavy }
+        let activePlugins: [any FootprintPlugin]
+        if requestedPlugins.isEmpty {
+            activePlugins = eligiblePlugins
+        } else {
+            activePlugins = eligiblePlugins.filter { requestedPlugins.contains($0.name.lowercased()) }
+            guard !activePlugins.isEmpty else {
+                throw Abort(.badRequest, reason: "No eligible plugins specified. Heavy plugins require a verified account.")
+            }
+        }
 
         // Dedupe: if an *in-flight* pending scan already exists for this input AND
         // this owner, return it so we don't spin up redundant plugin tasks. But a
@@ -124,30 +147,32 @@ struct ScanController: RouteCollection {
         // pending forever and block every future scan of that input — so only reuse
         // one young enough to plausibly still be running (the runner deadline is
         // ~120s), and reap an older orphan to `.failed` before starting fresh.
-        let inFlightCutoff = Date().addingTimeInterval(-180)
-        var pendingQuery = Scan.query(on: req.db)
-            .filterInput(input)
-            .filter(\.$statusRaw == ScanStatus.pending.rawValue)
-        if let userID {
-            pendingQuery = pendingQuery.filter(\.$user.$id == userID)
-        } else {
-            pendingQuery = pendingQuery.filter(\.$user.$id == nil)
-        }
-        if let pendingScan = try await pendingQuery.sort(\.$createdAt, .descending).first() {
-            if let createdAt = pendingScan.createdAt, createdAt > inFlightCutoff {
-                return ScanResponse(
-                    scanID: pendingScan.id!,
-                    input: pendingScan.input,
-                    status: pendingScan.status.rawValue,
-                    results: [],
-                    completedAt: nil,
-                    scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
-                )
+        if requestedPlugins.isEmpty {
+            let inFlightCutoff = Date().addingTimeInterval(-180)
+            var pendingQuery = Scan.query(on: req.db)
+                .filterInput(input)
+                .filter(\.$statusRaw == ScanStatus.pending.rawValue)
+            if let userID {
+                pendingQuery = pendingQuery.filter(\.$user.$id == userID)
+            } else {
+                pendingQuery = pendingQuery.filter(\.$user.$id == nil)
             }
-            // Orphaned: the runner is gone. Reap so it stops blocking this input and
-            // stops surfacing as a perpetually-pending scan, then fall through to start fresh.
-            pendingScan.status = .failed
-            try? await pendingScan.save(on: req.db)
+            if let pendingScan = try await pendingQuery.sort(\.$createdAt, .descending).first() {
+                if let createdAt = pendingScan.createdAt, createdAt > inFlightCutoff {
+                    return ScanResponse(
+                        scanID: pendingScan.id!,
+                        input: pendingScan.input,
+                        status: pendingScan.status.rawValue,
+                        results: [],
+                        completedAt: nil,
+                        scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
+                    )
+                }
+                // Orphaned: the runner is gone. Reap so it stops blocking this input and
+                // stops surfacing as a perpetually-pending scan, then fall through to start fresh.
+                pendingScan.status = .failed
+                try? await pendingScan.save(on: req.db)
+            }
         }
 
         // Reuse a recent completed scan of the SAME owner unless force=true or stale.
@@ -187,24 +212,12 @@ struct ScanController: RouteCollection {
 
         let app = req.application
 
-        // E2: Filter plugins based on request
-        let requestedPlugins = scanReq.plugins?.map { $0.lowercased() } ?? []
-        let activePlugins: [any FootprintPlugin]
-        if requestedPlugins.isEmpty {
-            activePlugins = self.plugins
-        } else {
-            activePlugins = self.plugins.filter { requestedPlugins.contains($0.name.lowercased()) }
-            guard !activePlugins.isEmpty else {
-                throw Abort(.badRequest, reason: "No valid plugins specified")
-            }
-        }
-
         await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
 
         // Run plugins in the background so the HTTP request returns immediately.
         // Transitive pivot is the expensive multiplier, so it's account-only:
         // authenticated scans get 2 rounds, anonymous scans get none.
-        let pivotDepth = userID != nil ? 2 : 0
+        let pivotDepth = currentUser?.emailVerified == true ? 2 : 0
         Task {
             await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app, pivotDepth: pivotDepth)
         }

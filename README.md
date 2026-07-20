@@ -197,8 +197,12 @@ page (cookie auth is persisted across reloads).
 - `GET /api/admin/scans` — last 100 scans across all users (admin only)
 
 ### Other route groups
-`/api/api-keys`, `/api/scheduled-scans`, `/api/bulk-scan`, `/api/share`, `/api/diff`,
+`/api/api-keys`, `/api/scheduled-scans`, `/api/scan/bulk`, `/api/share`, `/api/diff`,
 `/api/correlate`, `/api/tags`, `/api/notifications`, `/api/export`, `/api/report/:id`, `/api/health`
+
+Bulk scans, recurring scans, heavy plugins, and watched-board monitoring require
+a verified account. Bulk requests accept at most 10 unique targets and are capped
+at 2 requests/minute and 20/hour per account.
 
 ---
 

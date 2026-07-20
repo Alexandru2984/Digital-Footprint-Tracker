@@ -6,7 +6,11 @@ import Fluent
 /// ever visible to the user who created it.
 struct InvestigationController: RouteCollection {
     /// Hard cap on a serialized board so a runaway client can't store megabytes.
-    private static let maxDataBytes = 512 * 1024
+    static let maxDataBytes = 512 * 1024
+    static let maxBoardsPerUser = 25
+    static let maxWatchedBoardsPerUser = 5
+    static let maxNodes = 500
+    static let maxEdges = 1_000
 
     func boot(routes: RoutesBuilder) throws {
         let inv = routes.grouped("investigations")
@@ -84,6 +88,12 @@ struct InvestigationController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> Full {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let boardCount = try await Investigation.query(on: req.db)
+            .filter(\.$user.$id == user.id!)
+            .count()
+        guard boardCount < Self.maxBoardsPerUser else {
+            throw Abort(.tooManyRequests, reason: "Maximum \(Self.maxBoardsPerUser) investigation boards per account.")
+        }
         let body = try req.content.decode(CreateBody.self)
         let name = try Self.validName(body.name)
         let data = try Self.validData(body.data ?? #"{"nodes":[],"edges":[]}"#)
@@ -148,12 +158,25 @@ struct InvestigationController: RouteCollection {
     func watch(req: Request) async throws -> Full {
         let inv = try await owned(req)
         let body = try req.content.decode(WatchBody.self)
-        inv.watched = body.watched
         if body.watched {
+            guard let user = try await req.currentUser(), user.emailVerified else {
+                throw Abort(.forbidden, reason: "Verify your email before enabling board monitoring.")
+            }
+            if !inv.watched {
+                let watchedCount = try await Investigation.query(on: req.db)
+                    .filter(\.$user.$id == user.id!)
+                    .filter(\.$watched == true)
+                    .count()
+                guard watchedCount < Self.maxWatchedBoardsPerUser else {
+                    throw Abort(.tooManyRequests, reason: "Maximum \(Self.maxWatchedBoardsPerUser) watched boards per account.")
+                }
+            }
+            inv.watched = true
             inv.watchInterval = (body.interval == "weekly") ? "weekly" : "daily"
-            inv.nextCheckAt = Date().addingTimeInterval(60)   // first pass within a minute
+            inv.nextCheckAt = Date().addingTimeInterval(300)
             AuditLogger.log(req: req, action: "investigation_watch_on", target: inv.name)
         } else {
+            inv.watched = false
             inv.nextCheckAt = nil
             AuditLogger.log(req: req, action: "investigation_watch_off", target: inv.name)
         }
@@ -190,8 +213,24 @@ struct InvestigationController: RouteCollection {
         }
         guard let d = raw.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              obj["nodes"] is [Any], obj["edges"] is [Any] else {
+              let nodes = obj["nodes"] as? [[String: Any]],
+              let edges = obj["edges"] as? [[String: Any]] else {
             throw Abort(.badRequest, reason: "data must be JSON with `nodes` and `edges` arrays.")
+        }
+        guard nodes.count <= maxNodes, edges.count <= maxEdges else {
+            throw Abort(.payloadTooLarge, reason: "Board exceeds \(maxNodes) nodes or \(maxEdges) edges.")
+        }
+        guard nodes.allSatisfy({ node in
+            guard let id = node["id"] as? String, !id.isEmpty, id.count <= 255 else { return false }
+            if let label = node["label"] as? String, label.count > 256 { return false }
+            if let type = node["etype"] as? String, type.count > 32 { return false }
+            return true
+        }), edges.allSatisfy({ edge in
+            guard let source = edge["source"] as? String,
+                  let target = edge["target"] as? String else { return false }
+            return !source.isEmpty && source.count <= 255 && !target.isEmpty && target.count <= 255
+        }) else {
+            throw Abort(.badRequest, reason: "Board contains an invalid or oversized node/edge.")
         }
         return raw
     }

@@ -28,6 +28,20 @@ enum ScanPluginRunner {
         // shuts down immediately after the test. Skip execution entirely.
         guard app.environment != .testing else { return }
 
+        guard await ScanExecutionGate.shared.acquire() else {
+            app.logger.warning("Scan \(scanID) rejected: execution queue is full")
+            if let scan = try? await Scan.find(scanID, on: app.db) {
+                scan.status = .failed
+                scan.completedAt = Date()
+                try? await scan.save(on: app.db)
+            }
+            await ScanProgressTracker.shared.remove(for: scanID)
+            return
+        }
+        defer {
+            Task { await ScanExecutionGate.shared.release() }
+        }
+
         guard let db = app.databases.database(
             nil, logger: app.logger, on: app.eventLoopGroup.any()
         ) else {

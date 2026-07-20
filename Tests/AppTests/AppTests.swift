@@ -68,7 +68,124 @@ private func makeApp() async throws -> Application {
     return app
 }
 
+private func registerAndLogin(_ app: Application, username: String) async throws -> String {
+    try await app.test(.POST, "/auth/register", beforeRequest: { req in
+        try req.content.encode([
+            "username": username,
+            "email": "\(username)@example.com",
+            "password": "Xk9mQ2vLp7wZ",
+        ], as: .json)
+    }, afterResponse: { res in
+        XCTAssertEqual(res.status, .ok)
+    })
+    var cookie = ""
+    try await app.test(.POST, "/auth/login", beforeRequest: { req in
+        try req.content.encode(["username": username, "password": "Xk9mQ2vLp7wZ"], as: .json)
+    }, afterResponse: { res in
+        if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first {
+            cookie = String(pair)
+        }
+    })
+    return cookie
+}
+
 final class AppTests: XCTestCase {
+
+    // MARK: - Scan workload admission
+
+    func testExecutionGateRejectsWorkBeyondItsBoundedCapacity() async {
+        let gate = ScanExecutionGate(maxConcurrent: 1, maxQueued: 0)
+        let first = await gate.acquire()
+        let rejected = await gate.acquire()
+        XCTAssertTrue(first)
+        XCTAssertFalse(rejected)
+        let saturated = await gate.snapshot()
+        XCTAssertEqual(saturated.active, 1)
+        XCTAssertEqual(saturated.queued, 0)
+
+        await gate.release()
+        let afterRelease = await gate.acquire()
+        XCTAssertTrue(afterRelease)
+        await gate.release()
+    }
+
+    func testAnonymousCallerCannotSelectHeavyPlugin() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(ScanRequest(input: "alice", force: nil, plugins: ["BulkOSINT"]), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+        let scanCount = try await Scan.query(on: app.db).count()
+        XCTAssertEqual(scanCount, 0)
+    }
+
+    func testUnverifiedAccountCannotUseRecurringOrBulkFanout() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "fanout-user")
+
+        var boardID = ""
+        try await app.test(.POST, "/investigations", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(InvestigationController.CreateBody(
+                name: "Case",
+                data: #"{"nodes":[{"id":"alice","etype":"username","root":true}],"edges":[]}"#
+            ), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            boardID = try res.content.decode(InvestigationController.Full.self).id
+        })
+
+        try await app.test(.PUT, "/investigations/\(boardID)/watch", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(InvestigationController.WatchBody(watched: true, interval: "daily"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+
+        try await app.test(.POST, "/scan/bulk", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(BulkScanController.BulkScanRequest(targets: ["alice"], plugins: nil), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+
+        struct ScheduleBody: Content { let input: String; let interval: String }
+        try await app.test(.POST, "/scheduled-scans", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScheduleBody(input: "alice", interval: "daily"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+    }
+
+    func testBulkScanCapsAndDeduplicatesTargets() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "verified-bulk-user")
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "verified-bulk-user")
+            .first()
+        let user = try XCTUnwrap(storedUser)
+        user.emailVerified = true
+        try await user.save(on: app.db)
+
+        try await app.test(.POST, "/scan/bulk", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(BulkScanController.BulkScanRequest(
+                targets: (0..<11).map { "user\($0)" }, plugins: ["GitHubAccountCheck"]
+            ), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        try await app.test(.POST, "/scan/bulk", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(BulkScanController.BulkScanRequest(
+                targets: ["Alice", "alice"], plugins: ["GitHubAccountCheck"]
+            ), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(try res.content.decode([BulkScanController.BulkScanResult].self).count, 1)
+        })
+        let createdScanCount = try await Scan.query(on: app.db).count()
+        XCTAssertEqual(createdScanCount, 1)
+    }
 
     // MARK: - Sensitive-field encryption
 
@@ -1609,6 +1726,17 @@ final class AppTests: XCTestCase {
             req.headers.replaceOrAdd(name: "Cookie", value: alice)
             try req.content.encode(["data": "not json"], as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        // Structural caps reject valid JSON that would otherwise grow into an
+        // unbounded graph or feed oversized identifiers into the UI.
+        let tooManyNodes = (0...InvestigationController.maxNodes)
+            .map { #"{"id":"n\#($0)"}"# }
+            .joined(separator: ",")
+        let oversizedGraph = #"{"nodes":[\#(tooManyNodes)],"edges":[]}"#
+        try await app.test(.PUT, "/investigations/\(boardID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: alice)
+            try req.content.encode(["data": oversizedGraph], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .payloadTooLarge) })
 
         // A different user cannot read Alice's board.
         let bob = try await login("bob")

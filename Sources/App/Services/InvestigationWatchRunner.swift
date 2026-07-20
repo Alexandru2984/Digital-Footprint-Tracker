@@ -23,7 +23,7 @@ struct InvestigationWatchRunner: LifecycleHandler {
 
     /// Cap on how many entities a single board re-scans per cycle, so a huge board
     /// can't spawn dozens of scans at once.
-    static let maxEntitiesPerBoard = 6
+    static let maxEntitiesPerBoard = 3
 }
 
 private func runDue(app: Application) async {
@@ -34,6 +34,7 @@ private func runDue(app: Application) async {
         due = try await Investigation.query(on: db)
             .filter(\.$watched == true)
             .filter(\.$nextCheckAt <= now)
+            .limit(20)
             .all()
     } catch {
         app.logger.error("[InvestigationWatch] query failed: \(error)")
@@ -47,19 +48,31 @@ private func runDue(app: Application) async {
 private func checkBoard(_ board: Investigation, app: Application, now: Date) async {
     let db = app.db
     let boardID = board.id?.uuidString ?? "?"
+    let userID = board.$user.id
+
+    guard let owner = try? await User.find(userID, on: db), owner.emailVerified else {
+        board.watched = false
+        board.nextCheckAt = nil
+        try? await board.save(on: db)
+        app.logger.warning("[InvestigationWatch] board \(boardID): disabled for unverified or missing owner.")
+        return
+    }
 
     // Advance the schedule up front so a crash mid-check doesn't busy-loop.
     let step: TimeInterval = (board.watchInterval == "weekly") ? 604_800 : 86_400
     board.lastCheckedAt = now
     board.nextCheckAt = now.addingTimeInterval(step)
-    try? await board.save(on: db)
+    do {
+        try await board.save(on: db)
+    } catch {
+        app.logger.error("[InvestigationWatch] board \(boardID): failed to advance schedule: \(error)")
+        return
+    }
 
     guard var graph = BoardGraph.decode(board.data) else {
         app.logger.warning("[InvestigationWatch] board \(boardID): unparseable graph, skipping.")
         return
     }
-    let userID = board.$user.id
-
     // Re-scan the board's active fringe: pivotable entities the user seeded or
     // expanded. Cap to keep the workload bounded.
     let targets = graph.nodes
@@ -84,7 +97,8 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
 
         // Fresh data (bypass cache) so net-new findings actually surface.
         await ScanPluginRunner.run(scanID: scanID, input: input,
-                                   plugins: ScanController.defaultPlugins, app: app, useCache: false)
+                                   plugins: ScanController.backgroundPlugins, app: app,
+                                   useCache: false, pivotDepth: 0)
 
         let results = (try? await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()) ?? []
         let inputs = results.map {
@@ -100,22 +114,31 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
     }
 
     // Persist the grown graph (the `new` flags ride along for the UI).
-    if let json = BoardGraph.encode(graph) {
+    if let json = BoardGraph.encode(graph),
+       json.utf8.count <= InvestigationController.maxDataBytes,
+       graph.nodes.count <= InvestigationController.maxNodes,
+       graph.edges.count <= InvestigationController.maxEdges {
         board.data = json
-        try? await board.save(on: db)
+        do {
+            try await board.save(on: db)
+        } catch {
+            app.logger.error("[InvestigationWatch] board \(boardID): failed to persist graph: \(error)")
+            return
+        }
+    } else {
+        app.logger.warning("[InvestigationWatch] board \(boardID): growth exceeds board limits; changes not persisted.")
+        return
     }
 
     // Alert the owner across their configured channels.
-    if let user = try? await User.find(userID, on: db) {
-        let newLabels = graph.nodes.filter { $0.new == true }.prefix(6).compactMap { $0.label ?? $0.id }
-        let sample = newLabels.joined(separator: ", ")
-        await NotificationDispatcher.notify(
-            user: user,
-            title: "🕸 Board grew: \(board.name)",
-            message: "Your watched investigation \u{201C}\(board.name)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
-            scanID: lastScanID,
-            app: app
-        )
-    }
+    let newLabels = graph.nodes.filter { $0.new == true }.prefix(6).compactMap { $0.label ?? $0.id }
+    let sample = newLabels.joined(separator: ", ")
+    await NotificationDispatcher.notify(
+        user: owner,
+        title: "🕸 Board grew: \(board.name)",
+        message: "Your watched investigation \u{201C}\(board.name)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
+        scanID: lastScanID,
+        app: app
+    )
     app.logger.info("[InvestigationWatch] board \(boardID): +\(totalNew) new entities.")
 }

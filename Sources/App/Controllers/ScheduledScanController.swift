@@ -39,6 +39,9 @@ struct ScheduledScanController: RouteCollection {
     @Sendable
     func create(req: Request) async throws -> ScheduledScanDTO {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        guard user.emailVerified else {
+            throw Abort(.forbidden, reason: "Verify your email before creating scheduled scans.")
+        }
         // Per-user cap — without this, a single account can schedule
         // thousands of recurring scans and burn the runner / outbound HTTP
         // quota for every plugin.
@@ -79,6 +82,9 @@ struct ScheduledScanController: RouteCollection {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         guard let idStr = req.parameters.get("id"), let id = UUID(uuidString: idStr) else { throw Abort(.badRequest) }
         guard let ss = try await ScheduledScan.find(id, on: req.db), ss.$user.id == user.id else { throw Abort(.notFound) }
+        if !ss.isActive, !user.emailVerified {
+            throw Abort(.forbidden, reason: "Verify your email before enabling scheduled scans.")
+        }
         ss.isActive.toggle()
         try await ss.save(on: req.db)
         return ScheduledScanDTO(ss)
