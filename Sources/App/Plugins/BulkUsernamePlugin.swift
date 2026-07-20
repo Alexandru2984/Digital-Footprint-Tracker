@@ -79,8 +79,9 @@ struct BulkUsernamePlugin: FootprintPlugin {
 
     init() {
         let envPath = Environment.get("SHERLOCK_DATA_PATH")
+        let bundledPath = Bundle.module.url(forResource: "sherlock_data", withExtension: "json")?.path
         let cwdPath = FileManager.default.currentDirectoryPath + "/Sources/App/Plugins/sherlock_data.json"
-        let filePath = envPath ?? cwdPath
+        let filePath = envPath ?? bundledPath ?? cwdPath
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
             let decoded = try JSONDecoder().decode(SherlockData.self, from: data)

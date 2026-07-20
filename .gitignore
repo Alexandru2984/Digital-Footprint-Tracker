@@ -1,7 +1,6 @@
 # Swift PM
 .build/
 Packages/
-Package.resolved
 
 # Xcode
 *.xcodeproj/
