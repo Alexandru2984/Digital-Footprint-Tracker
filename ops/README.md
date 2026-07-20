@@ -39,8 +39,10 @@ you change the live config (or regenerate with the scripts under `scripts/`).
 
 ## systemd/
 - `swift-vapor.service` — the unit (runs the release binary as `micu`).
-- `swift-vapor.service.d/10-hardening.conf` — sandbox (ProtectSystem=strict,
-  ProtectHome=read-only, NoNewPrivileges, restricted syscalls/address families…).
+- `swift-vapor.service.d/10-hardening.conf` — sandbox (read-only application
+  tree with other home directories hidden, no capabilities/devices, private
+  file defaults, one permitted listen port, restricted address families, and
+  private/link-local egress denied at the service cgroup).
 - `swift-vapor.service.d/20-bind-loopback.conf` — binds the app to `127.0.0.1`
   only; nginx on localhost is the sole ingress.
 
