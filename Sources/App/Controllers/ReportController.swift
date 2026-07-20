@@ -63,16 +63,19 @@ struct ReportController: RouteCollection {
 
         let execution: BoundedProcess.Result
         do {
+            var processEnvironment = [
+                "PATH": "/usr/bin:/usr/local/bin",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "LANG": "C.UTF-8",
+            ]
+            if let pythonPath = Environment.get("REPORT_PYTHONPATH"), !pythonPath.isEmpty {
+                processEnvironment["PYTHONPATH"] = pythonPath
+            }
             execution = try await BoundedProcess.run(
-                executable: "/usr/bin/python3",
+                executable: Environment.get("REPORT_PYTHON_PATH") ?? "/usr/bin/python3",
                 arguments: [scriptPath],
-                environment: [
-                    "PATH": "/usr/bin:/usr/local/bin",
-                    "PYTHONPATH": Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages",
-                    "PYTHONNOUSERSITE": "1",
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                    "LANG": "C.UTF-8",
-                ],
+                environment: processEnvironment,
                 stdin: jsonData,
                 timeout: 30,
                 maxOutputBytes: 20 * 1_024 * 1_024

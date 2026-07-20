@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Alexandru2984/Digital-Footprint-Tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexandru2984/Digital-Footprint-Tracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Swift](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
+[![Swift](https://img.shields.io/badge/swift-6.2-orange.svg)](https://swift.org)
 [![Live Demo](https://img.shields.io/badge/demo-swift.micutu.com-success.svg)](https://swift.micutu.com)
 
 **OSINT aggregation engine** that scans an email address, username, domain, IP,
@@ -37,7 +37,7 @@ graph.
   email, generic webhook — silent by default, with enriched diff messages
   that list which sources surfaced new findings.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite, 30/30 passing), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---
@@ -46,7 +46,7 @@ graph.
 
 | Layer | Technology |
 |---|---|
-| Backend | Swift 6 + Vapor 4 (async/await, `TaskGroup` concurrency) |
+| Backend | Swift 6.2 toolchain + Vapor 4 (async/await, `TaskGroup` concurrency) |
 | Database | PostgreSQL (Fluent ORM, 19 migrations) |
 | Frontend | Vanilla JS + Tailwind CSS + D3.js v7 + Leaflet |
 | Reverse proxy | nginx (rate limiting, CSP, HSTS, security headers) |
@@ -54,7 +54,7 @@ graph.
 | Network | Cloudflare DNS + proxy (DDoS shield, TLS termination) |
 | Observability | Prometheus-compatible `/metrics`, structured `swift-log` |
 | Email | Raw SMTP (Mailcow / SendGrid compatible) |
-| Tests + Lint | XCTest (30 tests passing), SwiftLint, GitHub Actions CI |
+| Tests + Lint | XCTest, SwiftLint, GitHub Actions CI |
 
 ---
 
@@ -234,9 +234,15 @@ Postgres data persists in the `pgdata` named volume.
 ### Option B: Native build
 
 #### Prerequisites
-- Swift 6 toolchain
+- Swift 6.2 toolchain
 - PostgreSQL
-- Python 3 + [holehe](https://github.com/megadose/holehe) (`pip install holehe`)
+- Python 3 venv populated from the hash-locked `requirements-runtime.txt`
+  (`fpdf2` reports + [holehe](https://github.com/megadose/holehe))
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install --require-hashes --requirement requirements-runtime.txt
+```
 
 ### 1. Clone & configure
 
@@ -253,8 +259,8 @@ DATABASE_HOST=localhost
 DATABASE_USERNAME=footprint_user
 DATABASE_PASSWORD=your_password
 DATABASE_NAME=footprint_db
-HOLEHE_PATH=/usr/local/bin/holehe
-HOLEHE_PYTHONPATH=/path/to/site-packages
+HOLEHE_PATH=/home/micu/swift+vapor/.venv/bin/holehe
+REPORT_PYTHON_PATH=/home/micu/swift+vapor/.venv/bin/python3
 ADMIN_USERNAME=admin
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=your_strong_password

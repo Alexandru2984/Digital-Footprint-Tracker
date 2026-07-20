@@ -1,4 +1,5 @@
 import Fluent
+import Foundation
 
 final class EncryptionMetadata: Model {
     static let schema = "encryption_metadata"

@@ -33,5 +33,5 @@ Packages/
 docs/
 CONTRIBUTING.md
 
-# Tests are only needed by the build stage if we ran `swift test`. We don't.
-Tests/
+# SwiftPM validates the declared test target while planning a product build, so
+# Tests/ must remain in the builder context even though it is not in runtime.

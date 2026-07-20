@@ -17,19 +17,21 @@ struct BulkEmailPlugin: FootprintPlugin {
             app.logger.warning("holehe binary not found at \(holehePath); set HOLEHE_PATH env var")
             return []
         }
-        let pythonPath = Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages"
+        var processEnvironment = [
+            "PATH": "/usr/bin:/usr/local/bin",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "LANG": "C.UTF-8",
+        ]
+        if let pythonPath = Environment.get("HOLEHE_PYTHONPATH"), !pythonPath.isEmpty {
+            processEnvironment["PYTHONPATH"] = pythonPath
+        }
 
         do {
             let execution = try await BoundedProcess.run(
                 executable: holehePath,
                 arguments: [cleanedEmail, "--only-used", "--no-color"],
-                environment: [
-                    "PATH": "/usr/bin:/usr/local/bin:/home/micu/.local/bin",
-                    "PYTHONPATH": pythonPath,
-                    "PYTHONNOUSERSITE": "1",
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                    "LANG": "C.UTF-8",
-                ],
+                environment: processEnvironment,
                 timeout: 60,
                 maxOutputBytes: 1 * 1_024 * 1_024
             )

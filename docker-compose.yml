@@ -38,7 +38,7 @@ services:
       # CORS / cookie origin — must match how users reach the app.
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:8085}
     ports:
-      - "${APP_PORT:-8085}:8080"
+      - "127.0.0.1:${APP_PORT:-8085}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -55,10 +55,13 @@ services:
     tmpfs:
       # holehe writes a per-process $HOME here; PDF generation drops temp files
       # here; EmailService stages the netrc file here. 64 MB is plenty.
-      - /tmp:size=64m,mode=1777
+      - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+    networks:
+      - backend
+      - egress
 
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: unless-stopped
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-footprint}
@@ -74,6 +77,15 @@ services:
     # Postgres needs to write to its data dir; only harden the surface area.
     security_opt:
       - no-new-privileges:true
+    networks:
+      - backend
 
 volumes:
   pgdata:
+
+networks:
+  # Postgres has no route to the public internet. The app joins a second
+  # network for its intended OSINT HTTP clients.
+  backend:
+    internal: true
+  egress:

@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: swift:6.0-jammy@sha256:f0bfe313779a0bb99db87f97c88ea6ada014aa6b3359f9c5583bf70b0b721217
+      image: swift:6.2-jammy@sha256:1c1f422aee767a7f33b88bc3aee99cad5de4af8723fbee8a3ab6951a6879f929
 
     steps:
       - name: Check out repository
