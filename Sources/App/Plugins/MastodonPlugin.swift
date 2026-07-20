@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Looks up a username on Mastodon's largest instance (mastodon.social).
 ///
@@ -12,7 +9,7 @@ import FoundationNetworking
 /// API: GET https://mastodon.social/api/v1/accounts/lookup?acct={username}
 /// Returns 200 + JSON if found, 404 if not.
 ///
-/// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
+/// Uses the shared size-bounded outbound client.
 struct MastodonPlugin: FootprintPlugin {
     let name = "MastodonOSINT"
     let description = "Mastodon account search (mastodon.social)"
@@ -33,13 +30,15 @@ struct MastodonPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://mastodon.social/api/v1/accounts/lookup?acct=\(username)") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 12)
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 12,
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
             let displayName  = json["display_name"]  as? String ?? ""

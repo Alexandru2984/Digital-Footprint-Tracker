@@ -24,7 +24,7 @@ struct GravatarPlugin: FootprintPlugin {
 
         // Prefer the rich profile JSON (its 200 also implies the avatar exists).
         if let profileURL = URL(string: "https://gravatar.com/\(hashString).json"),
-           let resp = await PluginHTTP.request(profileURL), resp.status == 200,
+           let resp = await PluginHTTP.request(profileURL, on: app), resp.status == 200,
            let results = Self.parseProfile(resp.data, email: cleanedEmail, avatarURL: avatarURL),
            !results.isEmpty {
             return results
@@ -32,7 +32,7 @@ struct GravatarPlugin: FootprintPlugin {
 
         // Fall back to a HEAD presence check (d=404 makes a missing avatar 404).
         guard let url = URL(string: avatarURL),
-              let resp = await PluginHTTP.request(url, method: "HEAD"), resp.status == 200 else { return [] }
+              let resp = await PluginHTTP.request(url, method: .HEAD, bodyMode: .prefix(maxBytes: 0), on: app), resp.status == 200 else { return [] }
         return [PluginResult(
             source: name,
             type: "avatar_presence",

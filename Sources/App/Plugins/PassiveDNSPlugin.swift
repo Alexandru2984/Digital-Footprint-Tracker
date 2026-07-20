@@ -1,8 +1,5 @@
 import Foundation
 import Vapor
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 struct PassiveDNSPlugin: FootprintPlugin {
     let name = "PassiveDNS"
@@ -14,12 +11,15 @@ struct PassiveDNSPlugin: FootprintPlugin {
         let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
         guard let url = URL(string: "https://api.hackertarget.com/hostsearch/?q=\(encoded)") else { return [] }
 
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-
-        guard let (responseData, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let text = String(data: responseData, encoding: .utf8),
+        guard let response = await PluginHTTP.request(
+                url,
+                timeout: 15,
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+              ),
+              response.status == 200 else { return [] }
+        let responseData = response.data
+        guard let text = String(data: responseData, encoding: .utf8),
               !text.contains("error"),
               !text.contains("API count exceeded") else { return [] }
 

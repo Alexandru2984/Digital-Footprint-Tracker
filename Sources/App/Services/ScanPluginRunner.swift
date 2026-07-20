@@ -23,9 +23,8 @@ enum ScanPluginRunner {
     ///   main round (default 1). Authenticated interactive scans pass 2 for a
     ///   deeper chain; anonymous and scheduled scans keep 1 to bound cost.
     static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application, useCache: Bool = true, pivotDepth: Int = 1) async {
-        // In the test environment there are no external services to reach,
-        // and the background URLSession calls generate SIGPIPE when the app
-        // shuts down immediately after the test. Skip execution entirely.
+        // In the test environment there are no external services to reach, and
+        // background HTTP calls can race app shutdown. Skip execution entirely.
         guard app.environment != .testing else { return }
 
         guard await ScanExecutionGate.shared.acquire() else {
@@ -266,7 +265,7 @@ enum ScanPluginRunner {
         do {
             // SafeHTTP re-checks DNS resolution and blocks redirects to internal
             // hosts, on top of the structural guard above.
-            try await SafeHTTP.shared.post(url: hookURL, body: body)
+            try await SafeHTTP.post(url: hookURL, body: body, on: app)
         } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
             app.logger.warning("Webhook delivery to \(destination) blocked: resolved to an internal address.")
         } catch {

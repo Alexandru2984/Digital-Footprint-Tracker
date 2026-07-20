@@ -32,7 +32,7 @@ struct DomainPlugin: FootprintPlugin {
 
         // ── A records (DNS-over-HTTPS) ───────────────────────────────────────────
         var resolvedIPs: [String] = []
-        let aRecords = await DoHResolver.resolve(target, type: "A")
+        let aRecords = await DoHResolver.resolve(target, type: "A", on: app)
             .filter { $0.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil }
         if !aRecords.isEmpty {
             resolvedIPs = aRecords
@@ -46,7 +46,7 @@ struct DomainPlugin: FootprintPlugin {
         }
 
         // ── MX records ──────────────────────────────────────────────────────────
-        let mxHosts = await DoHResolver.resolve(target, type: "MX").map { DoHResolver.mxHost($0) }.filter { !$0.isEmpty }
+        let mxHosts = await DoHResolver.resolve(target, type: "MX", on: app).map { DoHResolver.mxHost($0) }.filter { !$0.isEmpty }
         if !mxHosts.isEmpty {
             results.append(PluginResult(
                 source: "DomainDNS",
@@ -58,7 +58,7 @@ struct DomainPlugin: FootprintPlugin {
         }
 
         // ── TXT / SPF records ───────────────────────────────────────────────────
-        let spf = await DoHResolver.resolve(target, type: "TXT")
+        let spf = await DoHResolver.resolve(target, type: "TXT", on: app)
             .filter { $0.lowercased().hasPrefix("v=spf") || $0.lowercased().contains("dmarc") }
         if !spf.isEmpty {
             results.append(PluginResult(
@@ -94,7 +94,7 @@ struct DomainPlugin: FootprintPlugin {
         // ── Reverse DNS (PTR) for IPs ────────────────────────────────────────────
         let isIP = target.range(of: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#, options: .regularExpression) != nil
         if isIP, let revName = DoHResolver.reverseIPv4Name(target),
-           let ptrRaw = await DoHResolver.resolve(revName, type: "PTR").first {
+           let ptrRaw = await DoHResolver.resolve(revName, type: "PTR", on: app).first {
             let ptr = ptrRaw.hasSuffix(".") ? String(ptrRaw.dropLast()) : ptrRaw
             if !ptr.isEmpty {
                 results.append(PluginResult(

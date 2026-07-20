@@ -15,18 +15,18 @@ struct VirusTotalPlugin: FootprintPlugin {
 
         let isIP = Self.ipRegex.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
         if isIP {
-            return await scanIP(input, apiKey: apiKey)
+            return await scanIP(input, apiKey: apiKey, app: app)
         }
         if input.contains(".") && !input.contains("@") {
-            return await scanDomain(input, apiKey: apiKey)
+            return await scanDomain(input, apiKey: apiKey, app: app)
         }
         return []
     }
 
-    private func scanDomain(_ domain: String, apiKey: String) async -> [PluginResult] {
+    private func scanDomain(_ domain: String, apiKey: String, app: Application) async -> [PluginResult] {
         guard let url = URL(string: "https://www.virustotal.com/api/v3/domains/\(domain)") else { return [] }
 
-        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey]), resp.status == 200,
+        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey], on: app), resp.status == 200,
               let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any],
               let attributes = dataDict["attributes"] as? [String: Any] else { return [] }
@@ -46,10 +46,10 @@ struct VirusTotalPlugin: FootprintPlugin {
                              metadata: ["domain": domain, "malicious": String(malicious)])]
     }
 
-    private func scanIP(_ ip: String, apiKey: String) async -> [PluginResult] {
+    private func scanIP(_ ip: String, apiKey: String, app: Application) async -> [PluginResult] {
         guard let url = URL(string: "https://www.virustotal.com/api/v3/ip_addresses/\(ip)") else { return [] }
 
-        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey]), resp.status == 200,
+        guard let resp = await PluginHTTP.request(url, headers: ["x-apikey": apiKey], on: app), resp.status == 200,
               let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any],
               let attributes = dataDict["attributes"] as? [String: Any] else { return [] }

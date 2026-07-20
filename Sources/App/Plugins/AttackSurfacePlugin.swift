@@ -33,7 +33,7 @@ struct AttackSurfacePlugin: FootprintPlugin {
 
         // 1. Footprint = apex + CT-log subdomains.
         let hosts = Self.hostList(apex: target,
-                                  subdomains: await CrtShPlugin.enumerate(domain: target, limit: Self.maxHosts),
+                                  subdomains: await CrtShPlugin.enumerate(domain: target, limit: Self.maxHosts, app: app),
                                   limit: Self.maxHosts)
 
         // 2. Resolve to public IPv4s. Track the apex's own IPs so subdomains sharing
@@ -43,7 +43,7 @@ struct AttackSurfacePlugin: FootprintPlugin {
         var mappings: [(host: String, ip: String)] = []
         for host in hosts {
             if Task.isCancelled { break }
-            for ip in await DoHResolver.resolve(host, type: "A") where Self.isPublicIPv4(ip) {
+            for ip in await DoHResolver.resolve(host, type: "A", on: app) where Self.isPublicIPv4(ip) {
                 if host == target { apexIPs.insert(ip) }
                 if ipToHost[ip] == nil { ipToHost[ip] = host }
                 mappings.append((host, ip))
@@ -66,7 +66,7 @@ struct AttackSurfacePlugin: FootprintPlugin {
         for ip in exposureIPs {
             if Task.isCancelled { break }
             guard let url = URL(string: "https://internetdb.shodan.io/\(ip)"),
-                  let resp = await PluginHTTP.request(url), resp.status == 200 else { continue }
+                  let resp = await PluginHTTP.request(url, on: app), resp.status == 200 else { continue }
             let host = ipToHost[ip]
             for finding in InternetDBPlugin.parse(resp.data, ip: ip) {
                 var meta = finding.metadata ?? [:]

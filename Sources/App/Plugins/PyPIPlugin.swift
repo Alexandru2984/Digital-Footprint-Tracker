@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Checks if a PyPI user profile exists and retrieves their public packages.
 /// Uses the public PyPI JSON API — no API key required.
@@ -19,12 +16,14 @@ struct PyPIPlugin: FootprintPlugin {
 
         // Step 1: check if the user profile page exists
         guard let profileURL = URL(string: "https://pypi.org/user/\(username)/") else { return [] }
-        var profileReq = URLRequest(url: profileURL, timeoutInterval: 10)
-        profileReq.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
-
         do {
-            let (profileData, profileResponse) = try await URLSession.shared.data(for: profileReq)
-            guard let http = profileResponse as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                profileURL,
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 1 * 1_024 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let profileData = response.data
 
             // Step 2: extract package names from profile HTML
             // PyPI profile page lists packages in links like /project/{name}/

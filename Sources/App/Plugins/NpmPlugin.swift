@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Searches npm registry for packages maintained by a given username.
 /// Uses the public npm search API — no API key required.
@@ -20,13 +17,15 @@ struct NpmPlugin: FootprintPlugin {
         let encoded = username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username
         guard let url = URL(string: "https://registry.npmjs.org/-/v1/search?text=maintainer:\(encoded)&size=5") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 1 * 1_024 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
 
             struct NpmObject: Decodable {
                 struct Package: Decodable {

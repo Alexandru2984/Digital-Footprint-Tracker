@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Checks whether a Twitter/X account exists for a given username.
 ///
@@ -10,7 +7,7 @@ import FoundationNetworking
 /// This endpoint is used by embedded tweet widgets and remains publicly
 /// accessible without authentication.
 ///
-/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle.
+/// Uses the shared size-bounded outbound client.
 struct TwitterPlugin: FootprintPlugin {
     let name = "TwitterOSINT"
     let description = "Twitter/X profile search"
@@ -35,13 +32,15 @@ struct TwitterPlugin: FootprintPlugin {
         let urlStr = "https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names=\(username)"
         guard let url = URL(string: urlStr) else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   let user = json.first
             else { return [] }

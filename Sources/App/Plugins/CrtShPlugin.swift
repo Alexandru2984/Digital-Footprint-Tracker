@@ -14,7 +14,7 @@ struct CrtShPlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"), !input.hasPrefix("http") else { return [] }
         let domain = Self.normalizeDomain(input)
-        return await Self.enumerate(domain: domain, limit: 50).map { sub in
+        return await Self.enumerate(domain: domain, limit: 50, app: app).map { sub in
             PluginResult(
                 source: "crt.sh",
                 type: "subdomain",
@@ -36,9 +36,14 @@ struct CrtShPlugin: FootprintPlugin {
     /// Fetches and parses CT-log subdomains for a domain (deduped, capped). Network.
     /// Exposed so other infrastructure plugins (e.g. AttackSurface) reuse one
     /// enumerator instead of re-implementing the crt.sh call.
-    static func enumerate(domain: String, limit: Int) async -> [String] {
+    static func enumerate(domain: String, limit: Int, app: Application) async -> [String] {
         guard let url = URL(string: "https://crt.sh/?q=%25.\(domain)&output=json") else { return [] }
-        guard let resp = await PluginHTTP.request(url, headers: ["Accept": "application/json"]),
+        guard let resp = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024),
+                on: app
+              ),
               resp.status == 200 else { return [] }
         return parseSubdomains(resp.data, limit: limit)
     }

@@ -14,7 +14,7 @@ struct ShodanPlugin: FootprintPlugin {
         let query = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
         guard let url = URL(string: "https://api.shodan.io/shodan/host/search?key=\(apiKey)&query=\(query)&minify=true") else { return [] }
 
-        guard let resp = await PluginHTTP.request(url), resp.status == 200,
+        guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200,
               let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let matches = json["matches"] as? [[String: Any]],
               !matches.isEmpty else { return [] }

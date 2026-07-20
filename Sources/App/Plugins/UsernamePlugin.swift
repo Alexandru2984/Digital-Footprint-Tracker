@@ -4,8 +4,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle
-/// and safe to call from background tasks that may outlive the app in tests.
+/// Uses the shared size-bounded outbound client.
 struct UsernamePlugin: FootprintPlugin {
     let name = "GitHubAccountCheck"
     let description = "GitHub profile lookup"
@@ -27,7 +26,7 @@ struct UsernamePlugin: FootprintPlugin {
 
         // Shared client: consistent UA + retry/backoff on GitHub's 429 (its
         // unauthenticated limit is only 60/h, so a transient 429 is common).
-        guard let resp = await PluginHTTP.request(url, headers: ["Accept": "application/vnd.github+json"]) else { return [] }
+        guard let resp = await PluginHTTP.request(url, headers: ["Accept": "application/vnd.github+json"], on: app) else { return [] }
         let data = resp.data
 
         if resp.status == 200 {
@@ -83,7 +82,7 @@ struct UsernamePlugin: FootprintPlugin {
             // author addresses are exposed there. Best-effort; skipped on a
             // rate-limit or parse failure so it never breaks the profile result.
             if let evURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/events/public"),
-               let evResp = await PluginHTTP.request(evURL, headers: ["Accept": "application/vnd.github+json"]),
+               let evResp = await PluginHTTP.request(evURL, headers: ["Accept": "application/vnd.github+json"], on: app),
                evResp.status == 200 {
                 for email in Self.extractCommitEmails(from: evResp.data).prefix(5) {
                     results.append(PluginResult(

@@ -77,12 +77,12 @@ struct ExposedFilesPlugin: FootprintPlugin {
 
         // SSRF-check the host ONCE (a single blocking getaddrinfo), then probe
         // SEQUENTIALLY with `hostPreChecked`. Sequential is deliberate: firing all
-        // probes at once through the shared SafeHTTP singleton raced its lazy
-        // URLSession and pinned a blocking resolve per redirect on every worker
-        // thread, starving the cooperative pool hard enough to hang the whole
-        // process (even /health stopped answering). One at a time is safe, and the
-        // per-probe timeout keeps the total bounded well under the runner deadline.
-        guard !SSRFGuard.resolvesToInternal(domain) else { return [] }
+        // probes at once previously pinned a blocking resolve per redirect on
+        // every worker thread, starving the cooperative pool hard enough to hang
+        // the whole process. One at a time is safe, and the per-probe timeout
+        // keeps the total bounded well under the runner deadline.
+        let isInternal = await Task.detached { SSRFGuard.resolvesToInternal(domain) }.value
+        guard !isInternal else { return [] }
 
         let base = "https://\(domain)"
         var out: [PluginResult] = []
@@ -92,7 +92,7 @@ struct ExposedFilesPlugin: FootprintPlugin {
         for probe in ExposedFiles.probes {
             if Date() > deadline || Task.isCancelled { break }
             guard let url = URL(string: base + probe.path),
-                  let resp = try? await SafeHTTP.shared.get(url: url, timeout: 6, wantBody: true, hostPreChecked: true),
+                  let resp = try? await SafeHTTP.get(url: url, timeout: 6, wantBody: true, hostPreChecked: true, on: app),
                   let body = resp.bodyPrefix,
                   let label = ExposedFiles.classify(path: probe.path, status: resp.status, body: body)
             else { continue }

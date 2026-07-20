@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Looks up a Keybase username and extracts cross-platform identity proofs.
 ///
@@ -11,7 +8,7 @@ import FoundationNetworking
 /// This makes it an extremely high-value OSINT source for linking identities.
 ///
 /// API: https://keybase.io/_/api/1.0/user/lookup.json (public, no key needed)
-/// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
+/// Uses the shared size-bounded outbound client.
 struct KeybasePlugin: FootprintPlugin {
     let name = "KeybaseOSINT"
     let description = "Keybase identity lookup (cross-platform proofs)"
@@ -31,13 +28,15 @@ struct KeybasePlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://keybase.io/_/api/1.0/user/lookup.json?usernames=\(username.lowercased())") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 12)
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 12,
+                bodyMode: .complete(maxBytes: 1 * 1_024 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let status = json["status"] as? [String: Any],
                   status["name"] as? String == "OK",

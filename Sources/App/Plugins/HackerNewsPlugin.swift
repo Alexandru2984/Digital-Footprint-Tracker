@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Checks if a username exists on Hacker News via the Firebase REST API.
 /// Returns karma, account age, and submission count — no API key required.
@@ -21,12 +18,14 @@ struct HackerNewsPlugin: FootprintPlugin {
         guard let url = URL(string: "https://hacker-news.firebaseio.com/v0/user/\(username).json") else {
             return []
         }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
 
             // API returns `null` (JSON null) for non-existent users.
             if data == Data("null".utf8) { return [] }

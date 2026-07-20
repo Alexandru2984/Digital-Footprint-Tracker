@@ -1,8 +1,5 @@
 import Foundation
 import Vapor
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 struct WhoisPlugin: FootprintPlugin {
     let name = "WHOIS"
@@ -19,14 +16,16 @@ struct WhoisPlugin: FootprintPlugin {
             .split(separator: "/").first.map(String.init) ?? input
 
         guard let url = URL(string: "https://rdap.org/domain/\(domain)") else { return [] }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 10
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("DigitalFootprintTracker/1.0", forHTTPHeaderField: "User-Agent")
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
+                on: app
+              ),
+              response.status == 200 else { return [] }
+        let data = response.data
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
         var info: [String] = []
 

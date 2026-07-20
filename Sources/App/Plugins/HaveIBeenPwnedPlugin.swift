@@ -4,8 +4,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle
-/// and safe to call from background tasks that may outlive the app in tests.
+/// Uses the shared size-bounded outbound client.
 struct HaveIBeenPwnedPlugin: FootprintPlugin {
     let name = "HaveIBeenPwned"
     let description = "Email breach database check (HIBP)"
@@ -29,7 +28,7 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
         guard let resp = await PluginHTTP.request(url, headers: [
             "hibp-api-key": apiKey,
             "Accept": "application/json"
-        ]) else { return [] }
+        ], on: app) else { return [] }
 
         if resp.status == 404 {
             return [PluginResult(

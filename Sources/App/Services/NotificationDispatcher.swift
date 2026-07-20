@@ -56,7 +56,7 @@ struct NotificationDispatcher {
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         do {
-            try await SafeHTTP.shared.post(url: url, body: data)
+            try await SafeHTTP.post(url: url, body: data, on: app)
         } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
             app.logger.warning("Blocked outbound webhook: \(destination) resolved to an internal address.")
         } catch {

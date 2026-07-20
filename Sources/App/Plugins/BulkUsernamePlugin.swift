@@ -1,9 +1,6 @@
 import Vapor
 import Foundation
 import Logging
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// File-scoped logger so `init()` (which has no `Application` reference) can
 /// emit structured log events to the same backend as the rest of the app
@@ -108,16 +105,6 @@ struct BulkUsernamePlugin: FootprintPlugin {
         // returning whatever it has found so far.
         let deadline = Date().addingTimeInterval(85)
         let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-        // Foundation URLSession (follows redirects, exposes the final URL for
-        // Sherlock's response_url checks) kept independent of the Vapor/NIO
-        // lifecycle so a mid-scan app shutdown in tests can't crash it.
-        let urlSession: URLSession = {
-            let cfg = URLSessionConfiguration.ephemeral
-            cfg.timeoutIntervalForRequest = 10
-            cfg.timeoutIntervalForResource = 12
-            return URLSession(configuration: cfg)
-        }()
-
         var results: [PluginResult] = []
         var checked = 0
         var iterator = validSites.makeIterator()
@@ -126,7 +113,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
             // Seed the sliding window.
             var scheduled = 0
             while scheduled < maxConcurrent, let (siteName, siteData) = iterator.next() {
-                group.addTask { await Self.checkSite(siteName, siteData, username: username, session: urlSession, userAgent: userAgent) }
+                group.addTask { await Self.checkSite(siteName, siteData, username: username, app: app, userAgent: userAgent) }
                 scheduled += 1
             }
             // Drain results and top up the window until the site list is
@@ -136,7 +123,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
                 if let pr = res { results.append(pr) }
                 if Date() < deadline, !Task.isCancelled,
                    let (siteName, siteData) = iterator.next() {
-                    group.addTask { await Self.checkSite(siteName, siteData, username: username, session: urlSession, userAgent: userAgent) }
+                    group.addTask { await Self.checkSite(siteName, siteData, username: username, app: app, userAgent: userAgent) }
                 }
             }
         }
@@ -154,25 +141,24 @@ struct BulkUsernamePlugin: FootprintPlugin {
         _ siteName: String,
         _ siteData: SherlockSite,
         username: String,
-        session: URLSession,
+        app: Application,
         userAgent: String
     ) async -> PluginResult? {
         let targetURL = siteData.url.replacingOccurrences(of: "{}", with: username)
         do {
             if siteData.errorType == "response_url" {
-                // Defense in depth: SSRFGuard on the resolved outbound URL host.
-                // The sherlock_data.json template is project-controlled, but a
-                // compromised or typo'd entry must not redirect outbound traffic
-                // to internal infrastructure.
                 guard let errorURL = siteData.errorUrl, !errorURL.isEmpty,
-                      let url = URL(string: targetURL),
-                      !SSRFGuard.isInternalURL(url)
+                      let url = URL(string: targetURL)
                 else { return nil }
-                var req = URLRequest(url: url, timeoutInterval: 10)
-                req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                let (_, resp) = try await session.data(for: req)
-                guard let http = resp as? HTTPURLResponse else { return nil }
-                let finalURL = http.url?.absoluteString ?? targetURL
+                let response = try await OutboundHTTP.request(
+                    url,
+                    headers: ["User-Agent": userAgent],
+                    timeout: 10,
+                    bodyMode: .prefix(maxBytes: 0),
+                    maxRedirects: 3,
+                    on: app
+                )
+                let finalURL = response.finalURL.absoluteString
                 let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 let finalTrim = finalURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 if finalTrim.hasPrefix(errTrim) { return nil }
@@ -181,27 +167,30 @@ struct BulkUsernamePlugin: FootprintPlugin {
                                     metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
             }
 
-            guard let url = URL(string: targetURL),
-                  !SSRFGuard.isInternalURL(url)
-            else { return nil }
-            var urlReq = URLRequest(url: url, timeoutInterval: 10)
-            urlReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            urlReq.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", forHTTPHeaderField: "Accept")
-            urlReq.setValue("en-US,en;q=0.5", forHTTPHeaderField: "Accept-Language")
-
-            let (data, resp) = try await session.data(for: urlReq)
-            guard let http = resp as? HTTPURLResponse else { return nil }
+            guard let url = URL(string: targetURL) else { return nil }
+            let needsMessageBody = siteData.errorType == "message"
+            let response = try await OutboundHTTP.request(
+                url,
+                headers: [
+                    "User-Agent": userAgent,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.5",
+                ],
+                timeout: 10,
+                bodyMode: needsMessageBody ? .complete(maxBytes: 512 * 1_024) : .prefix(maxBytes: 0),
+                maxRedirects: 3,
+                on: app
+            )
 
             if siteData.errorType == "status_code" {
-                if http.statusCode == 200 {
+                if response.status == 200 {
                     return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5,
                                         rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)",
                                         metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
                 }
             } else if siteData.errorType == "message" {
-                if http.statusCode == 200 {
-                    guard data.count <= 512 * 1024 else { return nil }
-                    let html = String(decoding: data, as: UTF8.self)
+                if response.status == 200 {
+                    let html = String(decoding: response.data, as: UTF8.self)
                     var notFound = false
                     if let errorMsg = siteData.errorMsg {
                         switch errorMsg {

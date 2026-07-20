@@ -29,7 +29,7 @@ struct EmailIntelPlugin: FootprintPlugin {
             ))
         }
 
-        let mxHosts = await DoHResolver.resolve(domain, type: "MX").map { DoHResolver.mxHost($0) }.filter { !$0.isEmpty }
+        let mxHosts = await DoHResolver.resolve(domain, type: "MX", on: app).map { DoHResolver.mxHost($0) }.filter { !$0.isEmpty }
         if mxHosts.isEmpty {
             results.append(PluginResult(
                 source: name,

@@ -92,18 +92,18 @@ struct WebPosturePlugin: FootprintPlugin {
               domain.range(of: #"[a-z]"#, options: .regularExpression) != nil else { return [] }
 
         // Prefer HTTPS; if it won't connect, fall back to HTTP and flag the missing TLS.
-        if let resp = await probe("https://\(domain)/") {
+        if let resp = await probe("https://\(domain)/", app: app) {
             return Self.findings(domain: domain, resp: resp, httpsServed: true)
         }
-        if let resp = await probe("http://\(domain)/") {
+        if let resp = await probe("http://\(domain)/", app: app) {
             return Self.findings(domain: domain, resp: resp, httpsServed: resp.finalURL?.scheme == "https")
         }
         return []
     }
 
-    private func probe(_ urlString: String) async -> SafeHTTP.Response? {
+    private func probe(_ urlString: String, app: Application) async -> SafeHTTP.Response? {
         guard let url = URL(string: urlString) else { return nil }
-        return try? await SafeHTTP.shared.get(url: url)
+        return try? await SafeHTTP.get(url: url, on: app)
     }
 
     static func findings(domain: String, resp: SafeHTTP.Response, httpsServed: Bool) -> [PluginResult] {

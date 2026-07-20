@@ -15,6 +15,10 @@ import Darwin
 private func makeApp() async throws -> Application {
     let app = try await Application.make(.testing)
 
+    var httpClientConfiguration = app.http.client.configuration
+    httpClientConfiguration.redirectConfiguration = .disallow
+    app.http.client.configuration = httpClientConfiguration
+
     // Register SQLite under the .psql ID so all model queries that use req.db
     // (which resolves to the default database) hit the in-memory store.
     app.databases.use(.sqlite(.memory), as: .psql, isDefault: true)
@@ -805,6 +809,33 @@ final class AppTests: XCTestCase {
     func testSSRFGuardDoesNotMisreadNumericUsername() {
         XCTAssertFalse(SSRFGuard.isInternalTarget("12345"))
         XCTAssertFalse(SSRFGuard.isInternalTarget("2130706433"))
+    }
+
+    func testOutboundHTTPRejectsInternalAndCredentialBearingURLsBeforeConnecting() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        do {
+            _ = try await OutboundHTTP.request(
+                try XCTUnwrap(URL(string: "http://127.0.0.1:8080/private")),
+                bodyMode: .prefix(maxBytes: 0),
+                on: app
+            )
+            XCTFail("Loopback egress must be rejected before connecting")
+        } catch OutboundHTTP.RequestError.blockedInternalHost {
+            // Expected.
+        }
+
+        do {
+            _ = try await OutboundHTTP.request(
+                try XCTUnwrap(URL(string: "https://token:secret@example.com/hook")),
+                bodyMode: .prefix(maxBytes: 0),
+                on: app
+            )
+            XCTFail("URL user-info must be rejected")
+        } catch OutboundHTTP.RequestError.invalidURL {
+            // Expected.
+        }
     }
 
     // MARK: - CSRF origin check

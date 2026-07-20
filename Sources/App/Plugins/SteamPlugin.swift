@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Checks Steam community vanity URLs via the public XML API.
 /// No API key required — Steam exposes ?xml=1 on community profile pages.
@@ -18,12 +15,14 @@ struct SteamPlugin: FootprintPlugin {
         guard username.range(of: "^[a-zA-Z0-9_-]{2,32}$", options: .regularExpression) != nil else { return [] }
 
         guard let url = URL(string: "https://steamcommunity.com/id/\(username)/?xml=1") else { return [] }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
             guard let xml = String(data: data, encoding: .utf8) else { return [] }
 
             // If the profile doesn't exist, Steam returns an <error> tag

@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 struct GitLabPlugin: FootprintPlugin {
     let name = "GitLabAccountCheck"
@@ -15,13 +12,15 @@ struct GitLabPlugin: FootprintPlugin {
         guard username.range(of: "^[a-zA-Z0-9_.-]{1,255}$", options: .regularExpression) != nil else { return [] }
 
         guard let url = URL(string: "https://gitlab.com/api/v4/users?username=\(username)") else { return [] }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("Digital-Footprint-Tracker/1.0", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
 
             struct GitLabUser: Decodable {
                 let id: Int?

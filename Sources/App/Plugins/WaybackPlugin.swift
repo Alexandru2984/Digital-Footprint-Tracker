@@ -23,7 +23,7 @@ struct WaybackPlugin: FootprintPlugin {
             "https://web.archive.org/cdx/search/cdx?url=\(encoded)&output=json&fl=timestamp&collapse=timestamp:8&limit=10000"
         ) else { return [] }
 
-        guard let resp = await PluginHTTP.request(url), resp.status == 200 else { return [] }
+        guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200 else { return [] }
         let (count, first, last) = Self.parseCDX(resp.data)
         guard count > 0, let first, let last else { return [] }
 

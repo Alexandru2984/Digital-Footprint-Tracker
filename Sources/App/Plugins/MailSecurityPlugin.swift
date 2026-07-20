@@ -152,18 +152,18 @@ struct MailSecurityPlugin: FootprintPlugin {
         var signals = EmailAuth.Signals()
 
         // SPF: a v=spf1 TXT at the apex.
-        signals.spf = await DoHResolver.resolve(domain, type: "TXT")
+        signals.spf = await DoHResolver.resolve(domain, type: "TXT", on: app)
             .first { $0.lowercased().hasPrefix("v=spf1") }
 
         // DMARC: a v=DMARC1 TXT at _dmarc.<domain>.
-        signals.dmarc = await DoHResolver.resolve("_dmarc.\(domain)", type: "TXT")
+        signals.dmarc = await DoHResolver.resolve("_dmarc.\(domain)", type: "TXT", on: app)
             .first { $0.lowercased().hasPrefix("v=dmarc1") }
 
         // DKIM: probe common selectors concurrently; a hit is a TXT with DKIM markers.
         await withTaskGroup(of: String?.self) { group in
             for sel in EmailAuth.commonDKIMSelectors {
                 group.addTask {
-                    let recs = await DoHResolver.resolve("\(sel)._domainkey.\(domain)", type: "TXT")
+                    let recs = await DoHResolver.resolve("\(sel)._domainkey.\(domain)", type: "TXT", on: app)
                     let hit = recs.contains { let l = $0.lowercased(); return l.contains("v=dkim1") || l.contains("k=rsa") || l.contains("p=") }
                     return hit ? sel : nil
                 }
@@ -173,14 +173,14 @@ struct MailSecurityPlugin: FootprintPlugin {
         signals.dkimSelectors.sort()
 
         // MTA-STS + TLS-RPT.
-        signals.mtaSts = await DoHResolver.resolve("_mta-sts.\(domain)", type: "TXT")
+        signals.mtaSts = await DoHResolver.resolve("_mta-sts.\(domain)", type: "TXT", on: app)
             .contains { $0.lowercased().hasPrefix("v=stsv1") }
-        signals.tlsRpt = await DoHResolver.resolve("_smtp._tls.\(domain)", type: "TXT")
+        signals.tlsRpt = await DoHResolver.resolve("_smtp._tls.\(domain)", type: "TXT", on: app)
             .contains { $0.lowercased().hasPrefix("v=tlsrptv1") }
 
         // DNSSEC (DS present at the parent) + CAA.
-        signals.dnssec = !(await DoHResolver.resolve(domain, type: "DS")).isEmpty
-        signals.caa = (await DoHResolver.resolve(domain, type: "CAA")).compactMap { rec in
+        signals.dnssec = !(await DoHResolver.resolve(domain, type: "DS", on: app)).isEmpty
+        signals.caa = (await DoHResolver.resolve(domain, type: "CAA", on: app)).compactMap { rec in
             // CAA data looks like `0 issue "letsencrypt.org"`; pull the CA host.
             rec.split(separator: "\"").dropFirst().first.map(String.init)
         }

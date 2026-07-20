@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Checks whether a public Telegram account or channel exists for a given username.
 ///
@@ -14,7 +11,7 @@ import FoundationNetworking
 /// Note: Telegram returns HTTP 200 for non-existent usernames too (soft 404),
 /// so status code alone is insufficient — content validation is required.
 ///
-/// Uses URLSession — lifecycle-independent, safe from asyncShutdown races.
+/// Reads only a bounded prefix through the shared outbound client.
 struct TelegramPlugin: FootprintPlugin {
     let name = "TelegramOSINT"
     let description = "Telegram username / channel search"
@@ -34,16 +31,20 @@ struct TelegramPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://t.me/\(username)") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 12)
-        req.setValue("Mozilla/5.0 (compatible; DigitalFootprintTracker/1.0)", forHTTPHeaderField: "User-Agent")
-        req.setValue("text/html", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: [
+                    "User-Agent": "Mozilla/5.0 (compatible; DigitalFootprintTracker/1.0)",
+                    "Accept": "text/html",
+                ],
+                timeout: 12,
+                bodyMode: .prefix(maxBytes: 8_192),
+                on: app
+            ), response.status == 200 else { return [] }
 
             // Read first 8 KB — enough for OG tags in <head>
-            let body = String(data: data.prefix(8192), encoding: .utf8) ?? ""
+            let body = String(data: response.data, encoding: .utf8) ?? ""
 
             // Negative signals: Telegram's "not found" page contains these markers
             let notFoundMarkers = [

@@ -1,13 +1,9 @@
 import Vapor
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import Foundation
 
 /// Checks whether a Reddit account exists for a given username.
 /// Uses the public JSON API (no key required).
-/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle
-/// and safe to call from background tasks that may outlive the app in tests.
+/// Uses a headers-only, size-bounded request.
 struct RedditPlugin: FootprintPlugin {
     let name = "Reddit"
     let description = "Reddit account lookup"
@@ -17,16 +13,17 @@ struct RedditPlugin: FootprintPlugin {
         let username = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: "https://www.reddit.com/user/\(username)/about.json") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (_, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .prefix(maxBytes: 0),
+                on: app
+            ) else { return [] }
             let meta = ["platform": "reddit", "username": username,
                         "profileURL": "https://www.reddit.com/user/\(username)"]
-            switch http.statusCode {
+            switch response.status {
             case 200:
                 return [PluginResult(
                     source: "Reddit",

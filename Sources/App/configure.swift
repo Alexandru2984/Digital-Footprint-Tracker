@@ -53,6 +53,9 @@ public func configure(_ app: Application) async throws {
     // Global HTTP client timeout — applies to all outbound requests (all plugins).
     var clientConfig = app.http.client.configuration
     clientConfig.timeout = .init(connect: .seconds(5), read: .seconds(15))
+    // Redirects are followed explicitly by OutboundHTTP so every destination
+    // can be revalidated before a connection is attempted.
+    clientConfig.redirectConfiguration = .disallow
     app.http.client.configuration = clientConfig
 
     // Crash early in production if the password secret is missing — never fall

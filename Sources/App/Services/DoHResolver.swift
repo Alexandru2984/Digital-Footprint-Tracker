@@ -1,4 +1,5 @@
 import Foundation
+import Vapor
 
 /// DNS resolution over HTTPS (Cloudflare's JSON API). Replaces shelling out to
 /// `dig`: no binary dependency, works inside minimal containers and behind
@@ -14,10 +15,15 @@ enum DoHResolver {
 
     /// Resolves `name` records of `type` (e.g. "A", "MX", "TXT", "PTR"). Returns
     /// the record `data` strings, or [] on failure.
-    static func resolve(_ name: String, type: String) async -> [String] {
+    static func resolve(_ name: String, type: String, on app: Application) async -> [String] {
         let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         guard let url = URL(string: "https://cloudflare-dns.com/dns-query?name=\(encoded)&type=\(type)") else { return [] }
-        guard let resp = await PluginHTTP.request(url, headers: ["Accept": "application/dns-json"]),
+        guard let resp = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/dns-json"],
+                bodyMode: .complete(maxBytes: 512 * 1_024),
+                on: app
+              ),
               resp.status == 200 else { return [] }
         return parse(resp.data, type: type)
     }

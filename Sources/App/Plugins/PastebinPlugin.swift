@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Searches paste sites for a given username or email address.
 ///
@@ -11,7 +8,7 @@ import FoundationNetworking
 /// - For **usernames**: checks whether a public Pastebin profile exists at
 ///   `https://pastebin.com/u/{username}` (HTTP 200 = exists).
 ///
-/// Uses URLSession (Foundation) — lifecycle-independent, safe from asyncShutdown races.
+/// Uses the shared size-bounded outbound client.
 struct PastebinPlugin: FootprintPlugin {
     let name = "PastebinOSINT"
     let description = "Pastebin / paste-site content search"
@@ -43,16 +40,17 @@ struct PastebinPlugin: FootprintPlugin {
             return []
         }
 
-        var req = URLRequest(url: url, timeoutInterval: 12)
-        req.setValue(apiKey, forHTTPHeaderField: "hibp-api-key")
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["hibp-api-key": apiKey, "Accept": "application/json"],
+                timeout: 12,
+                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
+                on: app
+            ) else { return [] }
+            let data = response.data
 
-            switch http.statusCode {
+            switch response.status {
             case 200:
                 guard let pastes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
                     return []
@@ -93,15 +91,16 @@ struct PastebinPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://pastebin.com/u/\(username)") else { return [] }
 
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("DigitalFootprintTracker/1.0 (OSINT research tool)", forHTTPHeaderField: "User-Agent")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                timeout: 10,
+                bodyMode: .prefix(maxBytes: 4_096),
+                on: app
+            ), response.status == 200 else { return [] }
 
             // Confirm the page actually refers to the user (not a 404 soft-redirect).
-            let body = String(data: data.prefix(4096), encoding: .utf8) ?? ""
+            let body = String(data: response.data, encoding: .utf8) ?? ""
             guard body.lowercased().contains("pastebin.com/u/\(username.lowercased())") ||
                   body.lowercased().contains("\(username.lowercased())'s pastes")
             else { return [] }

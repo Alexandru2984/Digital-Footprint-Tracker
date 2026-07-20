@@ -22,7 +22,7 @@ struct AbuseIPDBPlugin: FootprintPlugin {
         guard let resp = await PluginHTTP.request(url, headers: [
             "Key": apiKey,
             "Accept": "application/json"
-        ]), resp.status == 200,
+        ], on: app), resp.status == 200,
               let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
               let dataDict = json["data"] as? [String: Any] else { return [] }
 

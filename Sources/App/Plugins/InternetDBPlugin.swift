@@ -25,14 +25,14 @@ struct InternetDBPlugin: FootprintPlugin {
         // Only domain / IP inputs have host infrastructure to look up.
         guard !target.contains("@"), target.contains(".") else { return [] }
 
-        let ips = await Self.resolveIPs(target)
+        let ips = await Self.resolveIPs(target, app: app)
         guard !ips.isEmpty else { return [] }
 
         var results: [PluginResult] = []
         for ip in ips {
             guard let url = URL(string: "https://internetdb.shodan.io/\(ip)") else { continue }
             // 404 = host not in the dataset (i.e. nothing exposed) — a real "clean" answer.
-            guard let resp = await PluginHTTP.request(url), resp.status == 200 else { continue }
+            guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200 else { continue }
             results.append(contentsOf: Self.parse(resp.data, ip: ip))
         }
         return results
@@ -42,7 +42,7 @@ struct InternetDBPlugin: FootprintPlugin {
     /// passes through (when public); a domain is resolved via DoH. Private / internal
     /// addresses are dropped — InternetDB only holds public hosts and we never want to
     /// echo internal infrastructure.
-    static func resolveIPs(_ target: String) async -> [String] {
+    static func resolveIPs(_ target: String, app: Application? = nil) async -> [String] {
         func isPublic(_ ip: String) -> Bool {
             ip.range(of: ipv4Pattern, options: .regularExpression) != nil
                 && !SSRFGuard.isInternalHostname(ip)
@@ -52,9 +52,10 @@ struct InternetDBPlugin: FootprintPlugin {
             return isPublic(target) ? [target] : []
         }
 
+        guard let app else { return [] }
         var seen = Set<String>()
         var out: [String] = []
-        for ip in await DoHResolver.resolve(target, type: "A") where isPublic(ip) && seen.insert(ip).inserted {
+        for ip in await DoHResolver.resolve(target, type: "A", on: app) where isPublic(ip) && seen.insert(ip).inserted {
             out.append(ip)
             if out.count == 3 { break }
         }

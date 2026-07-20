@@ -47,7 +47,7 @@ struct TyposquatPlugin: FootprintPlugin {
             for candidate in candidates {
                 group.addTask {
                     if Task.isCancelled { return nil }
-                    let ips = await DoHResolver.resolve(candidate.domain, type: "A")
+                    let ips = await DoHResolver.resolve(candidate.domain, type: "A", on: app)
                     guard let ip = ips.first(where: { Self.isIPv4($0) }) ?? ips.first else { return nil }
                     return PluginResult(
                         source: "Typosquat",

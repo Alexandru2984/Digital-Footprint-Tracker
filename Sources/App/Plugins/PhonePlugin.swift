@@ -1,8 +1,5 @@
 import Vapor
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 /// Detects phone number inputs and performs basic OSINT.
 ///
@@ -14,8 +11,7 @@ import FoundationNetworking
 /// via AbstractAPI Phone Validation (https://app.abstractapi.com/api/phone-validation).
 /// Otherwise, returns a structural-analysis result only.
 ///
-/// Uses URLSession (Foundation) so it is independent of the Vapor/NIO lifecycle
-/// and safe to call from background tasks that may outlive the app in tests.
+/// Responses use the shared streaming client with a strict size limit.
 struct PhonePlugin: FootprintPlugin {
     let name = "PhoneOSINT"
     let description = "Phone number OSINT (carrier, region)"
@@ -54,12 +50,15 @@ struct PhonePlugin: FootprintPlugin {
         guard let url = URL(string: "https://phonevalidation.abstractapi.com/v1/?api_key=\(apiKey)&phone=\(e164)") else {
             return []
         }
-        var req = URLRequest(url: url, timeoutInterval: 10)
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
         do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 256 * 1_024),
+                on: app
+            ), response.status == 200 else { return [] }
+            let data = response.data
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
             let valid   = json["valid"]   as? Bool   ?? false
