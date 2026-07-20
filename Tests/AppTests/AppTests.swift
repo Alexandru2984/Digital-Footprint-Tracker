@@ -832,6 +832,63 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testCSRFValidatesSchemeAndPort() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        for origin in ["http://swift.micutu.com", "https://swift.micutu.com:444", "null"] {
+            try await app.test(.POST, "/scan", beforeRequest: { req in
+                try req.content.encode(["input": "csrf-origin"], as: .json)
+                req.headers.replaceOrAdd(name: "Origin", value: origin)
+            }, afterResponse: { res in
+                XCTAssertEqual(res.status, .forbidden, "Unexpectedly allowed origin: \(origin)")
+            })
+        }
+    }
+
+    func testCSRFDummyBearerCannotBypassSessionProtection() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "csrf-bearer-user")
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            req.headers.bearerAuthorization = .init(token: "not-a-real-api-key")
+            req.headers.replaceOrAdd(name: "Origin", value: "https://attacker.example")
+            try req.content.encode(["input": "csrf-bearer"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .forbidden)
+        })
+    }
+
+    func testCSRFRequiresProvenanceForAuthenticatedSessionsInProductionPolicy() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        // Add a second instance with the production missing-header policy. It is
+        // inside the sessions and API-key middleware already configured by makeApp.
+        app.middleware.use(CSRFMiddleware(requireProvenanceForSessions: true))
+        let cookie = try await registerAndLogin(app, username: "csrf-provenance-user")
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["input": "csrf-no-origin"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .forbidden)
+        })
+    }
+
+    func testCSRFSecFetchSiteBlocksCrossSiteRequest() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Sec-Fetch-Site", value: "cross-site")
+            try req.content.encode(["username": "nobody", "password": "irrelevant"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .forbidden)
+        })
+    }
+
     // MARK: - OSINT engine: plugin metadata coherence
 
     // Every shipping plugin must declare an honest description — not the

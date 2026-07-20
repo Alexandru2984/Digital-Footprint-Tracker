@@ -1,36 +1,84 @@
 import Vapor
 
-/// Defense-in-depth CSRF protection via Origin/Referer header validation.
-/// The session cookie uses SameSite=Strict which already prevents most CSRF.
-/// This middleware adds a secondary check: state-changing requests that include
-/// an Origin or Referer header must originate from the configured site URL.
+/// Defense-in-depth CSRF protection for state-changing requests.
+///
+/// Browser sessions use a `SameSite=Strict` cookie, but the server still validates
+/// request provenance. Only a successfully authenticated API key is exempt; the
+/// mere presence of an `Authorization` header must never disable CSRF checks.
 struct CSRFMiddleware: AsyncMiddleware {
+    private let requireProvenanceForSessions: Bool?
+
+    /// The override exists so the production-only missing-header policy can be
+    /// exercised by the test application without weakening normal test fixtures.
+    init(requireProvenanceForSessions: Bool? = nil) {
+        self.requireProvenanceForSessions = requireProvenanceForSessions
+    }
+
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        // Only check state-changing methods
         guard [.POST, .PUT, .PATCH, .DELETE].contains(request.method) else {
             return try await next.respond(to: request)
         }
-        // API key auth (Bearer token) is stateless — not vulnerable to CSRF
-        if request.headers.bearerAuthorization != nil {
+
+        // A validated, scoped API key is stateless and cannot be sent ambiently
+        // by a browser. APIKeyMiddleware has already populated this context.
+        if request.apiKeyAuthorization != nil {
             return try await next.respond(to: request)
         }
-        // If no Origin or Referer header, allow (server-to-server, curl, etc.)
-        guard let origin = request.headers.first(name: "Origin")
-                         ?? request.headers.first(name: "Referer")
-        else {
-            return try await next.respond(to: request)
-        }
-        // Compare the parsed *host* exactly, not a string prefix. A prefix check
-        // (`origin.hasPrefix("https://swift.micutu.com")`) is defeated by an
-        // attacker origin like `https://swift.micutu.com.evil.com`. A request
-        // whose Origin/Referer is present but unparseable (e.g. the literal
-        // "null" from a sandboxed iframe) yields no host and is rejected.
-        let allowedHost = URL(string: Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com")?.host
-            ?? "swift.micutu.com"
-        let allowedHosts: Set<String> = [allowedHost, "localhost", "127.0.0.1"]
-        guard let originHost = URL(string: origin)?.host, allowedHosts.contains(originHost) else {
+
+        if request.headers.first(name: "Sec-Fetch-Site")?.lowercased() == "cross-site" {
             throw Abort(.forbidden, reason: "Cross-origin request blocked.")
         }
+
+        let provenance = request.headers.first(name: "Origin")
+            ?? request.headers.first(name: "Referer")
+
+        if let provenance {
+            guard Self.isAllowed(provenance, for: request.application.environment) else {
+                throw Abort(.forbidden, reason: "Cross-origin request blocked.")
+            }
+        } else {
+            let hasAmbientAuthenticatedSession = request.hasSession
+                && (request.session.data["userID"] != nil
+                    || request.session.data["pending2FAUserID"] != nil)
+            let requireProvenance = requireProvenanceForSessions
+                ?? (request.application.environment == .production)
+            if requireProvenance && hasAmbientAuthenticatedSession {
+                throw Abort(.forbidden, reason: "Request provenance is required.")
+            }
+        }
+
         return try await next.respond(to: request)
+    }
+
+    private struct NormalizedOrigin: Hashable {
+        let scheme: String
+        let host: String
+        let port: Int
+
+        init?(_ rawValue: String) {
+            guard let url = URL(string: rawValue),
+                  let scheme = url.scheme?.lowercased(),
+                  let host = url.host?.lowercased(),
+                  scheme == "https" || scheme == "http" else {
+                return nil
+            }
+            let defaultPort = scheme == "https" ? 443 : 80
+            self.scheme = scheme
+            self.host = host
+            self.port = url.port ?? defaultPort
+        }
+    }
+
+    private static func isAllowed(_ rawOriginOrReferer: String, for environment: Environment) -> Bool {
+        guard let candidate = NormalizedOrigin(rawOriginOrReferer) else { return false }
+        let configured = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
+        guard let allowed = NormalizedOrigin(configured) else { return false }
+
+        if candidate == allowed { return true }
+
+        // Local front-end dev servers may use arbitrary ports. This exception is
+        // deliberately unavailable in production.
+        return environment != .production
+            && (candidate.host == "localhost" || candidate.host == "127.0.0.1")
     }
 }
