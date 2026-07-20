@@ -1,11 +1,17 @@
 import Vapor
 import Fluent
 import Crypto
+import SQLKit
 
 struct ShareController: RouteCollection {
+    static let maxActiveSharesPerScan = 20
+    static let minExpirySeconds = 300
+    static let maxExpirySeconds = 30 * 24 * 60 * 60
+
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
-        noCache.post("scans", ":scanID", "share", use: createShare)
+        noCache.grouped(ScanRateLimiter(anonMax: 5, authedMax: 10, windowSeconds: 60))
+            .post("scans", ":scanID", "share", use: createShare)
         noCache.get("scans", ":scanID", "shares", use: listShares)
         noCache.delete("shares", ":token", use: deleteShare)
         // Public endpoint that increments view_count on each hit — rate-limit
@@ -16,9 +22,10 @@ struct ShareController: RouteCollection {
         // required. POST carries the password in a JSON body: browsers drop the
         // body of a GET (Fetch spec), so a password-protected share is only
         // viewable via POST — the GET-with-body variant never worked client-side.
-        let limited = noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
-        limited.get("share", ":token", use: viewShare)
-        limited.post("share", ":token", use: viewShare)
+        noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
+            .get("share", ":token", use: viewShare)
+        noCache.grouped(ScanRateLimiter(anonMax: 5, authedMax: 10, windowSeconds: 60))
+            .post("share", ":token", use: viewShare)
     }
 
     struct CreateShareRequest: Content {
@@ -64,9 +71,7 @@ struct ShareController: RouteCollection {
 
     @Sendable
     func createShare(req: Request) async throws -> ShareResponse {
-        guard let user = try await req.currentUser() else {
-            throw Abort(.unauthorized)
-        }
+        let user = try await mutationUser(req)
         guard let scanIDStr = req.parameters.get("scanID"),
               let scanID = UUID(uuidString: scanIDStr) else {
             throw Abort(.badRequest, reason: "Invalid scanID")
@@ -80,13 +85,43 @@ struct ShareController: RouteCollection {
 
         let body = try req.content.decode(CreateShareRequest.self)
 
+        if let seconds = body.expiresIn {
+            guard (Self.minExpirySeconds...Self.maxExpirySeconds).contains(seconds) else {
+                throw Abort(.badRequest, reason: "Expiry must be between 5 minutes and 30 days.")
+            }
+        }
+        let password = body.password?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let password {
+            guard (8...72).contains(password.utf8.count) else {
+                throw Abort(.badRequest, reason: "Share password must be 8–72 UTF-8 bytes.")
+            }
+        }
+
         let token = [UInt8].random(count: 24).base64URLEncoded()
         let tokenHash = sha256Hex(token)
         let expiresAt = body.expiresIn.map { Date().addingTimeInterval(Double($0)) }
-        let passwordHash = try body.password.map { try Bcrypt.hash($0) }
+        let passwordHash = try password.map { try Bcrypt.hash($0) }
 
         let share = SharedReport(scanID: scanID, tokenHash: tokenHash, expiresAt: expiresAt, passwordHash: passwordHash)
-        try await share.save(on: req.db)
+        try await req.db.transaction { database in
+            // Serialize quota checks per scan across all app instances.
+            if let sql = database as? SQLDatabase,
+               sql.dialect.name.lowercased().contains("postgres") {
+                try await sql.raw("SELECT id FROM scans WHERE id = \(bind: scanID) FOR UPDATE").run()
+            }
+            try await SharedReport.query(on: database)
+                .filter(\.$scanID == scanID)
+                .filter(\.$expiresAt < Date())
+                .delete()
+            let activeShareCount = try await SharedReport.query(on: database)
+                .filter(\.$scanID == scanID)
+                .count()
+            guard activeShareCount < Self.maxActiveSharesPerScan else {
+                throw Abort(.tooManyRequests, reason: "Maximum \(Self.maxActiveSharesPerScan) active links per scan.")
+            }
+            try await share.save(on: database)
+        }
+        AuditLogger.log(req: req, action: "share_created", target: scanID.uuidString)
 
         let baseURL = Environment.get("BASE_URL") ?? "https://swift.micutu.com"
         return ShareResponse(
@@ -130,11 +165,9 @@ struct ShareController: RouteCollection {
 
     @Sendable
     func deleteShare(req: Request) async throws -> HTTPStatus {
-        guard let user = try await req.currentUser() else {
-            throw Abort(.unauthorized)
-        }
-        guard let token = req.parameters.get("token") else {
-            throw Abort(.badRequest)
+        let user = try await mutationUser(req)
+        guard let token = req.parameters.get("token"), Self.isValidToken(token) else {
+            throw Abort(.notFound)
         }
         let hash = sha256Hex(token)
         guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
@@ -145,6 +178,7 @@ struct ShareController: RouteCollection {
             throw Abort(.forbidden)
         }
         try await share.delete(on: req.db)
+        AuditLogger.log(req: req, action: "share_deleted", target: share.scanID.uuidString)
         return .noContent
     }
 
@@ -152,8 +186,8 @@ struct ShareController: RouteCollection {
 
     @Sendable
     func viewShare(req: Request) async throws -> SharedReportResponse {
-        guard let rawToken = req.parameters.get("token") else {
-            throw Abort(.badRequest)
+        guard let rawToken = req.parameters.get("token"), Self.isValidToken(rawToken) else {
+            throw Abort(.notFound)
         }
         let hash = sha256Hex(rawToken)
         guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
@@ -169,13 +203,14 @@ struct ShareController: RouteCollection {
             }
         }
 
-        // Increment view count
-        share.viewCount += 1
-        try await share.save(on: req.db)
-
         guard let scan = try await Scan.find(share.scanID, on: req.db) else {
             throw Abort(.notFound)
         }
+
+        // Increment view count only after confirming the parent still exists.
+        share.viewCount += 1
+        try await share.save(on: req.db)
+
         let results = try await App.Result.query(on: req.db).filter(\.$scan.$id == scan.id!).all()
 
         return SharedReportResponse(
@@ -199,6 +234,24 @@ struct ShareController: RouteCollection {
             sharedAt: share.createdAt.map { $0.timeIntervalSince1970 },
             viewCount: share.viewCount
         )
+    }
+
+    private static func isValidToken(_ token: String) -> Bool {
+        token.utf8.count == 32
+            && token.range(of: "^[A-Za-z0-9_-]{32}$", options: .regularExpression) != nil
+    }
+
+    /// Publishing or revoking data needs a recent browser login. Deliberately
+    /// scoped API keys remain usable for automation because the scope middleware
+    /// has already required `scans:write` for these routes.
+    private func mutationUser(_ req: Request) async throws -> User {
+        if req.apiKeyAuthorization == nil {
+            return try await req.requireRecentSessionUser()
+        }
+        guard let user = try await req.currentUser() else {
+            throw Abort(.unauthorized)
+        }
+        return user
     }
 }
 

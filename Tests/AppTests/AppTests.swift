@@ -59,8 +59,8 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateSharedReports())
     // Note: HashAPIKeyColumn + HashSharedReportTokens are PostgreSQL-only
     // (use ADD COLUMN IF NOT EXISTS / ALTER COLUMN SET NOT NULL / ADD CONSTRAINT)
-    // and are intentionally skipped here. No test in this suite exercises the
-    // CreateAPIKeys now creates the final hash column directly for fresh DBs.
+    // and are intentionally skipped here. Fresh migrations create the final
+    // hash columns directly, so endpoint tests still exercise the final schema.
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
@@ -933,6 +933,71 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .badRequest)
         })
+    }
+
+    func testShareLinksValidatePolicyAndUseHashOnlyFreshSchema() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "share-policy-user")
+
+        var scanID: UUID?
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["input": "share-policy-target"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            scanID = try res.content.decode(ScanResponse.self).scanID
+        })
+        let id = try XCTUnwrap(scanID)
+
+        try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ShareController.CreateShareRequest(expiresIn: -1, password: nil), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ShareController.CreateShareRequest(expiresIn: nil, password: "short"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        var rawToken = ""
+        try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ShareController.CreateShareRequest(
+                expiresIn: ShareController.minExpirySeconds,
+                password: "LongEnough123"
+            ), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            rawToken = try res.content.decode(ShareController.ShareResponse.self).token
+        })
+        XCTAssertEqual(rawToken.utf8.count, 32)
+
+        let storedCandidate = try await SharedReport.query(on: app.db).first()
+        let stored = try XCTUnwrap(storedCandidate)
+        XCTAssertEqual(stored.tokenHash, sha256Hex(rawToken))
+        XCTAssertNotEqual(stored.tokenHash, rawToken)
+        XCTAssertEqual(stored.tokenHash.count, 64)
+
+        try await app.test(.GET, "/share/not-a-token") { res in
+            XCTAssertEqual(res.status, .notFound)
+        }
+        try await app.test(.GET, "/share/\(rawToken)") { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        }
+        try await app.test(.POST, "/share/\(rawToken)", beforeRequest: { req in
+            try req.content.encode(ShareController.PasswordBody(password: "wrong-password"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+        try await app.test(.POST, "/share/\(rawToken)", beforeRequest: { req in
+            try req.content.encode(ShareController.PasswordBody(password: "LongEnough123"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+
+        let storedScan = try await Scan.find(id, on: app.db)
+        let scan = try XCTUnwrap(storedScan)
+        try await scan.delete(on: app.db)
+        let remainingShares = try await SharedReport.query(on: app.db).count()
+        XCTAssertEqual(remainingShares, 0,
+                       "Deleting a scan must revoke and remove all of its share links")
     }
 
     // MARK: - OSINT engine: plugin metadata coherence
