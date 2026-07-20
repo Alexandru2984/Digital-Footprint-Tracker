@@ -99,6 +99,60 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 
 final class AppTests: XCTestCase {
 
+    func testEmailAddressNormalizationRejectsHeaderAndDomainAbuse() {
+        XCTAssertEqual(EmailAddress.normalize("  User.Name+tag@Example.COM  "),
+                       "user.name+tag@example.com")
+        for invalid in [
+            "victim@example.com\r\nBcc: attacker@example.com",
+            "two@@example.com",
+            ".leading@example.com",
+            "double..dot@example.com",
+            "user@single-label",
+            "user@-edge.example",
+            "usér@example.com",
+        ] {
+            XCTAssertNil(EmailAddress.normalize(invalid), "Unexpectedly accepted: \(invalid)")
+        }
+    }
+
+    func testBoundedProcessCapturesCapsAndTimesOut() async throws {
+        func executable(_ candidates: [String]) throws -> String {
+            try XCTUnwrap(candidates.first(where: FileManager.default.isExecutableFile(atPath:)))
+        }
+        let printf = try executable(["/usr/bin/printf", "/bin/printf"])
+        let normal = try await BoundedProcess.run(
+            executable: printf,
+            arguments: ["safe-output"],
+            environment: ["PATH": "/usr/bin:/bin"],
+            timeout: 2,
+            maxOutputBytes: 128
+        )
+        XCTAssertTrue(normal.succeeded)
+        XCTAssertEqual(String(decoding: normal.stdout, as: UTF8.self), "safe-output")
+
+        let head = try executable(["/usr/bin/head", "/bin/head"])
+        let oversized = try await BoundedProcess.run(
+            executable: head,
+            arguments: ["-c", "4096", "/dev/zero"],
+            environment: ["PATH": "/usr/bin:/bin"],
+            timeout: 2,
+            maxOutputBytes: 64
+        )
+        XCTAssertTrue(oversized.outputExceeded)
+        XCTAssertEqual(oversized.stdout.count, 64)
+
+        let sleep = try executable(["/usr/bin/sleep", "/bin/sleep"])
+        let timedOut = try await BoundedProcess.run(
+            executable: sleep,
+            arguments: ["2"],
+            environment: ["PATH": "/usr/bin:/bin"],
+            timeout: 0.1,
+            maxOutputBytes: 64
+        )
+        XCTAssertTrue(timedOut.timedOut)
+        XCTAssertFalse(timedOut.succeeded)
+    }
+
     // MARK: - Session and step-up authentication
 
     func testLoginRotatesSessionIDAndInvalidatesTheOldSession() async throws {

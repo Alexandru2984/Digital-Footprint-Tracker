@@ -6,9 +6,8 @@ import Foundation
 /// Activated when the input contains a dot, no `@`, and no `+`/`-` prefix
 /// (i.e. looks like `example.com`, `sub.domain.org`, or `1.2.3.4`).
 ///
-/// Uses only `dig` and `whois` subprocesses (both available on the VPS).
-/// Each subprocess is bounded by a 15-second kill timer via DispatchSemaphore,
-/// matching the pattern used in BulkEmailPlugin for holehe.
+/// Uses Vapor's DNS resolver plus a bounded `whois` subprocess. The process has
+/// a 15-second deadline, a 1 MB output cap, and no inherited app environment.
 struct DomainPlugin: FootprintPlugin {
     let name = "DomainOSINT"
     let description = "DNS records, WHOIS, SSL info"
@@ -160,45 +159,20 @@ struct DomainPlugin: FootprintPlugin {
         guard target.range(of: #"^[a-zA-Z0-9.\-:]+$"#, options: .regularExpression) != nil else {
             return nil
         }
-        return await runProcess(path: "/usr/bin/whois", args: [target], timeout: 15, app: app)
+        return await runProcess(path: "/usr/bin/whois", args: [target], timeout: 15)
     }
 
-    /// Runs a subprocess, killing it after `timeout` seconds. Returns stdout as a
-    /// String, or nil on failure / timeout.
-    ///
-    /// All the blocking work (process wait + pipe read) runs on a GCD utility
-    /// thread and the `async` caller stays *suspended* via the continuation — it
-    /// never occupies a Swift cooperative thread. The previous version wrapped the
-    /// wait in `DispatchQueue.global().sync { … }`, which does NOT offload (`.sync`
-    /// runs on the calling thread): a slow `whois` then pinned a cooperative
-    /// thread, and enough concurrent scans starved the pool so hard that even the
-    /// runner's own 120 s deadline task couldn't resume — the whole scan hung.
-    private func runProcess(path: String, args: [String], timeout: Double, app: Application) async -> String? {
+    /// Runs WHOIS without a shell, inherited secrets, unbounded output, or a
+    /// cooperative-thread-blocking wait.
+    private func runProcess(path: String, args: [String], timeout: Double) async -> String? {
         guard FileManager.default.isExecutableFile(atPath: path) else { return nil }
-
-        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
-            DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: path)
-                process.arguments = args
-                process.environment = ["PATH": "/usr/bin:/usr/local/bin", "HOME": "/tmp"]
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                process.standardError = FileHandle.nullDevice
-
-                do { try process.run() } catch { cont.resume(returning: nil); return }
-
-                // Hard kill after `timeout` so a hung/slow whois can't block forever.
-                let killTimer = DispatchWorkItem { if process.isRunning { process.terminate() } }
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killTimer)
-
-                // Read to EOF first (drains the pipe so a chatty process can't block
-                // on a full buffer), then reap. The kill timer bounds both.
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                killTimer.cancel()
-                cont.resume(returning: String(data: data, encoding: .utf8))
-            }
-        }
+        guard let execution = try? await BoundedProcess.run(
+            executable: path,
+            arguments: args,
+            environment: ["PATH": "/usr/bin:/usr/local/bin", "LANG": "C.UTF-8"],
+            timeout: timeout,
+            maxOutputBytes: 1 * 1_024 * 1_024
+        ), execution.succeeded else { return nil }
+        return String(data: execution.stdout, encoding: .utf8)
     }
 }

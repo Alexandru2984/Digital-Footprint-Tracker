@@ -51,6 +51,9 @@ struct ReportController: RouteCollection {
             ] as [String: Any] }
         ]
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
+        guard jsonData.count <= 10 * 1_024 * 1_024 else {
+            throw Abort(.payloadTooLarge, reason: "Report input exceeded the 10 MB limit.")
+        }
 
         let scriptPath = Environment.get("REPORT_SCRIPT_PATH")
             ?? "/home/micu/swift+vapor/scripts/generate_report.py"
@@ -58,64 +61,32 @@ struct ReportController: RouteCollection {
             throw Abort(.serviceUnavailable, reason: "Report generation unavailable.")
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments    = [scriptPath]
-        process.environment  = [
-            "PATH":       "/usr/bin:/usr/local/bin",
-            "HOME":       "/tmp",
-            "PYTHONPATH": Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages",
-        ]
-
-        let stdinPipe  = Pipe()
-        let stdoutPipe = Pipe()
-        process.standardInput  = stdinPipe
-        process.standardError  = FileHandle.nullDevice
-        process.standardOutput = stdoutPipe
-
-        try process.run()
-        stdinPipe.fileHandleForWriting.write(jsonData)
-        stdinPipe.fileHandleForWriting.closeFile()
-
-        // Hard cap on report size — prevents OOM if generate_report.py
-        // produces a runaway PDF (logic bug, malformed input, infinite loop).
-        // 20 MB is far above any plausible legitimate report.
-        let MAX_PDF_BYTES = 20 * 1024 * 1024
-
-        let result: (data: Data, oversize: Bool) = await withCheckedContinuation { cont in
-            let sema = DispatchSemaphore(value: 0)
-            process.terminationHandler = { _ in sema.signal() }
-
-            let killTimer = DispatchWorkItem { if process.isRunning { process.terminate() } }
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30, execute: killTimer)
-
-            DispatchQueue.global(qos: .utility).async {
-                // Stream stdout in chunks so we can stop and terminate the
-                // subprocess as soon as the cap is hit, instead of waiting
-                // for it to finish producing arbitrary data.
-                var data = Data()
-                let handle = stdoutPipe.fileHandleForReading
-                var oversize = false
-                while data.count < MAX_PDF_BYTES {
-                    let chunk = handle.availableData
-                    if chunk.isEmpty { break } // EOF
-                    data.append(chunk)
-                }
-                if data.count >= MAX_PDF_BYTES, process.isRunning {
-                    oversize = true
-                    process.terminate()
-                }
-                sema.wait()
-                killTimer.cancel()
-                cont.resume(returning: (data, oversize))
-            }
+        let execution: BoundedProcess.Result
+        do {
+            execution = try await BoundedProcess.run(
+                executable: "/usr/bin/python3",
+                arguments: [scriptPath],
+                environment: [
+                    "PATH": "/usr/bin:/usr/local/bin",
+                    "PYTHONPATH": Environment.get("HOLEHE_PYTHONPATH") ?? "/home/micu/.local/lib/python3.12/site-packages",
+                    "PYTHONNOUSERSITE": "1",
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "LANG": "C.UTF-8",
+                ],
+                stdin: jsonData,
+                timeout: 30,
+                maxOutputBytes: 20 * 1_024 * 1_024
+            )
+        } catch {
+            req.logger.error("Report subprocess could not be started.")
+            throw Abort(.serviceUnavailable, reason: "Report generation unavailable.")
         }
 
-        if result.oversize {
+        if execution.outputExceeded {
             throw Abort(.payloadTooLarge, reason: "Generated report exceeded the 20 MB limit.")
         }
-        let pdfData = result.data
-        guard !pdfData.isEmpty else {
+        let pdfData = execution.stdout
+        guard execution.succeeded, pdfData.starts(with: Data("%PDF-".utf8)) else {
             throw Abort(.internalServerError, reason: "Report generation failed.")
         }
 

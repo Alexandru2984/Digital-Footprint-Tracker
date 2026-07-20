@@ -64,7 +64,7 @@ struct AuthController: RouteCollection {
         guard body.username.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else {
             throw Abort(.badRequest, reason: "Username may only contain letters, numbers, hyphens and underscores.")
         }
-        guard body.email.contains("@"), body.email.count <= 254 else {
+        guard let normalizedEmail = EmailAddress.normalize(body.email) else {
             throw Abort(.badRequest, reason: "Invalid email address.")
         }
         guard body.password.count >= 8 else {
@@ -72,7 +72,7 @@ struct AuthController: RouteCollection {
         }
         // Offline weak-password rejection — no third-party HIBP call, honours the
         // privacy-first stance. Blocks the passwords attackers try first.
-        try PasswordStrength.validate(body.password, username: body.username, email: body.email)
+        try PasswordStrength.validate(body.password, username: body.username, email: normalizedEmail)
 
         // Uniqueness check. Both queries run concurrently and the response
         // returns a single generic reason regardless of which constraint
@@ -82,7 +82,7 @@ struct AuthController: RouteCollection {
         // email verification link — is out of scope here; this is the
         // single-message hardening.)
         async let usernameTask = User.query(on: req.db).filter(\.$username == body.username).first()
-        async let emailTask    = User.query(on: req.db).filter(\.$email == body.email.lowercased()).first()
+        async let emailTask    = User.query(on: req.db).filter(\.$email == normalizedEmail).first()
         let (existingUsername, existingEmail) = try await (usernameTask, emailTask)
         if existingUsername != nil || existingEmail != nil {
             // Log internally for ops, generic response externally.
@@ -91,7 +91,7 @@ struct AuthController: RouteCollection {
         }
 
         let hash = try await req.password.async.hash(body.password)
-        let user = User(username: body.username, email: body.email.lowercased(), passwordHash: hash)
+        let user = User(username: body.username, email: normalizedEmail, passwordHash: hash)
         try await user.save(on: req.db)
 
         AuditLogger.log(req: req, action: "register", target: body.username)

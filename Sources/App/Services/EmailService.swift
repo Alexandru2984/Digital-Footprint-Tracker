@@ -15,14 +15,17 @@ struct EmailService {
             return
         }
 
-        // Strip CRLF / bare CR to prevent mail header injection.
-        let safeFrom    = sanitizeHeader(from)
-        let safeTo      = sanitizeHeader(to)
-        let safeSubject = sanitizeHeader(subject)
+        guard let safeFrom = EmailAddress.normalize(from),
+              let safeTo = EmailAddress.normalize(to) else {
+            app.logger.error("EmailService: rejected an invalid sender or recipient address")
+            return
+        }
+        let safeSubject = boundedUTF8(sanitizeHeader(subject), maxBytes: 512)
         // Body: drop NULs and normalize any line endings to CRLF (some MUAs
         // produce LF or CR alone; SMTP requires CRLF throughout, including
-        // body lines for strict relays).
-        let safeBody = body
+        // body lines for strict relays). Bound it so a malformed notification
+        // cannot turn curl's stdin into an unbounded memory/traffic sink.
+        let safeBody = boundedUTF8(body, maxBytes: 64 * 1_024)
             .replacingOccurrences(of: "\0", with: "")
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r",   with: "\n")
@@ -42,32 +45,55 @@ struct EmailService {
             safeBody,
         ].joined(separator: "\r\n")
 
-        let port = Int(portStr) ?? 587
-        let protocol_ = port == 465 ? "smtps" : "smtp"
-        let sslFlag = port == 465 ? "--ssl" : "--ssl-reqd"
-
-        // Write SMTP credentials to a private temp file rather than passing
-        // them as process arguments. Without this, "user:pass" would be
-        // visible to any local account via `ps auxf` / /proc/*/cmdline for
-        // the duration of each curl invocation. The file is created mode 600
-        // and deleted on function exit (`defer` runs after the await below).
-        let credsFile = NSTemporaryDirectory() + "smtp-\(UUID().uuidString).netrc"
-        // Strip CR/LF so a maliciously-set env var cannot inject extra
-        // netrc entries or change the active machine block.
-        let safeUser = user.replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "")
-        let safePass = pass.replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "")
-        let netrcBody = "default\n  login \(safeUser)\n  password \(safePass)\n"
-        do {
-            try netrcBody.write(toFile: credsFile, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o600)],
-                ofItemAtPath: credsFile
-            )
-        } catch {
-            app.logger.error("EmailService: failed to write credentials file: \(error)")
+        guard let port = Int(portStr), (1...65_535).contains(port) else {
+            app.logger.error("EmailService: SMTP_PORT is invalid")
             return
         }
-        defer { try? FileManager.default.removeItem(atPath: credsFile) }
+        let protocol_ = port == 465 ? "smtps" : "smtp"
+        let sslFlag = port == 465 ? "--ssl" : "--ssl-reqd"
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hostCharacters = CharacterSet.alphanumerics.union(.init(charactersIn: ".:-"))
+        guard !trimmedHost.isEmpty, trimmedHost.utf8.count <= 253,
+              trimmedHost.unicodeScalars.allSatisfy(hostCharacters.contains) else {
+            app.logger.error("EmailService: SMTP_HOST is invalid")
+            return
+        }
+        var smtpComponents = URLComponents()
+        smtpComponents.scheme = protocol_
+        smtpComponents.host = trimmedHost
+        smtpComponents.port = port
+        guard let smtpURL = smtpComponents.url else {
+            app.logger.error("EmailService: SMTP endpoint is invalid")
+            return
+        }
+
+        // Keep credentials in a 0700 directory and out of argv/environment.
+        // Quoted netrc values prevent whitespace from changing its grammar.
+        guard let safeUser = netrcValue(user), let safePass = netrcValue(pass) else {
+            app.logger.error("EmailService: SMTP credentials contain unsupported characters")
+            return
+        }
+        let processHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent("dft-smtp-\(UUID().uuidString)", isDirectory: true)
+        let credsFile = processHome.appendingPathComponent("credentials.netrc")
+        let netrcBody = "default\n  login \(safeUser)\n  password \(safePass)\n"
+        do {
+            try FileManager.default.createDirectory(
+                at: processHome,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            )
+            try netrcBody.write(to: credsFile, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o600)],
+                ofItemAtPath: credsFile.path
+            )
+        } catch {
+            app.logger.error("EmailService: failed to prepare private SMTP credentials")
+            try? FileManager.default.removeItem(at: processHome)
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: processHome) }
 
         // Resolve a curl binary. The previous hardcoded path failed silently
         // on systems where curl lives elsewhere (macOS dev installs, alpine
@@ -76,42 +102,46 @@ struct EmailService {
         let curlCandidates = [Environment.get("CURL_PATH"), "/usr/bin/curl", "/usr/local/bin/curl"]
             .compactMap { $0 }
         guard let curlPath = curlCandidates.first(where: {
-            FileManager.default.isExecutableFile(atPath: $0)
+            $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0)
         }) else {
-            app.logger.error("EmailService: no executable curl found (tried: \(curlCandidates.joined(separator: ", ")))")
+            app.logger.error("EmailService: no trusted executable curl was found")
             return
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: curlPath)
-        process.arguments = [
-            "--url", "\(protocol_)://\(host):\(port)",
+        let arguments = [
+            // --disable must be the first option to prevent ~/.curlrc from
+            // changing the request or exfiltrating the netrc credential.
+            "--disable",
+            "--proto", "=smtp,smtps",
+            "--url", smtpURL.absoluteString,
             sslFlag,
             "--mail-from", safeFrom,
             "--mail-rcpt", safeTo,
-            "--netrc-file", credsFile,
+            "--netrc-file", credsFile.path,
             "--upload-file", "-",
             "--silent",
             "--max-time", "15"
         ]
 
-        let inputPipe = Pipe()
-        process.standardInput = inputPipe
-
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                do {
-                    try process.run()
-                    inputPipe.fileHandleForWriting.write(Data(mimeMessage.utf8))
-                    inputPipe.fileHandleForWriting.closeFile()
-                    process.waitUntilExit()
-                    if process.terminationStatus != 0 {
-                        app.logger.warning("EmailService: curl exited with status \(process.terminationStatus)")
-                    }
-                } catch {
-                    app.logger.error("EmailService: failed to run curl: \(error)")
-                }
-                continuation.resume()
+        do {
+            let execution = try await BoundedProcess.run(
+                executable: curlPath,
+                arguments: arguments,
+                environment: [
+                    "PATH": "/usr/bin:/usr/local/bin",
+                    "HOME": processHome.path,
+                    "TMPDIR": processHome.path,
+                    "LANG": "C.UTF-8",
+                ],
+                stdin: Data(mimeMessage.utf8),
+                timeout: 20,
+                maxOutputBytes: 32 * 1_024,
+                privateTemporaryDirectory: false
+            )
+            if !execution.succeeded {
+                app.logger.warning("EmailService: SMTP delivery subprocess failed with status \(execution.exitStatus)")
             }
+        } catch {
+            app.logger.error("EmailService: failed to start SMTP delivery subprocess")
         }
     }
 
@@ -121,5 +151,21 @@ struct EmailService {
             .replacingOccurrences(of: "\r", with: "")
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\0", with: "")
+    }
+
+    private static func boundedUTF8(_ value: String, maxBytes: Int) -> String {
+        let data = Data(value.utf8)
+        guard data.count > maxBytes else { return value }
+        return String(decoding: data.prefix(maxBytes), as: UTF8.self)
+    }
+
+    private static func netrcValue(_ value: String) -> String? {
+        guard !value.isEmpty, value.utf8.count <= 1_024,
+              !value.contains("\r"), !value.contains("\n"), !value.contains("\0") else {
+            return nil
+        }
+        return "\"" + value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 }
