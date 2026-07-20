@@ -1,0 +1,270 @@
+# Product and security roadmap
+
+This roadmap deliberately puts containment, recoverability and abuse controls
+before feature volume. Priorities are ordered; items within a phase can run in
+parallel only when their dependencies are satisfied.
+
+## North-star architecture
+
+```text
+Cloudflare + origin authentication
+              |
+       nginx / API gateway
+              |
+       Vapor control plane
+       /        |         \
+ PostgreSQL   Redis      object storage
+                 |
+          durable job queue
+          /       |       \
+     light      browser    high-risk
+     workers    workers    subprocess workers
+          \       |       /
+        egress proxy + DNS policy
+                 |
+          approved external APIs
+```
+
+The control plane owns authentication, authorization, billing/quotas and
+results. Workers receive short-lived job capabilities, cannot read user/session
+secrets, and have per-plugin egress allowlists and resource budgets.
+
+## Phase 0 — production safety (now / 72 hours)
+
+- Complete the controlled rollout in the dated security audit.
+- Provision encrypted systemd backup credential before the next timer.
+- Restore-test a backup off-host; add backup-failure paging.
+- Create dedicated `swift-vapor` and `swift-deploy` Unix identities.
+- Remove `micu NOPASSWD: ALL`; revoke or restrict automation SSH keys.
+- Deploy Cloudflare-only origin guard; enable Authenticated Origin Pulls/mTLS.
+- Upgrade native toolchain to Swift 6.2 and install the locked Python venv.
+- Make app/frontend/CSP an immutable, atomic release with automatic rollback.
+- Move migrations out of application startup into an explicit locked step.
+- Provision `METRICS_TOKEN`, Prometheus scraping and five essential alerts.
+- Record production SHA/config checksums and create a one-command rollback.
+
+Exit gate: verified restore, direct origin denied, service has no personal-home
+access, broad sudo removed, and production SHA equals an accepted CI artifact.
+
+## Phase 1 — security platform
+
+### Identity and account security
+
+- Passkeys/WebAuthn as the preferred admin and user sign-in method.
+- Verified-email activation with expiring, single-use hashed tokens.
+- Password reset with single-use tokens, session revocation and notifications.
+- Password breach screening using k-anonymity; reject common credentials.
+- Device/session inventory with remote logout and “logout everywhere”.
+- Step-up authentication for exports, shares, keys, webhooks and admin actions.
+- 2FA recovery-code regeneration, encrypted recovery kit and lockout recovery.
+- Login anomaly notifications and configurable admin IP/device policy.
+- Optional OIDC/SAML for teams; SCIM only after tenant isolation is mature.
+
+### Authorization and tenancy
+
+- Central declarative route-policy table; CI fails on unclassified routes.
+- Property-based cross-tenant IDOR tests for every model and HTTP method.
+- Organization/workspace model with owner/admin/analyst/viewer roles.
+- Resource-level sharing ACLs, expiry, revocation and audit trail.
+- Service accounts with narrowly scoped keys and per-key quotas/IP policy.
+- Dual approval for destructive admin operations and bulk exports.
+
+### Secrets and cryptography
+
+- Split database, SMTP, metrics and provider credentials by worker capability.
+- systemd credentials or Vault/SOPS-backed delivery; no flat personal `.env`.
+- Versioned key-encryption keys and per-record/data-class DEKs.
+- Online key rotation with progress, verification and rollback checkpoints.
+- Key escrow/recovery procedure with two-person access for production.
+- Secret scanning in pre-commit and CI, plus full-history scheduled scan.
+
+### Supply chain and assurance
+
+- Dependabot/Renovate PRs with grouped Swift/Python/frontend updates.
+- OSV dependency policy and an SLA for critical/high advisories.
+- gitleaks, Semgrep rules, CodeQL where language coverage is useful.
+- Trivy/Grype container and OS-package scan with exception expiry.
+- CycloneDX and SPDX SBOMs attached to releases.
+- Signed images/artifacts, SLSA provenance and deploy-time signature verify.
+- Pin apt repository snapshots or package versions for reproducible images.
+- Branch protection, required reviews/checks and protected production environment.
+- Nightly DAST against a disposable environment; quarterly manual abuse review.
+
+### Browser and edge security
+
+- Extract all inline JS/CSS and use a static strict CSP without hash rewriting.
+- CSP report-only rollout, collection and alerting before enforcement changes.
+- COOP/COEP/CORP evaluation, Trusted Types and DOM-sink linting.
+- Cloudflare rate policies by authenticated identity and endpoint cost.
+- Turnstile only on abuse-sensitive anonymous flows, with privacy fallback.
+- Separate public liveness from internal/database readiness.
+- DNSSEC, CAA review, certificate-expiry and unexpected-certificate alerts.
+
+## Phase 2 — reliable scan engine
+
+### Durable execution
+
+- Redis/Postgres-backed job queue with leases and visibility timeouts.
+- Separate API, scheduler and worker processes; no jobs in web lifecycle hooks.
+- Idempotency keys on scan/bulk/schedule endpoints.
+- Retry taxonomy: transient, provider quota, permanent input, policy rejection.
+- Exponential backoff with jitter and per-provider circuit breakers.
+- Dead-letter queue with replay after operator review.
+- Cancellation propagation from API to HTTP calls and subprocesses.
+- Job checkpoints and resumable scans after process/VPS restart.
+- Weighted global concurrency and per-user/per-provider budgets.
+- Distributed rate limits and scheduler leader election.
+- Priority lanes for interactive, scheduled, watch and admin jobs.
+
+### Plugin isolation and quality
+
+- Versioned plugin protocol/SDK with typed input/output schemas.
+- Manifest-declared egress domains, secrets, timeout and cost class.
+- Workers/containers per risk class with CPU, memory, PID and network quotas.
+- Egress proxy that resolves/pins public destinations and logs policy decisions.
+- Plugin health score, latency/error history and automatic quarantine.
+- Contract fixtures and recorded upstream-response tests.
+- Result provenance: plugin/version/request time/evidence URL/hash/expiry.
+- Confidence calibration and explanation rather than a single opaque score.
+- Provider quota dashboards and cost forecasting.
+- Safe staged rollout/canary for plugin updates.
+
+### Scan experience
+
+- Named scan profiles: quick, standard, deep, passive-only and custom.
+- Preflight that estimates provider count, duration, quota and privacy impact.
+- Live progress by plugin with ETA, cancellation and selective retry.
+- Resume/replay failed plugins without duplicating successful findings.
+- Saved target lists, deduplication windows and configurable freshness.
+- Bulk import from CSV/JSON with validation preview and row-level errors.
+- Scan templates and reusable automation recipes.
+- Result suppression/false-positive workflow with expiry and reason.
+- Data freshness/last-seen/first-seen history per finding.
+- Signed webhook events with timestamp, delivery ID and replay protection.
+
+## Phase 3 — investigation and intelligence features
+
+### Entity graph and cases
+
+- Workspaces/cases with members, notes, tasks, status and due dates.
+- Merge/split entities with reversible lineage and conflict review.
+- Alias, relationship and confidence editing with complete audit history.
+- Timeline view across scans, findings, certificates, DNS and account events.
+- Path finder, neighborhood expansion and graph clustering/community detection.
+- Evidence pinning, annotations, attachments and cryptographic evidence hashes.
+- Case snapshots and comparison between two investigation dates.
+- Saved graph layouts, filters, queries and role-scoped views.
+- Entity-resolution suggestions with explainable match signals.
+- Case-level watch rules and escalation policies.
+
+### New domain/network intelligence
+
+- RDAP-first registration data with WHOIS fallback and normalized history.
+- DNSSEC validation and detailed SPF/DMARC/DKIM/MTA-STS/TLS-RPT/BIMI posture.
+- Certificate chain, CT timeline and unexpected issuer/SAN monitoring.
+- ASN/BGP prefix ownership, RPKI validity and route-change alerts.
+- Passive DNS provider adapters with explicit licensing and retention controls.
+- Reverse DNS, nameserver and MX infrastructure relationship graphs.
+- Safe HTTP technology/header/favicon fingerprints with provenance.
+- Cloud/storage exposure checks limited to non-invasive metadata requests.
+- Subdomain takeover indicators with manual-verification workflow.
+- Domain lookalike/typosquat campaigns with registration and mail posture.
+
+### Threat-intelligence interoperability
+
+- IOC lists and watchlists with severity, owner, expiry and suppression.
+- STIX 2.1 import/export and TAXII client/server integration.
+- MISP-compatible event export and sighting ingestion.
+- AbuseIPDB/VirusTotal/Shodan result normalization and source attribution.
+- Enrichment pipeline for IP/domain/hash/email without silent pivots.
+- Rule engine for compound detections across providers and time windows.
+- ATT&CK technique mapping only where evidence supports it.
+- Feed freshness, license and redistribution metadata.
+
+### Reporting
+
+- Report builder with sections, filters, branding and reusable templates.
+- Scheduled encrypted report delivery with recipient confirmation.
+- Executive, technical, compliance and incident-response report profiles.
+- PDF/HTML/JSON/CSV/STIX bundles with manifest and SHA-256 checksums.
+- Redaction presets and audience-specific views.
+- Evidence appendix with timestamps, provenance and confidence rationale.
+- Share portal with access log, download limits, watermark and revocation.
+- Optional client-side encrypted share package for highly sensitive cases.
+
+## Phase 4 — user experience and product depth
+
+- Guided onboarding and demo workspace with synthetic, non-PII data.
+- Unified command palette and complete keyboard navigation.
+- WCAG 2.2 AA accessibility pass, screen-reader graph alternatives.
+- Romanian/English localization architecture and translated UI/content.
+- Responsive investigation table as an alternative to the force graph.
+- Saved searches, advanced query language and reusable filter chips.
+- Custom dashboards/widgets with shareable read-only views.
+- Notification inbox with grouping, acknowledge, snooze and escalation.
+- Email/Slack/Discord/Telegram digest schedules and quiet hours.
+- PWA install/offline shell; never cache sensitive API responses.
+- Optimistic UI with explicit job states and recoverable errors.
+- Export progress, cancellation and background completion notification.
+- Admin support tools with safe impersonation prohibition and audit context.
+- Provider status page and per-plugin incident banners.
+- API explorer with scoped temporary tokens and copy-safe examples.
+- Versioned API, SDK generation and webhook playground.
+
+## Phase 5 — operations, scale and disaster recovery
+
+- OpenTelemetry traces across request, queue, plugin and provider calls.
+- Structured security-event stream separated from general application logs.
+- SLOs for API availability, scan latency, queue delay and report generation.
+- Error-budget alerts and dependency-specific burn-rate dashboards.
+- PostgreSQL PITR with encrypted WAL archive and tested point-in-time restore.
+- Tiered backup retention (daily/weekly/monthly) plus immutable offsite storage.
+- Quarterly disaster-recovery game day with recorded RTO/RPO results.
+- PgBouncer, index/query regression tracking and slow-query budgets.
+- Read replicas only after authorization-consistent routing is proven.
+- Blue/green or canary releases with schema compatibility gates.
+- Multi-zone deployment and queue workers only when single-host recovery is solid.
+- Capacity model for SSE connections, subprocesses, DB pool and provider quotas.
+- Chaos tests for provider timeouts, DNS failures, queue loss and worker death.
+- Configuration drift detection for `/etc`, Cloudflare and GitHub Environment.
+- Automated certificate, domain, backup, timer and origin-guard expiry checks.
+
+## Phase 6 — privacy, governance and abuse resistance
+
+- Explicit acceptable-use policy and purpose confirmation before sensitive scans.
+- Target classes/policies: self, organization-owned, public-interest and blocked.
+- Abuse report/takedown workflow with response SLA and preservation policy.
+- Consent/legal-basis record for recurring monitoring and notifications.
+- Per-data-class retention, legal hold and deletion verification.
+- Data-subject access/export/deletion workflow with identity verification.
+- Regional storage and subprocess-provider disclosure inventory.
+- Provider terms/license register and automatic feature disable on expiry.
+- Privacy-preserving analytics with no scan targets or raw findings.
+- Admin review queue for high-volume, high-risk or policy-triggered scans.
+- Tamper-evident audit export and documented incident-response playbooks.
+- Threat model review required for every new plugin/egress destination.
+
+## Suggested delivery waves
+
+| Wave | Duration | Outcome |
+|---|---:|---|
+| A | 1 week | Close live P0s, verified restore, origin lock, separated identities |
+| B | 2–3 weeks | Atomic releases, explicit migrations, security CI and central alerts |
+| C | 4–6 weeks | Durable queue/workers, distributed limits, cancellation and plugin health |
+| D | 6–10 weeks | Teams/cases/RBAC, evidence provenance, graph/timeline depth |
+| E | continuous | New intelligence adapters, UX, compliance and scale based on measured demand |
+
+## Feature admission checklist
+
+Every feature or plugin must answer these before implementation:
+
+1. What data and actor is trusted? What is attacker-controlled?
+2. What authorization rule applies to every read and mutation?
+3. What is the maximum request, fan-out, output, storage and runtime cost?
+4. What external destinations and secrets are required?
+5. How are timeout, cancellation, retry and duplicate delivery handled?
+6. What PII is stored, encrypted, logged, exported and eventually deleted?
+7. How is the feature observed and how does an operator disable it quickly?
+8. What tests prove tenant isolation, SSRF resistance and failure behavior?
+9. What migration/rollback/backup implications exist?
+10. What abuse, legal, provider-terms and user-consent constraints apply?

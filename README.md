@@ -16,11 +16,11 @@ graph.
 
 ## Highlights
 
-- **Production-deployed** on a hardened Ubuntu VPS — nginx + Cloudflare in
-  front, systemd-managed with capability dropping and `ProtectSystem=strict`,
-  daily `pg_dump` with 7-day rotation. Recent third-party-style security audit
-  surfaced 30+ findings (1 Critical, 11 High, 19 Medium); all fixed — see
-  [`SECURITY.md`](SECURITY.md).
+- **Production-hosted** on Ubuntu behind nginx + Cloudflare, with systemd
+  confinement and daily PostgreSQL backups. A July 2026 hardening pass is
+  prepared in the repository; its production rollout and remaining findings
+  are tracked explicitly in
+  [`docs/SECURITY_AUDIT_2026-07-20.md`](docs/SECURITY_AUDIT_2026-07-20.md).
 - **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
   deadline; results streamed live via SSE as each plugin completes.
 - **Cross-plugin result cache** with per-plugin TTL (1 h for volatile threat
@@ -37,7 +37,7 @@ graph.
   email, generic webhook — silent by default, with enriched diff messages
   that list which sources surfaced new findings.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 128 tests at the July 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---

@@ -1,5 +1,12 @@
 # Security
 
+> **Current production note (2026-07-20):** this document describes the
+> intended repository controls and also retains historical audit notes. The
+> dated [extreme security audit](docs/SECURITY_AUDIT_2026-07-20.md) is the
+> authoritative source for live-vs-prepared status, open VPS findings and the
+> controlled rollout order. A committed mitigation is not considered deployed
+> until the rollout evidence is recorded.
+
 This document records the security posture of **Digital Footprint Tracker**:
 the trust boundaries the system relies on, the threats considered and how
 each one is mitigated in the deployed code, what is intentionally out of
