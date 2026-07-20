@@ -27,6 +27,7 @@ private func makeApp() async throws -> Application {
 
     app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
+    app.middleware.use(SessionSecurityMiddleware())
     app.middleware.use(APIKeyMiddleware())
     app.middleware.use(APIKeyScopeMiddleware())
     // Mirror production so the CSRF origin check is exercised by tests. It is a
@@ -93,6 +94,119 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    // MARK: - Session and step-up authentication
+
+    func testLoginRotatesSessionIDAndInvalidatesTheOldSession() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        var firstCookie = ""
+        try await app.test(.POST, "/auth/register", beforeRequest: { req in
+            try req.content.encode([
+                "username": "rotation-user", "email": "rotation@example.com", "password": "Xk9mQ2vLp7wZ",
+            ], as: .json)
+        }, afterResponse: { res in
+            if let raw = res.headers.first(name: "Set-Cookie") {
+                firstCookie = String(raw.split(separator: ";").first ?? "")
+            }
+        })
+        XCTAssertFalse(firstCookie.isEmpty)
+
+        var rotatedCookie = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: firstCookie)
+            try req.content.encode(["username": "rotation-user", "password": "Xk9mQ2vLp7wZ"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            if let raw = res.headers.first(name: "Set-Cookie") {
+                rotatedCookie = String(raw.split(separator: ";").first ?? "")
+            }
+        })
+        XCTAssertFalse(rotatedCookie.isEmpty)
+        XCTAssertNotEqual(firstCookie, rotatedCookie)
+
+        try await app.test(.GET, "/auth/me", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: firstCookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+        try await app.test(.GET, "/auth/me", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: rotatedCookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+
+        let sessionsBeforeInvalidCookie = try await SessionRecord.query(on: app.db).count()
+        try await app.test(.GET, "/health", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: "vapor-session=attacker-controlled-id")
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        let sessionsAfterInvalidCookie = try await SessionRecord.query(on: app.db).count()
+        XCTAssertEqual(sessionsAfterInvalidCookie, sessionsBeforeInvalidCookie,
+                       "Unknown cookie IDs must not allocate persisted sessions.")
+    }
+
+    func testSensitiveOperationsRequireAndCanRefreshRecentAuthentication() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.post("_test", "stale-auth") { req -> HTTPStatus in
+            req.session.data["authenticatedAt"] = "0"
+            return .noContent
+        }
+        let cookie = try await registerAndLogin(app, username: "recent-auth-user")
+
+        try await app.test(.POST, "/_test/stale-auth", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .noContent) })
+
+        try await app.test(.POST, "/auth/api-keys", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["label": "blocked"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+
+        try await app.test(.POST, "/auth/reauth", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["password": "Xk9mQ2vLp7wZ"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .noContent) })
+
+        try await app.test(.POST, "/auth/api-keys", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["label": "allowed"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+    }
+
+    func testTwoFactorPendingTimestampFailsClosedWhenMissing() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.post("_test", "remove-pending-timestamp") { req -> HTTPStatus in
+            req.session.data["pending2FAAt"] = nil
+            return .noContent
+        }
+        _ = try await registerAndLogin(app, username: "pending-twofa-user")
+        let userLookup = try await User.query(on: app.db)
+            .filter(\.$username == "pending-twofa-user").first()
+        let user = try XCTUnwrap(userLookup)
+        let secret = TOTP.generateSecret()
+        user.totpSecret = secret
+        user.totpEnabled = true
+        try await user.save(on: app.db)
+
+        var pendingCookie = ""
+        try await app.test(.POST, "/auth/login", beforeRequest: { req in
+            try req.content.encode(["username": user.username, "password": "Xk9mQ2vLp7wZ"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertTrue((try? res.content.decode(LoginResponse.self).twoFactorRequired) == true)
+            if let raw = res.headers.first(name: "Set-Cookie") {
+                pendingCookie = String(raw.split(separator: ";").first ?? "")
+            }
+        })
+        XCTAssertFalse(pendingCookie.isEmpty)
+
+        try await app.test(.POST, "/_test/remove-pending-timestamp", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: pendingCookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .noContent) })
+        let validCode = try XCTUnwrap(TOTP.current(secret: secret))
+        try await app.test(.POST, "/auth/2fa/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: pendingCookie)
+            try req.content.encode(TwoFactorController.CodeBody(code: validCode), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+    }
 
     // MARK: - API key least privilege
 
@@ -1588,7 +1702,7 @@ final class AppTests: XCTestCase {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
         try await app.test(.DELETE, "/account", beforeRequest: { req in
-            try req.content.encode(["confirmUsername": "anyone"], as: .json)
+            try req.content.encode(["confirmUsername": "anyone", "password": "irrelevant"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .unauthorized)
         })
@@ -1616,11 +1730,19 @@ final class AppTests: XCTestCase {
 
         // Wrong username → 400, account NOT deleted.
         try await app.test(.DELETE, "/account", beforeRequest: { req in
-            try req.content.encode(["confirmUsername": "someoneelse"], as: .json)
+            try req.content.encode(["confirmUsername": "someoneelse", "password": "Xk9mQ2vLp7wZ"], as: .json)
             if !cookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: cookie) }
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .badRequest,
                 "Account delete must reject a mismatched confirmUsername to prevent accidental wipe via session theft alone.")
+        })
+
+        // Correct confirmation still requires the account password.
+        try await app.test(.DELETE, "/account", beforeRequest: { req in
+            try req.content.encode(["confirmUsername": "gdpruser", "password": "definitely-wrong"], as: .json)
+            if !cookie.isEmpty { req.headers.replaceOrAdd(name: "Cookie", value: cookie) }
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
         })
 
         // Session is still valid and the account row was NOT deleted. We

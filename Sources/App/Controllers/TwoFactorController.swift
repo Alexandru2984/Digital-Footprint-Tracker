@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import SQLKit
 
 /// Two-factor authentication (TOTP) endpoints.
 ///
@@ -17,9 +18,10 @@ struct TwoFactorController: RouteCollection {
 
     func boot(routes: RoutesBuilder) throws {
         let twofa = routes.grouped("auth", "2fa")
-        twofa.post("setup", use: setup)
-        twofa.post("enable", use: enable)
-        twofa.post("disable", use: disable)
+        let sensitive = twofa.grouped(AuthRateLimiter(maxAttempts: 5, windowSeconds: 600))
+        sensitive.post("setup", use: setup)
+        sensitive.post("enable", use: enable)
+        sensitive.post("disable", use: disable)
         // The verify step is pre-session; rate-limit it like login to slow code
         // guessing (10^6 space, ±1 step ⇒ brute-forceable without a cap).
         twofa.grouped(AuthRateLimiter(maxAttempts: 10, windowSeconds: 300))
@@ -32,7 +34,7 @@ struct TwoFactorController: RouteCollection {
 
     @Sendable
     func setup(req: Request) async throws -> SetupResponse {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireRecentSessionUser()
         guard !user.totpEnabled else {
             throw Abort(.conflict, reason: "Two-factor authentication is already enabled.")
         }
@@ -50,7 +52,7 @@ struct TwoFactorController: RouteCollection {
 
     @Sendable
     func enable(req: Request) async throws -> EnableResponse {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireRecentSessionUser()
         guard !user.totpEnabled else { throw Abort(.conflict, reason: "Already enabled.") }
         guard let stored = user.totpSecret, let secret = Self.readSecret(stored) else {
             throw Abort(.badRequest, reason: "Run setup first.")
@@ -74,7 +76,7 @@ struct TwoFactorController: RouteCollection {
 
     @Sendable
     func disable(req: Request) async throws -> User.Public {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireSessionUser()
         let body = try req.content.decode(DisableBody.self)
         guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
             throw Abort(.unauthorized, reason: "Incorrect password.")
@@ -83,6 +85,7 @@ struct TwoFactorController: RouteCollection {
         user.totpSecret = nil
         user.totpRecoveryCodes = nil
         try await user.save(on: req.db)
+        SessionSecurity.markReauthenticated(on: req)
         AuditLogger.log(req: req, action: "2fa_disabled", target: user.username)
         return user.toPublic()
     }
@@ -94,48 +97,60 @@ struct TwoFactorController: RouteCollection {
         guard let idString = req.session.data["pending2FAUserID"], let userID = UUID(idString) else {
             throw Abort(.unauthorized, reason: "No pending login. Start at /login.")
         }
-        // Reject a stale pending marker.
-        if let atStr = req.session.data["pending2FAAt"], let at = Double(atStr),
-           Date().timeIntervalSince1970 - at > Self.pendingTTL {
+        // Reject missing, malformed, future-dated, and stale pending markers.
+        let now = Date().timeIntervalSince1970
+        guard let atStr = req.session.data["pending2FAAt"], let at = Double(atStr),
+              now >= at, now - at <= Self.pendingTTL else {
             req.session.destroy()
             throw Abort(.unauthorized, reason: "Login timed out. Please sign in again.")
         }
-        guard let user = try await User.find(userID, on: req.db), user.totpEnabled,
-              let stored = user.totpSecret, let secret = Self.readSecret(stored) else {
+        guard let user = try await User.find(userID, on: req.db), user.totpEnabled else {
             req.session.destroy()
             throw Abort(.unauthorized)
         }
         let body = try req.content.decode(CodeBody.self)
         let submitted = body.code.trimmingCharacters(in: .whitespaces)
 
-        var ok = TOTP.verify(code: submitted, secret: secret)
-        if !ok { ok = try await consumeRecoveryCode(submitted, user: user, db: req.db) }
+        let ok = try await Self.verifySecondFactor(submitted, user: user, db: req.db)
         guard ok else {
             throw Abort(.unauthorized, reason: "Invalid code.")
         }
 
-        // Success — clear the pending marker and authenticate. Use `data = .init()`
-        // (as login/register do) rather than `destroy()`: destroying the session
-        // here invalidates the cookie so the freshly-set userID never sticks.
-        req.session.data = .init()
-        req.session.data["userID"] = user.id?.uuidString
+        guard let userID = user.id else { throw Abort(.internalServerError) }
+        try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         AuditLogger.log(req: req, action: "login_2fa", target: user.username)
         return user.toPublic()
     }
 
+    static func verifySecondFactor(_ submitted: String, user: User, db: Database) async throws -> Bool {
+        guard let stored = user.totpSecret, let secret = readSecret(stored) else { return false }
+        let normalized = submitted.trimmingCharacters(in: .whitespaces)
+        if TOTP.verify(code: normalized, secret: secret) { return true }
+        guard let userID = user.id else { return false }
+        return try await consumeRecoveryCode(normalized, userID: userID, db: db)
+    }
+
     /// If `submitted` matches an unused recovery-code hash, consume it and return true.
-    private func consumeRecoveryCode(_ submitted: String, user: User, db: Database) async throws -> Bool {
-        guard let raw = user.totpRecoveryCodes,
-              let data = raw.data(using: .utf8),
-              var hashes = try? JSONDecoder().decode([String].self, from: data) else { return false }
-        let candidate = RecoveryCodes.hash(submitted)
-        guard let idx = hashes.firstIndex(of: candidate) else { return false }
-        hashes.remove(at: idx)
-        if let data = try? JSONEncoder().encode(hashes) {
-            user.totpRecoveryCodes = String(data: data, encoding: .utf8)
+    private static func consumeRecoveryCode(_ submitted: String, userID: UUID, db: Database) async throws -> Bool {
+        try await db.transaction { transaction in
+            // PostgreSQL row locking makes read-remove-save atomic across app
+            // processes. SQLite's transaction is serialized in the test path.
+            if let sql = transaction as? SQLDatabase,
+               sql.dialect.name.lowercased().contains("postgres") {
+                try await sql.raw("SELECT id FROM users WHERE id = \(bind: userID) FOR UPDATE").run()
+            }
+            guard let lockedUser = try await User.find(userID, on: transaction),
+                  let raw = lockedUser.totpRecoveryCodes,
+                  let data = raw.data(using: .utf8),
+                  var hashes = try? JSONDecoder().decode([String].self, from: data) else { return false }
+            let candidate = RecoveryCodes.hash(submitted)
+            guard let idx = hashes.firstIndex(of: candidate) else { return false }
+            hashes.remove(at: idx)
+            let encoded = try JSONEncoder().encode(hashes)
+            lockedUser.totpRecoveryCodes = String(decoding: encoded, as: UTF8.self)
+            try await lockedUser.save(on: transaction)
+            return true
         }
-        try await user.save(on: db)
-        return true
     }
 
     // MARK: - Secret at-rest helpers

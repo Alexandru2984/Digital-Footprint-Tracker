@@ -101,8 +101,10 @@ socket peer address.
 | Brute-force login                   | BCrypt cost 12; `AuthRateLimiter` caps 10 attempts per IP per 5 min on `/auth/login` and `/auth/register`                                   | `Sources/App/Services/AuthRateLimiter.swift`       |
 | Timing-based user enumeration       | `login` always runs `req.password.async.verify`, falling back to a precomputed dummy BCrypt hash so response time is constant                | `AuthController.swift` (`dummyPasswordHash`)       |
 | Register-form user enumeration      | Single generic `409` message for both "username taken" and "email taken"; both DB queries run concurrently for constant response time      | `AuthController.register`                          |
-| Session hijacking                   | Cookie flags: `Secure=true`, `HTTPOnly=true`, `SameSite=Strict`                                                                             | `configure.swift`                                  |
-| Session fixation                    | `req.session.data = .init()` before binding `userID` at login/register                                                                      | `AuthController.swift`                             |
+| Session hijacking                   | `__Host-` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, path `/`); 7-day absolute and 24-hour idle server-side limits                     | `configure.swift`, `SessionSecurityMiddleware`     |
+| Session fixation                    | Password login, registration, and successful 2FA delete the old server row and force Vapor to mint a fresh 256-bit session ID              | `SessionSecurity.establishAuthenticated`           |
+| Stolen-session sensitive actions    | 10-minute recent-auth window; `/auth/reauth` requires password plus TOTP/recovery code for 2FA accounts; API-key changes, credentials, admin, export/delete require step-up | `SessionSecurity`, controllers |
+| Arbitrary-cookie session-table DoS  | Unknown cookie IDs are destroyed instead of being persisted as fresh empty sessions                                                        | `SessionSecurityMiddleware`                        |
 | **In-memory session leak**          | Sessions persisted to PostgreSQL via Fluent (`SessionRecord`); restart-survivable; heap-bounded                                              | `configure.swift` (`.use(.fluent)`)                |
 | **Bearer API key → session leak**   | Bearer auth uses request-scoped storage and does not even materialize an empty Vapor session; responses carry no session cookie             | `Sources/App/Middleware/APIKeyMiddleware.swift`    |
 | API key brute force                 | Tokens stored as SHA-256 hashes (`HashAPIKeyColumn` migration); exact-match indexed DB lookup                                                | `Sources/App/Models/APIKey.swift`                  |
@@ -119,6 +121,7 @@ socket peer address.
 | Admin escalation                              | `user.isAdmin` re-checked at each `/admin/*` route                                                                                            | `AdminController`, `UserController`, `HealthController.metrics`                            |
 | Tag / share / API-key reuse across users      | Every `Tag.find` / `SharedReport.find` / `APIKey.find` is followed by an explicit `entity.user.id == currentUser.id` check                    | `TagController`, `ShareController`, `APIKeyController`                                     |
 | API key privilege creep                       | New/unclassified routes are denied to API keys until explicitly mapped to a scope; bearer keys can never call `/account`, `/admin`, or mutating `/auth` routes | `APIKeyScopeMiddleware.swift`                                                    |
+| Concurrent recovery-code replay               | Recovery-code removal runs transactionally; PostgreSQL locks the user row with `FOR UPDATE` before decrypt/remove/save                      | `TwoFactorController.consumeRecoveryCode`                                        |
 
 ### Input validation
 

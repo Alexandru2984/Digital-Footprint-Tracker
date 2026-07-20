@@ -107,7 +107,8 @@ struct HealthController: RouteCollection {
             }
         } else {
             // Token auth not configured → fall back to admin session.
-            guard let user = try await req.currentUser(), user.isAdmin else {
+            let user = try await req.requireRecentSessionUser()
+            guard user.isAdmin else {
                 throw Abort(.forbidden, reason: "Admin or METRICS_TOKEN required.")
             }
         }

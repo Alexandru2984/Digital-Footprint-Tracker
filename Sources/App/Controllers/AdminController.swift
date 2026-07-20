@@ -45,9 +45,7 @@ struct AdminController: RouteCollection {
 
     @Sendable
     func dashboard(req: Request) async throws -> DashboardResponse {
-        guard let user = try await req.currentUser() else {
-            throw Abort(.unauthorized, reason: "Not authenticated.")
-        }
+        let user = try await req.requireRecentSessionUser()
         guard user.isAdmin else {
             throw Abort(.forbidden, reason: "Admin access required.")
         }
@@ -111,7 +109,8 @@ struct AdminController: RouteCollection {
 
     @Sendable
     func auditLog(req: Request) async throws -> Page<AuditLogDTO> {
-        guard let user = try await req.currentUser(), user.isAdmin else {
+        let user = try await req.requireRecentSessionUser()
+        guard user.isAdmin else {
             throw Abort(.forbidden)
         }
         let page = try await AuditLog.query(on: req.db)

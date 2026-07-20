@@ -21,9 +21,8 @@ struct AccountController: RouteCollection {
 
     @Sendable
     func exportAll(req: Request) async throws -> Response {
-        guard let user = try await req.currentUser(), let userID = user.id else {
-            throw Abort(.unauthorized, reason: "Not authenticated.")
-        }
+        let user = try await req.requireRecentSessionUser()
+        guard let userID = user.id else { throw Abort(.internalServerError) }
         AuditLogger.log(req: req, action: "account_export", target: user.username)
 
         // Profile — never include the password hash or the encrypted Telegram
@@ -157,16 +156,19 @@ struct AccountController: RouteCollection {
     /// match is case-insensitive.
     struct DeleteBody: Content {
         let confirmUsername: String
+        let password: String
     }
 
     @Sendable
     func deleteAccount(req: Request) async throws -> HTTPStatus {
-        guard let user = try await req.currentUser(), let userID = user.id else {
-            throw Abort(.unauthorized, reason: "Not authenticated.")
-        }
+        let user = try await req.requireRecentSessionUser()
+        guard let userID = user.id else { throw Abort(.internalServerError) }
         let body = try req.content.decode(DeleteBody.self)
         guard body.confirmUsername.caseInsensitiveCompare(user.username) == .orderedSame else {
             throw Abort(.badRequest, reason: "confirmUsername does not match the current account.")
+        }
+        guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
+            throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
 
         // Belt-and-braces: the admin seeded from ADMIN_USERNAME/ADMIN_PASSWORD

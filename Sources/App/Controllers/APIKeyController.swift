@@ -21,7 +21,7 @@ struct APIKeyController: RouteCollection {
     }
 
     @Sendable func create(req: Request) async throws -> APIKey.Created {
-        let user = try await req.requireSessionUser()
+        let user = try await req.requireRecentSessionUser()
         struct Body: Content {
             let label: String
             let scopes: [String]?
@@ -64,7 +64,7 @@ struct APIKeyController: RouteCollection {
     }
 
     @Sendable func delete(req: Request) async throws -> HTTPStatus {
-        let user = try await req.requireSessionUser()
+        let user = try await req.requireRecentSessionUser()
         guard let id = req.parameters.get("id", as: UUID.self),
               let key = try await APIKey.find(id, on: req.db) else { throw Abort(.notFound) }
         guard key.$user.id == user.id! else { throw Abort(.forbidden) }

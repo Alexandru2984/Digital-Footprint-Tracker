@@ -33,14 +33,19 @@ public func configure(_ app: Application) async throws {
     // restarts and don't bloat heap memory under sustained traffic. The
     // SessionRecord migration is registered alongside the rest below.
     app.sessions.use(.fluent)
+    app.sessions.configuration.cookieName = "__Host-swift-session"
     app.sessions.configuration.cookieFactory = { sessionID in
         var cookie = HTTPCookies.Value(string: sessionID.string)
         cookie.isSecure = true
         cookie.isHTTPOnly = true
         cookie.sameSite = .strict
+        cookie.path = "/"
+        cookie.expires = Date().addingTimeInterval(SessionSecurity.absoluteTTL)
+        cookie.maxAge = Int(SessionSecurity.absoluteTTL)
         return cookie
     }
     app.middleware.use(app.sessions.middleware)
+    app.middleware.use(SessionSecurityMiddleware())
     app.middleware.use(APIKeyMiddleware())
     app.middleware.use(APIKeyScopeMiddleware())
     app.middleware.use(CSRFMiddleware())

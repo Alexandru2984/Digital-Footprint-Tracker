@@ -89,9 +89,7 @@ struct UserController: RouteCollection {
 
     @Sendable
     func adminScans(req: Request) async throws -> PagedScans {
-        guard let user = try await req.currentUser() else {
-            throw Abort(.unauthorized, reason: "Not authenticated.")
-        }
+        let user = try await req.requireRecentSessionUser()
         guard user.isAdmin else {
             throw Abort(.forbidden, reason: "Admin access required.")
         }

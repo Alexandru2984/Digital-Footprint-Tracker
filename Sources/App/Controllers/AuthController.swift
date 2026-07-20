@@ -42,6 +42,7 @@ struct AuthController: RouteCollection {
         let limited = auth.grouped(AuthRateLimiter(maxAttempts: 10, windowSeconds: 300))
         limited.post("register", use: register)
         limited.post("login", use: login)
+        limited.post("reauth", use: reauthenticate)
         auth.post("logout", use: logout)
         auth.get("me", use: me)
         auth.get("verify-email", use: verifyEmail)
@@ -99,10 +100,8 @@ struct AuthController: RouteCollection {
         // send the link. Best-effort: a mail failure must not fail registration.
         await sendVerificationEmail(for: user, req: req)
 
-        // Regenerate session to prevent session fixation: clear any pre-auth data
-        // before binding the authenticated user ID to this session.
-        req.session.data = .init()
-        req.session.data["userID"] = user.id?.uuidString
+        guard let userID = user.id else { throw Abort(.internalServerError) }
+        try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
 
         return user.toPublic()
     }
@@ -175,7 +174,7 @@ struct AuthController: RouteCollection {
     /// POST /auth/resend-verification — authenticated; re-sends the link.
     @Sendable
     func resendVerification(req: Request) async throws -> HTTPStatus {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireSessionUser()
         guard !user.emailVerified else { throw Abort(.badRequest, reason: "Email is already verified.") }
         await sendVerificationEmail(for: user, req: req)
         return .accepted
@@ -204,17 +203,40 @@ struct AuthController: RouteCollection {
         // pending marker (cleared on success/timeout in TwoFactorController) and
         // ask the client for the second factor.
         if user.totpEnabled {
-            req.session.data = .init()
-            req.session.data["pending2FAUserID"] = user.id?.uuidString
-            req.session.data["pending2FAAt"] = String(Date().timeIntervalSince1970)
+            guard let userID = user.id else { throw Abort(.internalServerError) }
+            try await SessionSecurity.establishPendingTwoFactor(userID: userID, on: req)
             return LoginResponse(twoFactorRequired: true, user: nil)
         }
 
-        // Regenerate session to prevent session fixation.
-        req.session.data = .init()
-        req.session.data["userID"] = user.id?.uuidString
+        guard let userID = user.id else { throw Abort(.internalServerError) }
+        try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         AuditLogger.log(req: req, action: "login", target: body.username)
         return LoginResponse(twoFactorRequired: false, user: user.toPublic())
+    }
+
+    struct ReauthenticateRequest: Content {
+        let password: String
+        let code: String?
+    }
+
+    /// Refresh the short recent-authentication window required by sensitive
+    /// account operations. Accounts with 2FA must prove both factors again.
+    @Sendable
+    func reauthenticate(req: Request) async throws -> HTTPStatus {
+        let user = try await req.requireSessionUser()
+        let body = try req.content.decode(ReauthenticateRequest.self)
+        guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
+            throw Abort(.unauthorized, reason: "Invalid credentials.")
+        }
+        if user.totpEnabled {
+            guard let code = body.code,
+                  try await TwoFactorController.verifySecondFactor(code, user: user, db: req.db) else {
+                throw Abort(.unauthorized, reason: "A valid two-factor code is required.")
+            }
+        }
+        SessionSecurity.markReauthenticated(on: req)
+        AuditLogger.log(req: req, action: "reauthenticate", target: user.username)
+        return .noContent
     }
 
     @Sendable
@@ -234,9 +256,7 @@ struct AuthController: RouteCollection {
     @Sendable
     func setWebhook(req: Request) async throws -> User.Public {
         struct Body: Content { var webhookURL: String? }
-        guard let user = try await req.currentUser() else {
-            throw Abort(.unauthorized, reason: "Not authenticated.")
-        }
+        let user = try await req.requireRecentSessionUser()
         let body = try req.content.decode(Body.self)
         let url = body.webhookURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url, !url.isEmpty {
@@ -249,7 +269,7 @@ struct AuthController: RouteCollection {
     }
     @Sendable
     func setRetention(req: Request) async throws -> User.Public {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireSessionUser()
         struct Body: Content { let retentionDays: Int? }
         let body = try req.content.decode(Body.self)
         if let days = body.retentionDays {
@@ -265,7 +285,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func updateSettings(req: Request) async throws -> User.Public {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireRecentSessionUser()
         struct Body: Content {
             let discordWebhookURL: String?
             let telegramBotToken: String?
@@ -305,7 +325,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func testNotifications(req: Request) async throws -> HTTPStatus {
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user = try await req.requireSessionUser()
         await NotificationDispatcher.notify(
             user: user,
             title: "Test Notification",

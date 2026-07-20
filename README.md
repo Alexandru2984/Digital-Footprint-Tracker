@@ -171,6 +171,10 @@ PostgreSQL
 - Holehe subprocess bounded by a 60 s kill timer via `DispatchSemaphore`
 - PII masked in audit logs: `***@domain.com`, `use***`
 - **API keys & share-report tokens stored hashed**, never in plaintext
+- Session IDs rotate after password and 2FA authentication; the old server row
+  is deleted. `__Host-` cookies expire after 7 days with a 24-hour idle limit.
+- Sensitive controls use a 10-minute step-up window refreshed via
+  `POST /api/auth/reauth` (password plus TOTP/recovery code when 2FA is enabled).
 - Versioned AES-256-GCM envelopes for scan targets/results, investigation
   boards, notification credentials, scheduler targets, notifications, audit
   details, and plugin-cache payloads; production refuses to boot without a
@@ -197,6 +201,7 @@ page (cookie auth is persisted across reloads).
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
+- `POST /api/auth/reauth` — refresh recent authentication for sensitive actions
 - `GET  /api/auth/me`
 
 ### User
