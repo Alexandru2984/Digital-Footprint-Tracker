@@ -60,7 +60,10 @@ struct NotificationDispatcher {
         } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
             app.logger.warning("Blocked outbound webhook: \(destination) resolved to an internal address.")
         } catch {
-            app.logger.debug("Webhook delivery to \(destination) failed: \(error)")
+            // HTTP client errors may embed the complete request URL. Webhook
+            // paths frequently contain signing secrets, so never interpolate
+            // the error object into logs for a user-configured destination.
+            app.logger.debug("Webhook delivery to \(destination) failed.")
         }
     }
 

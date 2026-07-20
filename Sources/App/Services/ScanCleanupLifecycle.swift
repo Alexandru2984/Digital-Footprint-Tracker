@@ -53,7 +53,7 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                             .filter(\.$createdAt < userCutoff)
                             .delete()
                     } catch {
-                        app.logger.error("CleanupJob: cleanup for user \(user.username) failed: \(error)")
+                        app.logger.error("CleanupJob: cleanup for user_id=\(userID) failed: \(error)")
                     }
                 }
                 app.logger.info("CleanupJob: completed retention sweep across \(allUsers.count) user(s)")
@@ -82,9 +82,9 @@ struct ScanCleanupLifecycle: LifecycleHandler {
 
                 // Session rows — the .fluent driver never expires them
                 // server-side. Prune anything older than 30 days so the
-                // _fluent_sessions table doesn't grow without bound. Guarded:
-                // the created_at column comes from a best-effort migration that
-                // may be absent on some engines.
+                // _fluent_sessions table doesn't grow without bound. The
+                // startup migration is fail-closed on PostgreSQL, so a missing
+                // created_at column cannot silently accumulate rows forever.
                 if let sql = db as? SQLDatabase {
                     let sessionCutoff = now.addingTimeInterval(-30 * 86400)
                     do {

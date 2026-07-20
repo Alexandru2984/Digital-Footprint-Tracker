@@ -11,7 +11,7 @@ struct EmailService {
               let user = Environment.get("SMTP_USER"),
               let pass = Environment.get("SMTP_PASS"),
               let from = Environment.get("SMTP_FROM") else {
-            app.logger.warning("EmailService: SMTP not configured, skipping email to \(to)")
+            app.logger.warning("EmailService: SMTP not configured; skipping one email delivery")
             return
         }
 
@@ -123,4 +123,3 @@ struct EmailService {
             .replacingOccurrences(of: "\0", with: "")
     }
 }
-

@@ -269,7 +269,7 @@ enum ScanPluginRunner {
         } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
             app.logger.warning("Webhook delivery to \(destination) blocked: resolved to an internal address.")
         } catch {
-            app.logger.warning("Webhook delivery to \(destination) failed: \(error)")
+            app.logger.warning("Webhook delivery to \(destination) failed.")
         }
     }
 

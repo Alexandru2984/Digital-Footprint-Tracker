@@ -58,7 +58,8 @@ private func runDueScans(app: Application) async {
             try? await ss.save(on: db)
             continue
         }
-        app.logger.info("[ScheduledScanRunner] Running scheduled scan for '\(input)'.")
+        let scheduleID = ss.id?.uuidString ?? "unknown"
+        app.logger.info("[ScheduledScanRunner] Running schedule \(scheduleID).")
 
         let newScan = Scan(input: input)
         newScan.$user.id = userID
@@ -167,8 +168,9 @@ private func runDueScans(app: Application) async {
                         )
                         firedDiffAlert = true
                     }
-                    let logSummary = exposureLine.isEmpty ? sourceLine : exposureLine
-                    app.logger.info("[ScheduledScanRunner] Monitor: \(newResults.count) new findings for '\(input)' — \(logSummary)")
+                    app.logger.info(
+                        "[ScheduledScanRunner] Schedule \(scheduleID): \(newResults.count) new finding(s); exposure_changed=\(!exposureLine.isEmpty)"
+                    )
                 }
             }
 

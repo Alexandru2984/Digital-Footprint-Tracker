@@ -101,14 +101,11 @@ struct ScanController: RouteCollection {
         // Audit log: record every scan request with client IP for later review.
         let clientIP = req.clientIP
 
-        // Mask PII in logs: show only domain part for emails, first 3 chars for usernames.
-        let logSafe: String
-        if let atIdx = input.firstIndex(of: "@") {
-            logSafe = "***@" + String(input[input.index(after: atIdx)...])
-        } else {
-            logSafe = String(input.prefix(3)) + "***"
-        }
-        req.logger.info("Scan requested: input=\(logSafe) ip=\(clientIP)")
+        // Logs are operational telemetry, not a second datastore for OSINT
+        // targets or precise client addresses. Keep only a coarse target kind
+        // and the same /24 or /48 network prefix used by the audit trail.
+        let targetKind = input.contains("@") ? "email" : "non_email"
+        req.logger.info("Scan requested: target_type=\(targetKind) ip_prefix=\(IPPrivacy.anonymize(clientIP))")
 
         let requestedPlugins = scanReq.plugins?.map { $0.lowercased() } ?? []
         // A plugin-specific scan is not interchangeable with an earlier default

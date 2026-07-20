@@ -139,7 +139,7 @@ public func configure(_ app: Application) async throws {
             let hash = try await app.password.async.hash(adminPassword)
             let admin = User(username: adminUsername, email: adminEmail, passwordHash: hash, isAdmin: true, emailVerified: true)
             try await admin.save(on: app.db)
-            app.logger.notice("Admin user '\(adminUsername)' created.")
+            app.logger.notice("Configured administrator account created.")
         }
     } else {
         app.logger.warning("ADMIN_PASSWORD not set — admin account will not be seeded.")
