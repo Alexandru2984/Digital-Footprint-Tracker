@@ -7,6 +7,11 @@ server {
     server_name swift.micutu.com;
     include snippets/cloudflare-realip.conf;
 
+    # The public TLS origin is Cloudflare-only. The geo map uses the original
+    # TCP peer, not the visitor address restored by cloudflare-realip.conf.
+    # A direct request with forged forwarding headers therefore still gets 403.
+    if ($from_cloudflare_origin = 0) { return 403; }
+
     # ── Security headers ──────────────────────────────────────────────────────
     add_header X-Frame-Options           "DENY" always;
     add_header X-Content-Type-Options    "nosniff" always;

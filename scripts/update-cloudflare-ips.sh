@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
-# Regenerates the nginx `real_ip` trust list for Cloudflare from Cloudflare's
-# published ranges, so the origin only accepts a client IP from CF-Connecting-IP
-# when the TCP peer is actually a Cloudflare edge.
+# Regenerates both the nginx `real_ip` trust list and the origin-guard geo map
+# from Cloudflare's published ranges.
 #
 # Why this exists: port 443 on the origin is reachable directly (not only via
 # Cloudflare). Without a real_ip trust list, nginx forwards a client-supplied
@@ -12,43 +11,120 @@
 # connections whose peer is in a Cloudflare range; a direct attacker's forged
 # header is ignored and their real peer IP stands.
 #
-# Idempotent: validates with `nginx -t` and reloads only on change; rolls back on
-# validation failure. Safe to run by hand or from cron.
+# Idempotent: validates both generated files and reloads only on change. Both
+# files are rolled back if validation or reload fails. `--check` performs no
+# writes and exits non-zero when either installed file is stale.
 
 set -euo pipefail
+umask 077
 
-SNIPPET="${CF_SNIPPET:-/etc/nginx/snippets/cloudflare-realip.conf}"
+REALIP_SNIPPET="${CF_REALIP_SNIPPET:-${CF_SNIPPET:-/etc/nginx/snippets/cloudflare-realip.conf}}"
+ORIGIN_GUARD="${CF_ORIGIN_GUARD:-/etc/nginx/conf.d/cloudflare-origin-guard.conf}"
+CHECK_ONLY=0
+if [[ "${1:-}" == "--check" ]]; then
+    CHECK_ONLY=1
+elif [[ $# -ne 0 ]]; then
+    echo "usage: $0 [--check]" >&2
+    exit 2
+fi
 
 V4="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4)" || { echo "[cf] failed to fetch ips-v4" >&2; exit 1; }
 V6="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6)" || { echo "[cf] failed to fetch ips-v6" >&2; exit 1; }
-[ -n "$V4" ] || { echo "[cf] empty ips-v4 — refusing to write" >&2; exit 1; }
+CIDRS="$(mktemp)"
+REALIP_TMP="$(mktemp)"
+GUARD_TMP="$(mktemp)"
+BACKUP_DIR=""
+cleanup() {
+    rm -f "$CIDRS" "$REALIP_TMP" "$GUARD_TMP"
+    if [[ -n "$BACKUP_DIR" ]]; then
+        sudo rm -f "$BACKUP_DIR/realip" "$BACKUP_DIR/guard"
+        rmdir "$BACKUP_DIR" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
-TMP="$(mktemp)"
+printf '%s\n%s\n' "$V4" "$V6" | sed '/^[[:space:]]*$/d' > "$CIDRS"
+
+# Reject empty, truncated, wrong-family, or syntactically hostile responses
+# before interpolating remote data into nginx configuration.
+python3 - "$CIDRS" <<'PY'
+import ipaddress
+import pathlib
+import sys
+
+lines = pathlib.Path(sys.argv[1]).read_text(encoding="ascii").splitlines()
+networks = [ipaddress.ip_network(line, strict=True) for line in lines]
+if len(networks) != len(set(networks)):
+    raise SystemExit("[cf] duplicate network in response")
+v4 = sum(network.version == 4 for network in networks)
+v6 = sum(network.version == 6 for network in networks)
+if v4 < 10 or v6 < 5:
+    raise SystemExit(f"[cf] implausible response ({v4} IPv4, {v6} IPv6 ranges)")
+PY
+
 {
     echo "# Managed by scripts/update-cloudflare-ips.sh — do not edit by hand."
-    echo "# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "# Trust CF-Connecting-IP only from Cloudflare edge peers (anti-spoofing)."
-    while IFS= read -r cidr; do [ -n "$cidr" ] && echo "set_real_ip_from $cidr;"; done <<< "$V4"
-    while IFS= read -r cidr; do [ -n "$cidr" ] && echo "set_real_ip_from $cidr;"; done <<< "$V6"
+    while IFS= read -r cidr; do echo "set_real_ip_from $cidr;"; done < "$CIDRS"
     echo "real_ip_header CF-Connecting-IP;"
-} > "$TMP"
+} > "$REALIP_TMP"
 
-if [ -f "$SNIPPET" ] && cmp -s "$TMP" "$SNIPPET"; then
-    echo "[cf] already up to date ($(grep -c set_real_ip_from "$SNIPPET") ranges)"
-    rm -f "$TMP"
+{
+    echo "# Managed by scripts/update-cloudflare-ips.sh — do not edit by hand."
+    echo "# The peer address is captured before ngx_http_realip_module replaces"
+    echo '# $remote_addr with CF-Connecting-IP.'
+    echo 'geo $realip_remote_addr $from_cloudflare_origin {'
+    echo "    default 0;"
+    echo "    127.0.0.1/32 1;"
+    echo "    ::1/128 1;"
+    while IFS= read -r cidr; do echo "    $cidr 1;"; done < "$CIDRS"
+    echo "}"
+} > "$GUARD_TMP"
+
+realip_current=0
+guard_current=0
+[[ -f "$REALIP_SNIPPET" ]] && cmp -s "$REALIP_TMP" "$REALIP_SNIPPET" && realip_current=1
+[[ -f "$ORIGIN_GUARD" ]] && cmp -s "$GUARD_TMP" "$ORIGIN_GUARD" && guard_current=1
+
+if [[ "$realip_current" -eq 1 && "$guard_current" -eq 1 ]]; then
+    echo "[cf] already up to date ($(grep -c set_real_ip_from "$REALIP_SNIPPET") ranges)"
     exit 0
 fi
 
-BAK="/home/micu/cloudflare-realip.$(date +%s).bak"
-[ -f "$SNIPPET" ] && sudo cp "$SNIPPET" "$BAK"
-sudo cp "$TMP" "$SNIPPET"
-rm -f "$TMP"
-
-if sudo nginx -t; then
-    sudo systemctl reload nginx
-    echo "[cf] snippet updated ($(grep -c set_real_ip_from "$SNIPPET") ranges) and nginx reloaded"
-else
-    echo "[cf] nginx -t failed — rolling back" >&2
-    [ -f "$BAK" ] && sudo cp "$BAK" "$SNIPPET" || sudo rm -f "$SNIPPET"
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+    [[ "$realip_current" -eq 1 ]] || echo "[cf] stale: $REALIP_SNIPPET" >&2
+    [[ "$guard_current" -eq 1 ]] || echo "[cf] stale: $ORIGIN_GUARD" >&2
     exit 1
 fi
+
+BACKUP_DIR="$(mktemp -d)"
+realip_existed=0
+guard_existed=0
+if [[ -f "$REALIP_SNIPPET" ]]; then
+    sudo cp -a "$REALIP_SNIPPET" "$BACKUP_DIR/realip"
+    realip_existed=1
+fi
+if [[ -f "$ORIGIN_GUARD" ]]; then
+    sudo cp -a "$ORIGIN_GUARD" "$BACKUP_DIR/guard"
+    guard_existed=1
+fi
+sudo install -o root -g root -m 0644 "$REALIP_TMP" "$REALIP_SNIPPET"
+sudo install -o root -g root -m 0644 "$GUARD_TMP" "$ORIGIN_GUARD"
+
+rollback() {
+    if [[ "$realip_existed" -eq 1 ]]; then sudo cp -a "$BACKUP_DIR/realip" "$REALIP_SNIPPET"; else sudo rm -f "$REALIP_SNIPPET"; fi
+    if [[ "$guard_existed" -eq 1 ]]; then sudo cp -a "$BACKUP_DIR/guard" "$ORIGIN_GUARD"; else sudo rm -f "$ORIGIN_GUARD"; fi
+}
+
+if ! sudo nginx -t; then
+    echo "[cf] nginx validation failed — rolling back both files" >&2
+    rollback
+    exit 1
+fi
+if ! sudo systemctl reload nginx; then
+    echo "[cf] nginx reload failed — rolling back both files" >&2
+    rollback
+    sudo nginx -t && sudo systemctl reload nginx || true
+    exit 1
+fi
+echo "[cf] real-IP and origin-guard files updated ($(grep -c set_real_ip_from "$REALIP_SNIPPET") ranges)"

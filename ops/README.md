@@ -9,6 +9,9 @@ you change the live config (or regenerate with the scripts under `scripts/`).
 - `swift.micutu.com` — the clearnet vhost. Highlights:
   - Security headers (HSTS preload, CSP via shared snippet, X-Frame DENY, …).
   - `include snippets/cloudflare-realip.conf` — anti-spoofing trust list.
+  - TLS requests are rejected unless their original TCP peer is a Cloudflare
+    edge (`conf.d/cloudflare-origin-guard.conf`). Port 80 remains available for
+    HTTPS redirects and ACME; the loopback-only onion vhost is unaffected.
   - `Onion-Location` header advertising the Tor onion (Tor Browser shows a
     ".onion available" badge).
   - Per-location rate-limit zones; `CF-Connecting-IP` forwarded as the validated
@@ -26,6 +29,8 @@ you change the live config (or regenerate with the scripts under `scripts/`).
   `scripts/update-cloudflare-ips.sh`. Makes nginx honour `CF-Connecting-IP` only
   when the TCP peer is a Cloudflare edge, so a direct-to-origin request cannot
   forge its source IP.
+- `conf.d/cloudflare-origin-guard.conf` — generated from the same official
+  ranges. It classifies the original TCP peer for Cloudflare-only TLS vhosts.
 
 ## tor/
 - `torrc-swift-hiddenservice.conf` — the lines appended to `/etc/tor/torrc` that
