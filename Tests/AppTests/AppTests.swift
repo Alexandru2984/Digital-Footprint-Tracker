@@ -889,6 +889,21 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testWebhookRejectsEmbeddedCredentials() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "webhook-url-user")
+
+        try await app.test(.POST, "/auth/webhook", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode([
+                "webhookURL": "https://token:secret@example.com/delivery",
+            ], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+    }
+
     // MARK: - OSINT engine: plugin metadata coherence
 
     // Every shipping plugin must declare an honest description — not the

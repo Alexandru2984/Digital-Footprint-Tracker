@@ -116,7 +116,7 @@ enum ScanPluginRunner {
                    let hookURL = user.webhookURL {
                     let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
                     let risk = RiskScorer.compute(results: allResults)
-                    await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, logger: app.logger)
+                    await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, app: app)
                 }
             }
         } catch {
@@ -245,10 +245,11 @@ enum ScanPluginRunner {
         try await result.save(on: db)
     }
 
-    private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, logger: Logger) async {
+    private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, app: Application) async {
         guard let hookURL = URL(string: url) else { return }
+        let destination = redactedDestination(hookURL)
         guard !SSRFGuard.isInternalURL(hookURL) else {
-            logger.warning("Webhook delivery to \(url) blocked: internal/private target.")
+            app.logger.warning("Webhook delivery to \(destination) blocked: internal/private target.")
             return
         }
         let payload: [String: Any] = [
@@ -267,9 +268,16 @@ enum ScanPluginRunner {
             // hosts, on top of the structural guard above.
             try await SafeHTTP.shared.post(url: hookURL, body: body)
         } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
-            logger.warning("Webhook delivery to \(url) blocked: resolved to an internal address.")
+            app.logger.warning("Webhook delivery to \(destination) blocked: resolved to an internal address.")
         } catch {
-            logger.warning("Webhook delivery to \(url) failed: \(error)")
+            app.logger.warning("Webhook delivery to \(destination) failed: \(error)")
         }
+    }
+
+    /// Never include a webhook's path, query, fragment, or user-info in logs:
+    /// those components commonly carry bot tokens and signing secrets.
+    private static func redactedDestination(_ url: URL) -> String {
+        guard let scheme = url.scheme, let host = url.host else { return "invalid-destination" }
+        return "\(scheme.lowercased())://\(host.lowercased())\(url.port.map { ":\($0)" } ?? "")"
     }
 }
