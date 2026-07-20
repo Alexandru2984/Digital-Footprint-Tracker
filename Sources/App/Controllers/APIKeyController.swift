@@ -51,7 +51,7 @@ struct APIKeyController: RouteCollection {
         let key = APIKey(userID: user.id!, keyHash: hash, label: label,
                          scopes: scopes, expiresAt: expiresAt)
         try await key.save(on: req.db)
-        AuditLogger.log(req: req, action: "api_key_created", target: label)
+        await AuditLogger.log(req: req, action: "api_key_created", target: label)
         return APIKey.Created(
             id: key.id,
             label: key.label,
@@ -70,7 +70,7 @@ struct APIKeyController: RouteCollection {
         guard key.$user.id == user.id! else { throw Abort(.forbidden) }
         let label = key.label
         try await key.delete(on: req.db)
-        AuditLogger.log(req: req, action: "api_key_deleted", target: label)
+        await AuditLogger.log(req: req, action: "api_key_deleted", target: label)
         return .noContent
     }
 }

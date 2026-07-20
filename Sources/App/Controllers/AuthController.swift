@@ -93,14 +93,14 @@ struct AuthController: RouteCollection {
         let hash = try await req.password.async.hash(body.password)
         let user = User(username: body.username, email: normalizedEmail, passwordHash: hash)
         try await user.save(on: req.db)
+        guard let userID = user.id else { throw Abort(.internalServerError) }
 
-        AuditLogger.log(req: req, action: "register", target: body.username)
+        await AuditLogger.log(req: req, userID: userID, action: "register", target: body.username)
 
         // Issue an email-verification token (raw in the email, hash at rest) and
         // send the link. Best-effort: a mail failure must not fail registration.
         await sendVerificationEmail(for: user, req: req)
 
-        guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
 
         return user.toPublic()
@@ -146,7 +146,7 @@ struct AuthController: RouteCollection {
             user.emailVerificationToken = nil
             user.emailVerificationExpires = nil
             try await user.save(on: req.db)
-            AuditLogger.log(req: req, action: "email_verified", target: user.username)
+            await AuditLogger.log(req: req, action: "email_verified", target: user.username)
             ok = true
         } else {
             ok = false
@@ -210,7 +210,7 @@ struct AuthController: RouteCollection {
 
         guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
-        AuditLogger.log(req: req, action: "login", target: body.username)
+        await AuditLogger.log(req: req, action: "login", target: body.username)
         return LoginResponse(twoFactorRequired: false, user: user.toPublic())
     }
 
@@ -235,7 +235,7 @@ struct AuthController: RouteCollection {
             }
         }
         SessionSecurity.markReauthenticated(on: req)
-        AuditLogger.log(req: req, action: "reauthenticate", target: user.username)
+        await AuditLogger.log(req: req, action: "reauthenticate", target: user.username)
         return .noContent
     }
 
@@ -264,7 +264,7 @@ struct AuthController: RouteCollection {
         }
         user.webhookURL = (url?.isEmpty == false) ? url : nil
         try await user.save(on: req.db)
-        AuditLogger.log(req: req, action: "update_webhook", target: user.username)
+        await AuditLogger.log(req: req, action: "update_webhook", target: user.username)
         return user.toPublic()
     }
     @Sendable
@@ -279,7 +279,7 @@ struct AuthController: RouteCollection {
         }
         user.retentionDays = body.retentionDays
         try await user.save(on: req.db)
-        AuditLogger.log(req: req, action: "update_retention", target: user.username)
+        await AuditLogger.log(req: req, action: "update_retention", target: user.username)
         return user.toPublic()
     }
 
@@ -319,7 +319,7 @@ struct AuthController: RouteCollection {
         user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
         if let verbose = body.verboseAlerts { user.verboseAlerts = verbose }
         try await user.save(on: req.db)
-        AuditLogger.log(req: req, action: "update_settings", target: user.username)
+        await AuditLogger.log(req: req, action: "update_settings", target: user.username)
         return user.toPublic()
     }
 

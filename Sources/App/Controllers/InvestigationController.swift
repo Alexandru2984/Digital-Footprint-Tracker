@@ -99,7 +99,7 @@ struct InvestigationController: RouteCollection {
         let data = try Self.validData(body.data ?? #"{"nodes":[],"edges":[]}"#)
         let inv = Investigation(userID: user.id!, name: name, data: data)
         try await inv.save(on: req.db)
-        AuditLogger.log(req: req, action: "investigation_create", target: name)
+        await AuditLogger.log(req: req, action: "investigation_create", target: name)
         return full(inv)
     }
 
@@ -174,11 +174,11 @@ struct InvestigationController: RouteCollection {
             inv.watched = true
             inv.watchInterval = (body.interval == "weekly") ? "weekly" : "daily"
             inv.nextCheckAt = Date().addingTimeInterval(300)
-            AuditLogger.log(req: req, action: "investigation_watch_on", target: inv.name)
+            await AuditLogger.log(req: req, action: "investigation_watch_on", target: inv.name)
         } else {
             inv.watched = false
             inv.nextCheckAt = nil
-            AuditLogger.log(req: req, action: "investigation_watch_off", target: inv.name)
+            await AuditLogger.log(req: req, action: "investigation_watch_off", target: inv.name)
         }
         try await inv.save(on: req.db)
         return full(inv)

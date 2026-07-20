@@ -23,7 +23,7 @@ struct AccountController: RouteCollection {
     func exportAll(req: Request) async throws -> Response {
         let user = try await req.requireRecentSessionUser()
         guard let userID = user.id else { throw Abort(.internalServerError) }
-        AuditLogger.log(req: req, action: "account_export", target: user.username)
+        await AuditLogger.log(req: req, action: "account_export", target: user.username)
 
         // Profile — never include the password hash or the encrypted Telegram
         // token. Both are at-rest secrets that should never leave the box.
@@ -181,39 +181,46 @@ struct AccountController: RouteCollection {
 
         // Log BEFORE the row vanishes so the operator's audit trail still
         // captures who initiated the deletion, from where, and when.
-        AuditLogger.log(req: req, action: "account_deleted", target: user.username)
+        await AuditLogger.log(req: req, action: "account_deleted", target: user.username)
 
-        // FK cascade summary:
-        //   scheduled_scans, scan_notifications, tags, api_keys → CASCADE
-        //   scans.user_id                                       → SET NULL (default)
-        // For GDPR we want a real delete on scans too, otherwise the user's
-        // search history (input strings) lives on attached to NULL forever.
-        // Sequence below cleans up the SET-NULL holes before dropping the user.
-        let userScans = try await Scan.query(on: req.db)
-            .filter(\.$user.$id == userID)
-            .all()
-        let scanIDs = userScans.compactMap { $0.id }
+        let redactedTarget = FieldCrypto.encrypt("[deleted-account]")
+        let redactedIP = FieldCrypto.encrypt("[deleted]")
+        try await req.db.transaction { database in
+            // FK cascade summary:
+            //   scheduled_scans, notifications, tags, API keys,
+            //   investigations                                  → CASCADE
+            //   scans.user_id                                    → SET NULL
+            // For erasure we delete scans before the user, otherwise their
+            // encrypted targets would survive as anonymous history.
+            let userScans = try await Scan.query(on: database)
+                .filter(\.$user.$id == userID)
+                .all()
+            let scanIDs = userScans.compactMap { $0.id }
 
-        // shared_reports has no FK to scans, so it would point at orphans.
-        if !scanIDs.isEmpty {
-            try await SharedReport.query(on: req.db)
-                .filter(\.$scanID ~~ scanIDs)
-                .delete()
-            // Results cascade with scans (CreateResult migration). Tag links
-            // (scan_tags) cascade with scans too.
-            try await Scan.query(on: req.db)
-                .filter(\.$id ~~ scanIDs)
-                .delete()
+            if !scanIDs.isEmpty {
+                // Defense for databases that predate the cascading shared-report
+                // migration. On updated schemas this is harmlessly redundant.
+                try await SharedReport.query(on: database)
+                    .filter(\.$scanID ~~ scanIDs)
+                    .delete()
+                // Results, tag links, and current share links cascade with scans.
+                try await Scan.query(on: database)
+                    .filter(\.$id ~~ scanIDs)
+                    .delete()
+            }
+
+            // Retain only non-identifying action/timestamp evidence. Detaching
+            // user_id alone was insufficient because target and IP still named
+            // the deleted person/account.
+            try await AuditLog.query(on: database)
+                .filter(\.$userID == userID)
+                .set(\.$userID, to: nil)
+                .set(\.$targetCipher, to: redactedTarget)
+                .set(\.$ipCipher, to: redactedIP)
+                .update()
+
+            try await user.delete(on: database)
         }
-
-        // Audit logs: keep the rows for compliance / abuse forensics, but
-        // detach the user_id so they no longer identify the deleted account.
-        try await AuditLog.query(on: req.db)
-            .filter(\.$userID == userID)
-            .set(\.$userID, to: nil)
-            .update()
-
-        try await user.delete(on: req.db)
 
         req.session.destroy()
         return .noContent

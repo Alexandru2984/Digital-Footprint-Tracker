@@ -1979,6 +1979,49 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testAccountDeleteIsAtomicAndPseudonymizesRetainedAudit() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "erase-user")
+
+        let userCandidate = try await User.query(on: app.db)
+            .filter(\.$username == "erase-user")
+            .first()
+        let user = try XCTUnwrap(userCandidate)
+        let userID = try XCTUnwrap(user.id)
+        let scan = Scan(input: "erasure-target", status: .completed, userID: userID)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let share = SharedReport(
+            scanID: scanID,
+            tokenHash: sha256Hex("abcdefghijklmnopqrstuvwxyzABCDEF")
+        )
+        try await share.save(on: app.db)
+
+        try await app.test(.DELETE, "/account", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode([
+                "confirmUsername": "erase-user",
+                "password": "Xk9mQ2vLp7wZ",
+            ], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .noContent)
+        })
+
+        let deletedUser = try await User.find(userID, on: app.db)
+        let deletedScan = try await Scan.find(scanID, on: app.db)
+        let remainingShares = try await SharedReport.query(on: app.db).count()
+        XCTAssertNil(deletedUser)
+        XCTAssertNil(deletedScan)
+        XCTAssertEqual(remainingShares, 0)
+
+        let retainedAudit = try await AuditLog.query(on: app.db).all()
+        XCTAssertFalse(retainedAudit.isEmpty)
+        XCTAssertTrue(retainedAudit.allSatisfy { $0.userID == nil })
+        XCTAssertTrue(retainedAudit.allSatisfy { $0.target == "[deleted-account]" })
+        XCTAssertTrue(retainedAudit.allSatisfy { $0.ip == "[deleted]" })
+    }
+
     // MARK: - TOTP (2FA)
 
     func testTOTPGenerateVerifyRoundTrip() throws {

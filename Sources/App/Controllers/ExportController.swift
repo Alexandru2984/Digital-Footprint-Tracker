@@ -20,7 +20,7 @@ struct ExportController: RouteCollection {
         // Owned scans are owner-only; anonymous scans are readable by anyone
         // holding the unguessable scanID (capability access).
         try await scan.authorizeRead(req)
-        AuditLogger.log(req: req, action: "export_json", target: scan.input)
+        await AuditLogger.log(req: req, action: "export_json", target: scan.input)
 
         let risk = RiskScorer.compute(results: scan.results)
         let payload: [String: Any] = [
@@ -62,7 +62,7 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        AuditLogger.log(req: req, action: "export_graphml", target: scan.input)
+        await AuditLogger.log(req: req, action: "export_graphml", target: scan.input)
 
         let xml = IdentityGraph.graphml(from: scan.synthesizedIdentity(), target: scan.input)
         var headers = HTTPHeaders()
@@ -83,7 +83,7 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        AuditLogger.log(req: req, action: "export_report", target: scan.input)
+        await AuditLogger.log(req: req, action: "export_report", target: scan.input)
 
         let (profile, surface) = Self.reportModel(for: scan)
         let md = ExecutiveReport.markdown(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
@@ -104,7 +104,7 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        AuditLogger.log(req: req, action: "export_report_html", target: scan.input)
+        await AuditLogger.log(req: req, action: "export_report_html", target: scan.input)
 
         let (profile, surface) = Self.reportModel(for: scan)
         let html = ExecutiveReportHTML.html(input: scan.input, profile: profile, surface: surface, generatedAt: Date())

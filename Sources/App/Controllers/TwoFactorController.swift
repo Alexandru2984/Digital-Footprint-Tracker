@@ -68,7 +68,7 @@ struct TwoFactorController: RouteCollection {
         }
         user.totpEnabled = true
         try await user.save(on: req.db)
-        AuditLogger.log(req: req, action: "2fa_enabled", target: user.username)
+        await AuditLogger.log(req: req, action: "2fa_enabled", target: user.username)
         return EnableResponse(recoveryCodes: codes)
     }
 
@@ -86,7 +86,7 @@ struct TwoFactorController: RouteCollection {
         user.totpRecoveryCodes = nil
         try await user.save(on: req.db)
         SessionSecurity.markReauthenticated(on: req)
-        AuditLogger.log(req: req, action: "2fa_disabled", target: user.username)
+        await AuditLogger.log(req: req, action: "2fa_disabled", target: user.username)
         return user.toPublic()
     }
 
@@ -118,7 +118,7 @@ struct TwoFactorController: RouteCollection {
 
         guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
-        AuditLogger.log(req: req, action: "login_2fa", target: user.username)
+        await AuditLogger.log(req: req, action: "login_2fa", target: user.username)
         return user.toPublic()
     }
 

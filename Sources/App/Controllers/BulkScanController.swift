@@ -73,7 +73,7 @@ struct BulkScanController: RouteCollection {
             let scan = Scan(input: target, userID: userID)
             try await scan.save(on: req.db)
             guard let scanID = scan.id else { continue }
-            AuditLogger.log(req: req, action: "bulk_scan_start", target: String(target.prefix(100)))
+            await AuditLogger.log(req: req, action: "bulk_scan_start", target: String(target.prefix(100)))
             await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
 
             let pluginsCopy = activePlugins

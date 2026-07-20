@@ -121,7 +121,7 @@ struct ShareController: RouteCollection {
             }
             try await share.save(on: database)
         }
-        AuditLogger.log(req: req, action: "share_created", target: scanID.uuidString)
+        await AuditLogger.log(req: req, action: "share_created", target: scanID.uuidString)
 
         let baseURL = Environment.get("BASE_URL") ?? "https://swift.micutu.com"
         return ShareResponse(
@@ -178,7 +178,7 @@ struct ShareController: RouteCollection {
             throw Abort(.forbidden)
         }
         try await share.delete(on: req.db)
-        AuditLogger.log(req: req, action: "share_deleted", target: share.scanID.uuidString)
+        await AuditLogger.log(req: req, action: "share_deleted", target: share.scanID.uuidString)
         return .noContent
     }
 
