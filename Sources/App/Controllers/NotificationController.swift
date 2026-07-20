@@ -49,11 +49,11 @@ struct NotificationController: RouteCollection {
 
     @Sendable func markAllRead(req: Request) async throws -> HTTPStatus {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
-        let unread = try await ScanNotification.query(on: req.db)
+        try await ScanNotification.query(on: req.db)
             .filter(\.$user.$id == user.id!)
             .filter(\.$isRead == false)
-            .all()
-        for n in unread { n.isRead = true; try await n.save(on: req.db) }
+            .set(\.$isRead, to: true)
+            .update()
         return .ok
     }
 }

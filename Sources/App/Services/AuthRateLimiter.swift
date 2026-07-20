@@ -12,15 +12,19 @@ final class AuthRateLimiter: AsyncMiddleware {
 
     private let maxAttempts: Int
     private let windowSeconds: TimeInterval
+    private let maxTrackedKeys: Int
     private let lock = NIOLock()
     private var entries: [String: Entry] = [:]
 
     /// - Parameters:
     ///   - maxAttempts: Maximum number of requests per window (default: 10).
     ///   - windowSeconds: Rolling window length in seconds (default: 300 = 5 min).
-    init(maxAttempts: Int = 10, windowSeconds: TimeInterval = 300) {
+    init(maxAttempts: Int = 10, windowSeconds: TimeInterval = 300,
+         maxTrackedKeys: Int = 10_000) {
+        precondition(maxTrackedKeys > 0)
         self.maxAttempts = maxAttempts
         self.windowSeconds = windowSeconds
+        self.maxTrackedKeys = maxTrackedKeys
     }
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
@@ -28,18 +32,18 @@ final class AuthRateLimiter: AsyncMiddleware {
 
         let now = Date()
         let allowed: Bool = lock.withLock {
+            if entries[ip] == nil, entries.count >= maxTrackedKeys {
+                entries = entries.filter {
+                    now.timeIntervalSince($0.value.windowStart) < windowSeconds
+                }
+                guard entries.count < maxTrackedKeys else { return false }
+            }
             var entry = entries[ip] ?? Entry(count: 0, windowStart: now)
             if now.timeIntervalSince(entry.windowStart) >= windowSeconds {
                 entry = Entry(count: 0, windowStart: now)
             }
             entry.count += 1
             entries[ip] = entry
-
-            if entries.count > 1000 {
-                entries = entries.filter {
-                    now.timeIntervalSince($0.value.windowStart) < windowSeconds
-                }
-            }
 
             return entry.count <= maxAttempts
         }

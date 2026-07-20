@@ -49,6 +49,11 @@ struct MigrateSensitiveFieldEncryption: AsyncMigration {
             try await notification.save(on: database)
         }
 
+        for tag in try await Tag.query(on: database).all() {
+            tag.name = tag.name
+            try await tag.save(on: database)
+        }
+
         for entry in try await AuditLog.query(on: database).all() {
             entry.target = entry.target
             entry.ip = entry.ip

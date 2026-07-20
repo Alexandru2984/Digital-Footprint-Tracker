@@ -69,6 +69,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddWatchToInvestigations())
     app.migrations.add(CreateEncryptionMetadata())
     app.migrations.add(MigrateSensitiveFieldEncryption())
+    app.migrations.add(EncryptTagNames())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
@@ -151,6 +152,32 @@ final class AppTests: XCTestCase {
         )
         XCTAssertTrue(timedOut.timedOut)
         XCTAssertFalse(timedOut.succeeded)
+    }
+
+    func testRateLimiterKeyStoresFailClosedAtCapacity() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.grouped(ScanRateLimiter(
+            anonMax: 10, authedMax: 10, windowSeconds: 60, maxTrackedKeys: 2
+        )).get("_test", "scan-limiter-cap") { _ in HTTPStatus.ok }
+        app.grouped(AuthRateLimiter(
+            maxAttempts: 10, windowSeconds: 60, maxTrackedKeys: 2
+        )).get("_test", "auth-limiter-cap") { _ in HTTPStatus.ok }
+
+        for path in ["/_test/scan-limiter-cap", "/_test/auth-limiter-cap"] {
+            for address in ["198.51.100.1", "198.51.100.2"] {
+                try await app.test(.GET, path, beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-Real-IP", value: address)
+                }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+            }
+            try await app.test(.GET, path, beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "X-Real-IP", value: "198.51.100.3")
+            }, afterResponse: { res in XCTAssertEqual(res.status, .tooManyRequests) })
+            // Existing keys remain serviceable while unseen keys fail closed.
+            try await app.test(.GET, path, beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "X-Real-IP", value: "198.51.100.1")
+            }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        }
     }
 
     // MARK: - Session and step-up authentication
@@ -1048,10 +1075,58 @@ final class AppTests: XCTestCase {
 
         let storedScan = try await Scan.find(id, on: app.db)
         let scan = try XCTUnwrap(storedScan)
+        let ownerID = try XCTUnwrap(scan.$user.id)
+        try await ScanNotification(
+            userID: ownerID,
+            scanID: id,
+            message: "Sensitive target notification",
+            newResultsCount: 1
+        ).save(on: app.db)
         try await scan.delete(on: app.db)
         let remainingShares = try await SharedReport.query(on: app.db).count()
+        let remainingNotifications = try await ScanNotification.query(on: app.db).count()
         XCTAssertEqual(remainingShares, 0,
                        "Deleting a scan must revoke and remove all of its share links")
+        XCTAssertEqual(remainingNotifications, 0,
+                       "Deleting a scan must remove notifications that describe its target")
+    }
+
+    func testTagQuotasAndDuplicatePolicyAreEnforced() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "tag-quota-user")
+        let userCandidate = try await User.query(on: app.db)
+            .filter(\.$username == "tag-quota-user")
+            .first()
+        let userID = try XCTUnwrap(try XCTUnwrap(userCandidate).id)
+
+        var tags: [Tag] = []
+        for index in 0..<TagController.maxTagsPerUser {
+            let tag = Tag(userID: userID, name: "tag-\(index)", colour: "#112233")
+            try await tag.save(on: app.db)
+            tags.append(tag)
+        }
+        try await app.test(.POST, "/tags", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["name": "over-quota", "colour": "#445566"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .tooManyRequests) })
+
+        try await tags.removeLast().delete(on: app.db)
+        try await app.test(.POST, "/tags", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["name": "TAG-0", "colour": "#445566"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .conflict) })
+
+        let scan = Scan(input: "tag-quota-target", status: .completed, userID: userID)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        for tag in tags.prefix(TagController.maxTagsPerScan) {
+            try await ScanTag(scanID: scanID, tagID: try XCTUnwrap(tag.id)).save(on: app.db)
+        }
+        let extraTagID = try XCTUnwrap(tags[TagController.maxTagsPerScan].id)
+        try await app.test(.POST, "/scans/\(scanID)/tags/\(extraTagID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .tooManyRequests) })
     }
 
     // MARK: - OSINT engine: plugin metadata coherence

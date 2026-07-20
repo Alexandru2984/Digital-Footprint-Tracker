@@ -13,13 +13,17 @@ final class ScanRateLimiter: AsyncMiddleware {
     private let anonMax: Int
     private let authedMax: Int
     private let windowSeconds: TimeInterval
+    private let maxTrackedKeys: Int
     private let lock = NIOLock()
     private var entries: [String: Entry] = [:]
 
-    init(anonMax: Int = 3, authedMax: Int = 10, windowSeconds: TimeInterval = 60) {
+    init(anonMax: Int = 3, authedMax: Int = 10,
+         windowSeconds: TimeInterval = 60, maxTrackedKeys: Int = 10_000) {
+        precondition(maxTrackedKeys > 0)
         self.anonMax = anonMax
         self.authedMax = authedMax
         self.windowSeconds = windowSeconds
+        self.maxTrackedKeys = maxTrackedKeys
     }
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
@@ -33,19 +37,20 @@ final class ScanRateLimiter: AsyncMiddleware {
 
         let now = Date()
         let allowed: Bool = lock.withLock {
+            if entries[key] == nil, entries.count >= maxTrackedKeys {
+                entries = entries.filter {
+                    now.timeIntervalSince($0.value.windowStart) < windowSeconds
+                }
+                // During a distributed-source flood, fail closed for new keys
+                // instead of letting the limiter dictionary grow without bound.
+                guard entries.count < maxTrackedKeys else { return false }
+            }
             var entry = entries[key] ?? Entry(count: 0, windowStart: now)
             if now.timeIntervalSince(entry.windowStart) >= windowSeconds {
                 entry = Entry(count: 0, windowStart: now)
             }
             entry.count += 1
             entries[key] = entry
-
-            // Lazily prune expired entries to prevent unbounded growth.
-            if entries.count > 500 {
-                entries = entries.filter {
-                    now.timeIntervalSince($0.value.windowStart) < windowSeconds
-                }
-            }
 
             return entry.count <= maxForKey
         }

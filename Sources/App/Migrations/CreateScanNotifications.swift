@@ -5,7 +5,7 @@ struct CreateScanNotifications: AsyncMigration {
         try await database.schema("scan_notifications")
             .id()
             .field("user_id", .uuid, .required, .references("users", "id", onDelete: .cascade))
-            .field("scan_id", .uuid, .required)
+            .field("scan_id", .uuid, .required, .references("scans", "id", onDelete: .cascade))
             .field("message", .string, .required)
             .field("new_results_count", .int, .required)
             .field("is_read", .bool, .required)

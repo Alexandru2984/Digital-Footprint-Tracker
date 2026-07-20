@@ -6,7 +6,11 @@ final class Tag: Model, Content {
 
     @ID(key: .id) var id: UUID?
     @Parent(key: "user_id") var user: User
-    @Field(key: "name") var name: String
+    @Field(key: "name") var nameCipher: String
+    var name: String {
+        get { FieldCrypto.decryptStored(nameCipher) }
+        set { nameCipher = FieldCrypto.encrypt(newValue) }
+    }
     @Field(key: "colour") var colour: String
     @Siblings(through: ScanTag.self, from: \.$tag, to: \.$scan) var scans: [Scan]
 
