@@ -49,3 +49,11 @@ you change the live config (or regenerate with the scripts under `scripts/`).
 ## Regeneration
 - Cloudflare ranges: `scripts/update-cloudflare-ips.sh` (validate + reload + rollback).
 - CSP script-src hashes: `scripts/update-csp-hashes.sh` (run by `scripts/deploy.sh`).
+
+## CI deploy trust
+
+The production GitHub Environment must define `DEPLOY_HOST_KEY` as one complete
+OpenSSH `known_hosts` line (`[host]:port key-type base64-key`). Obtain the public
+host key or its fingerprint directly from `/etc/ssh/ssh_host_*_key.pub` through
+an already trusted VPS session and compare it out-of-band. Do not populate this
+secret with a fresh `ssh-keyscan` over the network being authenticated.
