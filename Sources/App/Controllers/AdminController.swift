@@ -18,6 +18,24 @@ struct DashboardResponse: Content {
     let topPlugins: [PluginStat]
 }
 
+struct AuditLogDTO: Content {
+    let id: UUID?
+    let userID: UUID?
+    let action: String
+    let target: String
+    let ip: String
+    let createdAt: Date?
+
+    init(_ entry: AuditLog) {
+        id = entry.id
+        userID = entry.userID
+        action = entry.action
+        target = entry.target
+        ip = entry.ip
+        createdAt = entry.createdAt
+    }
+}
+
 struct AdminController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
@@ -92,12 +110,13 @@ struct AdminController: RouteCollection {
     }
 
     @Sendable
-    func auditLog(req: Request) async throws -> Page<AuditLog> {
+    func auditLog(req: Request) async throws -> Page<AuditLogDTO> {
         guard let user = try await req.currentUser(), user.isAdmin else {
             throw Abort(.forbidden)
         }
-        return try await AuditLog.query(on: req.db)
+        let page = try await AuditLog.query(on: req.db)
             .sort(\.$createdAt, .descending)
             .paginate(for: req)
+        return Page(items: page.items.map(AuditLogDTO.init), metadata: page.metadata)
     }
 }

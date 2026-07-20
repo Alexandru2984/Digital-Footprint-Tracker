@@ -30,7 +30,7 @@ services:
       ADMIN_EMAIL:    ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
 
-      # Token encryption (API keys + integration secrets). 64 hex chars.
+      # Required sensitive-field encryption master key. Exactly 64 hex chars.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
 
       # CORS / cookie origin — must match how users reach the app.

@@ -8,7 +8,7 @@ import Vapor
 /// encrypted at rest via `FieldCrypto` — it names WHO/WHAT is under investigation
 /// (emails, usernames, domains), the most sensitive metadata in the app. Owner-only:
 /// there are no anonymous boards.
-final class Investigation: Model, Content {
+final class Investigation: Model {
     static let schema = "investigations"
 
     @ID(key: .id)
@@ -18,7 +18,11 @@ final class Investigation: Model, Content {
     var user: User
 
     @Field(key: "name")
-    var name: String
+    var nameCipher: String
+    var name: String {
+        get { FieldCrypto.decryptStored(nameCipher) }
+        set { nameCipher = FieldCrypto.encrypt(newValue) }
+    }
 
     /// Ciphertext at rest — the graph JSON. Read/written via the `data` accessor.
     @Field(key: "data")
@@ -26,7 +30,7 @@ final class Investigation: Model, Content {
 
     /// Plaintext view of the graph JSON (decrypts on read, encrypts on write).
     var data: String {
-        get { FieldCrypto.decrypt(dataCipher) ?? dataCipher }
+        get { FieldCrypto.decryptStored(dataCipher) }
         set { dataCipher = FieldCrypto.encrypt(newValue) }
     }
 

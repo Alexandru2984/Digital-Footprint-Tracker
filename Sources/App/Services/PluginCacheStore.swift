@@ -1,6 +1,5 @@
 import Vapor
 import Fluent
-import Crypto
 import Foundation
 
 /// Cross-plugin result cache. Each (plugin, target) pair is stored once and
@@ -8,7 +7,7 @@ import Foundation
 /// repeated scans of the same target.
 ///
 /// Design:
-///   • Cache key = (plugin_name, sha256(lowercased + trimmed input)).
+///   • Cache key = (plugin_name, HMAC-SHA256(lowercased + trimmed input)).
 ///   • TTL is supplied by the caller from the plugin's own `cacheTTL` property
 ///     (see `FootprintPlugin`). It used to live in a central name→TTL map here,
 ///     which silently fell back to the default whenever a plugin's `name` didn't
@@ -29,8 +28,7 @@ enum PluginCacheStore {
     /// Normalize before hashing so "user@x.com" and "  USER@X.com " share a cache row.
     private static func hash(_ input: String) -> String {
         let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let digest = SHA256.hash(data: Data(normalized.utf8))
-        return digest.compactMap { String(format: "%02x", $0) }.joined()
+        return FieldCrypto.blindIndex(normalized)
     }
 
     /// Returns cached results if the entry exists and hasn't expired, else nil.
@@ -45,7 +43,15 @@ enum PluginCacheStore {
                     .first()
                 else { return nil }
                 guard entry.expiresAt > Date() else { return nil }
-                guard let data = entry.payload.data(using: .utf8),
+                let payload: String
+                if let decrypted = TokenEncryption.decrypt(entry.payload) {
+                    payload = decrypted
+                } else if TokenEncryption.isEncryptedEnvelope(entry.payload) {
+                    return nil
+                } else {
+                    payload = entry.payload // legacy plaintext cache row
+                }
+                guard let data = payload.data(using: .utf8),
                       let decoded = try? JSONDecoder().decode([PluginResult].self, from: data)
                 else { return nil }
                 return decoded
@@ -71,8 +77,9 @@ enum PluginCacheStore {
         guard isEnabled else { return }
         let h = hash(input)
         guard let body = try? JSONEncoder().encode(results),
-              let payload = String(data: body, encoding: .utf8)
+              let plaintext = String(data: body, encoding: .utf8)
         else { return }
+        let payload = FieldCrypto.encrypt(plaintext)
         let expires = Date().addingTimeInterval(ttl)
 
         // Delete-then-insert keeps the upsert dialect-neutral. The unique

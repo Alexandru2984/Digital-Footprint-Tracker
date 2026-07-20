@@ -9,6 +9,11 @@ public func configure(_ app: Application) async throws {
     // Prevent SIGPIPE from crashing the server when a client disconnects
     // mid-write (common on Linux with long-lived connections).
     signal(SIGPIPE, SIG_IGN)
+
+    // A live deployment must never persist sensitive fields in plaintext merely
+    // because ENCRYPTION_KEY is absent or malformed. Validate before connecting,
+    // migrating, seeding, or serving any request.
+    try TokenEncryption.validateConfiguration(required: app.environment == .production)
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment == .production {
@@ -92,6 +97,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
+    app.migrations.add(CreateEncryptionMetadata())
+    app.migrations.add(MigrateSensitiveFieldEncryption())
     // Session storage table — required by `.fluent` session driver above.
     app.migrations.add(SessionRecord.migration)
     // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
@@ -100,6 +107,7 @@ public func configure(_ app: Application) async throws {
 
     // Run migrations automatically
     try await app.autoMigrate()
+    try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
 
     // Seed admin user from environment variables if not already present.
     let adminUsername = Environment.get("ADMIN_USERNAME") ?? "admin"

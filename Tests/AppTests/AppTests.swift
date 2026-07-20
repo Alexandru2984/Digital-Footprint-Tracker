@@ -3,6 +3,11 @@ import XCTVapor
 import Fluent
 import FluentSQLiteDriver
 @testable import App
+#if canImport(Glibc)
+import Glibc
+#else
+import Darwin
+#endif
 
 // Builds a fresh in-memory app for each test so tests are fully isolated.
 // SQLite is used instead of PostgreSQL to avoid a live database dependency.
@@ -54,6 +59,8 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
+    app.migrations.add(CreateEncryptionMetadata())
+    app.migrations.add(MigrateSensitiveFieldEncryption())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
@@ -62,6 +69,71 @@ private func makeApp() async throws -> Application {
 }
 
 final class AppTests: XCTestCase {
+
+    // MARK: - Sensitive-field encryption
+
+    func testSensitiveFieldEncryptionEnvelopeRoundTrip() throws {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        setenv("ENCRYPTION_KEY", String(repeating: "ab", count: 32), 1)
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+        }
+
+        try TokenEncryption.validateConfiguration(required: true)
+        let ciphertext = try TokenEncryption.encrypt("person@example.com")
+        XCTAssertTrue(ciphertext.hasPrefix("enc:v1:"))
+        XCTAssertFalse(ciphertext.contains("person@example.com"))
+        XCTAssertEqual(TokenEncryption.decrypt(ciphertext), "person@example.com")
+
+        let scan = Scan(input: "person@example.com")
+        XCTAssertTrue(scan.inputCipher.hasPrefix("enc:v1:"))
+        XCTAssertEqual(scan.input, "person@example.com")
+
+        let user = User(username: "alice", email: "alice@example.com", passwordHash: "hash",
+                        webhookURL: "https://hooks.example.test/secret")
+        XCTAssertTrue(user.webhookURLCipher?.hasPrefix("enc:v1:") == true)
+        XCTAssertEqual(user.webhookURL, "https://hooks.example.test/secret")
+    }
+
+    func testEncryptionConfigurationRejectsMissingAndMalformedKeys() {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+        }
+
+        unsetenv("ENCRYPTION_KEY")
+        XCTAssertNoThrow(try TokenEncryption.validateConfiguration(required: false))
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true))
+
+        setenv("ENCRYPTION_KEY", "not-a-64-character-hex-key", 1)
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: false))
+    }
+
+    func testEncryptionKeyVerifierRejectsKeyReplacement() async throws {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        setenv("ENCRYPTION_KEY", String(repeating: "11", count: 32), 1)
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+        }
+
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.databases.use(.sqlite(.memory), as: .psql, isDefault: true)
+        app.migrations.add(CreateEncryptionMetadata())
+        try await app.autoMigrate()
+        try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
+
+        setenv("ENCRYPTION_KEY", String(repeating: "22", count: 32), 1)
+        do {
+            try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
+            XCTFail("A replacement encryption key must not pass the persistent key check")
+        } catch {
+            XCTAssertTrue(error is TokenEncryption.Error)
+        }
+    }
 
     // MARK: - Root route
 

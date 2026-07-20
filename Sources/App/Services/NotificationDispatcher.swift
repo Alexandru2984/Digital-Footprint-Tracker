@@ -64,9 +64,7 @@ struct NotificationDispatcher {
     }
 
     private static func sendTelegram(token: String, chatID: String, text: String, app: Application) async {
-        // Decrypt token if encryption is available; fall back to raw value for legacy plaintext tokens
-        let plainToken = TokenEncryption.decrypt(token) ?? token
-        guard let url = URL(string: "https://api.telegram.org/bot\(plainToken)/sendMessage") else { return }
+        guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendMessage") else { return }
         let payload: [String: Any] = ["chat_id": chatID, "text": text, "parse_mode": "Markdown"]
         await sendWebhook(url: url, payload: payload, app: app)
     }

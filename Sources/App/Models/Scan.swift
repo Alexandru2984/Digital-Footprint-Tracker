@@ -29,7 +29,7 @@ final class Scan: Model, Content {
     /// Plaintext view of the target. Decrypts on read (legacy plaintext rows fall
     /// through unchanged); on write, encrypts and refreshes the blind index.
     var input: String {
-        get { FieldCrypto.decrypt(inputCipher) ?? inputCipher }
+        get { FieldCrypto.decryptStored(inputCipher) }
         set {
             inputCipher = FieldCrypto.encrypt(newValue)
             inputHash = FieldCrypto.blindIndex(newValue)

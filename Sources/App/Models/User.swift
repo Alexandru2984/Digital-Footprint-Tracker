@@ -1,7 +1,7 @@
 import Fluent
 import Vapor
 
-final class User: Model, Content {
+final class User: Model {
     static let schema = "users"
 
     @ID(key: .id)
@@ -20,22 +20,42 @@ final class User: Model, Content {
     var isAdmin: Bool
 
     @OptionalField(key: "webhook_url")
-    var webhookURL: String?
+    var webhookURLCipher: String?
+    var webhookURL: String? {
+        get { webhookURLCipher.map(FieldCrypto.decryptStored) }
+        set { webhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     @OptionalField(key: "retention_days")
     var retentionDays: Int?
 
     @OptionalField(key: "discord_webhook_url")
-    var discordWebhookURL: String?
+    var discordWebhookURLCipher: String?
+    var discordWebhookURL: String? {
+        get { discordWebhookURLCipher.map(FieldCrypto.decryptStored) }
+        set { discordWebhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     @OptionalField(key: "telegram_bot_token")
-    var telegramBotToken: String?
+    var telegramBotTokenCipher: String?
+    var telegramBotToken: String? {
+        get { telegramBotTokenCipher.map(FieldCrypto.decryptStored) }
+        set { telegramBotTokenCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     @OptionalField(key: "telegram_chat_id")
-    var telegramChatID: String?
+    var telegramChatIDCipher: String?
+    var telegramChatID: String? {
+        get { telegramChatIDCipher.map(FieldCrypto.decryptStored) }
+        set { telegramChatIDCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     @OptionalField(key: "slack_webhook_url")
-    var slackWebhookURL: String?
+    var slackWebhookURLCipher: String?
+    var slackWebhookURL: String? {
+        get { slackWebhookURLCipher.map(FieldCrypto.decryptStored) }
+        set { slackWebhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     /// Opt-in: when true, the user receives a notification for every completed
     /// scheduled scan. When false (default), they're only notified when monitor
@@ -47,7 +67,11 @@ final class User: Model, Content {
     /// Base32 TOTP secret, encrypted at rest (see `TokenEncryption`). Set during
     /// setup; `totpEnabled` stays false until the user proves possession.
     @OptionalField(key: "totp_secret")
-    var totpSecret: String?
+    var totpSecretCipher: String?
+    var totpSecret: String? {
+        get { totpSecretCipher.map(FieldCrypto.decryptStored) }
+        set { totpSecretCipher = newValue.map(FieldCrypto.encrypt) }
+    }
 
     @Field(key: "totp_enabled")
     var totpEnabled: Bool

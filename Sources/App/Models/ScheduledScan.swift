@@ -1,14 +1,18 @@
 import Fluent
 import Vapor
 
-final class ScheduledScan: Model, Content {
+final class ScheduledScan: Model {
     static let schema = "scheduled_scans"
 
     enum Interval: String, Codable { case daily, weekly }
 
     @ID(key: .id) var id: UUID?
     @Parent(key: "user_id") var user: User
-    @Field(key: "input") var input: String
+    @Field(key: "input") var inputCipher: String
+    var input: String {
+        get { FieldCrypto.decryptStored(inputCipher) }
+        set { inputCipher = FieldCrypto.encrypt(newValue) }
+    }
     @Field(key: "interval") var interval: Interval
     @Field(key: "is_active") var isActive: Bool
     @OptionalField(key: "last_run_at") var lastRunAt: Date?

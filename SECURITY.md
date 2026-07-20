@@ -182,7 +182,9 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | **SMTP credentials visible in `ps`**         | curl invoked with `--netrc-file /tmp/smtp-<uuid>.netrc` (mode `0600`, deleted on `defer`); never `--user user:pass` in argv               | `Sources/App/Services/EmailService.swift`                                       |
 | API keys plaintext at rest                   | SHA-256 hashed; raw token shown once on creation                                                                                          | `HashAPIKeyColumn` migration; `APIKey.swift`                                    |
 | Share-link tokens plaintext at rest          | SHA-256 hashed                                                                                                                           | `HashSharedReportTokens` migration; `SharedReport.swift`                         |
-| Telegram bot tokens plaintext at rest        | AES-256-GCM with random nonce when `ENCRYPTION_KEY` is configured; **fail-closed** if key is set but invalid (refuses to save)            | `Sources/App/Services/TokenEncryption.swift`, `AuthController.updateSettings`   |
+| Sensitive fields plaintext at rest           | Versioned AES-256-GCM envelopes cover scan/result/board data, all notification credentials, schedules, notifications, audit details, and cache payloads; production refuses to boot without a valid key | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
+| Accidental encryption-key replacement        | Persistent encrypted key-check marker aborts startup when a different valid-looking key is supplied                                     | `EncryptionKeyVerifier`, `CreateEncryptionMetadata`                             |
+| Cache target dictionary attacks              | Normalized targets use HMAC-SHA256 blind indexes; payload JSON is encrypted                                                              | `PluginCacheStore`                                                              |
 | Secrets in app logs                          | PII masked at INFO: `***@domain.com` for emails, `use***` for usernames                                                                  | `ScanController.scan`                                                           |
 | Secrets in audit log                         | Audit log stores `action` + truncated `target` (200 chars) + IP — never request bodies, never tokens                                      | `Sources/App/Services/AuditLogger.swift`                                        |
 
@@ -360,10 +362,10 @@ For anyone deploying this stack on their own host:
 
 - [ ] `.env` permissions are `0600`
 - [ ] `ADMIN_PASSWORD` is a high-entropy value (not the example)
-- [ ] `ENCRYPTION_KEY`, if set, is exactly 64 hex characters (32 bytes).
-      Setting an invalid value is detected and the request to save
-      encrypted fields returns `500` rather than silently storing
-      plaintext.
+- [ ] `ENCRYPTION_KEY` is set to exactly 64 hex characters (32 bytes).
+      Production aborts startup when it is absent, malformed, or does not
+      match the persistent key-check marker. Back it up separately before
+      deployment; losing it makes encrypted data unrecoverable.
 - [ ] `ALLOWED_ORIGIN` in production matches the exact public origin
 - [ ] nginx CSP `script-src` SHA-256 hashes are regenerated after any
       change to the inline `<script>` block (see deployment notes in

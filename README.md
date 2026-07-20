@@ -164,7 +164,10 @@ PostgreSQL
 - Holehe subprocess bounded by a 60 s kill timer via `DispatchSemaphore`
 - PII masked in audit logs: `***@domain.com`, `use***`
 - **API keys & share-report tokens stored hashed**, never in plaintext
-- `TokenEncryption` service (AES-GCM) for sensitive at-rest secrets
+- Versioned AES-256-GCM envelopes for scan targets/results, investigation
+  boards, notification credentials, scheduler targets, notifications, audit
+  details, and plugin-cache payloads; production refuses to boot without a
+  valid `ENCRYPTION_KEY` and detects accidental key replacement
 - SMTP header-injection guard (CRLF stripped from `From` / `To` / `Subject`)
 - Per-user `retention_days` + daily `ScanCleanupLifecycle` (default 30 d)
 
@@ -343,6 +346,8 @@ Then update the `Content-Security-Policy` header in `/etc/nginx/sites-available/
 
 `scripts/backup.sh` runs `pg_dump | gzip` and writes a timestamped file to
 `/home/micu/swift-vapor-backups/`, rotating so the last 7 dumps are kept.
+Gzip is compression, not backup encryption; use encrypted storage or wrap the
+dump with a backup key that is not available to the application process.
 The accompanying `swift-vapor-backup.service` + `.timer` units run it daily
 at 02:00 UTC with a 10-minute jitter and `Persistent=true` so a missed run
 catches up on next boot.

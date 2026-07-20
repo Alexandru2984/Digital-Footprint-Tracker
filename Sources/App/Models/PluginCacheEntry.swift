@@ -1,14 +1,14 @@
 import Fluent
 import Vapor
 
-/// Cached plugin output keyed by (plugin name, sha256(normalized input)).
+/// Encrypted cached plugin output keyed by (plugin name, HMAC-SHA256(normalized input)).
 ///
 /// One row per (plugin, target) pair. The unique constraint on those two
 /// columns lets us upsert via delete-then-insert without a transaction race
 /// (the worst case is two concurrent scans both writing the same payload —
 /// the row content is identical, so the loser of the unique-conflict just
 /// retries inside the catch branch).
-final class PluginCacheEntry: Model, Content {
+final class PluginCacheEntry: Model {
     static let schema = "plugin_cache"
 
     @ID(key: .id)                              var id: UUID?

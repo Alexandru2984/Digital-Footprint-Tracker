@@ -47,13 +47,13 @@ final class Result: Model, Content {
     /// Plaintext view of the finding. Decrypts on read (falling back to the raw
     /// value for legacy plaintext rows), encrypts on write.
     var rawData: String {
-        get { Result.decryptField(rawDataCipher) ?? rawDataCipher }
+        get { FieldCrypto.decryptStored(rawDataCipher) }
         set { rawDataCipher = Result.encryptField(newValue) }
     }
 
     /// Plaintext view of the structured metadata JSON string.
     var metadata: String? {
-        get { metadataCipher.flatMap { Result.decryptField($0) ?? $0 } }
+        get { metadataCipher.map(FieldCrypto.decryptStored) }
         set { metadataCipher = newValue.map { Result.encryptField($0) } }
     }
 
@@ -78,9 +78,8 @@ final class Result: Model, Content {
 
     // MARK: - Field encryption helpers
 
-    /// Encrypt when a key is configured; otherwise store plaintext. Fail-open to
-    /// plaintext on an unexpected encrypt error so a background scan never loses a
-    /// finding (with a valid `ENCRYPTION_KEY` this path is unreachable).
+    /// Encrypt when a key is configured. Production requires a valid key at startup;
+    /// encryption errors fail closed before a finding can be persisted.
     static func encryptField(_ plaintext: String) -> String { FieldCrypto.encrypt(plaintext) }
 
     /// Returns plaintext if `stored` is decryptable ciphertext, else nil (caller

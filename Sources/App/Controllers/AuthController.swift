@@ -277,13 +277,6 @@ struct AuthController: RouteCollection {
         if let url = body.discordWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         if let url = body.slackWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         user.discordWebhookURL = body.discordWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.discordWebhookURL
-        // Encrypt Telegram token at rest. Behaviour matters:
-        //   • ENCRYPTION_KEY set + encrypt() succeeds  → store ciphertext (normal path)
-        //   • ENCRYPTION_KEY set + encrypt() throws    → 500, do NOT save (fail closed)
-        //   • ENCRYPTION_KEY missing entirely          → operator opt-out; store raw
-        // The previous `(try? encrypt) ?? raw` silently saved plaintext when
-        // the key was set but malformed — fail-open behaviour that defeats
-        // the at-rest encryption guarantee.
         if let rawToken = body.telegramBotToken {
             if rawToken.isEmpty {
                 user.telegramBotToken = nil
@@ -297,16 +290,9 @@ struct AuthController: RouteCollection {
                       rawToken.count <= 100 else {
                     throw Abort(.badRequest, reason: "Telegram bot token format is invalid (expected `<id>:<secret>`).")
                 }
-                if TokenEncryption.isAvailable() {
-                    do {
-                        user.telegramBotToken = try TokenEncryption.encrypt(rawToken)
-                    } catch {
-                        req.logger.error("TokenEncryption.encrypt failed for user \(user.id?.uuidString ?? "?"): \(error)")
-                        throw Abort(.internalServerError, reason: "Failed to encrypt sensitive setting; nothing saved.")
-                    }
-                } else {
-                    user.telegramBotToken = rawToken
-                }
+                // The model accessor encrypts every notification credential,
+                // including Telegram, Discord, Slack, and generic webhooks.
+                user.telegramBotToken = rawToken
             }
         }
         user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID

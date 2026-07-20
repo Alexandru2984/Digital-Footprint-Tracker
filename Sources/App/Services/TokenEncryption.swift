@@ -8,14 +8,46 @@ import Vapor
 /// Usage:
 ///   - Encrypt before saving:  `TokenEncryption.encrypt(plaintext)`
 ///   - Decrypt before using:   `TokenEncryption.decrypt(ciphertext)`
-///   - Graceful fallback:      if decrypt fails, treat stored value as plaintext (migration path)
+/// New ciphertexts carry an `enc:v1:` prefix. This makes a key mismatch or damaged
+/// ciphertext distinguishable from a legacy plaintext row instead of silently
+/// returning the ciphertext as if it were user data.
 enum TokenEncryption {
-    enum Error: Swift.Error { case keyMissing, invalidKey, decryptionFailed }
+    enum Error: Swift.Error, CustomStringConvertible {
+        case keyMissing, invalidKey, invalidCiphertext, decryptionFailed
 
-    static func isAvailable() -> Bool { Environment.get("ENCRYPTION_KEY") != nil }
+        var description: String {
+            switch self {
+            case .keyMissing: return "ENCRYPTION_KEY is missing"
+            case .invalidKey: return "ENCRYPTION_KEY must contain exactly 64 hexadecimal characters"
+            case .invalidCiphertext: return "encrypted field has an invalid format"
+            case .decryptionFailed: return "encrypted field could not be decrypted with the configured key"
+            }
+        }
+    }
+
+    private static let envelopePrefix = "enc:v1:"
+
+    static func isConfigured() -> Bool {
+        guard let value = Environment.get("ENCRYPTION_KEY") else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func isAvailable() -> Bool { (try? symmetricKey()) != nil }
+
+    /// Validate configuration at startup. Production calls this with `required`
+    /// so sensitive writes can never silently fall back to plaintext.
+    static func validateConfiguration(required: Bool) throws {
+        if !isConfigured() {
+            if required { throw Error.keyMissing }
+            return
+        }
+        _ = try symmetricKey()
+    }
 
     private static func symmetricKey() throws -> SymmetricKey {
-        guard let hex = Environment.get("ENCRYPTION_KEY") else { throw Error.keyMissing }
+        guard let raw = Environment.get("ENCRYPTION_KEY") else { throw Error.keyMissing }
+        let hex = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard hex.count == 64 else { throw Error.invalidKey }
         var bytes: [UInt8] = []
         var idx = hex.startIndex
         while idx < hex.endIndex {
@@ -33,18 +65,36 @@ enum TokenEncryption {
         let key = try symmetricKey()
         let box = try AES.GCM.seal(Data(plaintext.utf8), using: key)
         guard let combined = box.combined else { throw Error.decryptionFailed }
-        return combined.base64EncodedString()
+        return envelopePrefix + combined.base64EncodedString()
     }
 
-    /// Decrypt a base64-encoded ciphertext. If decryption fails (e.g. plaintext token
-    /// stored before encryption was introduced), returns nil so caller can use raw value.
+    /// Decrypt a tagged ciphertext or an untagged legacy ciphertext. Returning nil
+    /// is reserved for legacy plaintext detection; tagged ciphertext is handled by
+    /// `FieldCrypto.decryptStored`, which fails closed when it cannot be opened.
     static func decrypt(_ ciphertext: String) -> String? {
-        guard let key = try? symmetricKey(),
-              let data = Data(base64Encoded: ciphertext),
-              let box = try? AES.GCM.SealedBox(combined: data),
-              let plain = try? AES.GCM.open(box, using: key),
-              let str = String(data: plain, encoding: .utf8)
-        else { return nil }
+        try? decryptRequired(ciphertext)
+    }
+
+    static func isEncryptedEnvelope(_ value: String) -> Bool {
+        value.hasPrefix(envelopePrefix)
+    }
+
+    static func decryptRequired(_ ciphertext: String) throws -> String {
+        let encoded = ciphertext.hasPrefix(envelopePrefix)
+            ? String(ciphertext.dropFirst(envelopePrefix.count))
+            : ciphertext
+        guard let data = Data(base64Encoded: encoded),
+              let box = try? AES.GCM.SealedBox(combined: data)
+        else { throw Error.invalidCiphertext }
+        let plain: Data
+        do {
+            plain = try AES.GCM.open(box, using: symmetricKey())
+        } catch {
+            throw Error.decryptionFailed
+        }
+        guard let str = String(data: plain, encoding: .utf8) else {
+            throw Error.invalidCiphertext
+        }
         return str
     }
 }

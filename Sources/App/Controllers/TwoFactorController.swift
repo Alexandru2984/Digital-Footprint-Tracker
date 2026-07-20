@@ -140,16 +140,13 @@ struct TwoFactorController: RouteCollection {
 
     // MARK: - Secret at-rest helpers
 
-    /// Encrypt the secret when a key is configured; otherwise store raw (operator
-    /// opt-out, mirrors the Telegram-token handling in `AuthController`).
+    /// The model also encrypts this field; these helpers keep the enrolment code
+    /// explicit and retain compatibility with legacy plaintext rows.
     static func storeSecret(_ secret: String) -> String {
-        if TokenEncryption.isAvailable(), let enc = try? TokenEncryption.encrypt(secret) { return enc }
         return secret
     }
 
-    /// Decrypt if it looks encrypted; fall back to treating the value as raw.
     static func readSecret(_ stored: String) -> String? {
-        if let dec = TokenEncryption.decrypt(stored) { return dec }
         return stored
     }
 }
