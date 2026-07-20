@@ -124,8 +124,15 @@ PostgreSQL
 
 ### API Keys
 - Per-user API keys, **stored as SHA-256 hashes** (cleartext shown once on creation)
-- Bearer auth via `Authorization: Bearer <key>` — equivalent to a logged-in session for that user
-- Issue / revoke endpoints under `/api/api-keys`
+- Bearer auth via `Authorization: Bearer <key>` with deny-by-default route authorization
+- Six least-privilege scopes: `scans:read`, `scans:write`, `automation:read`,
+  `automation:write`, `investigations:read`, `investigations:write`
+- Keys expire after 1–365 days (90 by default); account/admin/auth controls are
+  always browser-session-only, regardless of scope
+- Issue / revoke endpoints under `/api/auth/api-keys`
+
+> Security migration note: API keys created before scoped expiry support have
+> no expiry timestamp and are rejected after upgrade. Reissue them deliberately.
 
 ### Scheduled & Bulk Scans
 - **Scheduled scans** — hourly / daily / weekly recurrence, run via `ScheduledScanRunner` lifecycle hook
@@ -197,7 +204,7 @@ page (cookie auth is persisted across reloads).
 - `GET /api/admin/scans` — last 100 scans across all users (admin only)
 
 ### Other route groups
-`/api/api-keys`, `/api/scheduled-scans`, `/api/scan/bulk`, `/api/share`, `/api/diff`,
+`/api/auth/api-keys`, `/api/scheduled-scans`, `/api/scan/bulk`, `/api/share`, `/api/diff`,
 `/api/correlate`, `/api/tags`, `/api/notifications`, `/api/export`, `/api/report/:id`, `/api/health`
 
 Bulk scans, recurring scans, heavy plugins, and watched-board monitoring require

@@ -42,6 +42,7 @@ public func configure(_ app: Application) async throws {
     }
     app.middleware.use(app.sessions.middleware)
     app.middleware.use(APIKeyMiddleware())
+    app.middleware.use(APIKeyScopeMiddleware())
     app.middleware.use(CSRFMiddleware())
 
     // Global HTTP client timeout — applies to all outbound requests (all plugins).
@@ -90,6 +91,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddNotificationChannelsToUsers())
     app.migrations.add(CreateSharedReports())
     app.migrations.add(HashAPIKeyColumn())
+    app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(HashSharedReportTokens())
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())

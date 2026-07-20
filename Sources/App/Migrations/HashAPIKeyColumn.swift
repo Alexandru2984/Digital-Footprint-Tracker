@@ -12,13 +12,21 @@ struct HashAPIKeyColumn: AsyncMigration {
         // 1. Add nullable key_hash column (idempotent).
         try await sql.raw("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_hash VARCHAR(64)").run()
 
-        // 2. Back-fill existing rows using Swift SHA-256 (no pgcrypto needed).
-        let rows = try await sql.raw("SELECT id, key FROM api_keys WHERE key_hash IS NULL").all()
-        for row in rows {
-            guard let id = try? row.decode(column: "id", as: UUID.self),
-                  let rawKey = try? row.decode(column: "key", as: String.self) else { continue }
-            let hash = sha256Hex(rawKey)
-            try await sql.raw("UPDATE api_keys SET key_hash = \(bind: hash) WHERE id = \(bind: id)").run()
+        // 2. Back-fill legacy plaintext rows. Fresh databases create key_hash
+        // directly, so first detect whether the historical `key` column exists.
+        let legacyColumn = try await sql.raw("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'api_keys' AND column_name = 'key'
+            """).all()
+        if !legacyColumn.isEmpty {
+            let rows = try await sql.raw("SELECT id, key FROM api_keys WHERE key_hash IS NULL").all()
+            for row in rows {
+                guard let id = try? row.decode(column: "id", as: UUID.self),
+                      let rawKey = try? row.decode(column: "key", as: String.self) else { continue }
+                let hash = sha256Hex(rawKey)
+                try await sql.raw("UPDATE api_keys SET key_hash = \(bind: hash) WHERE id = \(bind: id)").run()
+            }
         }
 
         // 3. Make column NOT NULL.
@@ -29,11 +37,12 @@ struct HashAPIKeyColumn: AsyncMigration {
         try await sql.raw("ALTER TABLE api_keys ADD CONSTRAINT api_keys_key_hash_key UNIQUE (key_hash)").run()
 
         // 5. Drop old plain-text column (automatically drops its unique constraint too).
-        try await sql.raw("ALTER TABLE api_keys DROP COLUMN IF EXISTS key").run()
+        if !legacyColumn.isEmpty {
+            try await sql.raw("ALTER TABLE api_keys DROP COLUMN IF EXISTS key").run()
+        }
     }
 
     func revert(on database: Database) async throws {
         // Intentionally a no-op: cannot recover hashed plain-text keys.
     }
 }
-

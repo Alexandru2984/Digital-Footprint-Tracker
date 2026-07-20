@@ -104,9 +104,10 @@ socket peer address.
 | Session hijacking                   | Cookie flags: `Secure=true`, `HTTPOnly=true`, `SameSite=Strict`                                                                             | `configure.swift`                                  |
 | Session fixation                    | `req.session.data = .init()` before binding `userID` at login/register                                                                      | `AuthController.swift`                             |
 | **In-memory session leak**          | Sessions persisted to PostgreSQL via Fluent (`SessionRecord`); restart-survivable; heap-bounded                                              | `configure.swift` (`.use(.fluent)`)                |
-| **Bearer API key → session leak**   | Bearer auth writes to `req.storage[AuthedUserIDStorageKey]` (request-scoped) instead of `session.data`; stateless, no per-call memory entry  | `Sources/App/Middleware/APIKeyMiddleware.swift`    |
+| **Bearer API key → session leak**   | Bearer auth uses request-scoped storage and does not even materialize an empty Vapor session; responses carry no session cookie             | `Sources/App/Middleware/APIKeyMiddleware.swift`    |
 | API key brute force                 | Tokens stored as SHA-256 hashes (`HashAPIKeyColumn` migration); exact-match indexed DB lookup                                                | `Sources/App/Models/APIKey.swift`                  |
 | API key hash leakage in list        | Previously returned first 8 hex chars of the key hash; now masked as `•••`                                                                 | `APIKeyController.swift`                           |
+| Stolen/overprivileged API key       | Six explicit scopes, 1–365 day expiry, deny-by-default route policy; account/auth/admin control-plane is session-only; malformed/expired keys fail closed | `APIKeyScopeMiddleware`, `AddAPIKeyAuthorization` |
 | Share-link token brute force        | Tokens are 192 bits of `SystemRandomNumberGenerator` output; stored as SHA-256 hashes; configurable expiry; optional Bcrypt password gate    | `ShareController.swift`, `HashSharedReportTokens` migration |
 
 ### Authorization
@@ -117,6 +118,7 @@ socket peer address.
 | Anonymous-scan access model                   | Ownerless (anonymous) scans are readable by anyone holding the unguessable 122-bit `scanID` — capability access, the share-link model. This replaced the prior admin-only gate, which locked logged-out users out of their own results. Want privacy → scan while signed in. | `Sources/App/Services/ScanAccess.swift` (`Scan.authorizeRead`) |
 | Admin escalation                              | `user.isAdmin` re-checked at each `/admin/*` route                                                                                            | `AdminController`, `UserController`, `HealthController.metrics`                            |
 | Tag / share / API-key reuse across users      | Every `Tag.find` / `SharedReport.find` / `APIKey.find` is followed by an explicit `entity.user.id == currentUser.id` check                    | `TagController`, `ShareController`, `APIKeyController`                                     |
+| API key privilege creep                       | New/unclassified routes are denied to API keys until explicitly mapped to a scope; bearer keys can never call `/account`, `/admin`, or mutating `/auth` routes | `APIKeyScopeMiddleware.swift`                                                    |
 
 ### Input validation
 

@@ -27,6 +27,8 @@ private func makeApp() async throws -> Application {
 
     app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
+    app.middleware.use(APIKeyMiddleware())
+    app.middleware.use(APIKeyScopeMiddleware())
     // Mirror production so the CSRF origin check is exercised by tests. It is a
     // no-op for requests without an Origin/Referer header (the existing tests),
     // and blocks cross-origin POST/PUT/PATCH/DELETE.
@@ -45,6 +47,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
     app.migrations.add(CreateAPIKeys())
+    app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(CreateAuditLogs())
     app.migrations.add(AddRetentionDaysToUsers())
     app.migrations.add(AddNotificationChannelsToUsers())
@@ -52,7 +55,7 @@ private func makeApp() async throws -> Application {
     // Note: HashAPIKeyColumn + HashSharedReportTokens are PostgreSQL-only
     // (use ADD COLUMN IF NOT EXISTS / ALTER COLUMN SET NOT NULL / ADD CONSTRAINT)
     // and are intentionally skipped here. No test in this suite exercises the
-    // APIKey or SharedReport models, so the pre-hash schema is sufficient.
+    // CreateAPIKeys now creates the final hash column directly for fresh DBs.
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
@@ -90,6 +93,65 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    // MARK: - API key least privilege
+
+    func testAPIKeyScopesExpiryAndControlPlaneIsolation() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "api-scope-user")
+
+        struct CreateKeyBody: Content {
+            let label: String
+            let scopes: [String]
+            let expiresInDays: Int
+        }
+        var createdKey: APIKey.Created?
+        try await app.test(.POST, "/auth/api-keys", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(CreateKeyBody(
+                label: "scanner", scopes: ["scans:read", "scans:write"], expiresInDays: 30
+            ), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            createdKey = try res.content.decode(APIKey.Created.self)
+        })
+        let key = try XCTUnwrap(createdKey)
+        XCTAssertEqual(Set(key.scopes), ["scans:read", "scans:write"])
+        XCTAssertNotNil(key.expiresAt)
+
+        // Data-plane operation is allowed by scope.
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
+            try req.content.encode(ScanRequest(input: "api-user", force: nil, plugins: ["GitHubAccountCheck"]), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertNil(res.headers.first(name: "Set-Cookie"), "Bearer auth must remain stateless.")
+        })
+
+        // Control-plane and unrelated data-plane operations are deny-by-default.
+        try await app.test(.GET, "/auth/api-keys", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+        try await app.test(.POST, "/investigations", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
+            try req.content.encode(InvestigationController.CreateBody(name: "Nope", data: nil), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+
+        // Invalid bearer credentials must not silently fall back to anonymous.
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: "not-a-valid-token")
+            try req.content.encode(ScanRequest(input: "anonymous-fallback", force: nil, plugins: nil), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+
+        let storedKeyLookup = try await APIKey.find(key.id!, on: app.db)
+        let storedKey = try XCTUnwrap(storedKeyLookup)
+        storedKey.expiresAt = Date().addingTimeInterval(-1)
+        try await storedKey.save(on: app.db)
+        try await app.test(.GET, "/auth/me", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+    }
 
     // MARK: - Scan workload admission
 
