@@ -13,7 +13,9 @@
   var hiddenTypes = {};          // etype -> true when filtered out of the view
   var showEdgeLabels = null;     // null = auto (hide on busy graphs), else forced
   var zoomBehavior = null, zoomRoot = null;
+  var searchTerm = '';           // lowercased; dims non-matching nodes
   function isMobile() { return window.innerWidth < 768; }
+  function matchesSearch(n) { return searchTerm && ((n.label || '') + ' ' + n.id).toLowerCase().indexOf(searchTerm) >= 0; }
 
   // ── small API helper ──────────────────────────────────────────────────────
   function api(method, path, body) {
@@ -298,6 +300,7 @@
       var g = {};
       try { g = JSON.parse(d.data); } catch (e) { g = { nodes: [], edges: [] }; }
       board = { id: d.id, name: d.name, nodes: g.nodes || [], edges: g.edges || [], watched: !!d.watched, watchInterval: d.watchInterval || 'daily' };
+      clearSearch();
       document.getElementById('board-name-input').value = d.name;
       refreshWatchUI();
       status('Opened “' + d.name + '”.'); render(); setTimeout(fitToView, 900);
@@ -305,6 +308,7 @@
   }
   function newBoard() {
     board = { id: null, name: '', nodes: [], edges: [], watched: false, watchInterval: 'daily' };
+    clearSearch();
     document.getElementById('board-name-input').value = '';
     document.getElementById('board-list-select').value = '';
     refreshWatchUI();
@@ -485,6 +489,60 @@
     status('Report opened — Ctrl/Cmd-P to save as PDF.');
   }
 
+  // ── search (find & focus) ─────────────────────────────────────────────────
+  function clearSearch() {
+    searchTerm = '';
+    var el = document.getElementById('board-search'); if (el) el.value = '';
+  }
+  function runSearch(q) {
+    searchTerm = (q || '').trim().toLowerCase();
+    render();
+    if (!searchTerm) { status(''); return; }
+    var m = board.nodes.filter(matchesSearch);
+    status(m.length + ' match' + (m.length === 1 ? '' : 'es') + ' for “' + q.trim() + '”');
+    if (m.length && zoomBehavior && typeof m[0].x === 'number') {
+      var d3 = window.d3, svgEl = document.getElementById('board-svg');
+      var W = svgEl.clientWidth || 800, H = svgEl.clientHeight || 500, k = 1.5;
+      d3.select(svgEl).transition().duration(400)
+        .call(zoomBehavior.transform, d3.zoomIdentity.translate(W / 2 - k * m[0].x, H / 2 - k * m[0].y).scale(k));
+    }
+  }
+
+  // ── import (GraphML from a previous export / Maltego / yEd, or board JSON) ─
+  function dataVal(el, key) { var d = el.querySelector('data[key="' + key + '"]'); return d ? d.textContent : ''; }
+  function importFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result), added = 0;
+      try {
+        if (/^\s*[\[{]/.test(text)) {
+          var g = JSON.parse(text);
+          (g.nodes || []).forEach(function (n) { if (addNode(n.id, n.label, n.etype, n.root)) added++; });
+          (g.edges || []).forEach(function (e) { addEdge(e.source, e.target, e.rel); });
+        } else {
+          var doc = new DOMParser().parseFromString(text, 'application/xml');
+          if (doc.querySelector('parsererror')) throw new Error('bad XML');
+          var idMap = {};
+          Array.prototype.forEach.call(doc.querySelectorAll('node'), function (nd) {
+            var gid = nd.getAttribute('id');
+            var label = dataVal(nd, 'label') || gid;
+            var etype = dataVal(nd, 'type') || inferType(label);
+            var n = addNode(label, label, etype);
+            if (n) { idMap[gid] = n.id; added++; }
+          });
+          Array.prototype.forEach.call(doc.querySelectorAll('edge'), function (ed) {
+            var s = idMap[ed.getAttribute('source')], t = idMap[ed.getAttribute('target')];
+            if (s && t) addEdge(s, t, dataVal(ed, 'rel') || 'related');
+          });
+        }
+      } catch (e) { status('Import failed — not a valid GraphML or board JSON.'); return; }
+      status('Imported ' + added + ' node' + (added === 1 ? '' : 's') + '.');
+      render(); setTimeout(fitToView, 800); scheduleSave();
+    };
+    reader.readAsText(file);
+  }
+
   // ── detail / actions panel ────────────────────────────────────────────────
   function detail(node) {
     var empty = document.getElementById('board-detail-empty');
@@ -625,8 +683,15 @@
       .attr('values', '0.9;0.3;0.9').attr('dur', '1.6s').attr('repeatCount', 'indefinite');
 
     // Verification status ring (confirmed / suspect / false); false nodes are dimmed.
+    // A live search dims everything that doesn't match and haloes what does.
     var STATUS_COLOR = { confirmed: '#22c55e', suspect: '#f59e0b', 'false': '#ef4444' };
-    node.attr('opacity', function (d) { return d.status === 'false' ? 0.45 : 1; });
+    node.attr('opacity', function (d) {
+      if (searchTerm && !matchesSearch(d)) return 0.12;
+      return d.status === 'false' ? 0.45 : 1;
+    });
+    node.filter(function (d) { return matchesSearch(d); }).append('circle')
+      .attr('r', function (d) { return radius(d) + 7; })
+      .attr('fill', 'none').attr('stroke', '#facc15').attr('stroke-width', 3);
     node.filter(function (d) { return d.status; }).append('circle')
       .attr('r', function (d) { return radius(d) + 3.5; })
       .attr('fill', 'none').attr('stroke', function (d) { return STATUS_COLOR[d.status] || '#64748b'; }).attr('stroke-width', 2.5);
@@ -679,6 +744,18 @@
     document.getElementById('board-export-graphml-btn').addEventListener('click', exportGraphML);
     document.getElementById('board-export-png-btn').addEventListener('click', exportPNG);
     document.getElementById('board-report-btn').addEventListener('click', generateReport);
+    var searchEl = document.getElementById('board-search');
+    if (searchEl) searchEl.addEventListener('input', function () {
+      clearTimeout(window._boardSearchT);
+      window._boardSearchT = setTimeout(function () { runSearch(searchEl.value); }, 200);
+    });
+    document.getElementById('board-import-btn').addEventListener('click', function () {
+      document.getElementById('board-import-file').click();
+    });
+    document.getElementById('board-import-file').addEventListener('change', function (e) {
+      if (e.target.files && e.target.files[0]) importFile(e.target.files[0]);
+      e.target.value = '';   // allow re-importing the same file
+    });
     document.getElementById('board-more-btn').addEventListener('click', function () {
       document.getElementById('board-more').classList.toggle('open');
     });

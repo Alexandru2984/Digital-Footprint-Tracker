@@ -3347,6 +3347,7 @@
         <div class="flex items-center gap-2 px-3 py-2 border-b border-dark-700 bg-dark-800">
             <span class="text-sm font-bold text-brand-400 hidden sm:inline whitespace-nowrap">🕸 Boards</span>
             <select id="board-list-select" class="bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 flex-1 sm:flex-none sm:max-w-[200px] min-w-0"></select>
+            <input id="board-search" type="search" placeholder="🔍 find" title="Find & focus a node" class="bg-dark-900 border border-dark-700 text-white text-xs rounded px-2 py-1.5 w-24 sm:w-40 focus:outline-none focus:border-brand-500 placeholder-slate-600">
             <button id="board-save-btn" title="Save board" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded whitespace-nowrap">💾<span class="hidden sm:inline"> Save</span></button>
             <button id="board-ack-btn" title="Acknowledge new findings" class="hidden text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded whitespace-nowrap">✨ <span id="board-ack-count">0</span> new</button>
             <button id="board-more-btn" title="More actions" class="md:hidden text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded">⋯</button>
@@ -3366,6 +3367,8 @@
                 <option value="daily">daily</option>
                 <option value="weekly">weekly</option>
             </select>
+            <button id="board-import-btn" title="Import a GraphML or board JSON file into this board" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬆ Import</button>
+            <input id="board-import-file" type="file" accept=".graphml,.xml,.json,application/xml,application/json" class="hidden">
             <button id="board-export-graphml-btn" title="Export as GraphML (Maltego / Gephi / yEd)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ GraphML</button>
             <button id="board-export-png-btn" title="Export as PNG" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ PNG</button>
             <button id="board-report-btn" title="Print-ready case-file report (Save as PDF)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">📄 Report</button>
