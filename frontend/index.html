@@ -3386,6 +3386,10 @@
                 <div id="board-hint" class="absolute inset-0 flex items-center justify-center text-center px-6 text-slate-600 text-sm pointer-events-none">Add an entity, or open a saved board, then tap a node → Expand to grow the graph.</div>
                 <div id="board-graph-tooltip" class="pointer-events-none absolute z-50 hidden bg-dark-900 border border-dark-600 text-[11px] text-slate-200 rounded px-2 py-1.5 max-w-xs shadow-xl" style="word-break:break-all"></div>
                 <div id="board-status-m" class="md:hidden absolute bottom-2 left-2 right-2 text-[11px] text-slate-500 truncate pointer-events-none"></div>
+                <!-- Minimap: whole-graph overview + click-to-pan (hidden on small boards) -->
+                <div id="board-minimap" class="hidden absolute bottom-2 right-2 bg-dark-900/85 border border-dark-700 rounded overflow-hidden cursor-crosshair" style="width:150px;height:110px">
+                    <svg id="board-minimap-svg" width="150" height="110" style="display:block"></svg>
+                </div>
             </div>
             <div id="board-detail" class="md:w-72 flex-shrink-0 md:border-l border-dark-700 bg-dark-900 p-3 overflow-y-auto">
                 <div class="flex items-center justify-between mb-2">

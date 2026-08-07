@@ -72,6 +72,53 @@
       .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
   }
 
+  // ── minimap (whole-graph overview + click-to-pan) ─────────────────────────
+  var MINIMAP_MIN_NODES = 12;      // only worth showing once a board is busy
+  var mmMap = null;                // {b, scale, mx, my} for the last render
+  function renderMinimap() {
+    var d3 = window.d3, mm = document.getElementById('board-minimap');
+    if (!mm) return;
+    var vnodes = board.nodes.filter(function (n) { return !hiddenTypes[n.etype] && typeof n.x === 'number'; });
+    if (vnodes.length < MINIMAP_MIN_NODES) { mm.classList.add('hidden'); mmMap = null; return; }
+    var xs = vnodes.map(function (n) { return n.x; }), ys = vnodes.map(function (n) { return n.y; });
+    var pad = 25;
+    var minX = Math.min.apply(null, xs) - pad, maxX = Math.max.apply(null, xs) + pad;
+    var minY = Math.min.apply(null, ys) - pad, maxY = Math.max.apply(null, ys) + pad;
+    var MW = 150, MH = 110;
+    var scale = Math.min(MW / (maxX - minX), MH / (maxY - minY));
+    var offX = (MW - (maxX - minX) * scale) / 2, offY = (MH - (maxY - minY) * scale) / 2;
+    function mx(x) { return offX + (x - minX) * scale; }
+    function my(y) { return offY + (y - minY) * scale; }
+    mmMap = { minX: minX, minY: minY, scale: scale, offX: offX, offY: offY, mx: mx, my: my };
+    mm.classList.remove('hidden');
+    var svg = d3.select('#board-minimap-svg'); svg.selectAll('*').remove();
+    svg.append('g').selectAll('circle').data(vnodes).enter().append('circle')
+      .attr('cx', function (d) { return mx(d.x); }).attr('cy', function (d) { return my(d.y); })
+      .attr('r', function (d) { return d.root ? 2.5 : 1.5; })
+      .attr('fill', function (d) { return color(d.root ? 'root' : d.etype); });
+    svg.append('rect').attr('id', 'board-minimap-vp').attr('fill', 'rgba(56,189,248,0.12)').attr('stroke', '#38bdf8').attr('stroke-width', 1);
+    updateMinimapViewport();
+  }
+  function updateMinimapViewport() {
+    var d3 = window.d3; if (!mmMap) return;
+    var vp = d3.select('#board-minimap-vp'); if (vp.empty()) return;
+    var svgEl = document.getElementById('board-svg'), t = d3.zoomTransform(svgEl);
+    var W = svgEl.clientWidth || 800, H = svgEl.clientHeight || 500;
+    var wx0 = -t.x / t.k, wy0 = -t.y / t.k, wx1 = (W - t.x) / t.k, wy1 = (H - t.y) / t.k;
+    vp.attr('x', mmMap.mx(wx0)).attr('y', mmMap.my(wy0))
+      .attr('width', Math.max(2, (wx1 - wx0) * mmMap.scale)).attr('height', Math.max(2, (wy1 - wy0) * mmMap.scale));
+  }
+  function minimapClick(ev) {
+    var d3 = window.d3; if (!mmMap || !zoomBehavior) return;
+    var rect = document.getElementById('board-minimap-svg').getBoundingClientRect();
+    var wx = mmMap.minX + (ev.clientX - rect.left - mmMap.offX) / mmMap.scale;
+    var wy = mmMap.minY + (ev.clientY - rect.top - mmMap.offY) / mmMap.scale;
+    var svgEl = document.getElementById('board-svg'), t = d3.zoomTransform(svgEl);
+    var W = svgEl.clientWidth || 800, H = svgEl.clientHeight || 500;
+    d3.select(svgEl).transition().duration(300)
+      .call(zoomBehavior.transform, d3.zoomIdentity.translate(W / 2 - t.k * wx, H / 2 - t.k * wy).scale(t.k));
+  }
+
   // ── entity typing ─────────────────────────────────────────────────────────
   var PIVOTABLE = { email: 1, username: 1, domain: 1, ip: 1, phone: 1 };
   function inferType(v) {
@@ -637,7 +684,7 @@
 
     var g = svg.append('g');
     zoomRoot = g;
-    zoomBehavior = d3.zoom().scaleExtent([0.2, 5]).on('zoom', function (ev) { g.attr('transform', ev.transform); });
+    zoomBehavior = d3.zoom().scaleExtent([0.2, 5]).on('zoom', function (ev) { g.attr('transform', ev.transform); updateMinimapViewport(); });
     svg.call(zoomBehavior);
 
     // Apply type filters: keep visible nodes, and only edges whose endpoints survive.
@@ -716,7 +763,8 @@
           .attr('x2', function (d) { return d.target.x; }).attr('y2', function (d) { return d.target.y; });
         linkLabel.attr('x', function (d) { return (d.source.x + d.target.x) / 2; }).attr('y', function (d) { return (d.source.y + d.target.y) / 2; });
         node.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
-      });
+      })
+      .on('end', renderMinimap);
   }
 
   // ── wiring ────────────────────────────────────────────────────────────────
@@ -782,6 +830,8 @@
     document.getElementById('board-add-btn').addEventListener('click', addFromInput);
     document.getElementById('board-add-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') addFromInput(); });
     document.getElementById('board-svg').addEventListener('click', function () { detail(null); });
+    var mmSvg = document.getElementById('board-minimap-svg');
+    if (mmSvg) mmSvg.addEventListener('click', minimapClick);
 
     // "🕸 BOARD" in the scan-results toolbar: seed a fresh board from the scan
     // currently on screen. `lastScanData` is owned by the page's inline script.
