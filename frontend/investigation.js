@@ -210,7 +210,15 @@
   // ── persistence ───────────────────────────────────────────────────────────
   function serialize() {
     return JSON.stringify({
-      nodes: board.nodes.map(function (n) { return { id: n.id, label: n.label, etype: n.etype, root: n.root, expanded: n.expanded, x: n.x, y: n.y }; }),
+      nodes: board.nodes.map(function (n) {
+        var o = { id: n.id, label: n.label, etype: n.etype, root: n.root, expanded: n.expanded, x: n.x, y: n.y };
+        // Preserve the case-file layer + the watch runner's "new" flag so they
+        // survive a save (dragging a node must not silently clear them).
+        if (n['new']) o['new'] = true;
+        if (n.status) o.status = n.status;
+        if (n.note) o.note = n.note;
+        return o;
+      }),
       edges: board.edges.map(function (e) { return { source: (typeof e.source === 'object' ? e.source.id : e.source), target: (typeof e.target === 'object' ? e.target.id : e.target), rel: e.rel }; })
     });
   }
@@ -410,6 +418,73 @@
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
   }
 
+  /// Print-ready case-file report of the whole investigation. Opens in a new tab;
+  /// Ctrl/Cmd-P → save as PDF. Fully client-side — the board never leaves the
+  /// browser to be rendered.
+  function generateReport() {
+    if (!board.nodes.length) { status('Nothing to report.'); return; }
+    var STATUS_LABEL = { confirmed: 'Confirmed', suspect: 'Suspect', 'false': 'False positive' };
+    var STATUS_BG = { confirmed: '#dcfce7', suspect: '#fef3c7', 'false': '#fee2e2' };
+    var STATUS_FG = { confirmed: '#166534', suspect: '#92400e', 'false': '#991b1b' };
+
+    // Graph snapshot: current SVG on a white ground, animations stripped for print.
+    var svg = document.getElementById('board-svg');
+    var W = svg.clientWidth || 800, H = svg.clientHeight || 500;
+    var clone = svg.cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll('animate'), function (a) { a.remove(); });
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', W); clone.setAttribute('height', H); clone.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', W); bg.setAttribute('height', H); bg.setAttribute('fill', '#0f172a');
+    clone.insertBefore(bg, clone.firstChild);
+    var svgMarkup = new XMLSerializer().serializeToString(clone);
+
+    // Group entities by type; pull out the high-signal findings.
+    var byType = {};
+    board.nodes.forEach(function (n) { (byType[n.etype] = byType[n.etype] || []).push(n); });
+    var findings = board.nodes.filter(function (n) { return n.etype === 'breach' || n.etype === 'exposure' || n.etype === 'risk'; });
+    var counts = Object.keys(byType).sort().map(function (t) { return '<span class="chip"><b style="color:' + color(t) + '">●</b> ' + escapeHtml(t) + ' <b>' + byType[t].length + '</b></span>'; }).join('');
+
+    function statusBadge(s) {
+      if (!s) return '';
+      return '<span style="background:' + (STATUS_BG[s] || '#e2e8f0') + ';color:' + (STATUS_FG[s] || '#334155') + ';padding:1px 6px;border-radius:4px;font-size:11px">' + escapeHtml(STATUS_LABEL[s] || s) + '</span>';
+    }
+    var sections = Object.keys(byType).sort().map(function (t) {
+      var rows = byType[t].map(function (n) {
+        return '<tr><td>' + escapeHtml(n.label || n.id) + (n['new'] ? ' <span style="color:#65a30d">• new</span>' : '') + '</td><td>' + statusBadge(n.status) + '</td><td class="note">' + escapeHtml(n.note || '') + '</td></tr>';
+      }).join('');
+      return '<h3><span style="color:' + color(t) + '">●</span> ' + escapeHtml(t) + ' <span class="muted">(' + byType[t].length + ')</span></h3>' +
+        '<table><thead><tr><th>Entity</th><th>Status</th><th>Note</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }).join('');
+
+    var findingsHtml = findings.length
+      ? '<h2>Key findings</h2><ul>' + findings.map(function (n) { return '<li>' + escapeHtml(n.label || n.id) + '</li>'; }).join('') + '</ul>'
+      : '';
+
+    var now = new Date();
+    var html =
+      '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(board.name || 'Investigation') + ' — report</title>' +
+      '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:960px;margin:24px auto;padding:0 20px;line-height:1.45}' +
+      'h1{margin:0 0 2px}.muted{color:#64748b;font-weight:400}.sub{color:#64748b;font-size:13px;margin-bottom:16px}' +
+      '.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:3px 8px;font-size:12px}' +
+      '.graph{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin:16px 0;background:#0f172a}.graph svg{display:block;width:100%;height:auto}' +
+      'table{border-collapse:collapse;width:100%;margin:6px 0 18px;font-size:13px}th,td{border:1px solid #e2e8f0;padding:5px 8px;text-align:left;vertical-align:top}' +
+      'th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#475569}td.note{color:#475569;white-space:pre-wrap}h3{margin:16px 0 4px}' +
+      '@media print{a{display:none}}</style></head><body>' +
+      '<h1>🕸 ' + escapeHtml(board.name || 'Investigation') + '</h1>' +
+      '<div class="sub">Generated ' + now.toISOString().slice(0, 16).replace('T', ' ') + ' · ' + board.nodes.length + ' entities · ' + board.edges.length + ' relationships' + (board.watched ? ' · 👁 watched (' + escapeHtml(board.watchInterval || 'daily') + ')' : '') + '</div>' +
+      '<div class="chips">' + counts + '</div>' +
+      '<div class="graph">' + svgMarkup + '</div>' +
+      findingsHtml +
+      '<h2>Entities</h2>' + sections +
+      '</body></html>';
+
+    var w = window.open('', '_blank');
+    if (!w) { status('Allow pop-ups to open the report.'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    status('Report opened — Ctrl/Cmd-P to save as PDF.');
+  }
+
   // ── detail / actions panel ────────────────────────────────────────────────
   function detail(node) {
     var empty = document.getElementById('board-detail-empty');
@@ -446,10 +521,35 @@
         html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-amber-900/20 hover:bg-amber-900/40 border border-amber-700/40 text-amber-200 rounded">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
       });
     }
+    // Verification status + investigator note — the case-file layer.
+    html += '<p class="text-[10px] text-slate-500 uppercase tracking-widest mt-3 mb-1">Verification</p>';
+    html += '<div class="flex gap-1 mb-2">';
+    [['confirmed', '✓', 'Confirmed', '#22c55e'], ['suspect', '?', 'Suspect', '#f59e0b'], ['false', '✕', 'False', '#ef4444']].forEach(function (s) {
+      var on = node.status === s[0];
+      html += '<button data-status="' + s[0] + '" title="' + s[2] + '" class="board-status-btn flex-1 text-xs py-1 rounded border ' +
+        (on ? 'text-white' : 'text-slate-400 border-dark-700 bg-dark-800 hover:bg-dark-700') + '"' +
+        (on ? ' style="background:' + s[3] + ';border-color:' + s[3] + '"' : '') + '>' + s[1] + '</button>';
+    });
+    html += '<button data-status="" title="Clear" class="board-status-btn text-xs py-1 px-2 rounded border border-dark-700 bg-dark-800 text-slate-400 hover:bg-dark-700">–</button>';
+    html += '</div>';
+    html += '<textarea id="board-note" rows="3" placeholder="Notes for this entity…" class="w-full bg-dark-900 border border-dark-700 text-slate-200 text-[11px] rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y">' + escapeHtml(node.note || '') + '</textarea>';
+
     html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-dark-700 hover:bg-red-700/60 text-slate-300 rounded">Remove node</button>';
     content.innerHTML = html;
     Array.prototype.forEach.call(content.querySelectorAll('.board-merge-btn'), function (b) {
       b.onclick = function () { var o = also[+b.getAttribute('data-merge')]; mergeBoard(o.id, o.name); };
+    });
+    Array.prototype.forEach.call(content.querySelectorAll('.board-status-btn'), function (b) {
+      b.onclick = function () {
+        var v = b.getAttribute('data-status');
+        node.status = v || undefined; if (!v) delete node.status;
+        detail(node); render(); scheduleSave();
+      };
+    });
+    var noteEl = document.getElementById('board-note');
+    if (noteEl) noteEl.addEventListener('input', function () {
+      var v = noteEl.value; if (v) node.note = v; else delete node.note;
+      scheduleSave();
     });
 
     var eb = document.getElementById('board-expand-btn');
@@ -524,11 +624,19 @@
     pulse.append('animate').attr('attributeName', 'opacity')
       .attr('values', '0.9;0.3;0.9').attr('dur', '1.6s').attr('repeatCount', 'indefinite');
 
+    // Verification status ring (confirmed / suspect / false); false nodes are dimmed.
+    var STATUS_COLOR = { confirmed: '#22c55e', suspect: '#f59e0b', 'false': '#ef4444' };
+    node.attr('opacity', function (d) { return d.status === 'false' ? 0.45 : 1; });
+    node.filter(function (d) { return d.status; }).append('circle')
+      .attr('r', function (d) { return radius(d) + 3.5; })
+      .attr('fill', 'none').attr('stroke', function (d) { return STATUS_COLOR[d.status] || '#64748b'; }).attr('stroke-width', 2.5);
+
     node.append('circle').attr('r', radius).attr('fill', function (d) { return color(d.root ? 'root' : d.etype); })
       .attr('stroke', function (d) { return d['new'] ? '#a3e635' : '#0b1120'; }).attr('stroke-width', 2);
     node.append('text').text(function (d) { return d.label; })
       .attr('x', function (d) { return radius(d) + 4; }).attr('y', 4).attr('font-size', 10)
-      .attr('fill', function (d) { return d['new'] ? '#d9f99d' : '#cbd5e1'; });
+      .attr('fill', function (d) { return d['new'] ? '#d9f99d' : '#cbd5e1'; })
+      .attr('text-decoration', function (d) { return d.status === 'false' ? 'line-through' : 'none'; });
 
     renderFilters();
     refreshAckUI();
@@ -570,6 +678,7 @@
     document.getElementById('board-delete-btn').addEventListener('click', deleteBoard);
     document.getElementById('board-export-graphml-btn').addEventListener('click', exportGraphML);
     document.getElementById('board-export-png-btn').addEventListener('click', exportPNG);
+    document.getElementById('board-report-btn').addEventListener('click', generateReport);
     document.getElementById('board-more-btn').addEventListener('click', function () {
       document.getElementById('board-more').classList.toggle('open');
     });
