@@ -31,7 +31,14 @@ final class GeoIP: @unchecked Sendable {
         var city: String?
         var lat: Double?
         var lon: Double?
+        /// Autonomous System number + operator (from the offline GeoLite2-ASN DB).
+        /// `isp` populates the "ISP" line the map popup already renders.
+        var asn: Int?
+        var isp: String?
     }
+
+    /// Optional sibling reader for the ASN database, held by the City instance.
+    private var asnDB: GeoIP?
 
     private let data: [UInt8]
     private let nodeCount: UInt32
@@ -56,10 +63,30 @@ final class GeoIP: @unchecked Sendable {
         for path in candidates {
             if FileManager.default.fileExists(atPath: path), let db = GeoIP(path: path) {
                 app.logger.notice("GeoIP: loaded offline database from \(path)")
+                db.asnDB = openASN(app: app)
                 return db
             }
         }
         app.logger.warning("GeoIP: no local GeoLite2-City.mmdb found — /api/geolocate will return status=fail")
+        return nil
+    }
+
+    /// Load the companion ASN database (autonomous system number + operator).
+    /// Optional — geolocation still works without it, just with no ISP line.
+    private static func openASN(app: Application) -> GeoIP? {
+        var candidates: [String] = []
+        if let p = Environment.get("GEOIP_ASN_DB_PATH"), !p.isEmpty { candidates.append(p) }
+        candidates.append(contentsOf: [
+            "/home/micu/umami/geo/GeoLite2-ASN.mmdb",
+            "/var/lib/crowdsec/data/GeoLite2-ASN.mmdb",
+            app.directory.workingDirectory + "GeoLite2-ASN.mmdb"
+        ])
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            if let db = GeoIP(path: path) {
+                app.logger.notice("GeoIP: loaded offline ASN database from \(path)")
+                return db
+            }
+        }
         return nil
     }
 
@@ -133,7 +160,29 @@ final class GeoIP: @unchecked Sendable {
         guard loc.lat != nil, loc.lon != nil else {
             return Location(query: ipString, status: "fail")
         }
+        // Enrich a plotted point with its network operator from the ASN DB.
+        if let asnDB = asnDB {
+            let a = asnDB.lookupASN(ipString)
+            loc.asn = a.number
+            loc.isp = a.org
+        }
         return loc
+    }
+
+    /// Look up an IP's Autonomous System in the GeoLite2-ASN database. Returns the
+    /// AS number and the operator name (e.g. 13335 / "Cloudflare, Inc.").
+    func lookupASN(_ ipString: String) -> (number: Int?, org: String?) {
+        guard let bits = GeoIP.addressBits(ipString, dbIsV6: ipVersion == 6),
+              let dataOffset = traverse(bits: bits) else { return (nil, nil) }
+        let decoder = Decoder(data: data, base: searchTreeSize + Constants.separator)
+        guard case let .map(record)? = decoder.decode(at: dataOffset - Constants.separator)?.value else {
+            return (nil, nil)
+        }
+        var number: Int?
+        var org: String?
+        if case let .uint(n)? = record["autonomous_system_number"] { number = Int(n) }
+        if case let .string(o)? = record["autonomous_system_organization"] { org = o }
+        return (number, org)
     }
 
     /// Walk the binary search tree bit by bit; return the data-section offset of
