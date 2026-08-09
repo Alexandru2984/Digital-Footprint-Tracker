@@ -14,6 +14,8 @@
   var showEdgeLabels = null;     // null = auto (hide on busy graphs), else forced
   var zoomBehavior = null, zoomRoot = null;
   var searchTerm = '';           // lowercased; dims non-matching nodes
+  var linkMode = false;          // when on, clicking two nodes draws a manual edge
+  var linkSource = null;         // first node picked while in link mode
   function isMobile() { return window.innerWidth < 768; }
   function matchesSearch(n) { return searchTerm && ((n.label || '') + ' ' + n.id).toLowerCase().indexOf(searchTerm) >= 0; }
 
@@ -119,6 +121,31 @@
       .call(zoomBehavior.transform, d3.zoomIdentity.translate(W / 2 - t.k * wx, H / 2 - t.k * wy).scale(t.k));
   }
 
+  // ── manual relationships (draw a link the scan didn't find) ───────────────
+  function refreshLinkUI() {
+    var btn = document.getElementById('board-link-btn'); if (!btn) return;
+    btn.textContent = linkMode ? (linkSource ? '🔗 pick target…' : '🔗 pick source…') : '🔗 Link: off';
+    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+      (linkMode ? 'bg-cyan-700/70 hover:bg-cyan-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+    var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = linkMode ? 'crosshair' : '';
+  }
+  function toggleLinkMode() {
+    linkMode = !linkMode; linkSource = null;
+    refreshLinkUI(); render();
+    status(linkMode ? 'Link mode: click a source node, then a target.' : '');
+  }
+  function exitLinkMode() { if (linkMode) { linkMode = false; linkSource = null; refreshLinkUI(); render(); status(''); } }
+  /// Central node-click router: link mode wires two nodes, otherwise inspect.
+  function onNodeClick(d) {
+    if (!linkMode) { detail(d); return; }
+    if (!linkSource) { linkSource = d; refreshLinkUI(); render(); status('Source: ' + d.label + ' — now click the target.'); return; }
+    if (linkSource.id === d.id) { linkSource = null; refreshLinkUI(); render(); status('Same node — pick a different target.'); return; }
+    var rel = (window.prompt('Label for this relationship (e.g. "same owner", "belongs to"):', 'linked') || 'linked').trim().slice(0, 32) || 'linked';
+    var made = addEdge(linkSource.id, d.id, rel, true);
+    status(made ? ('Linked ' + linkSource.label + ' → ' + d.label + ' (' + rel + ').') : 'That link already exists.');
+    linkSource = null; refreshLinkUI(); render(); scheduleSave();
+  }
+
   // ── entity typing ─────────────────────────────────────────────────────────
   var PIVOTABLE = { email: 1, username: 1, domain: 1, ip: 1, phone: 1 };
   function inferType(v) {
@@ -152,16 +179,19 @@
     board.nodes.push(n);
     return n;
   }
-  function addEdge(s, t, rel) {
+  function addEdge(s, t, rel, manual) {
     s = String(s).toLowerCase(); t = String(t).toLowerCase();
-    if (s === t) return;
+    if (s === t) return false;
     for (var i = 0; i < board.edges.length; i++) {
       var e = board.edges[i];
       var es = (typeof e.source === 'object' ? e.source.id : e.source);
       var et = (typeof e.target === 'object' ? e.target.id : e.target);
-      if (es === s && et === t) return;
+      if (es === s && et === t) return false;
     }
-    board.edges.push({ source: s, target: t, rel: rel || 'related' });
+    var edge = { source: s, target: t, rel: rel || 'related' };
+    if (manual) edge.manual = true;
+    board.edges.push(edge);
+    return true;
   }
 
   // ── extract entities + relationships from a scan's results ────────────────
@@ -268,7 +298,11 @@
         if (n.note) o.note = n.note;
         return o;
       }),
-      edges: board.edges.map(function (e) { return { source: (typeof e.source === 'object' ? e.source.id : e.source), target: (typeof e.target === 'object' ? e.target.id : e.target), rel: e.rel }; })
+      edges: board.edges.map(function (e) {
+        var o = { source: (typeof e.source === 'object' ? e.source.id : e.source), target: (typeof e.target === 'object' ? e.target.id : e.target), rel: e.rel };
+        if (e.manual) o.manual = true;
+        return o;
+      })
     });
   }
   function scheduleSave() { dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(saveBoard, 1500); }
@@ -696,8 +730,12 @@
     // unless the user has explicitly toggled them.
     var labelsOn = (showEdgeLabels === null) ? (vedges.length <= 40) : showEdgeLabels;
 
+    // Manual (investigator-drawn) links render cyan-dashed to stand apart from
+    // the scan-discovered relationships.
     var link = g.append('g').selectAll('line').data(vedges).enter().append('line')
-      .attr('stroke', '#334155').attr('stroke-width', 1.2);
+      .attr('stroke', function (d) { return d.manual ? '#22d3ee' : '#334155'; })
+      .attr('stroke-width', function (d) { return d.manual ? 1.6 : 1.2; })
+      .attr('stroke-dasharray', function (d) { return d.manual ? '5,3' : null; });
     var linkLabel = g.append('g').selectAll('text').data(labelsOn ? vedges : []).enter().append('text')
       .text(function (d) { return d.rel; }).attr('font-size', 8).attr('fill', '#475569').attr('text-anchor', 'middle');
 
@@ -706,8 +744,8 @@
         .on('start', function (ev, d) { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
         .on('drag', function (ev, d) { d.fx = ev.x; d.fy = ev.y; })
         .on('end', function (ev, d) { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; scheduleSave(); }))
-      .on('click', function (ev, d) { ev.stopPropagation(); detail(d); })
-      .on('dblclick', function (ev, d) { ev.stopPropagation(); if (PIVOTABLE[d.etype]) expand(d); })
+      .on('click', function (ev, d) { ev.stopPropagation(); onNodeClick(d); })
+      .on('dblclick', function (ev, d) { ev.stopPropagation(); if (!linkMode && PIVOTABLE[d.etype]) expand(d); })
       .on('mouseover', function (ev, d) {
         var tt = document.getElementById('board-graph-tooltip');
         tt.textContent = d.label + '  ·  ' + d.etype; tt.classList.remove('hidden');
@@ -739,6 +777,10 @@
     node.filter(function (d) { return matchesSearch(d); }).append('circle')
       .attr('r', function (d) { return radius(d) + 7; })
       .attr('fill', 'none').attr('stroke', '#facc15').attr('stroke-width', 3);
+    // Chosen source node while drawing a manual link.
+    node.filter(function (d) { return linkSource && d.id === linkSource.id; }).append('circle')
+      .attr('r', function (d) { return radius(d) + 7; })
+      .attr('fill', 'none').attr('stroke', '#22d3ee').attr('stroke-width', 3).attr('stroke-dasharray', '4,3');
     node.filter(function (d) { return d.status; }).append('circle')
       .attr('r', function (d) { return radius(d) + 3.5; })
       .attr('fill', 'none').attr('stroke', function (d) { return STATUS_COLOR[d.status] || '#64748b'; }).attr('stroke-width', 2.5);
@@ -769,6 +811,7 @@
 
   // ── wiring ────────────────────────────────────────────────────────────────
   function open() {
+    linkMode = false; linkSource = null; refreshLinkUI();
     document.getElementById('board-overlay').classList.remove('hidden');
     document.getElementById('board-overlay').classList.add('flex');
     loadList();
@@ -808,6 +851,13 @@
       document.getElementById('board-more').classList.toggle('open');
     });
     document.getElementById('board-fit-btn').addEventListener('click', fitToView);
+    document.getElementById('board-link-btn').addEventListener('click', toggleLinkMode);
+    // Esc leaves link mode (and, failing that, clears a node selection).
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !document.getElementById('board-overlay').classList.contains('hidden')) {
+        if (linkMode) exitLinkMode(); else detail(null);
+      }
+    });
     document.getElementById('board-watch-btn').addEventListener('click', toggleWatch);
     document.getElementById('board-watch-interval').addEventListener('change', changeInterval);
     document.getElementById('board-ack-btn').addEventListener('click', acknowledgeNew);
