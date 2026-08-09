@@ -187,8 +187,9 @@
     </style>
     <!-- Privacy-first: no third-party analytics, telemetry, or tracking beacons.
          All assets are served first-party from this origin. -->
-    <script src="/d3.min.js"></script>
-    <script src="/qrcode.js"></script>
+    <!-- Non-blocking: d3 is only used by the on-demand graph, qrcode only by the 2FA modal. -->
+    <script defer src="/d3.min.js"></script>
+    <script defer src="/qrcode.js"></script>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
     <!-- Crawlable / no-JS fallback: real content for search engines and clients without JS. -->
