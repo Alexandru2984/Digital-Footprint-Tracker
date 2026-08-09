@@ -53,6 +53,7 @@ struct ScanController: RouteCollection {
         MailSecurityPlugin(),
         WebPosturePlugin(),
         ExposedFilesPlugin(),
+        SiteMetaPlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin(),
         CrtShPlugin(),

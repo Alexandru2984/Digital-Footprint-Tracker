@@ -2301,4 +2301,34 @@ final class AppTests: XCTestCase {
         let json = try XCTUnwrap(BoardGraph.encode(graph))
         XCTAssertNotNil(BoardGraph.decode(json))
     }
+
+    // MARK: - SiteMeta (security.txt + robots.txt recon)
+
+    func testSiteMetaSecurityTxtParse() throws {
+        let good = "# our policy\nContact: mailto:security@acme.com\nExpires: 2030-01-01T00:00:00Z\nPolicy: https://acme.com/policy\n"
+        let sec = try XCTUnwrap(SiteMeta.parseSecurityTxt(good))
+        XCTAssertEqual(sec.contacts.first, "mailto:security@acme.com")
+        XCTAssertEqual(sec.expires, "2030-01-01T00:00:00Z")
+        XCTAssertEqual(SiteMeta.contactEmail(sec.contacts), "security@acme.com")
+        // An HTML error page or a file without Contact is not a security.txt.
+        XCTAssertNil(SiteMeta.parseSecurityTxt("<!doctype html><html>404</html>"))
+        XCTAssertNil(SiteMeta.parseSecurityTxt("Policy: https://x/p\n"))
+    }
+
+    func testSiteMetaRobotsParse() throws {
+        let robots = """
+        # comment
+        User-agent: *
+        Disallow: /admin/
+        Disallow: /search
+        Disallow: /admin/
+        Sitemap: https://acme.com/sitemap.xml
+        """
+        let r = SiteMeta.parseRobots(robots)
+        XCTAssertEqual(r.disallowed, ["/admin/", "/search"], "deduped, comments ignored")
+        XCTAssertEqual(r.sitemaps, ["https://acme.com/sitemap.xml"])
+        XCTAssertEqual(SiteMeta.interesting(r.disallowed), ["/admin/"], "only the sensitive path is flagged")
+        // HTML masquerading as robots.txt yields nothing.
+        XCTAssertEqual(SiteMeta.parseRobots("<html><body>nope</body></html>").disallowed.count, 0)
+    }
 }
