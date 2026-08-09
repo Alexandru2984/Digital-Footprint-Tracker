@@ -20,6 +20,7 @@
   var pathSource = null;         // first node picked while tracing a connection
   var pathNodes = null;          // {id:1} of nodes on the traced path (null = none shown)
   var pathEdges = null;          // {ekey:1} of edges on the traced path
+  var hubMode = false;           // when on, size entities by degree (connection count)
   var undoStack = [], redoStack = [];   // serialized board states for undo/redo
   function isMobile() { return window.innerWidth < 768; }
   function matchesSearch(n) { return searchTerm && ((n.label || '') + ' ' + n.id).toLowerCase().indexOf(searchTerm) >= 0; }
@@ -131,7 +132,7 @@
     var btn = document.getElementById('board-link-btn'); if (!btn) return;
     btn.textContent = linkMode ? (linkSource ? '🔗 pick target…' : '🔗 pick source…') : '🔗 Link: off';
     btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
-      (linkMode ? 'bg-cyan-700/70 hover:bg-cyan-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+      (linkMode ? 'bg-blue-500 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (linkMode || pathMode) ? 'crosshair' : '';
   }
   function toggleLinkMode() {
@@ -190,7 +191,7 @@
     var btn = document.getElementById('board-path-btn'); if (!btn) return;
     btn.textContent = pathMode ? (pathSource ? '🧭 pick destination…' : '🧭 pick start…') : '🧭 Path: off';
     btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
-      (pathMode ? 'bg-indigo-700/70 hover:bg-indigo-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+      (pathMode ? 'bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (pathMode || linkMode) ? 'crosshair' : '';
   }
   function clearPath() { pathSource = null; pathNodes = null; pathEdges = null; }
@@ -228,6 +229,25 @@
     status(hops + ' hop' + (hops === 1 ? '' : 's') + ':  ' + labels.join('  →  '));
   }
 
+  // ── hubs (degree centrality) ──────────────────────────────────────────────
+  function refreshHubUI() {
+    var btn = document.getElementById('board-hub-btn'); if (!btn) return;
+    btn.textContent = hubMode ? '◎ Hubs: on' : '◎ Hubs: off';
+    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+      (hubMode ? 'bg-yellow-900 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+  }
+  function toggleHubs() {
+    hubMode = !hubMode;
+    refreshHubUI(); render();   // render() stashes each node's __deg
+    if (!hubMode) { status(''); return; }
+    var ranked = board.nodes
+      .filter(function (n) { return !hiddenTypes[n.etype] && (n.__deg || 0) > 0; })
+      .sort(function (a, b) { return (b.__deg || 0) - (a.__deg || 0); }).slice(0, 3);
+    status(ranked.length
+      ? 'Top hubs: ' + ranked.map(function (n) { return n.label + ' (' + n.__deg + ')'; }).join(',  ')
+      : 'Hubs: no connections yet — expand nodes or draw links.');
+  }
+
   // ── entity typing ─────────────────────────────────────────────────────────
   var PIVOTABLE = { email: 1, username: 1, domain: 1, ip: 1, phone: 1 };
   function inferType(v) {
@@ -247,6 +267,9 @@
   // Bigger hit areas on touch screens — 6px dots are unusable with a finger.
   function radius(d) {
     var base = d.root ? 16 : PIVOTABLE[d.etype] ? 10 : 6;
+    // Hubs mode: grow each entity with its connection count (degree centrality),
+    // so the network's linchpins pop out. `__deg` is stashed during render().
+    if (hubMode) base = Math.max(base, 6 + Math.min(d.__deg || 0, 12) * 2.4);
     return isMobile() ? base + 4 : base;
   }
 
@@ -520,7 +543,7 @@
     if (!btn) return;
     btn.textContent = board.watched ? ('👁 Watch: ' + (board.watchInterval || 'daily')) : '👁 Watch: off';
     btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
-      (board.watched ? 'bg-brand-700/70 hover:bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+      (board.watched ? 'bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     sel.classList.toggle('hidden', !board.watched);
     if (board.watched) sel.value = board.watchInterval || 'daily';
   }
@@ -774,9 +797,9 @@
     }
     var also = sharedWith(node.id);
     if (also.length) {
-      html += '<p class="text-[10px] text-amber-400 uppercase tracking-widest mt-3 mb-1">Also in ' + also.length + ' other board' + (also.length > 1 ? 's' : '') + '</p>';
+      html += '<p class="text-[10px] text-yellow-300 uppercase tracking-widest mt-3 mb-1">Also in ' + also.length + ' other board' + (also.length > 1 ? 's' : '') + '</p>';
       also.forEach(function (b, i) {
-        html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-amber-900/20 hover:bg-amber-900/40 border border-amber-700/40 text-amber-200 rounded">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
+        html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-600 border border-yellow-700 text-yellow-300 rounded">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
       });
     }
     // Verification status + investigator note — the case-file layer.
@@ -792,7 +815,7 @@
     html += '</div>';
     html += '<textarea id="board-note" rows="3" placeholder="Notes for this entity…" class="w-full bg-dark-900 border border-dark-700 text-slate-200 text-[11px] rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y">' + escapeHtml(node.note || '') + '</textarea>';
 
-    html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-dark-700 hover:bg-red-700/60 text-slate-300 rounded">Remove node</button>';
+    html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-red-900 text-slate-300 rounded">Remove node</button>';
     content.innerHTML = html;
     Array.prototype.forEach.call(content.querySelectorAll('.board-merge-btn'), function (b) {
       b.onclick = function () { var o = also[+b.getAttribute('data-merge')]; mergeBoard(o.id, o.name); };
@@ -846,6 +869,10 @@
     var vnodes = board.nodes.filter(function (n) { return !hiddenTypes[n.etype]; });
     var vis = {}; vnodes.forEach(function (n) { vis[n.id] = 1; });
     var vedges = board.edges.filter(function (e) { return vis[eid(e.source)] && vis[eid(e.target)]; });
+    // Degree centrality over the visible graph — stashed on each node for Hubs mode.
+    var deg = {}; vnodes.forEach(function (n) { deg[n.id] = 0; });
+    vedges.forEach(function (e) { var s = eid(e.source), t = eid(e.target); if (deg[s] != null) deg[s]++; if (deg[t] != null) deg[t]++; });
+    vnodes.forEach(function (n) { n.__deg = deg[n.id] || 0; });
     // Relationship labels are noise on a busy board — auto-hide past 40 links
     // unless the user has explicitly toggled them.
     var labelsOn = (showEdgeLabels === null) ? (vedges.length <= 40) : showEdgeLabels;
@@ -904,6 +931,7 @@
     node.attr('opacity', function (d) {
       if (searchTerm && !matchesSearch(d)) return 0.12;
       if (pathActive && !pathNodes[d.id]) return 0.12;
+      if (hubMode && (d.__deg || 0) <= 1) return 0.5;   // fade the leaves so hubs stand out
       return d.status === 'false' ? 0.45 : 1;
     });
     node.filter(function (d) { return matchesSearch(d); }).append('circle')
@@ -955,6 +983,7 @@
   function open() {
     linkMode = false; linkSource = null; refreshLinkUI();
     pathMode = false; clearPath(); refreshPathUI();
+    hubMode = false; refreshHubUI();
     document.getElementById('board-overlay').classList.remove('hidden');
     document.getElementById('board-overlay').classList.add('flex');
     loadList();
@@ -996,6 +1025,7 @@
     document.getElementById('board-fit-btn').addEventListener('click', fitToView);
     document.getElementById('board-link-btn').addEventListener('click', toggleLinkMode);
     document.getElementById('board-path-btn').addEventListener('click', togglePathMode);
+    document.getElementById('board-hub-btn').addEventListener('click', toggleHubs);
     document.getElementById('board-undo-btn').addEventListener('click', undo);
     document.getElementById('board-redo-btn').addEventListener('click', redo);
     // Keyboard: Esc leaves link/path mode or clears the trace / selection;
