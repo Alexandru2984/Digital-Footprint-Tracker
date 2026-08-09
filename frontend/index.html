@@ -11,6 +11,8 @@
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="alternate icon" href="/favicon.svg">
+    <link rel="apple-touch-icon" href="/favicon.svg">
+    <link rel="manifest" href="/manifest.json">
     <!-- Open Graph (link previews) -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Digital Footprint Tracker">
@@ -183,6 +185,22 @@
     <script src="/qrcode.js"></script>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
+    <!-- Crawlable / no-JS fallback: real content for search engines and clients without JS. -->
+    <noscript>
+        <div style="max-width:720px;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;color:#cbd5e1;background:#1e293b;border:1px solid #334155;border-radius:12px;line-height:1.6">
+            <h2 style="color:#f8fafc;margin:0 0 .5rem">Digital Footprint Tracker — Privacy-First OSINT Scanner</h2>
+            <p>Digital Footprint Tracker is a self-hosted OSINT tool that aggregates a target's public exposure across 30+ sources — emails, domains, usernames, data breaches, exposed files and attack surface — into a single report and an interactive investigation graph.</p>
+            <ul>
+                <li>OSINT aggregation across 30+ sources</li>
+                <li>Attack-surface &amp; exposed-file discovery</li>
+                <li>Breach and paste correlation</li>
+                <li>Interactive investigation graph with connection tracing</li>
+                <li>Offline geolocation &amp; ASN enrichment</li>
+                <li>Encrypted at rest, two-factor authentication, no third parties</li>
+            </ul>
+            <p>This application requires JavaScript. Please enable it to run scans.</p>
+        </div>
+    </noscript>
     <!-- Grid Background Pattern -->
     <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
 

@@ -1,0 +1,13 @@
+{
+  "name": "Digital Footprint Tracker",
+  "short_name": "Footprint",
+  "description": "Privacy-first OSINT scanner: map a target's public digital footprint across 30+ sources.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}
