@@ -16,6 +16,10 @@
   var searchTerm = '';           // lowercased; dims non-matching nodes
   var linkMode = false;          // when on, clicking two nodes draws a manual edge
   var linkSource = null;         // first node picked while in link mode
+  var pathMode = false;          // when on, clicking two nodes traces the shortest path
+  var pathSource = null;         // first node picked while tracing a connection
+  var pathNodes = null;          // {id:1} of nodes on the traced path (null = none shown)
+  var pathEdges = null;          // {ekey:1} of edges on the traced path
   var undoStack = [], redoStack = [];   // serialized board states for undo/redo
   function isMobile() { return window.innerWidth < 768; }
   function matchesSearch(n) { return searchTerm && ((n.label || '') + ' ' + n.id).toLowerCase().indexOf(searchTerm) >= 0; }
@@ -128,16 +132,19 @@
     btn.textContent = linkMode ? (linkSource ? '🔗 pick target…' : '🔗 pick source…') : '🔗 Link: off';
     btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
       (linkMode ? 'bg-cyan-700/70 hover:bg-cyan-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
-    var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = linkMode ? 'crosshair' : '';
+    var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (linkMode || pathMode) ? 'crosshair' : '';
   }
   function toggleLinkMode() {
     linkMode = !linkMode; linkSource = null;
+    if (linkMode && pathMode) { pathMode = false; clearPath(); refreshPathUI(); }
     refreshLinkUI(); render();
     status(linkMode ? 'Link mode: click a source node, then a target.' : '');
   }
   function exitLinkMode() { if (linkMode) { linkMode = false; linkSource = null; refreshLinkUI(); render(); status(''); } }
-  /// Central node-click router: link mode wires two nodes, otherwise inspect.
+  /// Central node-click router: path mode traces a route, link mode wires two
+  /// nodes, otherwise inspect.
   function onNodeClick(d) {
+    if (pathMode) { pickForPath(d); return; }
     if (!linkMode) { detail(d); return; }
     if (!linkSource) { linkSource = d; refreshLinkUI(); render(); status('Source: ' + d.label + ' — now click the target.'); return; }
     if (linkSource.id === d.id) { linkSource = null; refreshLinkUI(); render(); status('Same node — pick a different target.'); return; }
@@ -146,6 +153,79 @@
     var made = addEdge(linkSource.id, d.id, rel, true);
     status(made ? ('Linked ' + linkSource.label + ' → ' + d.label + ' (' + rel + ').') : 'That link already exists.');
     linkSource = null; refreshLinkUI(); render(); scheduleSave();
+  }
+
+  // ── connection finder (shortest path between two entities) ────────────────
+  function eEnd(x) { return (x && typeof x === 'object') ? x.id : x; }
+  function ekey(a, b) { return JSON.stringify(a < b ? [a, b] : [b, a]); }
+  /// BFS shortest path over the *visible* graph (undirected). Returns an ordered
+  /// array of node ids, or null when the two entities aren't connected.
+  function shortestPath(aId, bId) {
+    if (aId === bId) return [aId];
+    var adj = {};
+    board.edges.forEach(function (e) {
+      var s = eEnd(e.source), t = eEnd(e.target);
+      var ns = nodeById(s), nt = nodeById(t);
+      if (!ns || !nt || hiddenTypes[ns.etype] || hiddenTypes[nt.etype]) return;
+      (adj[s] || (adj[s] = [])).push(t);
+      (adj[t] || (adj[t] = [])).push(s);
+    });
+    var prev = {}, seen = {}; seen[aId] = 1;
+    var q = [aId];
+    while (q.length) {
+      var u = q.shift();
+      if (u === bId) break;
+      var nb = adj[u] || [];
+      for (var i = 0; i < nb.length; i++) {
+        var v = nb[i];
+        if (!seen[v]) { seen[v] = 1; prev[v] = u; q.push(v); }
+      }
+    }
+    if (!seen[bId]) return null;
+    var path = [bId], cur = bId;
+    while (cur !== aId) { cur = prev[cur]; path.unshift(cur); }
+    return path;
+  }
+  function refreshPathUI() {
+    var btn = document.getElementById('board-path-btn'); if (!btn) return;
+    btn.textContent = pathMode ? (pathSource ? '🧭 pick destination…' : '🧭 pick start…') : '🧭 Path: off';
+    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+      (pathMode ? 'bg-indigo-700/70 hover:bg-indigo-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
+    var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (pathMode || linkMode) ? 'crosshair' : '';
+  }
+  function clearPath() { pathSource = null; pathNodes = null; pathEdges = null; }
+  function togglePathMode() {
+    pathMode = !pathMode;
+    clearPath();
+    if (pathMode && linkMode) { linkMode = false; linkSource = null; refreshLinkUI(); }
+    refreshPathUI(); render();
+    status(pathMode ? 'Connection finder: click a start entity, then a destination.' : '');
+  }
+  function pickForPath(d) {
+    if (!pathSource) {
+      pathSource = d; pathNodes = null; pathEdges = null;
+      refreshPathUI(); render();
+      status('Trace from: ' + d.label + ' — now click a destination.');
+      return;
+    }
+    if (pathSource.id === d.id) {
+      pathSource = null; refreshPathUI(); render();
+      status('Same entity — pick a different destination.');
+      return;
+    }
+    var start = pathSource, p = shortestPath(start.id, d.id);
+    pathSource = null;
+    if (!p) {
+      pathNodes = null; pathEdges = null; refreshPathUI(); render();
+      status('No connection found between ' + start.label + ' and ' + d.label + '.');
+      return;
+    }
+    pathNodes = {}; p.forEach(function (id) { pathNodes[id] = 1; });
+    pathEdges = {}; for (var i = 0; i < p.length - 1; i++) pathEdges[ekey(p[i], p[i + 1])] = 1;
+    var hops = p.length - 1;
+    var labels = p.map(function (id) { var n = nodeById(id); return n ? n.label : id; });
+    refreshPathUI(); render();
+    status(hops + ' hop' + (hops === 1 ? '' : 's') + ':  ' + labels.join('  →  '));
   }
 
   // ── entity typing ─────────────────────────────────────────────────────────
@@ -769,6 +849,10 @@
     // Relationship labels are noise on a busy board — auto-hide past 40 links
     // unless the user has explicitly toggled them.
     var labelsOn = (showEdgeLabels === null) ? (vedges.length <= 40) : showEdgeLabels;
+    // Connection finder highlight is only "active" if part of the traced path is
+    // actually on screen (survives board switches, type filters, deletions).
+    var pathActive = false;
+    if (pathNodes) { for (var pk = 0; pk < vnodes.length; pk++) { if (pathNodes[vnodes[pk].id]) { pathActive = true; break; } } }
 
     // Manual (investigator-drawn) links render cyan-dashed to stand apart from
     // the scan-discovered relationships.
@@ -776,6 +860,13 @@
       .attr('stroke', function (d) { return d.manual ? '#22d3ee' : '#334155'; })
       .attr('stroke-width', function (d) { return d.manual ? 1.6 : 1.2; })
       .attr('stroke-dasharray', function (d) { return d.manual ? '5,3' : null; });
+    // Emerald-thicken the edges on the traced connection; fade the rest back.
+    if (pathActive) {
+      var onPath = function (d) { return pathEdges && pathEdges[ekey(eid(d.source), eid(d.target))]; };
+      link.attr('stroke', function (d) { return onPath(d) ? '#34d399' : (d.manual ? '#22d3ee' : '#334155'); })
+        .attr('stroke-width', function (d) { return onPath(d) ? 3 : (d.manual ? 1.6 : 1.2); })
+        .attr('stroke-opacity', function (d) { return onPath(d) ? 1 : 0.18; });
+    }
     var linkLabel = g.append('g').selectAll('text').data(labelsOn ? vedges : []).enter().append('text')
       .text(function (d) { return d.rel; }).attr('font-size', 8).attr('fill', '#475569').attr('text-anchor', 'middle');
 
@@ -812,11 +903,22 @@
     var STATUS_COLOR = { confirmed: '#22c55e', suspect: '#f59e0b', 'false': '#ef4444' };
     node.attr('opacity', function (d) {
       if (searchTerm && !matchesSearch(d)) return 0.12;
+      if (pathActive && !pathNodes[d.id]) return 0.12;
       return d.status === 'false' ? 0.45 : 1;
     });
     node.filter(function (d) { return matchesSearch(d); }).append('circle')
       .attr('r', function (d) { return radius(d) + 7; })
       .attr('fill', 'none').attr('stroke', '#facc15').attr('stroke-width', 3);
+    // Emerald halo on every entity along the traced connection.
+    if (pathActive) {
+      node.filter(function (d) { return pathNodes[d.id]; }).append('circle')
+        .attr('r', function (d) { return radius(d) + 6; })
+        .attr('fill', 'none').attr('stroke', '#34d399').attr('stroke-width', 3);
+    }
+    // Chosen start entity while tracing a connection.
+    node.filter(function (d) { return pathSource && d.id === pathSource.id; }).append('circle')
+      .attr('r', function (d) { return radius(d) + 8; })
+      .attr('fill', 'none').attr('stroke', '#818cf8').attr('stroke-width', 3).attr('stroke-dasharray', '4,3');
     // Chosen source node while drawing a manual link.
     node.filter(function (d) { return linkSource && d.id === linkSource.id; }).append('circle')
       .attr('r', function (d) { return radius(d) + 7; })
@@ -852,6 +954,7 @@
   // ── wiring ────────────────────────────────────────────────────────────────
   function open() {
     linkMode = false; linkSource = null; refreshLinkUI();
+    pathMode = false; clearPath(); refreshPathUI();
     document.getElementById('board-overlay').classList.remove('hidden');
     document.getElementById('board-overlay').classList.add('flex');
     loadList();
@@ -892,13 +995,21 @@
     });
     document.getElementById('board-fit-btn').addEventListener('click', fitToView);
     document.getElementById('board-link-btn').addEventListener('click', toggleLinkMode);
+    document.getElementById('board-path-btn').addEventListener('click', togglePathMode);
     document.getElementById('board-undo-btn').addEventListener('click', undo);
     document.getElementById('board-redo-btn').addEventListener('click', redo);
-    // Keyboard: Esc leaves link mode / clears selection; Ctrl+Z / Ctrl+Shift+Z undo/redo.
+    // Keyboard: Esc leaves link/path mode or clears the trace / selection;
+    // Ctrl+Z / Ctrl+Shift+Z undo/redo.
     document.addEventListener('keydown', function (e) {
       if (document.getElementById('board-overlay').classList.contains('hidden')) return;
       var tag = (e.target && e.target.tagName) || '';
-      if (e.key === 'Escape') { if (linkMode) exitLinkMode(); else detail(null); return; }
+      if (e.key === 'Escape') {
+        if (linkMode) exitLinkMode();
+        else if (pathMode) togglePathMode();
+        else if (pathNodes) { clearPath(); render(); status(''); }
+        else detail(null);
+        return;
+      }
       // Don't hijack undo while the user is editing a note / name field.
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
