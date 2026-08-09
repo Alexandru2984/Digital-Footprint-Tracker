@@ -89,16 +89,16 @@ jobs:
       # ssh-add sees match the bytes ssh-keygen wrote on the VPS.
       - name: Set up SSH
         env:
-          DEPLOY_SSH_KEY_B64: ${{ secrets.DEPLOY_SSH_KEY_B64 }}
-          DEPLOY_HOST:        ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT:        ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_HOST_KEY:    ${{ secrets.DEPLOY_HOST_KEY }}
+          DEPLOY_SSH_KEY_B64:  ${{ secrets.DEPLOY_SSH_KEY_B64 }}
+          DEPLOY_HOST:         ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT:         ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_HOST_PUBKEY:  ${{ secrets.DEPLOY_HOST_PUBKEY }}
         run: |
           set -euo pipefail
           : "${DEPLOY_SSH_KEY_B64:?missing DEPLOY_SSH_KEY_B64}"
           : "${DEPLOY_HOST:?missing DEPLOY_HOST}"
           : "${DEPLOY_PORT:?missing DEPLOY_PORT}"
-          : "${DEPLOY_HOST_KEY:?missing DEPLOY_HOST_KEY}"
+          : "${DEPLOY_HOST_PUBKEY:?missing DEPLOY_HOST_PUBKEY}"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
@@ -113,12 +113,17 @@ jobs:
           # produced garbage, this fails loudly before we waste a job slot.
           ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null
 
-          # DEPLOY_HOST_KEY is provisioned out-of-band and contains one complete
-          # known_hosts line: [host]:port key-type base64-key. Never trust a key
-          # discovered over the same connection that is about to deploy prod.
-          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          # Pin the VPS host key so we never trust a key discovered over the same
+          # connection that is about to deploy prod. DEPLOY_HOST_PUBKEY holds only
+          # the server's *public* host key ("ssh-ed25519 AAAA…") — not secret; the
+          # value is what pins the identity. We build the known_hosts host field
+          # from the same DEPLOY_HOST/DEPLOY_PORT the ssh command uses, so the
+          # canonical form (bare host on :22, "[host]:port" otherwise) always
+          # matches what ssh looks up at connect time.
+          if [ "$DEPLOY_PORT" = "22" ]; then hostspec="$DEPLOY_HOST"; else hostspec="[$DEPLOY_HOST]:$DEPLOY_PORT"; fi
+          printf '%s %s\n' "$hostspec" "$DEPLOY_HOST_PUBKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-          ssh-keygen -F "[$DEPLOY_HOST]:$DEPLOY_PORT" -f ~/.ssh/known_hosts > /dev/null
+          ssh-keygen -F "$hostspec" -f ~/.ssh/known_hosts > /dev/null
 
       - name: Trigger deploy
         env:
