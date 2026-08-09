@@ -16,6 +16,7 @@
   var searchTerm = '';           // lowercased; dims non-matching nodes
   var linkMode = false;          // when on, clicking two nodes draws a manual edge
   var linkSource = null;         // first node picked while in link mode
+  var undoStack = [], redoStack = [];   // serialized board states for undo/redo
   function isMobile() { return window.innerWidth < 768; }
   function matchesSearch(n) { return searchTerm && ((n.label || '') + ' ' + n.id).toLowerCase().indexOf(searchTerm) >= 0; }
 
@@ -141,6 +142,7 @@
     if (!linkSource) { linkSource = d; refreshLinkUI(); render(); status('Source: ' + d.label + ' — now click the target.'); return; }
     if (linkSource.id === d.id) { linkSource = null; refreshLinkUI(); render(); status('Same node — pick a different target.'); return; }
     var rel = (window.prompt('Label for this relationship (e.g. "same owner", "belongs to"):', 'linked') || 'linked').trim().slice(0, 32) || 'linked';
+    snapshot();
     var made = addEdge(linkSource.id, d.id, rel, true);
     status(made ? ('Linked ' + linkSource.label + ' → ' + d.label + ' (' + rel + ').') : 'That link already exists.');
     linkSource = null; refreshLinkUI(); render(); scheduleSave();
@@ -277,6 +279,7 @@
       (function poll() {
         api('GET', '/results/' + sid).then(function (r) { return r.json(); }).then(function (data) {
           if ((data.status === 'completed' || data.status === 'failed') || tries > 40) {
+            snapshot();
             var n = mergeScan(node.id, data.results || []);
             status(n + ' new entit' + (n === 1 ? 'y' : 'ies') + ' from ' + node.label);
             render(); scheduleSave();
@@ -305,6 +308,39 @@
       })
     });
   }
+
+  // ── undo / redo (structural edits) ────────────────────────────────────────
+  function refreshHistoryUI() {
+    var u = document.getElementById('board-undo-btn'), r = document.getElementById('board-redo-btn');
+    if (u) u.disabled = undoStack.length === 0;
+    if (r) r.disabled = redoStack.length === 0;
+  }
+  function resetHistory() { undoStack = []; redoStack = []; refreshHistoryUI(); }
+  /// Capture the current graph BEFORE a structural change so it can be undone.
+  function snapshot() {
+    undoStack.push(serialize());
+    if (undoStack.length > 40) undoStack.shift();
+    redoStack = [];
+    refreshHistoryUI();
+  }
+  function restoreState(json) {
+    var g; try { g = JSON.parse(json); } catch (e) { return; }
+    board.nodes = g.nodes || []; board.edges = g.edges || [];
+    linkSource = null; clearSearch(); detail(null); render(); setTimeout(fitToView, 500);
+  }
+  function undo() {
+    if (!undoStack.length) { status('Nothing to undo.'); return; }
+    redoStack.push(serialize());
+    restoreState(undoStack.pop());
+    refreshHistoryUI(); scheduleSave(); status('Undone.');
+  }
+  function redo() {
+    if (!redoStack.length) { status('Nothing to redo.'); return; }
+    undoStack.push(serialize());
+    restoreState(redoStack.pop());
+    refreshHistoryUI(); scheduleSave(); status('Redone.');
+  }
+
   function scheduleSave() { dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(saveBoard, 1500); }
   /// Persist (create or update); resolves with the board id.
   function persist() {
@@ -353,6 +389,7 @@
     api('GET', '/investigations/' + otherId).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) return;
       var g; try { g = JSON.parse(d.data); } catch (e) { return; }
+      snapshot();
       var before = board.nodes.length;
       (g.nodes || []).forEach(function (n) { addNode(n.id, n.label, n.etype, n.root); });
       (g.edges || []).forEach(function (e) { addEdge(e.source, e.target, e.rel); });
@@ -381,7 +418,7 @@
       var g = {};
       try { g = JSON.parse(d.data); } catch (e) { g = { nodes: [], edges: [] }; }
       board = { id: d.id, name: d.name, nodes: g.nodes || [], edges: g.edges || [], watched: !!d.watched, watchInterval: d.watchInterval || 'daily' };
-      clearSearch();
+      clearSearch(); resetHistory();
       document.getElementById('board-name-input').value = d.name;
       refreshWatchUI();
       status('Opened “' + d.name + '”.'); render(); setTimeout(fitToView, 900);
@@ -389,7 +426,7 @@
   }
   function newBoard() {
     board = { id: null, name: '', nodes: [], edges: [], watched: false, watchInterval: 'daily' };
-    clearSearch();
+    clearSearch(); resetHistory();
     document.getElementById('board-name-input').value = '';
     document.getElementById('board-list-select').value = '';
     refreshWatchUI();
@@ -438,6 +475,7 @@
     btn.classList.toggle('hidden', c === 0);
   }
   function acknowledgeNew() {
+    snapshot();
     board.nodes.forEach(function (n) { delete n['new']; });
     refreshAckUI(); render(); scheduleSave();
     status('New findings acknowledged.');
@@ -596,6 +634,7 @@
     var reader = new FileReader();
     reader.onload = function () {
       var text = String(reader.result), added = 0;
+      snapshot();
       try {
         if (/^\s*[\[{]/.test(text)) {
           var g = JSON.parse(text);
@@ -699,6 +738,7 @@
     document.getElementById('board-remove-btn').onclick = function () { removeNode(node); };
   }
   function removeNode(node) {
+    snapshot();
     board.nodes = board.nodes.filter(function (n) { return n.id !== node.id; });
     board.edges = board.edges.filter(function (e) {
       var s = (typeof e.source === 'object' ? e.source.id : e.source), t = (typeof e.target === 'object' ? e.target.id : e.target);
@@ -852,10 +892,20 @@
     });
     document.getElementById('board-fit-btn').addEventListener('click', fitToView);
     document.getElementById('board-link-btn').addEventListener('click', toggleLinkMode);
-    // Esc leaves link mode (and, failing that, clears a node selection).
+    document.getElementById('board-undo-btn').addEventListener('click', undo);
+    document.getElementById('board-redo-btn').addEventListener('click', redo);
+    // Keyboard: Esc leaves link mode / clears selection; Ctrl+Z / Ctrl+Shift+Z undo/redo.
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !document.getElementById('board-overlay').classList.contains('hidden')) {
-        if (linkMode) exitLinkMode(); else detail(null);
+      if (document.getElementById('board-overlay').classList.contains('hidden')) return;
+      var tag = (e.target && e.target.tagName) || '';
+      if (e.key === 'Escape') { if (linkMode) exitLinkMode(); else detail(null); return; }
+      // Don't hijack undo while the user is editing a note / name field.
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault(); redo();
       }
     });
     document.getElementById('board-watch-btn').addEventListener('click', toggleWatch);
@@ -874,6 +924,7 @@
     function addFromInput() {
       var inp = document.getElementById('board-add-input');
       var v = inp.value.trim(); if (!v) return;
+      snapshot();
       var n = addNode(v, v, inferType(v), true);
       inp.value = ''; detail(n); render(); scheduleSave();
     }
