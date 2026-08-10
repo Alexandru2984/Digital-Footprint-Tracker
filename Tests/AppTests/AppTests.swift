@@ -82,7 +82,7 @@ private func registerAndLogin(_ app: Application, username: String) async throws
     try await app.test(.POST, "/auth/register", beforeRequest: { req in
         try req.content.encode([
             "username": username,
-            "email": "\(username)@example.com",
+            "email": "\(username)@example.test",
             "password": "Xk9mQ2vLp7wZ",
         ], as: .json)
     }, afterResponse: { res in
@@ -102,16 +102,16 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 final class AppTests: XCTestCase {
 
     func testEmailAddressNormalizationRejectsHeaderAndDomainAbuse() {
-        XCTAssertEqual(EmailAddress.normalize("  User.Name+tag@Example.COM  "),
-                       "user.name+tag@example.com")
+        XCTAssertEqual(EmailAddress.normalize("  User.Name+tag@Example.test  "),
+                       "user.name+tag@example.test")
         for invalid in [
-            "victim@example.com\r\nBcc: attacker@example.com",
-            "two@@example.com",
-            ".leading@example.com",
-            "double..dot@example.com",
+            "victim@example.test\r\nBcc: attacker@example.test",
+            "two@@example.test",
+            ".leading@example.test",
+            "double..dot@example.test",
             "user@single-label",
             "user@-edge.example",
-            "usér@example.com",
+            "usér@example.test",
         ] {
             XCTAssertNil(EmailAddress.normalize(invalid), "Unexpectedly accepted: \(invalid)")
         }
@@ -190,7 +190,7 @@ final class AppTests: XCTestCase {
         var firstCookie = ""
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
             try req.content.encode([
-                "username": "rotation-user", "email": "rotation@example.com", "password": "Xk9mQ2vLp7wZ",
+                "username": "rotation-user", "email": "rotation@example.test", "password": "Xk9mQ2vLp7wZ",
             ], as: .json)
         }, afterResponse: { res in
             if let raw = res.headers.first(name: "Set-Cookie") {
@@ -460,16 +460,16 @@ final class AppTests: XCTestCase {
         }
 
         try TokenEncryption.validateConfiguration(required: true)
-        let ciphertext = try TokenEncryption.encrypt("person@example.com")
+        let ciphertext = try TokenEncryption.encrypt("person@example.test")
         XCTAssertTrue(ciphertext.hasPrefix("enc:v1:"))
-        XCTAssertFalse(ciphertext.contains("person@example.com"))
-        XCTAssertEqual(TokenEncryption.decrypt(ciphertext), "person@example.com")
+        XCTAssertFalse(ciphertext.contains("person@example.test"))
+        XCTAssertEqual(TokenEncryption.decrypt(ciphertext), "person@example.test")
 
-        let scan = Scan(input: "person@example.com")
+        let scan = Scan(input: "person@example.test")
         XCTAssertTrue(scan.inputCipher.hasPrefix("enc:v1:"))
-        XCTAssertEqual(scan.input, "person@example.com")
+        XCTAssertEqual(scan.input, "person@example.test")
 
-        let user = User(username: "alice", email: "alice@example.com", passwordHash: "hash",
+        let user = User(username: "alice", email: "alice@example.test", passwordHash: "hash",
                         webhookURL: "https://hooks.example.test/secret")
         XCTAssertTrue(user.webhookURLCipher?.hasPrefix("enc:v1:") == true)
         XCTAssertEqual(user.webhookURL, "https://hooks.example.test/secret")
@@ -710,7 +710,7 @@ final class AppTests: XCTestCase {
 
         // Register + login so the scan has an owner (IDOR fix requires ownership)
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "resultstest", "email": "rt@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            try req.content.encode(["username": "resultstest", "email": "rt@example.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
@@ -785,7 +785,7 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
         // Register + login
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "testuser2", "email": "t2@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            try req.content.encode(["username": "testuser2", "email": "t2@example.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
@@ -881,7 +881,7 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(SSRFGuard.isInternalTarget("example.com"))
         XCTAssertFalse(SSRFGuard.isInternalTarget("8.8.8.8"))
         XCTAssertFalse(SSRFGuard.isInternalTarget("1.1.1.1"))
-        XCTAssertFalse(SSRFGuard.isInternalTarget("user@example.com"))
+        XCTAssertFalse(SSRFGuard.isInternalTarget("user@example.test"))
         XCTAssertFalse(SSRFGuard.isInternalTarget("swift.micutu.com"))
     }
 
@@ -940,7 +940,7 @@ final class AppTests: XCTestCase {
 
         do {
             _ = try await OutboundHTTP.request(
-                try XCTUnwrap(URL(string: "https://token:secret@example.com/hook")),
+                try XCTUnwrap(URL(string: "https://token:secret@example.test/hook")),
                 bodyMode: .prefix(maxBytes: 0),
                 on: app
             )
@@ -1040,7 +1040,7 @@ final class AppTests: XCTestCase {
         try await app.test(.POST, "/auth/webhook", beforeRequest: { req in
             req.headers.replaceOrAdd(name: "Cookie", value: cookie)
             try req.content.encode([
-                "webhookURL": "https://token:secret@example.com/delivery",
+                "webhookURL": "https://token:secret@example.test/delivery",
             ], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .badRequest)
@@ -1207,7 +1207,7 @@ final class AppTests: XCTestCase {
     }
 
     func testTargetDeriverStripsPlusTag() {
-        let c = TargetDeriver.candidates(for: "alice+newsletter@example.com")
+        let c = TargetDeriver.candidates(for: "alice+newsletter@example.test")
         XCTAssertTrue(c.contains(TargetDeriver.Candidate(value: "alice", origin: .emailLocalPart)))
         XCTAssertFalse(c.contains { $0.origin.derived && $0.value.contains("+") }, "The +tag must be stripped")
     }
@@ -1255,7 +1255,7 @@ final class AppTests: XCTestCase {
           ]
         }]}
         """
-        let results = GravatarPlugin.parseProfile(Data(json.utf8), email: "jane@example.com", avatarURL: "https://en.gravatar.com/avatar/x")
+        let results = GravatarPlugin.parseProfile(Data(json.utf8), email: "jane@example.test", avatarURL: "https://en.gravatar.com/avatar/x")
         let r = try? XCTUnwrap(results)
         XCTAssertEqual(r?.count, 3, "profile + 2 linked accounts")
         XCTAssertEqual(r?.first?.metadata?["name"], "Jane Roe")
@@ -1271,14 +1271,14 @@ final class AppTests: XCTestCase {
         let json = """
         [
           {"type":"PushEvent","payload":{"commits":[
-            {"author":{"email":"Real.Dev@Example.com","name":"Real Dev"}},
+            {"author":{"email":"Real.Dev@Example.test","name":"Real Dev"}},
             {"author":{"email":"12345+janer@users.noreply.github.com","name":"janer"}}
           ]}},
           {"type":"WatchEvent","payload":{}}
         ]
         """
         let emails = UsernamePlugin.extractCommitEmails(from: Data(json.utf8))
-        XCTAssertEqual(emails, ["real.dev@example.com"], "lowercased, deduped, noreply dropped")
+        XCTAssertEqual(emails, ["real.dev@example.test"], "lowercased, deduped, noreply dropped")
     }
 
     // MARK: - Wayback / Internet Archive
@@ -1351,7 +1351,7 @@ final class AppTests: XCTestCase {
               metadata: ["platform": "github", "username": "alice", "name": "Alice Roe",
                          "profileURL": "https://github.com/alice", "location": "Berlin"], rawData: "x"),
             I(source: "GitHub:commits", type: "email", confidence: 0.9,
-              metadata: ["email": "Alice@Example.com"], rawData: "x"),
+              metadata: ["email": "Alice@Example.test"], rawData: "x"),
             I(source: "Gravatar:twitter", type: "identity_proof", confidence: 0.95,
               metadata: ["platform": "twitter", "username": "alice"], rawData: "x"),
             I(source: "HaveIBeenPwned", type: "data_breach", confidence: 1.0,
@@ -1361,7 +1361,7 @@ final class AppTests: XCTestCase {
 
         XCTAssertEqual(p.likelyName, "Alice Roe")
         XCTAssertEqual(p.locations, ["Berlin"])
-        XCTAssertTrue(p.emails.contains("alice@example.com"), "email lowercased + deduped")
+        XCTAssertTrue(p.emails.contains("alice@example.test"), "email lowercased + deduped")
         XCTAssertTrue(p.breaches.contains("Adobe") && p.breaches.contains("LinkedIn"))
         XCTAssertEqual(p.exposedDataClasses, ["Email addresses", "Passwords", "Usernames"], "leaked data categories, sorted + deduped")
         XCTAssertEqual(p.riskScore, 40)
@@ -1388,7 +1388,7 @@ final class AppTests: XCTestCase {
             names: ["Alice Roe"],
             locations: ["Berlin"],
             organizations: ["Acme & Co"],   // ampersand must be XML-escaped
-            emails: ["alice@example.com"],
+            emails: ["alice@example.test"],
             phones: [],
             handles: [IdentitySynthesizer.HandleUse(handle: "alice", platforms: ["github", "twitter"], confidence: 0.95)],
             confirmedAccounts: [IdentitySynthesizer.Account(platform: "github", reference: "https://github.com/alice", confidence: 1.0)],
@@ -1402,7 +1402,7 @@ final class AppTests: XCTestCase {
             riskLevel: "Medium",
             resultCount: 6
         )
-        let xml = IdentityGraph.graphml(from: profile, target: "alice@example.com")
+        let xml = IdentityGraph.graphml(from: profile, target: "alice@example.test")
 
         XCTAssertTrue(xml.hasPrefix("<?xml"))
         XCTAssertTrue(xml.contains("<graphml"))
@@ -1663,12 +1663,12 @@ final class AppTests: XCTestCase {
             PluginResult(source: "GitHubAccountCheck", type: "account_presence", confidenceScore: 1.0,
                          rawData: "x", metadata: ["platform": "github", "username": "alice"]),
             PluginResult(source: "GitHub:commits", type: "email", confidenceScore: 0.9,
-                         rawData: "x", metadata: ["email": "real.dev@example.com", "username": "alice"]),
+                         rawData: "x", metadata: ["email": "real.dev@example.test", "username": "alice"]),
             PluginResult(source: "Gravatar:twitter", type: "identity_proof", confidenceScore: 0.95,
                          rawData: "x", metadata: ["platform": "twitter", "username": "alice_x"])
         ]
         let pivots = PivotExtractor.candidates(from: results, alreadyScanned: ["alice"])
-        XCTAssertTrue(pivots.contains("real.dev@example.com"), "harvested email becomes a pivot")
+        XCTAssertTrue(pivots.contains("real.dev@example.test"), "harvested email becomes a pivot")
         XCTAssertTrue(pivots.contains("alice_x"), "linked handle becomes a pivot")
         XCTAssertFalse(pivots.contains("alice"), "already-scanned identity is excluded")
     }
@@ -1676,7 +1676,7 @@ final class AppTests: XCTestCase {
     func testPivotExtractorRespectsCap() {
         let results = (0..<20).map {
             PluginResult(source: "s", type: "email", confidenceScore: 1.0, rawData: "x",
-                         metadata: ["email": "user\($0)@example.com"])
+                         metadata: ["email": "user\($0)@example.test"])
         }
         XCTAssertEqual(PivotExtractor.candidates(from: results, alreadyScanned: []).count, PivotExtractor.maxPivots)
     }
@@ -1826,25 +1826,25 @@ final class AppTests: XCTestCase {
     }
 
     func testCorrelatorRequiresTwoScans() {
-        XCTAssertTrue(Correlator.correlate([summary("alice@example.com")]).isEmpty)
+        XCTAssertTrue(Correlator.correlate([summary("alice@example.test")]).isEmpty)
     }
 
     func testCorrelatorIgnoresUnsharedEntities() {
-        let a = summary("alice@example.com")
-        let b = summary("bob@example.com")
+        let a = summary("alice@example.test")
+        let b = summary("bob@example.test")
         XCTAssertTrue(Correlator.correlate([a, b]).isEmpty, "No shared entity → no correlation")
     }
 
     // The scan input itself is now a correlation anchor (it was ignored before):
     // an email that is one scan's input and another scan's structured finding links them.
     func testCorrelatorLinksInputToStructuredMetadata() {
-        let a = summary("alice@example.com")
+        let a = summary("alice@example.test")
         let b = summary("aliceuser", [
             Correlator.ResultEntry(source: "HaveIBeenPwned", type: "data_breach", rawData: "x",
-                                   metadata: ["email": "alice@example.com", "breachCount": "2"])
+                                   metadata: ["email": "alice@example.test", "breachCount": "2"])
         ])
         let entities = Correlator.correlate([a, b])
-        let email = entities.first { $0.type == "email" && $0.value == "alice@example.com" }
+        let email = entities.first { $0.type == "email" && $0.value == "alice@example.test" }
         XCTAssertEqual(email?.occurrences.count, 2, "Email should link both scans")
     }
 
@@ -1865,11 +1865,11 @@ final class AppTests: XCTestCase {
     func testCorrelatorFallsBackToRegex() {
         let a = summary("targetalpha", [
             Correlator.ResultEntry(source: "SomePlugin", type: "paste_exposure",
-                                   rawData: "leaked credential for shared@example.com here", metadata: nil)
+                                   rawData: "leaked credential for shared@example.test here", metadata: nil)
         ])
-        let b = summary("shared@example.com")
+        let b = summary("shared@example.test")
         let entities = Correlator.correlate([a, b])
-        XCTAssertTrue(entities.contains { $0.value == "shared@example.com" && $0.occurrences.count == 2 })
+        XCTAssertTrue(entities.contains { $0.value == "shared@example.test" && $0.occurrences.count == 2 })
     }
 
     // A Keybase identity proof exposing a github handle links to a username scan.
@@ -1921,7 +1921,7 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
 
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "owner2", "email": "o2@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            try req.content.encode(["username": "owner2", "email": "o2@example.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
         var cookie = ""
         try await app.test(.POST, "/auth/login", beforeRequest: { req in
@@ -1951,7 +1951,7 @@ final class AppTests: XCTestCase {
 
         // Register + login user A.
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "ownerA", "email": "a@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            try req.content.encode(["username": "ownerA", "email": "a@example.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
 
         var cookieA = ""
@@ -1993,11 +1993,11 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
 
         try await app.test(.POST, "/scan", beforeRequest: { req in
-            try req.content.encode(["input": "User@Example.COM"], as: .json)
+            try req.content.encode(["input": "User@Example.test"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
             let body = try res.content.decode(ScanResponse.self)
-            XCTAssertEqual(body.input, "user@example.com",
+            XCTAssertEqual(body.input, "user@example.test",
                 "Emails must be lowercased so cache lookups are case-insensitive")
         })
     }
@@ -2041,7 +2041,7 @@ final class AppTests: XCTestCase {
         addTeardownBlock { try await app.asyncShutdown() }
 
         try await app.test(.POST, "/auth/register", beforeRequest: { req in
-            try req.content.encode(["username": "gdpruser", "email": "g@example.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            try req.content.encode(["username": "gdpruser", "email": "g@example.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
         })
@@ -2292,7 +2292,7 @@ final class AppTests: XCTestCase {
 
         func login(_ name: String) async throws -> String {
             try await app.test(.POST, "/auth/register", beforeRequest: { req in
-                try req.content.encode(["username": name, "email": "\(name)@ex.com", "password": "Xk9mQ2vLp7wZ"], as: .json)
+                try req.content.encode(["username": name, "email": "\(name)@ex.test", "password": "Xk9mQ2vLp7wZ"], as: .json)
             }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
             var cookie = ""
             try await app.test(.POST, "/auth/login", beforeRequest: { req in

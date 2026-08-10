@@ -6,6 +6,18 @@ import FoundationNetworking
 
 struct EmailService {
     static func send(to: String, subject: String, body: String, app: Application) async {
+        // Never deliver real mail from the test environment. `swift test` boots
+        // with the box's `.env` (SMTP_* point at Resend for micutu.com), so
+        // without this guard every test that registers a user would send a live
+        // email to a fixture address — 422 on `@example.com`, guaranteed bounce
+        // on domains with no MX — and wreck the domain's sender reputation for
+        // every project that mails from it. Tests exercise formatting, not
+        // delivery. To exercise real delivery on purpose, use a non-test env and
+        // Resend's sink addresses (delivered@resend.dev / bounced@resend.dev).
+        guard app.environment != .testing else {
+            app.logger.debug("EmailService: test environment — skipping real delivery to \(EmailAddress.redactedDomain(to))")
+            return
+        }
         guard let host = Environment.get("SMTP_HOST"),
               let portStr = Environment.get("SMTP_PORT"),
               let user = Environment.get("SMTP_USER"),
@@ -138,10 +150,17 @@ struct EmailService {
                 privateTemporaryDirectory: false
             )
             if !execution.succeeded {
-                app.logger.warning("EmailService: SMTP delivery subprocess failed with status \(execution.exitStatus)")
+                // Surface hard rejections (e.g. Resend's 422 for an invalid
+                // recipient) at error level so a silent delivery gap is visible.
+                // Note: an accepted message that bounces later (no MX, etc.) exits
+                // 0 here — those only show up via the provider's bounce webhook.
+                app.logger.error("""
+                    EmailService: SMTP delivery FAILED — nothing was delivered \
+                    (curl exit \(execution.exitStatus), recipient domain: \(EmailAddress.redactedDomain(safeTo))).
+                    """)
             }
         } catch {
-            app.logger.error("EmailService: failed to start SMTP delivery subprocess")
+            app.logger.error("EmailService: failed to start SMTP delivery subprocess (recipient domain: \(EmailAddress.redactedDomain(safeTo)))")
         }
     }
 

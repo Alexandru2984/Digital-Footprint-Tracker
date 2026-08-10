@@ -2,6 +2,14 @@ import Foundation
 
 /// Conservative ASCII mailbox validation for account and SMTP boundaries.
 enum EmailAddress {
+    /// Domain part only, for logging a delivery event without exposing the
+    /// local-part (PII). Returns "?" when there is no domain.
+    static func redactedDomain(_ raw: String) -> String {
+        guard let at = raw.lastIndex(of: "@") else { return "?" }
+        let domain = raw[raw.index(after: at)...]
+        return domain.isEmpty ? "?" : String(domain)
+    }
+
     static func normalize(_ raw: String) -> String? {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !value.isEmpty, value.utf8.count <= 254,
