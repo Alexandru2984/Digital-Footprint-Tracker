@@ -2182,6 +2182,23 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
     }
 
+    func testRedditEvaluateRejectsBlocksAndMismatches() throws {
+        let real = Data(#"{"kind":"t2","data":{"name":"spez","id":"abc"}}"#.utf8)
+        XCTAssertNotNil(RedditPlugin.evaluate(username: "spez", status: 200, body: real))
+        XCTAssertNotNil(RedditPlugin.evaluate(username: "SPEZ", status: 200, body: real)) // case-insensitive
+        // 403 block (datacenter IP) must NOT be reported as "suspended" — the old bug.
+        XCTAssertNil(RedditPlugin.evaluate(username: "anyone", status: 403, body: Data()))
+        // 200 that isn't a real t2 account (block/soft page) → nil.
+        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 200, body: Data("<html>blocked</html>".utf8)))
+        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 404,
+                                           body: Data(#"{"message":"Not Found","error":404}"#.utf8)))
+        // Returned account is a different user → not a hit.
+        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 200, body: real))
+        // A suspended account is still a real account.
+        let suspended = Data(#"{"kind":"t2","data":{"name":"banned_user","is_suspended":true}}"#.utf8)
+        XCTAssertNotNil(RedditPlugin.evaluate(username: "banned_user", status: 200, body: suspended))
+    }
+
     func testTOTPKnownVectorRFC6238() throws {
         // RFC 6238 test vector: secret "12345678901234567890" (ASCII) → base32
         // GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ; at T=59s the SHA-1 TOTP is 94287082.
