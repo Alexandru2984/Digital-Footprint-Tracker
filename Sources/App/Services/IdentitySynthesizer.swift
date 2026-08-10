@@ -63,7 +63,8 @@ enum IdentitySynthesizer {
     ]
 
     static func synthesize(from inputs: [Input], riskScore: Int, riskLevel: String) -> IdentityProfile {
-        var nameCounts: [String: Int] = [:]
+        var nameScore: [String: Double] = [:]        // normalized key → summed confidence (weight)
+        var nameForms: [String: [String: Int]] = [:] // normalized key → seen display forms + counts
         var locations = Set<String>()
         var orgs = Set<String>()
         var emails = Set<String>()
@@ -81,7 +82,16 @@ enum IdentitySynthesizer {
 
         for inp in inputs {
             let m = inp.metadata
-            if let n = nonEmpty(m["name"]) { nameCounts[n, default: 0] += 1 }
+            if let rawName = nonEmpty(m["name"]) {
+                let display = collapseWhitespace(rawName)
+                let key = display.lowercased()
+                // Weight by the finding's confidence so a name from a confirmed
+                // account outranks a one-off mention from a weak source, and
+                // corroboration across sources accumulates. Case/spacing variants
+                // ("John Smith" / "john  smith") merge into one identity.
+                nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence))
+                nameForms[key, default: [:]][display, default: 0] += 1
+            }
             if let l = nonEmpty(m["location"]) { locations.insert(l) }
             if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { orgs.insert(o) }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
@@ -118,7 +128,15 @@ enum IdentitySynthesizer {
             }
         }
 
-        let likelyName = nameCounts.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key
+        // Pick the most-seen casing for a normalized name key.
+        func displayForm(_ key: String) -> String {
+            guard let forms = nameForms[key] else { return key }
+            return forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key ?? key
+        }
+        // The highest summed-confidence name is the likely identity; ties → lexical.
+        let bestNameKey = nameScore.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key
+        let likelyName = bestNameKey.map(displayForm)
+        let resolvedNames = nameScore.keys.map(displayForm).sorted()
         let handles = handlePlatforms.map { handle, platforms -> HandleUse in
             let base = handleConfidence[handle] ?? 0.5
             let boosted = min(1.0, base + 0.1 * Double(platforms.count - 1))
@@ -138,7 +156,7 @@ enum IdentitySynthesizer {
 
         return IdentityProfile(
             likelyName: likelyName,
-            names: nameCounts.keys.sorted(),
+            names: resolvedNames,
             locations: locations.sorted(),
             organizations: orgs.sorted(),
             emails: emails.sorted(),
@@ -154,6 +172,13 @@ enum IdentitySynthesizer {
             riskLevel: riskLevel,
             resultCount: inputs.count
         )
+    }
+
+    /// Trim and collapse internal runs of whitespace to a single space, so
+    /// "John   Smith" and "John Smith" are the same name.
+    private static func collapseWhitespace(_ s: String) -> String {
+        s.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" })
+            .joined(separator: " ")
     }
 
     private static func nonEmpty(_ s: String?) -> String? {

@@ -1380,6 +1380,25 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.resultCount, 0)
     }
 
+    func testIdentitySynthesizerNameConfidenceWeightedAndMerged() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            // Weak one-off mention of the wrong name.
+            I(source: "SiteA", type: "account_presence", confidence: 0.3,
+              metadata: ["name": "J. Doe"], rawData: "x"),
+            // Real name, corroborated by two strong sources, in two casings/spacings.
+            I(source: "GitHub", type: "account_presence", confidence: 1.0,
+              metadata: ["name": "John Smith"], rawData: "x"),
+            I(source: "GitLab", type: "account_presence", confidence: 0.9,
+              metadata: ["name": "john  smith"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 10, riskLevel: "Low")
+        // Confidence-weighted (1.0 + 0.9 = 1.9) beats the 0.3 one-off, not by count.
+        XCTAssertEqual(p.likelyName, "John Smith")
+        // Case/spacing variants collapse: two distinct identities, not three.
+        XCTAssertEqual(p.names.sorted(), ["J. Doe", "John Smith"])
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {
