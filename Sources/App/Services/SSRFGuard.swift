@@ -119,6 +119,72 @@ enum SSRFGuard {
         return false
     }
 
+    /// Resolve `host` and return the concrete public IP the caller must dial to
+    /// defeat DNS rebinding: the connection is pinned to *this* address instead
+    /// of re-resolving the hostname (which an attacker's low-TTL DNS could rebind
+    /// to an internal address between the check and the connect). Returns nil if
+    /// the host is internal, unresolvable, or resolves to *any* internal address
+    /// (fail-closed). Blocking — call off the request hot path.
+    static func resolveValidatedIP(_ host: String) -> String? {
+        guard !host.isEmpty, !isInternalHostname(host) else { return nil }
+        // Numeric literal forms are deterministic (no DNS) — return as-is once public.
+        if let greedy = parseGreedyIPv4(host) { return isPrivateIPv4(greedy) ? nil : host }
+
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        var res: UnsafeMutablePointer<addrinfo>?
+        let status = host.withCString { getaddrinfo($0, nil, &hints, &res) }
+        guard status == 0, let head = res else { return nil } // fail closed
+        defer { freeaddrinfo(head) }
+
+        var chosen: String?
+        var node: UnsafeMutablePointer<addrinfo>? = head
+        while let cur = node {
+            if let sa = cur.pointee.ai_addr {
+                switch cur.pointee.ai_family {
+                case AF_INET:
+                    let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                        UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
+                    }
+                    if isPrivateIPv4(v4) { return nil } // any internal answer → block
+                    if chosen == nil {
+                        chosen = "\((v4 >> 24) & 0xff).\((v4 >> 16) & 0xff).\((v4 >> 8) & 0xff).\(v4 & 0xff)"
+                    }
+                case AF_INET6:
+                    let bytes = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p -> [UInt8] in
+                        var a6 = p.pointee.sin6_addr
+                        return withUnsafeBytes(of: &a6) { Array($0) }
+                    }
+                    if isInternalIPv6(bytes) { return nil }
+                    if chosen == nil { chosen = ipv6String(bytes) }
+                default:
+                    break
+                }
+            }
+            node = cur.pointee.ai_next
+        }
+        return chosen
+    }
+
+    /// True if `host` is an IP literal (dotted-quad, greedy-numeric, or IPv6),
+    /// meaning no DNS lookup is involved and rebinding cannot apply.
+    static func isIPLiteral(_ host: String) -> Bool {
+        var h = host.lowercased()
+        if h.hasPrefix("[") && h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
+        if let pct = h.firstIndex(of: "%") { h = String(h[..<pct]) }
+        return parseGreedyIPv4(h) != nil || parseIPv6(h) != nil
+    }
+
+    private static func ipv6String(_ b: [UInt8]) -> String {
+        var addr = in6_addr()
+        withUnsafeMutableBytes(of: &addr) { raw in
+            for i in 0..<min(16, b.count) { raw[i] = b[i] }
+        }
+        var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        _ = inet_ntop(AF_INET6, &addr, &buf, socklen_t(INET6_ADDRSTRLEN))
+        return String(cString: buf)
+    }
+
     // MARK: - IPv4
 
     private static func parseStrictIPv4(_ s: String) -> UInt32? {

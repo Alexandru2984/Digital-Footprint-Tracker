@@ -52,7 +52,7 @@ enum OutboundHTTP {
             guard visited.insert(currentURL.absoluteString).inserted else {
                 throw RequestError.redirectLimit
             }
-            try await validatePublicDestination(currentURL, skipDNS: hostPreChecked && redirects == 0)
+            let dnsOverride = try await pinnedDestination(currentURL)
 
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { throw HTTPClientError.deadlineExceeded }
@@ -65,12 +65,29 @@ enum OutboundHTTP {
                 request.body = .bytes(currentBody)
             }
 
-            let response = try await app.http.client.shared.execute(
-                request,
-                timeout: .milliseconds(Int64(max(1, remaining * 1_000)))
-            )
+            // Pin the connection to the exact validated IP (defeats DNS rebinding):
+            // a per-request client whose dnsOverride maps this host to the address
+            // the guard just approved, while SNI/certificate validation stay bound
+            // to the real hostname. Redirects are handled here, not by the client.
+            var clientConfig = HTTPClient.Configuration()
+            clientConfig.redirectConfiguration = .disallow
+            clientConfig.timeout.connect = .seconds(5)
+            clientConfig.dnsOverride = dnsOverride
+            let client = HTTPClient(eventLoopGroupProvider: .shared(app.eventLoopGroup), configuration: clientConfig)
+
+            let response: HTTPClientResponse
+            do {
+                response = try await client.execute(
+                    request,
+                    timeout: .milliseconds(Int64(max(1, remaining * 1_000)))
+                )
+            } catch {
+                try? await client.shutdown()
+                throw error
+            }
 
             if let redirect = redirectTarget(from: response, relativeTo: currentURL) {
+                try? await client.shutdown()
                 guard redirects < maxRedirects else { throw RequestError.redirectLimit }
                 let nextURL = try normalized(redirect)
                 if currentURL.scheme?.lowercased() == "https", nextURL.scheme?.lowercased() != "https" {
@@ -92,18 +109,25 @@ enum OutboundHTTP {
             let data: Data
             switch bodyMode {
             case .complete(let maxBytes):
-                guard maxBytes >= 0 else { throw RequestError.invalidURL }
+                guard maxBytes >= 0 else { try? await client.shutdown(); throw RequestError.invalidURL }
                 do {
                     let buffer = try await response.body.collect(upTo: maxBytes)
                     data = Data(buffer.readableBytesView)
                 } catch {
                     // Do not let a retry loop download an oversized body again.
+                    try? await client.shutdown()
                     throw RequestError.responseBodyRejected
                 }
             case .prefix(let maxBytes):
-                guard maxBytes >= 0 else { throw RequestError.invalidURL }
-                data = try await collectPrefix(response.body, maxBytes: maxBytes)
+                guard maxBytes >= 0 else { try? await client.shutdown(); throw RequestError.invalidURL }
+                do {
+                    data = try await collectPrefix(response.body, maxBytes: maxBytes)
+                } catch {
+                    try? await client.shutdown()
+                    throw error
+                }
             }
+            try? await client.shutdown()
 
             var flattenedHeaders: [String: String] = [:]
             for header in response.headers {
@@ -136,14 +160,17 @@ enum OutboundHTTP {
         return normalized
     }
 
-    private static func validatePublicDestination(_ url: URL, skipDNS: Bool) async throws {
-        guard let host = url.host, !SSRFGuard.isInternalURL(url) else {
+    /// Validate `url`'s destination and return the DNS override that pins the
+    /// connection to a guard-approved IP. Empty for IP-literal hosts (no DNS
+    /// lookup, so no rebinding surface). Throws for internal/unresolvable hosts.
+    private static func pinnedDestination(_ url: URL) async throws -> [String: String] {
+        guard let host = url.host, !host.isEmpty, !SSRFGuard.isInternalURL(url) else {
             throw RequestError.blockedInternalHost
         }
-        if !skipDNS {
-            let blocked = await Task.detached { SSRFGuard.resolvesToInternal(host) }.value
-            guard !blocked else { throw RequestError.blockedInternalHost }
-        }
+        if SSRFGuard.isIPLiteral(host) { return [:] }
+        let pinned = await Task.detached { SSRFGuard.resolveValidatedIP(host) }.value
+        guard let ip = pinned else { throw RequestError.blockedInternalHost }
+        return [host: ip]
     }
 
     private static func redirectTarget(from response: HTTPClientResponse, relativeTo current: URL) -> URL? {

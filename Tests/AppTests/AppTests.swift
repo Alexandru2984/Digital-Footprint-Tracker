@@ -829,6 +829,27 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(SSRFGuard.isInternalTarget("user@127.0.0.1"))
     }
 
+    // Connection-pinning: the outbound path dials this exact IP (no re-resolve),
+    // so an internal answer is rejected and a public one becomes the pin target.
+    func testSSRFResolveValidatedIPPinsPublicAndBlocksInternal() {
+        XCTAssertEqual(SSRFGuard.resolveValidatedIP("8.8.8.8"), "8.8.8.8")
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("127.0.0.1"))
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("10.0.0.1"))
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("192.168.1.1"))
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("169.254.169.254")) // cloud metadata
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("2130706433"))       // 127.0.0.1 in decimal
+        XCTAssertNil(SSRFGuard.resolveValidatedIP(""))
+    }
+
+    func testSSRFIsIPLiteral() {
+        XCTAssertTrue(SSRFGuard.isIPLiteral("8.8.8.8"))
+        XCTAssertTrue(SSRFGuard.isIPLiteral("::1"))
+        XCTAssertTrue(SSRFGuard.isIPLiteral("[2606:4700:4700::1111]"))
+        XCTAssertTrue(SSRFGuard.isIPLiteral("2130706433"))
+        XCTAssertFalse(SSRFGuard.isIPLiteral("example.com"))
+        XCTAssertFalse(SSRFGuard.isIPLiteral("sub.domain.co.uk"))
+    }
+
     func testSSRFGuardBlocksPrivateRanges() {
         // RFC 1918 — class A / B / C
         XCTAssertTrue(SSRFGuard.isInternalTarget("10.0.0.1"))
