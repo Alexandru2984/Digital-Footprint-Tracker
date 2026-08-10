@@ -2153,6 +2153,35 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(TOTP.verify(code: code, secret: secret, at: now), "verify() still accepts a valid code")
     }
 
+    func testBulkUsernameEvaluatePrecision() throws {
+        func eval(_ site: SherlockSite, _ user: String, _ status: Int, _ final: String, _ body: String = "") -> PluginResult? {
+            BulkUsernamePlugin.evaluate(
+                siteName: "Site", siteData: site, username: user,
+                targetURL: "https://x/\(user)", status: status,
+                finalURL: URL(string: final)!, body: Data(body.utf8))
+        }
+        // status_code: a missing user redirected to the home/login page loses the
+        // username from the final URL → must NOT be reported (the old bug).
+        let sc = SherlockSite(errorType: "status_code", url: "https://9gag.com/u/{}",
+                              urlMain: "https://9gag.com/", errorMsg: nil, errorUrl: nil, regexCheck: nil)
+        XCTAssertNil(eval(sc, "ghost404", 200, "https://9gag.com/"))          // → home
+        XCTAssertNil(eval(sc, "ghost404", 200, "https://9gag.com/login"))     // → login
+        XCTAssertNotNil(eval(sc, "realuser", 200, "https://9gag.com/u/realuser")) // real profile
+        XCTAssertNil(eval(sc, "realuser", 404, "https://9gag.com/u/realuser"))    // 404
+        // Apex redirect keeps the username (www.github.com/user → github.com/user).
+        XCTAssertNotNil(eval(sc, "blue", 200, "https://github.com/blue"))
+        // A `?next=/u/name` echo in the query must not count as a hit.
+        XCTAssertNil(eval(sc, "ghost", 200, "https://9gag.com/login?next=/u/ghost"))
+
+        // message: error string present → not found; absent + username present → found.
+        let msg = SherlockSite(errorType: "message", url: "https://ex.com/{}",
+                               urlMain: "https://ex.com/", errorMsg: .string("User not found"),
+                               errorUrl: nil, regexCheck: nil)
+        XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/ghost", "Sorry, User not found."))
+        XCTAssertNotNil(eval(msg, "real", 200, "https://ex.com/real", "Welcome real"))
+        XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
+    }
+
     func testTOTPKnownVectorRFC6238() throws {
         // RFC 6238 test vector: secret "12345678901234567890" (ASCII) → base32
         // GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ; at T=59s the SHA-1 TOTP is 94287082.

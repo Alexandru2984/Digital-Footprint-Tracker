@@ -136,7 +136,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
 
     /// Checks a single Sherlock site for the username. Returns a hit or nil.
     /// Static so the sliding-window task group can call it without capturing
-    /// `self`, and so the per-site logic lives in one testable place.
+    /// `self`; the pure detection logic lives in `evaluate` so it's unit-testable.
     private static func checkSite(
         _ siteName: String,
         _ siteData: SherlockSite,
@@ -145,30 +145,11 @@ struct BulkUsernamePlugin: FootprintPlugin {
         userAgent: String
     ) async -> PluginResult? {
         let targetURL = siteData.url.replacingOccurrences(of: "{}", with: username)
+        guard let url = URL(string: targetURL) else { return nil }
+        // Only the message method needs the body; the rest decide on status +
+        // final URL, so skip downloading bodies we won't read.
+        let needsBody = siteData.errorType == "message"
         do {
-            if siteData.errorType == "response_url" {
-                guard let errorURL = siteData.errorUrl, !errorURL.isEmpty,
-                      let url = URL(string: targetURL)
-                else { return nil }
-                let response = try await OutboundHTTP.request(
-                    url,
-                    headers: ["User-Agent": userAgent],
-                    timeout: 10,
-                    bodyMode: .prefix(maxBytes: 0),
-                    maxRedirects: 3,
-                    on: app
-                )
-                let finalURL = response.finalURL.absoluteString
-                let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                let finalTrim = finalURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                if finalTrim.hasPrefix(errTrim) { return nil }
-                return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.8,
-                                    rawData: "Account found (redirect-based). Profile: \(targetURL)",
-                                    metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
-            }
-
-            guard let url = URL(string: targetURL) else { return nil }
-            let needsMessageBody = siteData.errorType == "message"
             let response = try await OutboundHTTP.request(
                 url,
                 headers: [
@@ -177,38 +158,70 @@ struct BulkUsernamePlugin: FootprintPlugin {
                     "Accept-Language": "en-US,en;q=0.5",
                 ],
                 timeout: 10,
-                bodyMode: needsMessageBody ? .complete(maxBytes: 512 * 1_024) : .prefix(maxBytes: 0),
+                bodyMode: needsBody ? .complete(maxBytes: 512 * 1_024) : .prefix(maxBytes: 0),
                 maxRedirects: 3,
                 on: app
             )
+            return evaluate(siteName: siteName, siteData: siteData, username: username,
+                            targetURL: targetURL, status: response.status,
+                            finalURL: response.finalURL, body: response.data)
+        } catch {
+            return nil
+        }
+    }
 
-            if siteData.errorType == "status_code" {
-                if response.status == 200 {
-                    return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.5,
-                                        rawData: "Account possibly found (HTTP 200). Profile: \(targetURL)",
-                                        metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
-                }
-            } else if siteData.errorType == "message" {
-                if response.status == 200 {
-                    let html = String(decoding: response.data, as: UTF8.self)
-                    var notFound = false
-                    if let errorMsg = siteData.errorMsg {
-                        switch errorMsg {
-                        case .string(let s):
-                            if html.contains(s) { notFound = true }
-                        case .array(let a):
-                            for s in a where html.contains(s) { notFound = true; break }
-                        }
-                    }
-                    if !notFound {
-                        return PluginResult(source: siteName, type: "account_presence", confidenceScore: 0.9,
-                                            rawData: "Account found (message-based)! Profile: \(targetURL)",
-                                            metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
-                    }
+    /// Pure detection: turn a fetched response into a hit (or nil). Split out so
+    /// the anti-false-positive rules can be unit-tested without the network.
+    ///
+    /// The key rule: a real profile keeps the username in its final URL. Sites
+    /// whose "user not found" page 3xx-redirects to a home/login page drop the
+    /// username, so requiring it in the final host+path (query excluded, to avoid
+    /// `?next=/u/<name>` echoes) rejects that whole class of false positives —
+    /// while still accepting subdomain profiles (`user.tumblr.com`) and apex
+    /// redirects (`www.github.com/user` → `github.com/user`).
+    static func evaluate(
+        siteName: String,
+        siteData: SherlockSite,
+        username: String,
+        targetURL: String,
+        status: Int,
+        finalURL: URL,
+        body: Data
+    ) -> PluginResult? {
+        func hit(_ confidence: Double, _ how: String) -> PluginResult {
+            PluginResult(source: siteName, type: "account_presence", confidenceScore: confidence,
+                         rawData: "Account found (\(how)). Profile: \(targetURL)",
+                         metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
+        }
+
+        // Username preserved in the destination's host or path (not the query).
+        let locus = ((finalURL.host ?? "") + finalURL.path).lowercased()
+        let mentionsUser = locus.contains(username.lowercased())
+
+        switch siteData.errorType {
+        case "response_url":
+            guard let errorURL = siteData.errorUrl, !errorURL.isEmpty else { return nil }
+            let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let finalTrim = finalURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if finalTrim.hasPrefix(errTrim) { return nil } // bounced to the known "not found" URL
+            return hit(0.8, "redirect-based")
+
+        case "status_code":
+            guard status == 200, mentionsUser else { return nil }
+            return hit(0.7, "HTTP 200")
+
+        case "message":
+            guard status == 200, mentionsUser else { return nil }
+            let html = String(decoding: body, as: UTF8.self)
+            if let errorMsg = siteData.errorMsg {
+                switch errorMsg {
+                case .string(let s): if html.contains(s) { return nil }
+                case .array(let a): if a.contains(where: { html.contains($0) }) { return nil }
                 }
             }
-            return nil
-        } catch {
+            return hit(0.85, "message-based")
+
+        default:
             return nil
         }
     }
