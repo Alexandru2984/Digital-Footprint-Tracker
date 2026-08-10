@@ -125,9 +125,30 @@ struct TwoFactorController: RouteCollection {
     static func verifySecondFactor(_ submitted: String, user: User, db: Database) async throws -> Bool {
         guard let stored = user.totpSecret, let secret = readSecret(stored) else { return false }
         let normalized = submitted.trimmingCharacters(in: .whitespaces)
-        if TOTP.verify(code: normalized, secret: secret) { return true }
+        if let step = TOTP.matchedStep(code: normalized, secret: secret) {
+            guard let userID = user.id else { return false }
+            return try await consumeTotpStep(step, userID: userID, db: db)
+        }
         guard let userID = user.id else { return false }
         return try await consumeRecoveryCode(normalized, userID: userID, db: db)
+    }
+
+    /// Atomically accept a TOTP time-step exactly once. Rejects a step at or
+    /// below the last accepted one (replay), and records the new step under the
+    /// same row lock the recovery-code path uses so two concurrent submissions of
+    /// the same code cannot both pass.
+    private static func consumeTotpStep(_ step: Int, userID: UUID, db: Database) async throws -> Bool {
+        try await db.transaction { transaction in
+            if let sql = transaction as? SQLDatabase,
+               sql.dialect.name.lowercased().contains("postgres") {
+                try await sql.raw("SELECT id FROM users WHERE id = \(bind: userID) FOR UPDATE").run()
+            }
+            guard let lockedUser = try await User.find(userID, on: transaction) else { return false }
+            if let last = lockedUser.lastTotpStep, step <= last { return false } // replay
+            lockedUser.lastTotpStep = step
+            try await lockedUser.save(on: transaction)
+            return true
+        }
     }
 
     /// If `submitted` matches an unused recovery-code hash, consume it and return true.

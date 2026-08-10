@@ -34,14 +34,22 @@ enum TOTP {
     /// clock drift (default ±1 → accepts the previous, current, and next code).
     /// Constant-time digit comparison.
     static func verify(code: String, secret: String, at date: Date = Date(), window: Int = 1) -> Bool {
+        matchedStep(code: code, secret: secret, at: date, window: window) != nil
+    }
+
+    /// Like `verify`, but returns the matched time-step counter so the caller can
+    /// enforce single-use (reject a code at or below the last accepted step —
+    /// RFC 6238 §5.2 replay protection). Constant-time digit comparison.
+    static func matchedStep(code: String, secret: String, at date: Date = Date(), window: Int = 1) -> Int? {
         let cleaned = code.filter { $0.isNumber }
-        guard cleaned.count == digits, let key = base32Decode(secret) else { return false }
+        guard cleaned.count == digits, let key = base32Decode(secret) else { return nil }
         let counter = Int(date.timeIntervalSince1970) / period
         for offset in -window...window {
-            let candidate = generate(key: key, counter: UInt64(bitPattern: Int64(counter + offset)))
-            if constantTimeEqual(candidate, cleaned) { return true }
+            let step = counter + offset
+            let candidate = generate(key: key, counter: UInt64(bitPattern: Int64(step)))
+            if constantTimeEqual(candidate, cleaned) { return step }
         }
-        return false
+        return nil
     }
 
     /// The current code (used only in tests / debugging).

@@ -80,6 +80,11 @@ final class User: Model {
     @OptionalField(key: "totp_recovery_codes")
     var totpRecoveryCodes: String?
 
+    /// Last accepted TOTP time-step. A code at or below this step is a replay and
+    /// is rejected (RFC 6238 §5.2). Nil until the first code is accepted.
+    @OptionalField(key: "last_totp_step")
+    var lastTotpStep: Int?
+
     // ── Email verification ────────────────────────────────────────────────
     @Field(key: "email_verified")
     var emailVerified: Bool

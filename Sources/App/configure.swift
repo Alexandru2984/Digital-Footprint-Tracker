@@ -113,6 +113,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
+    app.migrations.add(AddLastTotpStepToUsers())
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())

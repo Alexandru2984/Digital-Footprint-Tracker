@@ -64,6 +64,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())
     app.migrations.add(AddAccountSecurityToUsers())
+    app.migrations.add(AddLastTotpStepToUsers())
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
@@ -2138,6 +2139,18 @@ final class AppTests: XCTestCase {
         // A code from a step far outside the ±1 window must not verify.
         let stale = try XCTUnwrap(TOTP.current(secret: secret, at: Date().addingTimeInterval(-600)))
         XCTAssertFalse(TOTP.verify(code: stale, secret: secret), "a 10-minute-old code is outside the window")
+    }
+
+    func testTOTPMatchedStepReturnsCurrentStep() throws {
+        // `matchedStep` surfaces the accepted code's time-step so the 2FA path can
+        // reject any submission at or below the last accepted step (replay).
+        let secret = TOTP.generateSecret()
+        let now = Date()
+        let code = try XCTUnwrap(TOTP.current(secret: secret, at: now))
+        XCTAssertEqual(TOTP.matchedStep(code: code, secret: secret, at: now),
+                       Int(now.timeIntervalSince1970) / 30,
+                       "the accepted code's step must equal the current time-step")
+        XCTAssertTrue(TOTP.verify(code: code, secret: secret, at: now), "verify() still accepts a valid code")
     }
 
     func testTOTPKnownVectorRFC6238() throws {
