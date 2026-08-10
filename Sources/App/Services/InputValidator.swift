@@ -36,6 +36,12 @@ enum InputValidator {
         guard input.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
             throw Abort(.badRequest, reason: "Input contains invalid characters.")
         }
+        // Reject a leading hyphen so a target can never be interpreted as a flag
+        // by a downstream argv-based tool (whois/holehe). No real email, domain,
+        // username, or phone begins with '-'. ('+' stays valid for phone numbers.)
+        guard input.first != "-" else {
+            throw Abort(.badRequest, reason: "Input cannot start with a hyphen.")
+        }
         // SSRF guard: reject targets that resolve to private / loopback /
         // link-local ranges (including cloud-metadata endpoints).
         guard !SSRFGuard.isInternalTarget(input) else {

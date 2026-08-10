@@ -601,6 +601,15 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testInputRejectsLeadingHyphen() throws {
+        // A leading '-' could be read as a flag by a downstream argv-based tool
+        // (whois/holehe). Reject it at the source; '+' stays valid for phones.
+        XCTAssertThrowsError(try InputValidator.validateScanInput("-hevil.com"))
+        XCTAssertThrowsError(try InputValidator.validateScanInput("--only-used"))
+        XCTAssertNoThrow(try InputValidator.validateScanInput("+40712345678"))
+        XCTAssertNoThrow(try InputValidator.validateScanInput("example.com"))
+    }
+
     // MARK: - Deduplication
 
     func testDuplicateScanReturnsSameID() async throws {
