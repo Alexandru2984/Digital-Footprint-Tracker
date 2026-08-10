@@ -1417,6 +1417,22 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.names, ["John Smith"], "handle-echoes and handle-shaped strings are not names")
     }
 
+    func testIdentitySynthesizerDedupesAccountAcrossSources() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHubAccountCheck", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "alice",
+                         "profileURL": "https://github.com/alice"], rawData: "x"),
+            // Same account via the Sherlock sweep: different casing + www. + slash.
+            I(source: "GitHub", type: "account_presence", confidence: 0.7,
+              metadata: ["platform": "GitHub", "username": "alice",
+                         "profileURL": "https://www.github.com/alice/"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 10, riskLevel: "Low")
+        XCTAssertEqual(p.confirmedAccounts.count, 1, "same GitHub account from two sources collapses into one")
+        XCTAssertEqual(p.confirmedAccounts.first?.confidence, 1.0, "keeps the highest-confidence sighting")
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {

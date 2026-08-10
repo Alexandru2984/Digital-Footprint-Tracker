@@ -113,7 +113,7 @@ enum IdentitySynthesizer {
             if accountTypes.contains(inp.type) {
                 let platform = nonEmpty(m["platform"]) ?? inp.source
                 let reference = nonEmpty(m["profileURL"]) ?? nonEmpty(m["url"]) ?? nonEmpty(m["username"]) ?? String(inp.rawData.prefix(160))
-                let key = "\(platform.lowercased())|\(reference.lowercased())"
+                let key = "\(platform.lowercased())|\(canonicalRef(reference))"
                 // Keep the highest-confidence sighting of each (platform, reference).
                 if (accountsByKey[key]?.confidence ?? -1) < inp.confidence {
                     accountsByKey[key] = Account(platform: platform, reference: String(reference.prefix(200)), confidence: inp.confidence)
@@ -190,6 +190,19 @@ enum IdentitySynthesizer {
             riskLevel: riskLevel,
             resultCount: inputs.count
         )
+    }
+
+    /// Canonicalize an account reference (usually a profile URL) so the same
+    /// account found by several plugins collapses into one: lowercase, drop the
+    /// scheme, a leading `www.`, and any trailing slash. E.g. the dedicated
+    /// GitHub check ("https://github.com/x") and the Sherlock sweep
+    /// ("https://www.github.com/x/") become the same "github.com/x".
+    private static func canonicalRef(_ ref: String) -> String {
+        var s = ref.lowercased().trimmingCharacters(in: .whitespaces)
+        for scheme in ["https://", "http://"] where s.hasPrefix(scheme) { s.removeFirst(scheme.count) }
+        if s.hasPrefix("www.") { s.removeFirst(4) }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
     }
 
     /// Trim and collapse internal runs of whitespace to a single space, so
