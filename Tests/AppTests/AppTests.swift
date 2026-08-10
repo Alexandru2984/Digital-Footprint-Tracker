@@ -1399,6 +1399,24 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.names.sorted(), ["J. Doe", "John Smith"])
     }
 
+    func testIdentitySynthesizerRejectsHandleShapedNames() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            // A plugin echoing the handle into `name` — highest confidence, still junk.
+            I(source: "SiteX", type: "account_presence", confidence: 1.0,
+              metadata: ["username": "jsmith92", "name": "jsmith92"], rawData: "x"),
+            // Handle-shaped string (underscore) — not a real name.
+            I(source: "SiteY", type: "account_presence", confidence: 0.6,
+              metadata: ["name": "john_smith"], rawData: "x"),
+            // The only real name.
+            I(source: "GitHub", type: "account_presence", confidence: 0.9,
+              metadata: ["name": "John Smith"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 10, riskLevel: "Low")
+        XCTAssertEqual(p.likelyName, "John Smith")
+        XCTAssertEqual(p.names, ["John Smith"], "handle-echoes and handle-shaped strings are not names")
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {
@@ -1477,7 +1495,7 @@ final class AppTests: XCTestCase {
         let inputs = [
             I(source: "x", type: "account_presence", confidence: 1.0,
               metadata: ["platform": "github", "username": "alice",
-                         "name": "<script>alert(1)</script>", "profileURL": "https://github.com/alice"], rawData: "x"),
+                         "name": "Evil <script>Xss</script>", "profileURL": "https://github.com/alice"], rawData: "x"),
             I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
               metadata: ["ip": "1.2.3.4", "ports": "443"], rawData: "x")
         ]
@@ -1488,7 +1506,7 @@ final class AppTests: XCTestCase {
 
         XCTAssertTrue(html.hasPrefix("<!DOCTYPE html>"))
         XCTAssertTrue(html.contains("</html>"))
-        XCTAssertFalse(html.contains("<script>alert(1)</script>"), "hostile name must be escaped")
+        XCTAssertFalse(html.contains("<script>Xss</script>"), "hostile name must be escaped")
         XCTAssertTrue(html.contains("&lt;script&gt;"), "name rendered as escaped text")
         XCTAssertTrue(html.contains("ex&amp;ample.com"), "ampersand in target escaped")
         XCTAssertTrue(html.contains("risk-medium"), "risk level styled")

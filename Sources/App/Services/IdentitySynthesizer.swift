@@ -133,10 +133,28 @@ enum IdentitySynthesizer {
             guard let forms = nameForms[key] else { return key }
             return forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key ?? key
         }
+        // Drop "names" that just echo a handle, or are handle-shaped (contain a
+        // digit/underscore, or are a single lowercase token). Plugins sometimes
+        // copy the username into `name`; that's not a real identity and must not
+        // become the headline. Kept: anything with a space (given + family) or an
+        // uppercase letter (a proper noun) and no handle markers.
+        let handleKeys = Set(handlePlatforms.keys.map { $0.lowercased() })
+        func isRealName(_ key: String) -> Bool {
+            if handleKeys.contains(key) { return false }
+            let display = displayForm(key)
+            if display.contains("_") || display.rangeOfCharacter(from: .decimalDigits) != nil { return false }
+            let hasSpace = display.contains(" ")
+            let hasUpper = display.rangeOfCharacter(from: .uppercaseLetters) != nil
+            return hasSpace || hasUpper
+        }
+        let validNameKeys = nameScore.keys.filter(isRealName)
         // The highest summed-confidence name is the likely identity; ties → lexical.
-        let bestNameKey = nameScore.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key
+        let bestNameKey = validNameKeys.max { l, r in
+            let a = nameScore[l] ?? 0, b = nameScore[r] ?? 0
+            return a != b ? a < b : l > r
+        }
         let likelyName = bestNameKey.map(displayForm)
-        let resolvedNames = nameScore.keys.map(displayForm).sorted()
+        let resolvedNames = validNameKeys.map(displayForm).sorted()
         let handles = handlePlatforms.map { handle, platforms -> HandleUse in
             let base = handleConfidence[handle] ?? 0.5
             let boosted = min(1.0, base + 0.1 * Double(platforms.count - 1))
