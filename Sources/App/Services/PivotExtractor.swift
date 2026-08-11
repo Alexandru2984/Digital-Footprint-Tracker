@@ -16,14 +16,22 @@ enum PivotExtractor {
     /// Hard cap on second-round seeds.
     static let maxPivots = 5
 
+    /// Only pivot on findings the plugin itself is confident about. A weak /
+    /// false-positive match (e.g. a Sherlock `status_code` hit at 0.7) would seed
+    /// a second-round scan of an unrelated identity and pollute the results with
+    /// someone else's footprint — the opposite of what enrichment should do.
+    static let minPivotConfidence = 0.8
+
     /// Returns up to `maxPivots` new identifiers found in `results` that are not
     /// already in `alreadyScanned` (the first-round candidate set, lowercased).
+    /// Only high-confidence findings contribute, and stronger anchors win the
+    /// limited budget: emails first (a hard identity link), then by confidence.
     static func candidates(from results: [PluginResult], alreadyScanned: Set<String>) -> [String] {
-        var out: [String] = []
+        var scored: [(value: String, priority: Double)] = []
         var seen = alreadyScanned
 
         for result in results {
-            guard let meta = result.metadata else { continue }
+            guard result.confidenceScore >= minPivotConfidence, let meta = result.metadata else { continue }
             for (key, rawValue) in meta where pivotKeys.contains(key.lowercased()) {
                 var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 if value.hasPrefix("@") { value.removeFirst() }
@@ -31,11 +39,13 @@ enum PivotExtractor {
                       isScannable(value),
                       seen.insert(value).inserted
                 else { continue }
-                out.append(value)
-                if out.count >= maxPivots { return out }
+                // Emails are a far stronger identity anchor than a bare handle on
+                // some platform — rank them above handles, then by confidence.
+                let priority = (value.contains("@") ? 1.0 : 0.0) + result.confidenceScore
+                scored.append((value, priority))
             }
         }
-        return out
+        return scored.sorted { $0.priority > $1.priority }.prefix(maxPivots).map { $0.value }
     }
 
     /// A bare username/handle, or an email address.

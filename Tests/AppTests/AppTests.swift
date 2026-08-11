@@ -1734,6 +1734,35 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(PivotExtractor.candidates(from: results, alreadyScanned: []).count, PivotExtractor.maxPivots)
     }
 
+    func testPivotExtractorSkipsLowConfidenceFindings() {
+        let results = [
+            // A weak (false-positive-prone) match must not seed a round-2 scan of
+            // an unrelated identity.
+            PluginResult(source: "SherlockSite", type: "account_presence", confidenceScore: 0.7,
+                         rawData: "x", metadata: ["github": "unrelated_user"]),
+            // A strong finding still pivots.
+            PluginResult(source: "Keybase", type: "identity_proof", confidenceScore: 0.98,
+                         rawData: "x", metadata: ["twitter": "confirmed_handle"]),
+        ]
+        let pivots = PivotExtractor.candidates(from: results, alreadyScanned: [])
+        XCTAssertFalse(pivots.contains("unrelated_user"), "a 0.7 finding is too weak to pivot on")
+        XCTAssertTrue(pivots.contains("confirmed_handle"), "a strong finding still pivots")
+    }
+
+    func testPivotExtractorPrioritizesEmailAnchorOverHandles() {
+        // More handle candidates than the budget, plus one email: the email — a
+        // hard identity link — must survive the cap.
+        var results = (0..<6).map {
+            PluginResult(source: "s", type: "account_presence", confidenceScore: 0.85,
+                         rawData: "x", metadata: ["github": "handle\($0)"])
+        }
+        results.append(PluginResult(source: "s", type: "email", confidenceScore: 0.9,
+                                    rawData: "x", metadata: ["email": "anchor@example.test"]))
+        let pivots = PivotExtractor.candidates(from: results, alreadyScanned: [])
+        XCTAssertEqual(pivots.count, PivotExtractor.maxPivots)
+        XCTAssertTrue(pivots.contains("anchor@example.test"), "the email anchor outranks handles for the limited budget")
+    }
+
     func testPivotedOriginIsDiscountedAndNotHeavy() {
         XCTAssertEqual(TargetDeriver.Origin.pivoted.confidenceFactor, 0.6, accuracy: 0.001)
         XCTAssertFalse(TargetDeriver.Origin.pivoted.heavyEligible, "pivots never trigger the heavy sweep")
