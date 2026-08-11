@@ -1535,9 +1535,10 @@ final class AppTests: XCTestCase {
         let inputs = [
             I(source: "GitHub", type: "account_presence", confidence: 1.0,
               metadata: ["platform": "github", "username": "alice", "name": "Alice Roe",
-                         "profileURL": "https://github.com/alice"], rawData: "x"),
+                         "since": "2013", "profileURL": "https://github.com/alice"], rawData: "x"),
             I(source: "HIBP", type: "data_breach", confidence: 1.0,
-              metadata: ["breaches": "Adobe, LinkedIn", "dataClasses": "Passwords, Phone numbers"], rawData: "x"),
+              metadata: ["breaches": "Adobe, LinkedIn", "dataClasses": "Passwords, Phone numbers",
+                         "breachDates": "Adobe|2013-10-04; LinkedIn|2012-05-05"], rawData: "x"),
             I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
               metadata: ["ip": "1.2.3.4", "ports": "22, 443"], rawData: "x"),
             I(source: "InternetDB", type: "vulnerability", confidence: 0.95,
@@ -1561,6 +1562,11 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(md.contains("CVE-2024-9"))
         XCTAssertTrue(md.contains("| Domain | Grade |") && md.contains("| example.com | D |"))
         XCTAssertTrue(md.contains("admin.example.com"), "subdomain listed")
+        // Exposure timeline: chronological, breach dates + account creation year.
+        XCTAssertTrue(md.contains("## Exposure timeline"))
+        XCTAssertTrue(md.contains("| 2012-05-05 | Breach: LinkedIn |"))
+        XCTAssertTrue(md.contains("| 2013 | GitHub account created |"))
+        XCTAssertTrue(md.contains("earliest dated footprint is from 2012-05-05"), "footprint age in summary")
     }
 
     func testExecutiveReportHTMLEscapesAndStructures() {
@@ -1568,7 +1574,7 @@ final class AppTests: XCTestCase {
         // A hostile "name" must not break out into live markup.
         let inputs = [
             I(source: "x", type: "account_presence", confidence: 1.0,
-              metadata: ["platform": "github", "username": "alice",
+              metadata: ["platform": "github", "username": "alice", "since": "2013",
                          "name": "Evil <script>Xss</script>", "profileURL": "https://github.com/alice"], rawData: "x"),
             I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
               metadata: ["ip": "1.2.3.4", "ports": "443"], rawData: "x")
@@ -1585,6 +1591,7 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(html.contains("ex&amp;ample.com"), "ampersand in target escaped")
         XCTAssertTrue(html.contains("risk-medium"), "risk level styled")
         XCTAssertTrue(html.contains("<table>") && html.contains("1.2.3.4"), "attack-surface table present")
+        XCTAssertTrue(html.contains("Exposure timeline") && html.contains("GitHub account created"), "timeline section rendered")
     }
 
     func testIdentitySynthesizerAggregatesInfraExposure() {

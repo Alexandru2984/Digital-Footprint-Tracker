@@ -61,6 +61,15 @@ enum ExecutiveReport {
             }
         }
 
+        // ── Exposure timeline ─────────────────────────────────────────────────────
+        if !profile.timeline.isEmpty {
+            out += "## Exposure timeline\n\n| Date | Event |\n|---|---|\n"
+            for e in profile.timeline.prefix(60) {
+                out += "| \(cell(e.date)) | \(cell(e.label)) |\n"
+            }
+            out += "\n"
+        }
+
         // ── Attack surface ────────────────────────────────────────────────────────
         let hostIPs = Set(surface.portsByIP.keys).union(surface.cvesByIP.keys).sorted()
         if !hostIPs.isEmpty || !surface.subdomains.isEmpty || !surface.gradeByDomain.isEmpty {
@@ -113,6 +122,7 @@ enum ExecutiveReport {
             s.append("Across \(surface.portsByIP.count) host(s), \(totalPorts) open port(s) and \(totalCVEs) known CVE(s) are exposed.")
         }
         if !surface.subdomains.isEmpty { s.append("\(surface.subdomains.count) subdomain(s) were discovered.") }
+        if let first = profile.timeline.first { s.append("The earliest dated footprint is from \(line(first.date)).") }
         return s.joined(separator: " ")
     }
 
