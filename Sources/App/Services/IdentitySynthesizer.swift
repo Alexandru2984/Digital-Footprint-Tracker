@@ -68,7 +68,7 @@ enum IdentitySynthesizer {
         var locationForms: [String: [String: Int]] = [:] // same case/spacing merge for places…
         var orgForms: [String: [String: Int]] = [:]      // …and organizations
         var emails = Set<String>()
-        var phones = Set<String>()
+        var phoneForms: [String: [String: Int]] = [:] // canonical number → seen formats + counts
         var handlePlatforms: [String: Set<String>] = [:]
         var handleConfidence: [String: Double] = [:]
         var accountsByKey: [String: Account] = [:]
@@ -95,7 +95,10 @@ enum IdentitySynthesizer {
             if let l = nonEmpty(m["location"]) { record(collapseWhitespace(l), into: &locationForms) }
             if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { record(collapseWhitespace(o), into: &orgForms) }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
-            if let p = nonEmpty(m["phone"]) { phones.insert(p) }
+            if let p = nonEmpty(m["phone"]) {
+                let display = collapseWhitespace(p)
+                record(display, key: canonicalPhone(display), into: &phoneForms)
+            }
             if let ip = nonEmpty(m["ip"]) {
                 ips.insert(ip)
                 for port in csv(m["ports"]) { svcPorts[ip, default: []].insert(port) }
@@ -175,7 +178,7 @@ enum IdentitySynthesizer {
             locations: resolveForms(locationForms),
             organizations: resolveForms(orgForms),
             emails: emails.sorted(),
-            phones: phones.sorted(),
+            phones: resolveForms(phoneForms),
             handles: handles,
             confirmedAccounts: accountsByKey.values.sorted { $0.confidence > $1.confidence },
             breaches: breaches.sorted(),
@@ -205,7 +208,23 @@ enum IdentitySynthesizer {
     /// Record a display form under its case-folded key, tallying how often each
     /// casing was seen so the most common one can be surfaced later.
     private static func record(_ display: String, into forms: inout [String: [String: Int]]) {
-        forms[display.lowercased(), default: [:]][display, default: 0] += 1
+        record(display, key: display.lowercased(), into: &forms)
+    }
+
+    /// Record a display form under an explicit normalization key — used where the
+    /// merge rule isn't just case-folding (e.g. phone-number formatting).
+    private static func record(_ display: String, key: String, into forms: inout [String: [String: Int]]) {
+        forms[key, default: [:]][display, default: 0] += 1
+    }
+
+    /// Canonicalize a phone number for dedup: keep a leading "+", drop spaces,
+    /// dashes, dots and parentheses. This merges pure formatting variants of the
+    /// same number ("+40 721 234 567" / "+40721234567") while keeping genuinely
+    /// different numbers apart — a national "0721…" and an international "+40721…"
+    /// get distinct keys, since inferring country codes reliably is out of scope.
+    private static func canonicalPhone(_ s: String) -> String {
+        let plus = s.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("+") ? "+" : ""
+        return plus + s.filter { $0.isNumber }
     }
 
     /// The most-seen display form for one normalized key; ties break to the

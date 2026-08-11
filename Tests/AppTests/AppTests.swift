@@ -1449,6 +1449,24 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.organizations, ["Acme Corp"], "company and org variants merge into one org")
     }
 
+    func testIdentitySynthesizerDedupesPhoneFormatting() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            // Same number, two formats (spaced international + compact E.164).
+            I(source: "PhoneOSINT", type: "phone_number", confidence: 0.95,
+              metadata: ["phone": "+40 721 234 567"], rawData: "x"),
+            I(source: "PhoneFormat", type: "phone_number", confidence: 0.4,
+              metadata: ["phone": "+40721234567"], rawData: "x"),
+            // A genuinely different national-format number must NOT be merged in.
+            I(source: "PhoneFormat", type: "phone_number", confidence: 0.4,
+              metadata: ["phone": "0721234567"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 10, riskLevel: "Low")
+        XCTAssertEqual(p.phones.count, 2, "formatting variants merge; the national-format number stays separate")
+        XCTAssertTrue(p.phones.contains("0721234567"))
+        XCTAssertTrue(p.phones.contains(where: { $0.filter(\.isNumber) == "40721234567" }))
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {
