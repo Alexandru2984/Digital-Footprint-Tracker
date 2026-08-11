@@ -1433,6 +1433,22 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(p.confirmedAccounts.first?.confidence, 1.0, "keeps the highest-confidence sighting")
     }
 
+    func testIdentitySynthesizerDedupesLocationAndOrgVariants() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            // Same place, three casing/spacing forms — "Berlin" seen twice wins.
+            I(source: "A", type: "account_presence", confidence: 0.9,
+              metadata: ["location": "Berlin", "company": "Acme Corp"], rawData: "x"),
+            I(source: "B", type: "account_presence", confidence: 0.8,
+              metadata: ["location": "berlin", "org": "acme corp"], rawData: "x"),
+            I(source: "C", type: "account_presence", confidence: 0.7,
+              metadata: ["location": "Berlin ", "company": "Acme  Corp"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 10, riskLevel: "Low")
+        XCTAssertEqual(p.locations, ["Berlin"], "case/spacing variants collapse to the most-seen form")
+        XCTAssertEqual(p.organizations, ["Acme Corp"], "company and org variants merge into one org")
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {

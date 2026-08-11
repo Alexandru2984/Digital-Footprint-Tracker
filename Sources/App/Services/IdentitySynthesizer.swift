@@ -63,10 +63,10 @@ enum IdentitySynthesizer {
     ]
 
     static func synthesize(from inputs: [Input], riskScore: Int, riskLevel: String) -> IdentityProfile {
-        var nameScore: [String: Double] = [:]        // normalized key → summed confidence (weight)
-        var nameForms: [String: [String: Int]] = [:] // normalized key → seen display forms + counts
-        var locations = Set<String>()
-        var orgs = Set<String>()
+        var nameScore: [String: Double] = [:]            // normalized key → summed confidence (weight)
+        var nameForms: [String: [String: Int]] = [:]     // normalized key → seen display forms + counts
+        var locationForms: [String: [String: Int]] = [:] // same case/spacing merge for places…
+        var orgForms: [String: [String: Int]] = [:]      // …and organizations
         var emails = Set<String>()
         var phones = Set<String>()
         var handlePlatforms: [String: Set<String>] = [:]
@@ -92,8 +92,8 @@ enum IdentitySynthesizer {
                 nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence))
                 nameForms[key, default: [:]][display, default: 0] += 1
             }
-            if let l = nonEmpty(m["location"]) { locations.insert(l) }
-            if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { orgs.insert(o) }
+            if let l = nonEmpty(m["location"]) { record(collapseWhitespace(l), into: &locationForms) }
+            if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { record(collapseWhitespace(o), into: &orgForms) }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
             if let p = nonEmpty(m["phone"]) { phones.insert(p) }
             if let ip = nonEmpty(m["ip"]) {
@@ -129,10 +129,7 @@ enum IdentitySynthesizer {
         }
 
         // Pick the most-seen casing for a normalized name key.
-        func displayForm(_ key: String) -> String {
-            guard let forms = nameForms[key] else { return key }
-            return forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key ?? key
-        }
+        func displayForm(_ key: String) -> String { nameForms[key].flatMap(bestForm) ?? key }
         // Drop "names" that just echo a handle, or are handle-shaped (contain a
         // digit/underscore, or are a single lowercase token). Plugins sometimes
         // copy the username into `name`; that's not a real identity and must not
@@ -175,8 +172,8 @@ enum IdentitySynthesizer {
         return IdentityProfile(
             likelyName: likelyName,
             names: resolvedNames,
-            locations: locations.sorted(),
-            organizations: orgs.sorted(),
+            locations: resolveForms(locationForms),
+            organizations: resolveForms(orgForms),
             emails: emails.sorted(),
             phones: phones.sorted(),
             handles: handles,
@@ -203,6 +200,24 @@ enum IdentitySynthesizer {
         if s.hasPrefix("www.") { s.removeFirst(4) }
         while s.hasSuffix("/") { s.removeLast() }
         return s
+    }
+
+    /// Record a display form under its case-folded key, tallying how often each
+    /// casing was seen so the most common one can be surfaced later.
+    private static func record(_ display: String, into forms: inout [String: [String: Int]]) {
+        forms[display.lowercased(), default: [:]][display, default: 0] += 1
+    }
+
+    /// The most-seen display form for one normalized key; ties break to the
+    /// lexically-smallest form so the result is deterministic.
+    private static func bestForm(_ forms: [String: Int]) -> String? {
+        forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key
+    }
+
+    /// Collapse case/spacing variants ("Berlin" / "berlin" / "Berlin ") into one
+    /// entry each, keeping the casing seen most often, sorted for stable output.
+    private static func resolveForms(_ formsByKey: [String: [String: Int]]) -> [String] {
+        formsByKey.values.compactMap(bestForm).sorted()
     }
 
     /// Trim and collapse internal runs of whitespace to a single space, so
