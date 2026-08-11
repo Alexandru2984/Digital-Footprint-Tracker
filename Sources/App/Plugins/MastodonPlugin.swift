@@ -38,41 +38,64 @@ struct MastodonPlugin: FootprintPlugin {
                 bodyMode: .complete(maxBytes: 512 * 1_024),
                 on: app
             ), response.status == 200 else { return [] }
-            let data = response.data
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+            guard let acct = Self.parseAccount(from: response.data, fallbackUsername: username) else { return [] }
 
-            let displayName  = json["display_name"]  as? String ?? ""
-            let acct         = json["acct"]           as? String ?? username
-            let followersCount = json["followers_count"] as? Int
-            let statusesCount  = json["statuses_count"]  as? Int
-            let note         = json["note"]           as? String ?? ""
-            let profileURL   = json["url"]            as? String ?? "https://mastodon.social/@\(acct)"
-            let locked       = json["locked"]         as? Bool ?? false
-
-            // Strip HTML tags from the bio (Mastodon returns HTML in `note`)
-            let cleanNote = note
-                .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            var parts = ["Mastodon account found: \(profileURL)"]
-            if !displayName.isEmpty { parts.append("Display name: \(displayName)") }
-            if let f = followersCount { parts.append("Followers: \(f)") }
-            if let s = statusesCount  { parts.append("Posts: \(s)") }
-            if locked { parts.append("🔒 Locked account") }
-            if !cleanNote.isEmpty {
-                let truncNote = cleanNote.count > 120 ? String(cleanNote.prefix(120)) + "…" : cleanNote
+            var parts = ["Mastodon account found: \(acct.profileURL)"]
+            if !acct.displayName.isEmpty { parts.append("Display name: \(acct.displayName)") }
+            if let f = acct.followers { parts.append("Followers: \(f)") }
+            if let s = acct.statuses  { parts.append("Posts: \(s)") }
+            if acct.locked { parts.append("🔒 Locked account") }
+            if !acct.bio.isEmpty {
+                let truncNote = acct.bio.count > 120 ? String(acct.bio.prefix(120)) + "…" : acct.bio
                 parts.append("Bio: \(truncNote)")
             }
+
+            var meta: [String: String] = ["platform": "mastodon", "username": acct.acct, "profileURL": acct.profileURL]
+            // Feed the display name into identity synthesis — a self-set nickname on
+            // Mastodon is still identity signal, weighted and corroborated there.
+            if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
 
             return [PluginResult(
                 source: "Mastodon",
                 type: "social_media",
                 confidenceScore: 1.0,
                 rawData: parts.joined(separator: " | "),
-                metadata: ["platform": "mastodon", "username": acct, "profileURL": profileURL]
+                metadata: meta
             )]
         } catch {
             return []
         }
+    }
+
+    /// Parsed subset of a Mastodon account-lookup response.
+    struct Account {
+        let displayName: String
+        let acct: String
+        let bio: String
+        let profileURL: String
+        let followers: Int?
+        let statuses: Int?
+        let locked: Bool
+    }
+
+    /// Decodes a `/accounts/lookup` JSON body. Pure + internal so the field
+    /// extraction (including the HTML-stripped bio) is unit-testable offline.
+    static func parseAccount(from data: Data, fallbackUsername: String) -> Account? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let acct = json["acct"] as? String ?? fallbackUsername
+        let note = json["note"] as? String ?? ""
+        // Strip HTML tags from the bio (Mastodon returns HTML in `note`).
+        let cleanNote = note
+            .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Account(
+            displayName: (json["display_name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            acct: acct,
+            bio: cleanNote,
+            profileURL: json["url"] as? String ?? "https://mastodon.social/@\(acct)",
+            followers: json["followers_count"] as? Int,
+            statuses: json["statuses_count"] as? Int,
+            locked: json["locked"] as? Bool ?? false
+        )
     }
 }

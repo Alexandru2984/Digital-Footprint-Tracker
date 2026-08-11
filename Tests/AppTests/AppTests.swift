@@ -2297,6 +2297,33 @@ final class AppTests: XCTestCase {
         XCTAssertNotNil(RedditPlugin.evaluate(username: "banned_user", status: 200, body: suspended))
     }
 
+    func testMastodonParseAccountExtractsNameAndBio() throws {
+        let json = Data(#"""
+        {"acct":"alice","display_name":"Alice Example ","url":"https://mastodon.social/@alice",
+         "followers_count":42,"statuses_count":7,"locked":true,
+         "note":"<p>Hi <a href=\"x\">there</a></p>"}
+        """#.utf8)
+        let acct = try XCTUnwrap(MastodonPlugin.parseAccount(from: json, fallbackUsername: "fallback"))
+        // Display name is trimmed and now available to feed metadata["name"].
+        XCTAssertEqual(acct.displayName, "Alice Example")
+        XCTAssertEqual(acct.acct, "alice")
+        XCTAssertEqual(acct.bio, "Hi there", "HTML tags stripped from the note")
+        XCTAssertEqual(acct.followers, 42)
+        XCTAssertTrue(acct.locked)
+        // Malformed body → nil (no false positive).
+        XCTAssertNil(MastodonPlugin.parseAccount(from: Data("not json".utf8), fallbackUsername: "x"))
+    }
+
+    func testTelegramOGContentParsing() throws {
+        let html = #"""
+        <meta property="og:title" content="Jane Doe">
+        <meta property="og:description" content="Founder &amp; builder">
+        """#
+        XCTAssertEqual(TelegramPlugin.ogContent("title", from: html), "Jane Doe")
+        XCTAssertEqual(TelegramPlugin.ogContent("description", from: html), "Founder &amp; builder")
+        XCTAssertNil(TelegramPlugin.ogContent("image", from: html), "absent tag → nil")
+    }
+
     func testTOTPKnownVectorRFC6238() throws {
         // RFC 6238 test vector: secret "12345678901234567890" (ASCII) → base32
         // GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ; at T=59s the SHA-1 TOTP is 94287082.

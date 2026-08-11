@@ -57,19 +57,8 @@ struct TelegramPlugin: FootprintPlugin {
                 return []
             }
 
-            // Extract og:title
-            guard let titleRange = body.range(of: #"og:title" content="([^"]+)""#,
-                                               options: .regularExpression) else { return [] }
-            let titleMatch = String(body[titleRange])
-            // Parse out the value between the quotes after "content="
-            let titleValue: String
-            if let contentRange = titleMatch.range(of: #"content="([^"]+)""#, options: .regularExpression) {
-                let raw = String(titleMatch[contentRange])
-                titleValue = raw.replacingOccurrences(of: "content=\"", with: "")
-                                .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-            } else {
-                return []
-            }
+            // Extract og:title — the profile/display name
+            guard let titleValue = Self.ogContent("title", from: body) else { return [] }
 
             // Generic fallback titles mean the user doesn't exist
             let genericTitles = ["Telegram", "Telegram: Contact @\(username.lowercased())"]
@@ -79,15 +68,7 @@ struct TelegramPlugin: FootprintPlugin {
             if isGeneric { return [] }
 
             // Extract og:description for extra context
-            var description = ""
-            if let descRange = body.range(of: #"og:description" content="([^"]+)""#, options: .regularExpression) {
-                let raw = String(body[descRange])
-                if let valRange = raw.range(of: #"content="([^"]+)""#, options: .regularExpression) {
-                    description = String(raw[valRange])
-                        .replacingOccurrences(of: "content=\"", with: "")
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                }
-            }
+            let description = Self.ogContent("description", from: body) ?? ""
 
             // Determine if it's a channel/group or a personal account
             let isChannel = body.contains("tgme_page_extra") || body.contains("subscribers") || body.contains("members")
@@ -102,15 +83,33 @@ struct TelegramPlugin: FootprintPlugin {
                 parts.append("Description: \(truncDesc)")
             }
 
+            var meta: [String: String] = ["platform": "telegram", "username": username, "profileURL": "https://t.me/\(username)"]
+            // A concrete profile title (not the generic "Telegram" fallback) is the
+            // account's display name — feed it into identity synthesis.
+            if !titleValue.isEmpty && !titleValue.contains("Telegram") { meta["name"] = titleValue }
+
             return [PluginResult(
                 source: "Telegram",
                 type: "social_media",
                 confidenceScore: 0.9,
                 rawData: parts.joined(separator: " | "),
-                metadata: ["platform": "telegram", "username": username, "profileURL": "https://t.me/\(username)"]
+                metadata: meta
             )]
         } catch {
             return []
         }
+    }
+
+    /// Extracts the `content` value of an Open Graph meta tag (`og:title`,
+    /// `og:description`) from an HTML string. Pure + internal so the parsing is
+    /// unit-testable offline, and shared by the title/description extraction.
+    static func ogContent(_ property: String, from html: String) -> String? {
+        let pattern = "og:\(property)\" content=\"([^\"]+)\""
+        guard let range = html.range(of: pattern, options: .regularExpression) else { return nil }
+        let match = String(html[range])
+        guard let contentRange = match.range(of: "content=\"([^\"]+)\"", options: .regularExpression) else { return nil }
+        return String(match[contentRange])
+            .replacingOccurrences(of: "content=\"", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
     }
 }
