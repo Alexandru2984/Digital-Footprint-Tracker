@@ -1467,6 +1467,29 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(p.phones.contains(where: { $0.filter(\.isNumber) == "40721234567" }))
     }
 
+    func testIdentitySynthesizerBuildsExposureTimeline() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHubAccountCheck", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "alice", "since": "2013"], rawData: "x"),
+            I(source: "HackerNews", type: "account_presence", confidence: 0.9,
+              metadata: ["platform": "hackernews", "since": "2011"], rawData: "x"),
+            I(source: "HaveIBeenPwned", type: "data_breach", confidence: 1.0,
+              metadata: ["breaches": "LinkedIn, Dropbox",
+                         "breachDates": "LinkedIn|2012-05-05; Dropbox|2012-07-01"], rawData: "x"),
+            // Garbage date must be dropped, not placed on the timeline.
+            I(source: "X", type: "account_presence", confidence: 0.5,
+              metadata: ["platform": "steam", "since": "n/a"], rawData: "x"),
+        ]
+        let p = IdentitySynthesizer.synthesize(from: inputs, riskScore: 20, riskLevel: "Low")
+        // Oldest-first, garbage dropped: HN 2011, GitHub 2013, two 2012 breaches.
+        XCTAssertEqual(p.timeline.map(\.date), ["2011", "2012-05-05", "2012-07-01", "2013"])
+        XCTAssertEqual(p.timeline.first?.label, "Hacker News account created")
+        XCTAssertEqual(p.timeline.first?.category, "account")
+        XCTAssertTrue(p.timeline.contains { $0.label == "Breach: LinkedIn" && $0.category == "breach" })
+        XCTAssertFalse(p.timeline.contains { $0.label.contains("Steam") }, "unparseable 'since' dropped")
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {
@@ -1485,6 +1508,7 @@ final class AppTests: XCTestCase {
             exposedServices: [IdentitySynthesizer.ServiceExposure(
                 ip: "1.2.3.4", ports: ["22", "443"], cves: ["CVE-2021-1234"], hostnames: ["host.example.com"])],
             vulnerabilities: ["CVE-2021-1234"],
+            timeline: [],
             riskScore: 40,
             riskLevel: "Medium",
             resultCount: 6

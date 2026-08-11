@@ -1305,7 +1305,7 @@
             const hasData = p.likelyName || (p.emails || []).length || (p.handles || []).length ||
                             (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length ||
                             (p.exposedIPs || []).length || (p.exposedServices || []).length || (p.vulnerabilities || []).length ||
-                            (p.exposedDataClasses || []).length;
+                            (p.exposedDataClasses || []).length || (p.timeline || []).length;
             if (!hasData) { panel.classList.add('hidden'); return; }
             panel.innerHTML = '';
             panel.style.cssText = 'background:#111827;border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px;';
@@ -1383,6 +1383,35 @@
             }
 
             panel.appendChild(grid);
+
+            // Exposure timeline — chronological footprint (account creations + breaches),
+            // spanning the full width below the two-column grid.
+            const tl = (p.timeline || []).slice(0, 24);
+            if (tl.length) {
+                const sec = document.createElement('div');
+                sec.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid #1f2937;';
+                const lbl = document.createElement('div');
+                lbl.style.cssText = 'color:#64748b;font-size:12px;margin-bottom:6px;';
+                lbl.textContent = '🕓 Exposure timeline';
+                sec.appendChild(lbl);
+                const list = document.createElement('div');
+                list.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+                tl.forEach(ev => {
+                    const isBreach = ev.category === 'breach';
+                    const line = document.createElement('div');
+                    line.style.cssText = 'display:flex;gap:8px;align-items:baseline;font-size:12px;';
+                    const d = document.createElement('span');
+                    d.style.cssText = 'color:#94a3b8;font-variant-numeric:tabular-nums;flex-shrink:0;min-width:78px;';
+                    d.textContent = String(ev.date || '');
+                    const t = document.createElement('span');
+                    t.style.cssText = 'color:' + (isBreach ? '#fca5a5' : '#cbd5e1') + ';word-break:break-word;';
+                    t.textContent = (isBreach ? '⚠ ' : '• ') + String(ev.label || '').slice(0, 80);
+                    line.appendChild(d); line.appendChild(t); list.appendChild(line);
+                });
+                sec.appendChild(list);
+                panel.appendChild(sec);
+            }
+
             panel.classList.remove('hidden');
         }
 

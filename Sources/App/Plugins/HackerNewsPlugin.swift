@@ -46,10 +46,13 @@ struct HackerNewsPlugin: FootprintPlugin {
                          "Karma: \(karma)",
                          "Submissions: \(submissions)"]
 
+            var meta: [String: String] = ["platform": "hackernews", "username": id,
+                                          "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
             if let created = user.created {
                 let date = Date(timeIntervalSince1970: TimeInterval(created))
                 let year = Calendar.current.component(.year, from: date)
                 parts.append("Member since: \(year)")
+                meta["since"] = String(year)
             }
 
             let confidence: Double = karma > 100 ? 1.0 : (karma > 0 ? 0.9 : 0.75)
@@ -59,8 +62,7 @@ struct HackerNewsPlugin: FootprintPlugin {
                 type: "account_presence",
                 confidenceScore: confidence,
                 rawData: parts.joined(separator: " | "),
-                metadata: ["platform": "hackernews", "username": id,
-                           "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
+                metadata: meta
             )]
         } catch {
             return []

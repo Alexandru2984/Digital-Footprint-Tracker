@@ -58,6 +58,7 @@ struct GitLabPlugin: FootprintPlugin {
             if let loc = user.location, !loc.isEmpty     { meta["location"] = loc }
             if let org = user.organization, !org.isEmpty { meta["company"] = org }
             if let web = user.website_url, !web.isEmpty  { meta["blog"] = web }
+            if let created = user.created_at?.prefix(4)  { meta["since"] = String(created) }
 
             return [PluginResult(
                 source: name,

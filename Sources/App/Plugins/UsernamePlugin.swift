@@ -69,6 +69,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
             if let tw = user?.twitter_username, !tw.isEmpty { meta["twitter"] = tw }
+            if let created = user?.created_at?.prefix(4) { meta["since"] = String(created) }
 
             var results = [PluginResult(
                 source: name,

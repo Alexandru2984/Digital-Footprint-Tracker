@@ -39,6 +39,14 @@ enum IdentitySynthesizer {
         let hostnames: [String]
     }
 
+    /// A dated point in the target's footprint history — when an account was
+    /// created or when their data appeared in a breach. Oldest-first for display.
+    struct TimelineEvent: Content {
+        let date: String       // "YYYY" (account) or "YYYY-MM-DD" (breach)
+        let label: String
+        let category: String   // "account" | "breach"
+    }
+
     struct IdentityProfile: Content {
         let likelyName: String?
         let names: [String]
@@ -53,6 +61,7 @@ enum IdentitySynthesizer {
         let exposedIPs: [String]
         let exposedServices: [ServiceExposure]
         let vulnerabilities: [String]
+        let timeline: [TimelineEvent]
         let riskScore: Int
         let riskLevel: String
         let resultCount: Int
@@ -186,10 +195,60 @@ enum IdentitySynthesizer {
             exposedIPs: ips.sorted(),
             exposedServices: exposedServices,
             vulnerabilities: allCves.sorted(),
+            timeline: buildTimeline(from: inputs),
             riskScore: riskScore,
             riskLevel: riskLevel,
             resultCount: inputs.count
         )
+    }
+
+    /// Builds the exposure timeline from dated signals in the findings: account
+    /// creation years (`since` metadata from GitHub/GitLab/HN) and per-breach
+    /// dates (`breachDates` from HIBP). Pure + internal so it's unit-testable.
+    /// Deduped and sorted oldest-first.
+    static func buildTimeline(from inputs: [Input]) -> [TimelineEvent] {
+        var events: [TimelineEvent] = []
+        var seen = Set<String>()
+        func add(_ date: String, _ label: String, _ category: String) {
+            guard seen.insert("\(date)|\(label)").inserted else { return }
+            events.append(TimelineEvent(date: date, label: label, category: category))
+        }
+        for inp in inputs {
+            let m = inp.metadata
+            // When the account was created.
+            if let since = nonEmpty(m["since"]), let date = normalizedDate(since) {
+                let platform = nonEmpty(m["platform"]) ?? inp.source
+                add(date, "\(prettyPlatform(platform)) account created", "account")
+            }
+            // When the target's data was exposed — one event per breach.
+            if inp.type == "data_breach", let bd = nonEmpty(m["breachDates"]) {
+                for entry in bd.components(separatedBy: "; ") {
+                    guard let sep = entry.range(of: "|", options: .backwards) else { continue }
+                    let name = String(entry[..<sep.lowerBound]).trimmingCharacters(in: .whitespaces)
+                    let raw  = String(entry[sep.upperBound...]).trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty, let date = normalizedDate(raw) else { continue }
+                    add(date, "Breach: \(name)", "breach")
+                }
+            }
+        }
+        // Lexical order works across "YYYY" and "YYYY-MM-DD" (shared year prefix).
+        return events.sorted { $0.date != $1.date ? $0.date < $1.date : $0.label < $1.label }
+    }
+
+    /// Accepts a 4-digit year or an ISO `YYYY-MM-DD`, bounded to a sane range so
+    /// a garbage value can't land on the timeline. Returns the value unchanged.
+    private static func normalizedDate(_ s: String) -> String? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.range(of: "^[0-9]{4}(-[0-9]{2}-[0-9]{2})?$", options: .regularExpression) != nil,
+              let year = Int(t.prefix(4)), (1990...2100).contains(year) else { return nil }
+        return t
+    }
+
+    /// Human-facing platform label for the timeline.
+    private static func prettyPlatform(_ p: String) -> String {
+        let known = ["github": "GitHub", "gitlab": "GitLab", "hackernews": "Hacker News"]
+        let key = p.lowercased()
+        return known[key] ?? (p.prefix(1).uppercased() + p.dropFirst())
     }
 
     /// Canonicalize an account reference (usually a profile URL) so the same

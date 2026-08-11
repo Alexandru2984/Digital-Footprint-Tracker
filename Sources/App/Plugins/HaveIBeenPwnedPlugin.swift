@@ -72,6 +72,13 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
         if !dataClasses.isEmpty {
             meta["dataClasses"] = dataClasses.prefix(20).joined(separator: ", ")
         }
+        // Per-breach dates ("Name|YYYY-MM-DD; …") so the identity timeline can show
+        // when each exposure happened, not just that a breach occurred.
+        let dated = breaches.prefix(30)
+            .filter { !$0.BreachDate.isEmpty }
+            .map { "\($0.Name)|\($0.BreachDate)" }
+            .joined(separator: "; ")
+        if !dated.isEmpty { meta["breachDates"] = dated }
 
         return [PluginResult(
             source: name,
