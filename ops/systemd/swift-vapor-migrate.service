@@ -1,0 +1,45 @@
+[Unit]
+Description=Swift Vapor explicit database migration gate
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=micu
+Group=micu
+WorkingDirectory=/home/micu/swift-vapor-next
+EnvironmentFile=/home/micu/swift+vapor/.env
+# /usr/bin/env overrides any stale values from the shared legacy EnvironmentFile;
+# the web unit independently forces AUTO_MIGRATE=false.
+ExecStart=/usr/bin/env AUTO_MIGRATE=true REPORT_SCRIPT_PATH=/home/micu/swift-vapor-next/scripts/generate_report.py /home/micu/swift-vapor-next/Run migrate --yes --env production
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/micu/swift-vapor-next
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+MemoryMax=512M
+CPUQuota=200%

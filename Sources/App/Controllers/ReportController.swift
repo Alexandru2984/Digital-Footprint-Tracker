@@ -55,8 +55,11 @@ struct ReportController: RouteCollection {
             throw Abort(.payloadTooLarge, reason: "Report input exceeded the 10 MB limit.")
         }
 
-        let scriptPath = Environment.get("REPORT_SCRIPT_PATH")
-            ?? "/home/micu/swift+vapor/scripts/generate_report.py"
+        let bundledScript = URL(fileURLWithPath: req.application.directory.workingDirectory)
+            .appendingPathComponent("scripts", isDirectory: true)
+            .appendingPathComponent("generate_report.py", isDirectory: false)
+            .path
+        let scriptPath = Environment.get("REPORT_SCRIPT_PATH") ?? bundledScript
         guard FileManager.default.fileExists(atPath: scriptPath) else {
             throw Abort(.serviceUnavailable, reason: "Report generation unavailable.")
         }

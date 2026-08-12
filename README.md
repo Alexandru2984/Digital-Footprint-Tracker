@@ -349,23 +349,18 @@ struct YourPlugin: FootprintPlugin {
 
 ## Deployment (production)
 
-```bash
-swift build -c release
-sudo systemctl restart swift-vapor
-sudo nginx -t && sudo systemctl reload nginx
-```
+Production uses immutable, commit-named bundles under
+`/home/micu/swift-vapor-releases/` and a single
+`/home/micu/swift-vapor-current` symlink shared by systemd and nginx. The forced
+SSH command runs `scripts/deploy.sh`; it refuses dirty/diverged source, requires
+a recent verified encrypted backup, builds from `git archive`, runs migrations
+through a sandboxed oneshot unit, transitions CSP hashes, switches the symlink,
+and verifies both backend and served frontend. A failure restores the prior
+release automatically (database migrations are intentionally never auto-reverted).
 
-After any change to the inline `<script>` block in `frontend/index.html`, recompute the CSP hash:
-
-```bash
-python3 -c "
-import hashlib, base64, re
-s = re.findall(r'<script>(.*?)</script>', open('frontend/index.html').read(), re.DOTALL)[0]
-print('sha256-' + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode())
-"
-```
-
-Then update the `Content-Security-Policy` header in `/etc/nginx/sites-available/swift.micutu.com`.
+The initial conversion from the legacy live checkout is a privileged maintenance
+operation. Follow `docs/PRODUCTION_ROLLOUT.md`; do not point nginx/systemd at the
+new symlink until its release manifest passes `scripts/release-lib.sh` validation.
 
 ### Database backups
 

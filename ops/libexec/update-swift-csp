@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+# Root-owned narrow privilege boundary used by the deploy account. The caller
+# can select only syntactically valid SHA-256 source hashes; file paths, policy
+# directives, nginx validation and rollback are fixed here.
+
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+
+CSP=/etc/nginx/snippets/swift-csp.conf
+BACKUP_DIR=/var/lib/swift-vapor-csp-backups
+[[ $EUID -eq 0 ]] || { echo "csp-install: must run as root" >&2; exit 1; }
+(( $# >= 1 && $# <= 32 )) || { echo "csp-install: expected 1..32 hashes" >&2; exit 2; }
+[[ -f "$CSP" && ! -L "$CSP" ]] || { echo "csp-install: CSP snippet is missing or unsafe" >&2; exit 1; }
+
+declare -A seen=()
+hashes=()
+for hash in "$@"; do
+    [[ "$hash" =~ ^sha256-[A-Za-z0-9+/]{43}=$ ]] || {
+        echo "csp-install: rejected malformed hash" >&2
+        exit 2
+    }
+    [[ -n "${seen[$hash]:-}" ]] && continue
+    seen[$hash]=1
+    hashes+=("$hash")
+done
+mapfile -t hashes < <(printf '%s\n' "${hashes[@]}" | sort)
+
+tokens=""
+for hash in "${hashes[@]}"; do
+    [[ -z "$tokens" ]] || tokens+=" "
+    tokens+="'$hash'"
+done
+
+mkdir -p "$BACKUP_DIR"
+chmod 0700 "$BACKUP_DIR"
+temporary="$(mktemp --tmpdir="$(dirname "$CSP")" .swift-csp.XXXXXX)"
+restore_temporary=""
+backup="$BACKUP_DIR/swift-csp.$(date -u +%Y%m%dT%H%M%S%N).conf"
+# Invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2329
+cleanup() {
+    [[ -z "$temporary" ]] || rm -f -- "$temporary"
+    [[ -z "$restore_temporary" ]] || rm -f -- "$restore_temporary"
+}
+trap cleanup EXIT
+
+NEW="$tokens" perl -0777 -pe \
+    "s{'sha256-[A-Za-z0-9+/=]+'(?:\\s+'sha256-[A-Za-z0-9+/=]+')*}{\$ENV{NEW}}" \
+    "$CSP" > "$temporary"
+first="'${hashes[0]}'"
+grep -qF "$first" "$temporary" || { echo "csp-install: rewrite did not apply" >&2; exit 1; }
+[[ "$(grep -o "'sha256-[A-Za-z0-9+/=]*'" "$temporary" | wc -l)" -eq "${#hashes[@]}" ]] || {
+    echo "csp-install: generated hash count mismatch" >&2
+    exit 1
+}
+chmod 0644 "$temporary"
+
+if cmp -s "$temporary" "$CSP"; then
+    echo "csp-install: already current"
+    exit 0
+fi
+
+cp --preserve=mode,ownership,timestamps -- "$CSP" "$backup"
+chown root:root "$temporary"
+chmod 0644 "$temporary"
+mv -f -- "$temporary" "$CSP"
+temporary=""
+if nginx -t && systemctl reload nginx.service; then
+    echo "csp-install: nginx reloaded; rollback copy $backup"
+    exit 0
+fi
+
+echo "csp-install: validation/reload failed; restoring previous snippet" >&2
+restore_temporary="$(mktemp --tmpdir="$(dirname "$CSP")" .swift-csp-restore.XXXXXX)"
+install -o root -g root -m 0644 -- "$backup" "$restore_temporary"
+mv -f -- "$restore_temporary" "$CSP"
+restore_temporary=""
+nginx -t
+systemctl reload nginx.service
+exit 1

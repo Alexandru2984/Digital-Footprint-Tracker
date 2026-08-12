@@ -92,18 +92,51 @@ jobs:
           unzip -q "$archive" swiftlint-static -d "$install_dir"
           "$install_dir/swiftlint-static" --reporter github-actions-logging
 
+  operations:
+    name: Deployment integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment scripts and privilege policy
+        run: |
+          set -euo pipefail
+          scripts=(
+            scripts/backup.sh
+            scripts/build-release.sh
+            scripts/check-backup.sh
+            scripts/deploy.sh
+            scripts/release-lib.sh
+            scripts/update-csp-hashes.sh
+            scripts/tests/check-backup.test.sh
+            scripts/tests/csp-hashes.test.sh
+            scripts/tests/release-lib.test.sh
+            ops/libexec/update-swift-csp
+          )
+          bash -n "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+          sudo visudo -cf ops/sudoers/swift-vapor-deploy
+          scripts/tests/check-backup.test.sh
+          scripts/tests/csp-hashes.test.sh
+          scripts/tests/release-lib.test.sh
+
   deploy:
     name: Deploy to VPS
-    needs: [frontend, test, lint]
+    needs: [frontend, test, lint, operations]
     # Only push events on main trigger a deploy. Pull requests run the
     # test + lint jobs above but never reach this job.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     environment: production
     # No concurrency overlap — if a second push lands while one deploy is
-    # mid-flight, the second waits for the first to finish so we don't
-    # have two `git pull + swift build` racing on the same checkout.
+    # mid-flight, the second waits for the first to finish. The server also
+    # takes a local flock before building or switching release symlinks.
     concurrency:
       group: deploy-vps
       cancel-in-progress: false
