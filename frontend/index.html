@@ -2953,31 +2953,50 @@
             }
         })();
 
-        // Handle /share/TOKEN path
+        // New links use /share#TOKEN: URL fragments never reach HTTP access
+        // logs or Referer headers. Legacy /share/TOKEN links remain readable.
         const pathParts = window.location.pathname.split('/');
-        if (pathParts[1] === 'share' && pathParts[2]) {
-            const shareToken = pathParts[2];
+        const legacyShareToken = pathParts[1] === 'share' && pathParts[2] ? pathParts[2] : '';
+        const fragmentShareToken = pathParts[1] === 'share' && window.location.hash.length > 1
+            ? window.location.hash.slice(1) : '';
+        const shareToken = fragmentShareToken || legacyShareToken;
+        if (/^[A-Za-z0-9_-]{32}$/.test(shareToken)) {
+            // Remove the capability from browser history/address bar as soon as
+            // it has been captured in this closure.
+            window.history.replaceState(null, '', '/share');
             (async () => {
                 try {
-                    const resp = await fetch('/api/share/' + shareToken);
+                    async function requestSharedReport(password) {
+                        const body = { token: shareToken };
+                        if (password) body.password = password;
+                        const response = await fetch('/api/share', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        // Temporary compatibility with a backend that predates
+                        // body-based token exchange. Fragment links never fall
+                        // back to a token-bearing request URL.
+                        if (!legacyShareToken || (response.status !== 404 && response.status !== 405)) return response;
+                        return fetch('/api/share/' + encodeURIComponent(shareToken), password ? {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password })
+                        } : undefined);
+                    }
+
+                    let resp = await requestSharedReport();
                     if (resp.status === 401) {
                         const pw = prompt('This report is password-protected. Enter password:');
                         if (!pw) return;
-                        // POST: browsers drop the body of a GET, so the password
-                        // must travel via POST to reach the server.
-                        const resp2 = await fetch('/api/share/' + shareToken, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ password: pw })
-                        });
-                        if (!resp2.ok) { alert('Wrong password or expired link.'); return; }
-                        var data = await resp2.json();
-                    } else if (!resp.ok) {
+                        resp = await requestSharedReport(pw);
+                    }
+                    if (!resp.ok) {
+                        if (resp.status === 401) { alert('Wrong password.'); return; }
                         alert(resp.status === 410 ? 'This share link has expired.' : 'Share link not found.');
                         return;
-                    } else {
-                        var data = await resp.json();
                     }
+                    const data = await resp.json();
                     lastScanData = { scanID: data.scan.id, input: data.scan.input, results: data.results, status: data.scan.status };
                     document.getElementById('target-input').value = data.scan.input;
                     displayResults(data.results || [], data.scan.input);

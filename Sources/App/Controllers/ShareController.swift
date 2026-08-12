@@ -14,9 +14,10 @@ struct ShareController: RouteCollection {
             .post("scans", ":scanID", "share", use: createShare)
         noCache.get("scans", ":scanID", "shares", use: listShares)
         noCache.delete("shares", ":token", use: deleteShare)
-        // Public endpoint that increments view_count on each hit — rate-limit
-        // per IP so a script with a known token cannot inflate viewCount or
-        // spam-write the DB.
+        // Public endpoints increment view_count on each hit — rate-limit per IP
+        // so a script with a known token cannot inflate viewCount or spam-write
+        // the DB. New links carry their bearer token in the URL fragment and
+        // submit it in a JSON body, keeping it out of proxy/CDN access logs.
         //
         // GET serves password-free reports and signals 401 when a password is
         // required. POST carries the password in a JSON body: browsers drop the
@@ -24,6 +25,10 @@ struct ShareController: RouteCollection {
         // viewable via POST — the GET-with-body variant never worked client-side.
         noCache.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
             .get("share", ":token", use: viewShare)
+        noCache.grouped(ScanRateLimiter(anonMax: 5, authedMax: 10, windowSeconds: 60))
+            .post("share", use: viewShareFromBody)
+        // Compatibility for already-issued /share/TOKEN links. New clients do
+        // not use these token-in-path endpoints.
         noCache.grouped(ScanRateLimiter(anonMax: 5, authedMax: 10, windowSeconds: 60))
             .post("share", ":token", use: viewShare)
     }
@@ -123,10 +128,11 @@ struct ShareController: RouteCollection {
         }
         await AuditLogger.log(req: req, action: "share_created", target: scanID.uuidString)
 
-        let baseURL = Environment.get("BASE_URL") ?? "https://swift.micutu.com"
+        let baseURL = (Environment.get("BASE_URL") ?? "https://swift.micutu.com")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return ShareResponse(
             token: token,
-            url: "\(baseURL)/share/\(token)",
+            url: "\(baseURL)/share#\(token)",
             expiresAt: expiresAt.map { $0.timeIntervalSince1970 },
             createdAt: share.createdAt.map { $0.timeIntervalSince1970 }
         )
@@ -183,12 +189,30 @@ struct ShareController: RouteCollection {
     }
 
     struct PasswordBody: Content { let password: String? }
+    struct ShareAccessRequest: Content {
+        let token: String
+        let password: String?
+    }
 
     @Sendable
     func viewShare(req: Request) async throws -> SharedReportResponse {
         guard let rawToken = req.parameters.get("token"), Self.isValidToken(rawToken) else {
             throw Abort(.notFound)
         }
+        let body = (try? req.content.decode(PasswordBody.self)) ?? PasswordBody(password: nil)
+        return try await sharedReport(req: req, rawToken: rawToken, password: body.password)
+    }
+
+    @Sendable
+    func viewShareFromBody(req: Request) async throws -> SharedReportResponse {
+        let body = try req.content.decode(ShareAccessRequest.self)
+        guard Self.isValidToken(body.token) else {
+            throw Abort(.notFound)
+        }
+        return try await sharedReport(req: req, rawToken: body.token, password: body.password)
+    }
+
+    private func sharedReport(req: Request, rawToken: String, password: String?) async throws -> SharedReportResponse {
         let hash = sha256Hex(rawToken)
         guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
             throw Abort(.notFound)
@@ -197,8 +221,7 @@ struct ShareController: RouteCollection {
             throw Abort(.gone, reason: "This shared link has expired")
         }
         if let hash = share.passwordHash {
-            let body = (try? req.content.decode(PasswordBody.self)) ?? PasswordBody(password: nil)
-            guard let provided = body.password, (try? Bcrypt.verify(provided, created: hash)) == true else {
+            guard let password, (try? Bcrypt.verify(password, created: hash)) == true else {
                 throw Abort(.unauthorized, reason: "Password required")
             }
         }

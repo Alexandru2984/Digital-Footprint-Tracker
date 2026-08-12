@@ -1245,6 +1245,7 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
 
         var rawToken = ""
+        var shareURL = ""
         try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
             req.headers.replaceOrAdd(name: "Cookie", value: cookie)
             try req.content.encode(ShareController.CreateShareRequest(
@@ -1253,9 +1254,13 @@ final class AppTests: XCTestCase {
             ), as: .json)
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
-            rawToken = try res.content.decode(ShareController.ShareResponse.self).token
+            let share = try res.content.decode(ShareController.ShareResponse.self)
+            rawToken = share.token
+            shareURL = share.url
         })
         XCTAssertEqual(rawToken.utf8.count, 32)
+        XCTAssertTrue(shareURL.hasSuffix("/share#\(rawToken)"))
+        XCTAssertFalse(shareURL.contains("/share/\(rawToken)"), "Bearer tokens must not be placed in request paths")
 
         let storedCandidate = try await SharedReport.query(on: app.db).first()
         let stored = try XCTUnwrap(storedCandidate)
@@ -1274,6 +1279,12 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
         try await app.test(.POST, "/share/\(rawToken)", beforeRequest: { req in
             try req.content.encode(ShareController.PasswordBody(password: "LongEnough123"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        try await app.test(.POST, "/share", beforeRequest: { req in
+            try req.content.encode(
+                ShareController.ShareAccessRequest(token: rawToken, password: "LongEnough123"),
+                as: .json
+            )
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
 
         let storedScan = try await Scan.find(id, on: app.db)
