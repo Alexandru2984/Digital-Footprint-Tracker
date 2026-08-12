@@ -7,13 +7,14 @@ struct ShareController: RouteCollection {
     static let maxActiveSharesPerScan = 20
     static let minExpirySeconds = 300
     static let maxExpirySeconds = 30 * 24 * 60 * 60
+    static let defaultExpirySeconds = 7 * 24 * 60 * 60
 
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.grouped(ScanRateLimiter(anonMax: 5, authedMax: 10, windowSeconds: 60))
             .post("scans", ":scanID", "share", use: createShare)
         noCache.get("scans", ":scanID", "shares", use: listShares)
-        noCache.delete("shares", ":token", use: deleteShare)
+        noCache.delete("shares", ":shareID", use: deleteShare)
         // Public endpoints increment view_count on each hit — rate-limit per IP
         // so a script with a known token cannot inflate viewCount or spam-write
         // the DB. New links carry their bearer token in the URL fragment and
@@ -39,6 +40,7 @@ struct ShareController: RouteCollection {
     }
 
     struct ShareResponse: Content {
+        let id: String
         let token: String
         let url: String
         let expiresAt: Double?
@@ -46,10 +48,11 @@ struct ShareController: RouteCollection {
     }
 
     struct ShareDetail: Content {
-        let token: String
+        let id: String
         let expiresAt: Double?
         let viewCount: Int
         let createdAt: Double?
+        let hasPassword: Bool
     }
 
     struct SharedReportResponse: Content {
@@ -90,10 +93,9 @@ struct ShareController: RouteCollection {
 
         let body = try req.content.decode(CreateShareRequest.self)
 
-        if let seconds = body.expiresIn {
-            guard (Self.minExpirySeconds...Self.maxExpirySeconds).contains(seconds) else {
-                throw Abort(.badRequest, reason: "Expiry must be between 5 minutes and 30 days.")
-            }
+        let expirySeconds = body.expiresIn ?? Self.defaultExpirySeconds
+        guard (Self.minExpirySeconds...Self.maxExpirySeconds).contains(expirySeconds) else {
+            throw Abort(.badRequest, reason: "Expiry must be between 5 minutes and 30 days.")
         }
         let password = body.password?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let password {
@@ -104,7 +106,7 @@ struct ShareController: RouteCollection {
 
         let token = [UInt8].random(count: 24).base64URLEncoded()
         let tokenHash = sha256Hex(token)
-        let expiresAt = body.expiresIn.map { Date().addingTimeInterval(Double($0)) }
+        let expiresAt = Date().addingTimeInterval(Double(expirySeconds))
         let passwordHash: String?
         if let password {
             // BCrypt is intentionally expensive. Run it on Vapor's password
@@ -138,9 +140,10 @@ struct ShareController: RouteCollection {
         let baseURL = (Environment.get("BASE_URL") ?? "https://swift.micutu.com")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return ShareResponse(
+            id: try share.requireID().uuidString,
             token: token,
             url: "\(baseURL)/share#\(token)",
-            expiresAt: expiresAt.map { $0.timeIntervalSince1970 },
+            expiresAt: expiresAt.timeIntervalSince1970,
             createdAt: share.createdAt.map { $0.timeIntervalSince1970 }
         )
     }
@@ -166,12 +169,13 @@ struct ShareController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .all()
 
-        return shares.map { s in
+        return try shares.map { s in
             ShareDetail(
-                token: String(s.tokenHash.prefix(8)) + "…",
+                id: try s.requireID().uuidString,
                 expiresAt: s.expiresAt.map { $0.timeIntervalSince1970 },
                 viewCount: s.viewCount,
-                createdAt: s.createdAt.map { $0.timeIntervalSince1970 }
+                createdAt: s.createdAt.map { $0.timeIntervalSince1970 },
+                hasPassword: s.passwordHash != nil
             )
         }
     }
@@ -179,16 +183,17 @@ struct ShareController: RouteCollection {
     @Sendable
     func deleteShare(req: Request) async throws -> HTTPStatus {
         let user = try await mutationUser(req)
-        guard let token = req.parameters.get("token"), Self.isValidToken(token) else {
+        guard let rawShareID = req.parameters.get("shareID"),
+              let shareID = UUID(uuidString: rawShareID) else {
             throw Abort(.notFound)
         }
-        let hash = sha256Hex(token)
-        guard let share = try await SharedReport.query(on: req.db).filter(\.$tokenHash == hash).first() else {
+        guard let share = try await SharedReport.find(shareID, on: req.db) else {
             throw Abort(.notFound)
         }
         guard let scan = try await Scan.find(share.scanID, on: req.db),
               scan.$user.id == user.id else {
-            throw Abort(.forbidden)
+            // Do not turn opaque share IDs into a cross-account existence oracle.
+            throw Abort(.notFound)
         }
         try await share.delete(on: req.db)
         await AuditLogger.log(req: req, action: "share_deleted", target: share.scanID.uuidString)
@@ -238,9 +243,13 @@ struct ShareController: RouteCollection {
             throw Abort(.notFound)
         }
 
-        // Increment view count only after confirming the parent still exists.
-        share.viewCount += 1
-        try await share.save(on: req.db)
+        // Increment only after confirming the parent still exists. PostgreSQL
+        // locks the row so simultaneous viewers cannot overwrite each other's
+        // counters; SQLite serializes writes for the test/development path.
+        let viewCount = try await incrementViewCount(
+            shareID: try share.requireID(),
+            on: req.db
+        )
 
         let results = try await App.Result.query(on: req.db).filter(\.$scan.$id == scan.id!).all()
 
@@ -263,8 +272,28 @@ struct ShareController: RouteCollection {
                 )
             },
             sharedAt: share.createdAt.map { $0.timeIntervalSince1970 },
-            viewCount: share.viewCount
+            viewCount: viewCount
         )
+    }
+
+    private func incrementViewCount(shareID: UUID, on database: Database) async throws -> Int {
+        try await database.transaction { transaction in
+            if let sql = transaction as? SQLDatabase,
+               sql.dialect.name.lowercased().contains("postgres") {
+                try await sql.raw(
+                    "SELECT id FROM shared_reports WHERE id = \(bind: shareID) FOR UPDATE"
+                ).run()
+            }
+            guard let lockedShare = try await SharedReport.find(shareID, on: transaction) else {
+                throw Abort(.notFound)
+            }
+            if let expiresAt = lockedShare.expiresAt, expiresAt < Date() {
+                throw Abort(.gone, reason: "This shared link has expired")
+            }
+            lockedShare.viewCount += 1
+            try await lockedShare.save(on: transaction)
+            return lockedShare.viewCount
+        }
     }
 
     private static func isValidToken(_ token: String) -> Bool {

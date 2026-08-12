@@ -115,6 +115,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(HashSharedReportTokens())
     app.migrations.add(HardenSharedReportLifecycle())
+    app.migrations.add(ExpireLegacySharedReports())
     app.migrations.add(HardenNotificationLifecycle())
     app.migrations.add(CreatePluginCache())
     app.migrations.add(AddVerboseAlertsToUser())

@@ -60,6 +60,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(DefaultUserRetention())
     app.migrations.add(AddNotificationChannelsToUsers())
     app.migrations.add(CreateSharedReports())
+    app.migrations.add(ExpireLegacySharedReports())
     // Note: HashAPIKeyColumn + HashSharedReportTokens are PostgreSQL-only
     // (use ADD COLUMN IF NOT EXISTS / ALTER COLUMN SET NOT NULL / ADD CONSTRAINT)
     // and are intentionally skipped here. Fresh migrations create the final
@@ -1310,8 +1311,51 @@ final class AppTests: XCTestCase {
             try req.content.encode(ShareController.CreateShareRequest(expiresIn: nil, password: "short"), as: .json)
         }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
 
+        let defaultCreatedAfter = Date().timeIntervalSince1970
+        var defaultShareID = ""
+        try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(
+                ShareController.CreateShareRequest(expiresIn: nil, password: nil),
+                as: .json
+            )
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let share = try res.content.decode(ShareController.ShareResponse.self)
+            defaultShareID = share.id
+            XCTAssertNotNil(UUID(uuidString: share.id))
+            let expiresAt = try XCTUnwrap(share.expiresAt)
+            XCTAssertGreaterThanOrEqual(
+                expiresAt,
+                defaultCreatedAfter + Double(ShareController.defaultExpirySeconds) - 2
+            )
+            XCTAssertLessThanOrEqual(
+                expiresAt,
+                Date().timeIntervalSince1970 + Double(ShareController.defaultExpirySeconds) + 2
+            )
+        })
+
+        try await app.test(.GET, "/scans/\(id)/shares", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let shares = try res.content.decode([ShareController.ShareDetail].self)
+            XCTAssertEqual(shares.count, 1)
+            XCTAssertEqual(shares.first?.id, defaultShareID)
+            XCTAssertEqual(shares.first?.hasPassword, false)
+            XCTAssertNotNil(shares.first?.expiresAt)
+            XCTAssertFalse(res.body.string.contains("token"), "Share listings must not expose token material")
+        })
+
+        try await app.test(.DELETE, "/shares/\(defaultShareID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .noContent) })
+        let revokedShare = try await SharedReport.find(UUID(uuidString: defaultShareID)!, on: app.db)
+        XCTAssertNil(revokedShare)
+
         var rawToken = ""
         var shareURL = ""
+        var shareID = ""
         try await app.test(.POST, "/scans/\(id)/share", beforeRequest: { req in
             req.headers.replaceOrAdd(name: "Cookie", value: cookie)
             try req.content.encode(ShareController.CreateShareRequest(
@@ -1321,9 +1365,11 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
             let share = try res.content.decode(ShareController.ShareResponse.self)
+            shareID = share.id
             rawToken = share.token
             shareURL = share.url
         })
+        XCTAssertNotNil(UUID(uuidString: shareID))
         XCTAssertEqual(rawToken.utf8.count, 32)
         XCTAssertTrue(shareURL.hasSuffix("/share#\(rawToken)"))
         XCTAssertFalse(shareURL.contains("/share/\(rawToken)"), "Bearer tokens must not be placed in request paths")
@@ -1333,6 +1379,15 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(stored.tokenHash, sha256Hex(rawToken))
         XCTAssertNotEqual(stored.tokenHash, rawToken)
         XCTAssertEqual(stored.tokenHash.count, 64)
+
+        let attackerCookie = try await registerAndLogin(app, username: "share-policy-attacker")
+        try await app.test(.DELETE, "/shares/\(shareID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: attackerCookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .notFound, "Share IDs must not reveal cross-account existence")
+        })
+        let shareAfterAttack = try await SharedReport.find(stored.id, on: app.db)
+        XCTAssertNotNil(shareAfterAttack)
 
         try await app.test(.GET, "/share/not-a-token") { res in
             XCTAssertEqual(res.status, .notFound)
@@ -1345,13 +1400,39 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
         try await app.test(.POST, "/share/\(rawToken)", beforeRequest: { req in
             try req.content.encode(ShareController.PasswordBody(password: "LongEnough123"), as: .json)
-        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(try res.content.decode(ShareController.SharedReportResponse.self).viewCount, 1)
+        })
         try await app.test(.POST, "/share", beforeRequest: { req in
             try req.content.encode(
                 ShareController.ShareAccessRequest(token: rawToken, password: "LongEnough123"),
                 as: .json
             )
-        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(try res.content.decode(ShareController.SharedReportResponse.self).viewCount, 2)
+        })
+
+        let legacy = SharedReport(
+            scanID: id,
+            tokenHash: sha256Hex("legacy-permanent-share"),
+            expiresAt: nil
+        )
+        try await legacy.save(on: app.db)
+        let migrationStartedAt = Date().timeIntervalSince1970
+        try await ExpireLegacySharedReports().prepare(on: app.db)
+        let migratedLegacyCandidate = try await SharedReport.find(legacy.id, on: app.db)
+        let migratedLegacy = try XCTUnwrap(migratedLegacyCandidate)
+        let legacyExpiry = try XCTUnwrap(migratedLegacy.expiresAt?.timeIntervalSince1970)
+        XCTAssertGreaterThanOrEqual(
+            legacyExpiry,
+            migrationStartedAt + Double(ShareController.defaultExpirySeconds) - 2
+        )
+        XCTAssertLessThanOrEqual(
+            legacyExpiry,
+            Date().timeIntervalSince1970 + Double(ShareController.defaultExpirySeconds) + 2
+        )
 
         let storedScan = try await Scan.find(id, on: app.db)
         let scan = try XCTUnwrap(storedScan)
