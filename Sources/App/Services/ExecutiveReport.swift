@@ -136,15 +136,29 @@ enum ExecutiveReport {
         return f.string(from: date)
     }
 
-    /// Inline text: collapse newlines so a value can't break the document structure.
+    /// Inline text: collapse newlines and neutralise both raw HTML and Markdown
+    /// punctuation. Report values come from remote OSINT sources, so they must be
+    /// treated as plain text even when the exported file is opened by a renderer
+    /// that supports embedded HTML, images, or links.
     private static func line(_ s: String) -> String {
-        s.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
+        let singleLine = s
+            .split(whereSeparator: \.isNewline)
+            .joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
+
+        var escaped = singleLine.replacingOccurrences(of: "&", with: "&amp;")
+        escaped = escaped.replacingOccurrences(of: "<", with: "&lt;")
+        escaped = escaped.replacingOccurrences(of: ">", with: "&gt;")
+        escaped = escaped.replacingOccurrences(of: "\\", with: "\\\\")
+        for character in ["`", "*", "_", "{", "}", "[", "]", "(", ")", "!", "|"] {
+            escaped = escaped.replacingOccurrences(of: character, with: "\\" + character)
+        }
+        return escaped
     }
 
-    /// Table-cell text: also escape the pipe that would otherwise split the column.
+    /// `line` already escapes pipes, so table values cannot create extra cells.
     private static func cell(_ s: String) -> String {
-        line(s).replacingOccurrences(of: "|", with: "\\|")
+        line(s)
     }
 
     private static func joined<S: Sequence>(_ items: S) -> String where S.Element == String {

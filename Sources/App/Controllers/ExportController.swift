@@ -110,6 +110,14 @@ struct ExportController: RouteCollection {
         let html = ExecutiveReportHTML.html(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        // This document needs only its embedded CSS. A report contains data from
+        // untrusted remote sources, so give it a defense-in-depth sandbox that
+        // prevents scripts, network beacons, navigation bases, and form posts.
+        headers.replaceOrAdd(
+            name: .contentSecurityPolicy,
+            value: "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        )
+        headers.replaceOrAdd(name: "X-Robots-Tag", value: "noindex, nofollow, noarchive")
         return Response(status: .ok, headers: headers, body: .init(string: html))
     }
 
