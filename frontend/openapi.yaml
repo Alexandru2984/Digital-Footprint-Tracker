@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.1.0"
+  version: "1.2.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -20,7 +20,7 @@ components:
     cookieAuth:
       type: apiKey
       in: cookie
-      name: vapor-session
+      name: __Host-swift-session
 
   schemas:
     ScanResult:
@@ -130,6 +130,10 @@ components:
           type: string
           format: email
         isAdmin:
+          type: boolean
+        twoFactorEnabled:
+          type: boolean
+        emailVerified:
           type: boolean
         createdAt:
           type: integer
@@ -361,6 +365,97 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /auth/2fa/setup:
+    post:
+      summary: Begin TOTP enrolment
+      description: Requires a recently authenticated browser session. Returns a secret that is not active until confirmed.
+      tags: [Auth]
+      responses:
+        '200':
+          description: TOTP provisioning material
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, otpauthURI]
+                properties:
+                  secret: { type: string }
+                  otpauthURI: { type: string, format: uri }
+        '401': { description: Recent browser authentication required }
+        '409': { description: Two-factor authentication is already enabled }
+
+  /auth/2fa/enable:
+    post:
+      summary: Confirm and enable TOTP
+      description: The confirmation time-step is consumed immediately to prevent replay.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: One-time recovery codes; shown only in this response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recoveryCodes]
+                properties:
+                  recoveryCodes:
+                    type: array
+                    items: { type: string }
+        '400': { description: Setup is missing or the code is invalid }
+        '401': { description: Recent browser authentication required }
+
+  /auth/2fa/verify:
+    post:
+      summary: Complete a pending two-factor login
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: Six-digit TOTP or one-time recovery code }
+      responses:
+        '200': { description: Login completed and session rotated }
+        '401': { description: Missing/expired pending login or invalid code }
+
+  /auth/2fa/disable:
+    post:
+      summary: Disable two-factor authentication
+      description: Requires both the current password and a fresh TOTP or one-time recovery code. Rotates the session on success.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password: { type: string, format: password }
+                code: { type: string, maxLength: 64, description: Six-digit TOTP or one-time recovery code }
+      responses:
+        '200':
+          description: Two-factor authentication disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { description: Invalid request body }
+        '401': { description: Invalid password or second factor }
+        '409': { description: Two-factor authentication is not enabled }
 
   /my-scans:
     get:

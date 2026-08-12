@@ -41,8 +41,10 @@ enum TOTP {
     /// enforce single-use (reject a code at or below the last accepted step —
     /// RFC 6238 §5.2 replay protection). Constant-time digit comparison.
     static func matchedStep(code: String, secret: String, at date: Date = Date(), window: Int = 1) -> Int? {
-        let cleaned = code.filter { $0.isNumber }
-        guard cleaned.count == digits, let key = base32Decode(secret) else { return nil }
+        let cleaned = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleaned.utf8.count == digits,
+              cleaned.utf8.allSatisfy({ (48...57).contains($0) }),
+              let key = base32Decode(secret) else { return nil }
         let counter = Int(date.timeIntervalSince1970) / period
         for offset in -window...window {
             let step = counter + offset

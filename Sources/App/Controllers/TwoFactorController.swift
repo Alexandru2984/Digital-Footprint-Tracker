@@ -7,7 +7,7 @@ import SQLKit
 /// Enrolment (all require an authenticated session):
 ///   POST /auth/2fa/setup   → issue a secret + otpauth URI (not yet active)
 ///   POST /auth/2fa/enable  → prove possession with a code, receive recovery codes
-///   POST /auth/2fa/disable → turn 2FA off (re-auth with the account password)
+///   POST /auth/2fa/disable → turn 2FA off (prove password + current second factor)
 ///
 /// Login second step (no session yet — gated by a short-lived pending marker
 /// that `AuthController.login` sets after the password checks out):
@@ -58,7 +58,9 @@ struct TwoFactorController: RouteCollection {
             throw Abort(.badRequest, reason: "Run setup first.")
         }
         let body = try req.content.decode(CodeBody.self)
-        guard TOTP.verify(code: body.code, secret: secret) else {
+        guard let step = TOTP.matchedStep(code: body.code, secret: secret),
+              let userID = user.id,
+              try await Self.consumeTotpStep(step, userID: userID, db: req.db) else {
             throw Abort(.badRequest, reason: "Incorrect code — check your authenticator's clock and try again.")
         }
         let codes = RecoveryCodes.generate()
@@ -67,25 +69,41 @@ struct TwoFactorController: RouteCollection {
             user.totpRecoveryCodes = String(data: data, encoding: .utf8)
         }
         user.totpEnabled = true
+        // Keep the in-memory model in sync with the row updated by
+        // consumeTotpStep so this save cannot overwrite replay protection.
+        user.lastTotpStep = step
         try await user.save(on: req.db)
         await AuditLogger.log(req: req, action: "2fa_enabled", target: user.username)
         return EnableResponse(recoveryCodes: codes)
     }
 
-    struct DisableBody: Content { let password: String }
+    struct DisableBody: Content {
+        let password: String
+        let code: String
+    }
 
     @Sendable
     func disable(req: Request) async throws -> User.Public {
         let user = try await req.requireSessionUser()
+        guard user.totpEnabled else {
+            throw Abort(.conflict, reason: "Two-factor authentication is not enabled.")
+        }
         let body = try req.content.decode(DisableBody.self)
         guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
-            throw Abort(.unauthorized, reason: "Incorrect password.")
+            throw Abort(.unauthorized, reason: "Invalid credentials.")
+        }
+        guard try await Self.verifySecondFactor(body.code, user: user, db: req.db) else {
+            throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
         user.totpEnabled = false
         user.totpSecret = nil
         user.totpRecoveryCodes = nil
+        user.lastTotpStep = nil
         try await user.save(on: req.db)
-        SessionSecurity.markReauthenticated(on: req)
+        guard let userID = user.id else { throw Abort(.internalServerError) }
+        // Rotate after the security downgrade so copies of the old session ID
+        // do not remain valid after this high-impact operation.
+        try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         await AuditLogger.log(req: req, action: "2fa_disabled", target: user.username)
         return user.toPublic()
     }
@@ -124,7 +142,8 @@ struct TwoFactorController: RouteCollection {
 
     static func verifySecondFactor(_ submitted: String, user: User, db: Database) async throws -> Bool {
         guard let stored = user.totpSecret, let secret = readSecret(stored) else { return false }
-        let normalized = submitted.trimmingCharacters(in: .whitespaces)
+        let normalized = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized.utf8.count <= 64 else { return false }
         if let step = TOTP.matchedStep(code: normalized, secret: secret) {
             guard let userID = user.id else { return false }
             return try await consumeTotpStep(step, userID: userID, db: db)

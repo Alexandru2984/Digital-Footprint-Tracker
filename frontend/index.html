@@ -434,7 +434,10 @@
 
               <!-- Enabled → offer disable -->
               <div id="twofa-disable-block" class="hidden space-y-2">
+                <label for="twofa-disable-pass" class="block text-[10px] text-slate-500 uppercase tracking-wide">Current password</label>
                 <input type="password" id="twofa-disable-pass" placeholder="Confirm with your password" autocomplete="current-password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
+                <label for="twofa-disable-code" class="block text-[10px] text-slate-500 uppercase tracking-wide">Authenticator or recovery code</label>
+                <input type="text" id="twofa-disable-code" placeholder="6-digit or recovery code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
                 <button id="twofa-disable-btn" class="text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded">Disable 2FA</button>
               </div>
               <p id="twofa-msg" class="text-[10px] mt-1 hidden"></p>
@@ -2400,16 +2403,18 @@
         document.getElementById('twofa-recovery-done-btn')?.addEventListener('click', refreshTwoFactorUI);
         document.getElementById('twofa-disable-btn')?.addEventListener('click', async () => {
             const password = document.getElementById('twofa-disable-pass').value;
-            if (!password) return twofaMsg('Enter your password to disable.', false);
+            const code = document.getElementById('twofa-disable-code').value.trim();
+            if (!password || !code) return twofaMsg('Enter your password and a current second-factor code.', false);
             try {
                 const res = await fetch('/api/auth/2fa/disable', {
                     method: 'POST', credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
+                    body: JSON.stringify({ password, code })
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) return twofaMsg(data.reason || 'Failed.', false);
                 document.getElementById('twofa-disable-pass').value = '';
+                document.getElementById('twofa-disable-code').value = '';
                 if (currentUser) currentUser.twoFactorEnabled = false;
                 refreshTwoFactorUI();
             } catch { twofaMsg('Network error.', false); }

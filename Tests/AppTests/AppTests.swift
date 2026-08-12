@@ -354,6 +354,84 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
     }
 
+    func testDisableTwoFactorRequiresPasswordAndASecondFactor() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "disable-twofa-user")
+        let userLookup = try await User.query(on: app.db)
+            .filter(\.$username == "disable-twofa-user").first()
+        let user = try XCTUnwrap(userLookup)
+        let secret = TOTP.generateSecret()
+        let recoveryCode = "abcd-efgh-jkmn"
+        user.totpSecret = secret
+        user.totpEnabled = true
+        user.totpRecoveryCodes = String(decoding: try JSONEncoder().encode([
+            RecoveryCodes.hash(recoveryCode),
+        ]), as: UTF8.self)
+        try await user.save(on: app.db)
+
+        try await app.test(.POST, "/auth/2fa/disable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(["password": "Xk9mQ2vLp7wZ"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        try await app.test(.POST, "/auth/2fa/disable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(TwoFactorController.DisableBody(
+                password: "wrong-password", code: recoveryCode
+            ), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+
+        try await app.test(.POST, "/auth/2fa/disable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(TwoFactorController.DisableBody(
+                password: "Xk9mQ2vLp7wZ", code: "not-a-valid-code"
+            ), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+
+        try await app.test(.POST, "/auth/2fa/disable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(TwoFactorController.DisableBody(
+                password: "Xk9mQ2vLp7wZ", code: recoveryCode
+            ), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+
+        let disabledLookup = try await User.find(try XCTUnwrap(user.id), on: app.db)
+        let disabled = try XCTUnwrap(disabledLookup)
+        XCTAssertFalse(disabled.totpEnabled)
+        XCTAssertNil(disabled.totpSecret)
+        XCTAssertNil(disabled.totpRecoveryCodes)
+        XCTAssertNil(disabled.lastTotpStep)
+    }
+
+    func testEnablingTwoFactorConsumesTheConfirmationTOTP() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "enable-twofa-user")
+
+        var setup: TwoFactorController.SetupResponse?
+        try await app.test(.POST, "/auth/2fa/setup", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            setup = try res.content.decode(TwoFactorController.SetupResponse.self)
+        })
+        let code = try XCTUnwrap(TOTP.current(secret: try XCTUnwrap(setup).secret))
+        try await app.test(.POST, "/auth/2fa/enable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(TwoFactorController.CodeBody(code: code), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+
+        // The enrolment proof is now recorded as used and cannot immediately
+        // authorize a security downgrade with the same time-step.
+        try await app.test(.POST, "/auth/2fa/disable", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(TwoFactorController.DisableBody(
+                password: "Xk9mQ2vLp7wZ", code: code
+            ), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .unauthorized) })
+    }
+
     // MARK: - API key least privilege
 
     func testAPIKeyScopesExpiryAndControlPlaneIsolation() async throws {
@@ -2422,6 +2500,10 @@ final class AppTests: XCTestCase {
         let code = try XCTUnwrap(TOTP.current(secret: secret))
         XCTAssertEqual(code.count, 6)
         XCTAssertTrue(TOTP.verify(code: code, secret: secret), "the current code must verify")
+        XCTAssertTrue(TOTP.verify(code: "  \(code)  ", secret: secret), "outer whitespace is harmless")
+        XCTAssertFalse(TOTP.verify(code: "x\(code)", secret: secret), "codes must be exactly six ASCII digits")
+        XCTAssertFalse(TOTP.verify(code: "\(code.prefix(3))-\(code.suffix(3))", secret: secret),
+                       "punctuation inside a TOTP must not be silently discarded")
         // A code from a step far outside the ±1 window must not verify.
         let stale = try XCTUnwrap(TOTP.current(secret: secret, at: Date().addingTimeInterval(-600)))
         XCTAssertFalse(TOTP.verify(code: stale, secret: secret), "a 10-minute-old code is outside the window")

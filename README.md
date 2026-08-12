@@ -166,7 +166,7 @@ PostgreSQL
 - `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Robots-Tag: noindex`
 - nginx rate limiting: 10 req/s on `/scan`, 30 req/s on all API routes
 - Input sanitisation: character whitelist + 255-char limit before any plugin runs
-- `rawData` capped at 8 KB, `source`/`type` at 64 chars, `confidenceScore` clamped `[0.0, 1.0]`
+- `rawData` capped at 8 KB, `source`/`type` at 64 UTF-8 bytes, `confidenceScore` clamped `[0.0, 1.0]`
 - All plugins use `URLSession` (Foundation) — safe from Vapor lifecycle races
 - Holehe subprocess bounded by a 60 s kill timer via `DispatchSemaphore`
 - PII masked in audit logs: `***@domain.com`, `use***`
@@ -175,6 +175,8 @@ PostgreSQL
   is deleted. `__Host-` cookies expire after 7 days with a 24-hour idle limit.
 - Sensitive controls use a 10-minute step-up window refreshed via
   `POST /api/auth/reauth` (password plus TOTP/recovery code when 2FA is enabled).
+- Disabling 2FA requires the password and a fresh TOTP/recovery code, consumes
+  the factor once, and rotates the authenticated session.
 - Versioned AES-256-GCM envelopes for scan targets/results, investigation
   boards, notification credentials, scheduler targets, notifications, audit
   details, and plugin-cache payloads; production refuses to boot without a
@@ -202,6 +204,7 @@ page (cookie auth is persisted across reloads).
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/reauth` — refresh recent authentication for sensitive actions
+- `POST /api/auth/2fa/disable` — requires both the current password and a fresh TOTP/recovery code
 - `GET  /api/auth/me`
 
 ### User
