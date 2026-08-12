@@ -3,13 +3,13 @@ Description=Swift Vapor Footprint Application
 After=network.target postgresql.service
 
 [Service]
-User=micu
-Group=micu
-WorkingDirectory=/home/micu/swift-vapor-current
+User=swift-vapor
+Group=swift-vapor
+WorkingDirectory=/srv/swift-vapor/current
 EnvironmentFile=/home/micu/swift+vapor/.env
 # ExecStart's env assignments deliberately override stale values in the legacy
 # EnvironmentFile: only the migration unit may opt production into migrations.
-ExecStart=/usr/bin/env AUTO_MIGRATE=false REPORT_SCRIPT_PATH=/home/micu/swift-vapor-current/scripts/generate_report.py /home/micu/swift-vapor-current/Run serve --env production --hostname 127.0.0.1 --port 8085
+ExecStart=/usr/bin/env AUTO_MIGRATE=false REPORT_SCRIPT_PATH=/srv/swift-vapor/current/scripts/generate_report.py /srv/swift-vapor/current/Run serve --env production --hostname 127.0.0.1 --port 8085
 Restart=always
 RestartSec=3
 

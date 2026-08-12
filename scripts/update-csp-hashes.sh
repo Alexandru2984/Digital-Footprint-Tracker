@@ -19,7 +19,7 @@ if (( $# > 2 )); then
     exit 2
 fi
 
-frontends=("${1:-/home/micu/swift-vapor-current/frontend}")
+frontends=("${1:-/srv/swift-vapor/current/frontend}")
 [[ $# -lt 2 ]] || frontends+=("$2")
 for frontend in "${frontends[@]}"; do
     [[ "$frontend" == /* && -d "$frontend" ]] || {

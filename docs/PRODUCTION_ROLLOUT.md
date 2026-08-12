@@ -24,13 +24,16 @@ Proceed only when all are true:
 
 ## Prepare without changing traffic
 
-Create and verify the commit-named release as the unprivileged deploy user:
+Create the non-login runtime identity and deploy-owned release directories,
+then build and verify the commit-named release as the unprivileged deploy user:
 
 ```bash
+sudo systemd-sysusers "$PWD/ops/sysusers.d/swift-vapor.conf"
+sudo systemd-tmpfiles --create "$PWD/ops/tmpfiles.d/swift-vapor.conf"
 commit="$(git rev-parse HEAD)"
 scripts/build-release.sh "$commit"
 source scripts/release-lib.sh
-verify_release "/home/micu/swift-vapor-releases/$commit" /home/micu/swift-vapor-releases
+verify_release "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/releases
 ```
 
 Install the narrow root helper and validate the sudoers policy before replacing
@@ -49,8 +52,12 @@ diffing rather than overwriting unrelated configuration.
 
 ```bash
 source scripts/release-lib.sh
-switch_release_link "/home/micu/swift-vapor-releases/$commit" /home/micu/swift-vapor-current /home/micu/swift-vapor-releases
-switch_release_link "/home/micu/swift-vapor-releases/$commit" /home/micu/swift-vapor-next /home/micu/swift-vapor-releases
+switch_release_link "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/current /srv/swift-vapor/releases
+switch_release_link "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/next /srv/swift-vapor/releases
+sudo install -o root -g root -m 0644 ops/systemd/swift-vapor.service /etc/systemd/system/swift-vapor.service
+sudo install -o root -g root -m 0644 ops/systemd/swift-vapor-migrate.service /etc/systemd/system/swift-vapor-migrate.service
+sudo install -d -o root -g root -m 0755 /etc/systemd/system/swift-vapor.service.d
+sudo install -o root -g root -m 0644 ops/systemd/swift-vapor.service.d/*.conf /etc/systemd/system/swift-vapor.service.d/
 sudo systemctl daemon-reload
 sudo systemd-analyze verify /etc/systemd/system/swift-vapor.service /etc/systemd/system/swift-vapor-migrate.service
 sudo nginx -t
@@ -69,7 +76,7 @@ sudo systemctl reload nginx
 curl --fail --silent --show-error http://127.0.0.1:8085/health
 curl --fail --silent --show-error -H 'Host: 5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion' \
   http://127.0.0.1:8110/index.html | sha256sum
-sha256sum "/home/micu/swift-vapor-releases/$commit/frontend/index.html"
+sha256sum "/srv/swift-vapor/releases/$commit/frontend/index.html"
 ```
 
 Compare the two frontend hashes, test login/scan/report/share revocation from a

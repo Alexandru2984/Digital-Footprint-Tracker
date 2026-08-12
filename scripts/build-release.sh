@@ -8,7 +8,7 @@ set -euo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 REPOSITORY="/home/micu/swift+vapor"
-RELEASE_ROOT="/home/micu/swift-vapor-releases"
+RELEASE_ROOT="/srv/swift-vapor/releases"
 REVISION="${1:-HEAD}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/release-lib.sh

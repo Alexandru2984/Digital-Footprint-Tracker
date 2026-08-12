@@ -350,8 +350,8 @@ struct YourPlugin: FootprintPlugin {
 ## Deployment (production)
 
 Production uses immutable, commit-named bundles under
-`/home/micu/swift-vapor-releases/` and a single
-`/home/micu/swift-vapor-current` symlink shared by systemd and nginx. The forced
+`/srv/swift-vapor/releases/` and a single `/srv/swift-vapor/current` symlink
+shared by systemd and nginx. The forced
 SSH command runs `scripts/deploy.sh`; it refuses dirty/diverged source, requires
 a recent verified encrypted backup, builds from `git archive`, runs migrations
 through a sandboxed oneshot unit, transitions CSP hashes, switches the symlink,

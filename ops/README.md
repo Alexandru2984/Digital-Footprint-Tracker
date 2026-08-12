@@ -39,15 +39,28 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
   `/var/lib/tor/swift/hostname` on the box.
 
 ## systemd/
-- `swift-vapor.service` — the unit (runs the release binary as `micu`).
+- `swift-vapor.service` — the unit (runs the release binary as the non-login
+  `swift-vapor` identity, separated from the deploy/personal account).
 - `swift-vapor-migrate.service` — sandboxed oneshot migration gate against the
-  candidate `/home/micu/swift-vapor-next` release.
+  candidate `/srv/swift-vapor/next` release.
 - `swift-vapor.service.d/10-hardening.conf` — sandbox (read-only application
   tree with other home directories hidden, no capabilities/devices, private
   file defaults, one permitted listen port, restricted address families, and
   private/link-local egress denied at the service cgroup).
 - `swift-vapor.service.d/20-bind-loopback.conf` — binds the app to `127.0.0.1`
   only; nginx on localhost is the sole ingress.
+
+## Runtime identity and privilege boundary
+
+- `sysusers.d/swift-vapor.conf` creates the non-login runtime account.
+- `tmpfiles.d/swift-vapor.conf` creates `/srv/swift-vapor` and its release
+  directory for the deploy identity; release contents become read-only before
+  their manifest is accepted.
+- `sudoers/swift-vapor-deploy` replaces broad passwordless sudo with only the
+  migration gate, app restart and the root-owned CSP updater. Validate with
+  `visudo -cf` before installation and keep an independent root console open.
+- `libexec/update-swift-csp` accepts only validated SHA-256 tokens and owns the
+  fixed-path atomic nginx update, syntax check, reload and rollback.
 
 ## Regeneration
 - Cloudflare ranges: `scripts/update-cloudflare-ips.sh` (validate + reload + rollback).

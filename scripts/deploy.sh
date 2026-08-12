@@ -10,10 +10,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 022
 
 REPOSITORY=/home/micu/swift+vapor
-RELEASE_ROOT=/home/micu/swift-vapor-releases
-CURRENT_LINK=/home/micu/swift-vapor-current
-NEXT_LINK=/home/micu/swift-vapor-next
-LOCK_FILE=/home/micu/.swift-vapor-deploy.lock
+RELEASE_ROOT=/srv/swift-vapor/releases
+CURRENT_LINK=/srv/swift-vapor/current
+NEXT_LINK=/srv/swift-vapor/next
+LOCK_FILE=/srv/swift-vapor/deploy.lock
 HEALTH_URL=http://127.0.0.1:8085/health
 STATIC_URL=http://127.0.0.1:8110/index.html
 ONION_HOST=5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion

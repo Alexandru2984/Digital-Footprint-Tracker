@@ -24,12 +24,12 @@ server {
 
     # ── Static frontend ───────────────────────────────────────────────────────
     location /robots.txt {
-        root  /home/micu/swift-vapor-current/frontend;
+        root  /srv/swift-vapor/current/frontend;
         access_log off;
     }
 
     location / {
-        root  /home/micu/swift-vapor-current/frontend;
+        root  /srv/swift-vapor/current/frontend;
         index index.html;
         try_files $uri $uri/ /index.html;
     }
