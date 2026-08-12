@@ -104,7 +104,7 @@ final class User: Model {
 
     init() { }
 
-    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = nil, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false, emailVerified: Bool = false) {
+    init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = 30, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false, emailVerified: Bool = false) {
         self.id = id
         self.username = username
         self.email = email

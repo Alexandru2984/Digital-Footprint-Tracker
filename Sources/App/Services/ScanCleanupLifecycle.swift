@@ -28,7 +28,8 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 //
                 // New flow:
                 //   1. Anonymous scans (no owner) — default 30 days.
-                //   2. Each user — effective retention = user.retentionDays ?? 30.
+                //   2. Each user with an explicit policy — nil means the user
+                //      selected "Never" and must not be silently treated as 30.
                 let now = Date()
                 let defaultCutoff = now.addingTimeInterval(-30 * 86400)
 
@@ -44,8 +45,7 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 let allUsers = (try? await User.query(on: db).all()) ?? []
                 for user in allUsers {
                     guard let userID = user.id else { continue }
-                    let days = user.retentionDays ?? 30
-                    guard days > 0 else { continue }
+                    guard let days = user.retentionDays else { continue }
                     let userCutoff = now.addingTimeInterval(-Double(days) * 86400)
                     do {
                         try await Scan.query(on: db)

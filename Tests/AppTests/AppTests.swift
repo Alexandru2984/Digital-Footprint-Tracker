@@ -57,6 +57,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(CreateAuditLogs())
     app.migrations.add(AddRetentionDaysToUsers())
+    app.migrations.add(DefaultUserRetention())
     app.migrations.add(AddNotificationChannelsToUsers())
     app.migrations.add(CreateSharedReports())
     // Note: HashAPIKeyColumn + HashSharedReportTokens are PostgreSQL-only
@@ -159,6 +160,42 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(response.status, .ok)
             XCTAssertEqual(response.headers.first(name: .cacheControl), "no-store")
         })
+    }
+
+    func testRetentionDefaultIsExplicitAndNeverReallyDisablesCleanup() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "retention-user")
+
+        let initial = try await User.query(on: app.db)
+            .filter(\.$username == "retention-user")
+            .first()
+        XCTAssertEqual(initial?.retentionDays, 30)
+
+        let legacy = User(
+            username: "legacy-retention-user",
+            email: "legacy-retention@example.test",
+            passwordHash: "unused",
+            retentionDays: nil
+        )
+        try await legacy.save(on: app.db)
+        try await DefaultUserRetention().prepare(on: app.db)
+        let migratedLegacy = try await User.find(legacy.id, on: app.db)
+        XCTAssertEqual(migratedLegacy?.retentionDays, 30, "Historical implicit defaults must be materialized")
+
+        struct RetentionBody: Content { let retentionDays: Int? }
+        try await app.test(.POST, "/auth/retention", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try request.content.encode(RetentionBody(retentionDays: nil), as: .json)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertNil(try response.content.decode(User.Public.self).retentionDays)
+        })
+
+        let optedOut = try await User.query(on: app.db)
+            .filter(\.$username == "retention-user")
+            .first()
+        XCTAssertNil(optedOut?.retentionDays)
     }
 
     func testEmailAddressNormalizationRejectsHeaderAndDomainAbuse() {
