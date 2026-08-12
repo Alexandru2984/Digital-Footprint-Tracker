@@ -1,0 +1,29 @@
+groups:
+  - name: swift-vapor-availability
+    rules:
+      - alert: SwiftVaporTargetMissing
+        expr: absent(up{job="swift-vapor"}) or up{job="swift-vapor"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor metrics target is unavailable
+          description: Prometheus has not successfully scraped the swift-vapor target for two minutes.
+
+      - alert: SwiftVaporBackupSignalMissing
+        expr: absent(swift_vapor_backup_last_success_unixtime)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor backup freshness signal is missing
+          description: The application is not publishing a verified-backup timestamp.
+
+      - alert: SwiftVaporBackupStale
+        expr: swift_vapor_backup_fresh == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor encrypted database backup is stale or missing
+          description: No locally verified encrypted backup exists inside the configured freshness window.

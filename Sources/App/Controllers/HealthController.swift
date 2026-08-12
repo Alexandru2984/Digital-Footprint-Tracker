@@ -128,6 +128,7 @@ struct HealthController: RouteCollection {
         let scansLast24h = (try? await Scan.query(on: req.db).filter(\.$createdAt >= yesterday).count()) ?? 0
 
         let snap = await MetricsRegistry.shared.snapshot()
+        let backup = BackupStatus.current()
 
         // ─── Format (Prometheus text 0.0.4) ────────────────────────────────
         var out = ""
@@ -168,6 +169,15 @@ struct HealthController: RouteCollection {
         writeGauge(name: "swift_vapor_plugin_cache_rows",
                    help: "Live (non-expired plus expired-but-unswept) rows in plugin_cache.",
                    value: pluginCacheRows)
+        writeGauge(name: "swift_vapor_backup_last_success_unixtime",
+                   help: "Unix timestamp of the last locally verified encrypted database backup, or zero when unknown.",
+                   value: backup?.lastSuccessUnix ?? 0)
+        writeGauge(name: "swift_vapor_backup_age_seconds",
+                   help: "Age in seconds of the last locally verified encrypted database backup, or minus one when unknown.",
+                   value: backup?.ageSeconds ?? -1)
+        writeGauge(name: "swift_vapor_backup_fresh",
+                   help: "Whether the last locally verified encrypted database backup is within the configured freshness window.",
+                   value: backup?.isFresh == true ? 1 : 0)
 
         writeCounter(name: "swift_vapor_plugin_cache_hits_total",
                      help: "Plugin cache lookups that returned a fresh hit since process start.",

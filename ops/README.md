@@ -50,6 +50,16 @@ you change the live config (or regenerate with the scripts under `scripts/`).
 - Cloudflare ranges: `scripts/update-cloudflare-ips.sh` (validate + reload + rollback).
 - CSP script-src hashes: `scripts/update-csp-hashes.sh` (run by `scripts/deploy.sh`).
 
+## Monitoring
+
+- `prometheus/swift-vapor-alerts.yml` contains target-down and verified-backup
+  freshness alerts. It expects the protected `/metrics` endpoint to be scraped
+  with `job="swift-vapor"`.
+- `scripts/check-backup.sh` is the local deployment/runbook gate. It confirms
+  the newest retained encrypted dump and the success marker written only after
+  backup authentication and decompression checks. A passing result does not
+  replace an isolated restore drill.
+
 ## CI deploy trust
 
 The production GitHub Environment must define `DEPLOY_HOST_KEY` as one complete

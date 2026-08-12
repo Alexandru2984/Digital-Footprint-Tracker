@@ -394,7 +394,14 @@ Trigger an on-demand backup and confirm that verification completed:
 ```bash
 sudo systemctl start swift-vapor-backup.service
 sudo journalctl -u swift-vapor-backup.service -n 30 --no-pager
+scripts/check-backup.sh --status-file /var/lib/swift-vapor-backup/last-success
 ```
+
+The backup job publishes `/var/lib/swift-vapor-backup/last-success` only after
+authenticated decryption and gzip verification succeed. The read-only checker
+also verifies that the newest encrypted dump exists, is private, is non-trivial
+in size and is recent. It is a freshness gate, not a restore test; exercise a
+real restore into an isolated PostgreSQL instance on a schedule.
 
 Existing `.sql.gz` files are plaintext and are deliberately not deleted or
 rewritten by the new job. Re-encrypt and verify them during the controlled
@@ -423,7 +430,11 @@ Available series: `swift_vapor_scans`, `swift_vapor_scans_by_status{status="..."
 `swift_vapor_scans_last_24h`, `swift_vapor_users`, `swift_vapor_results`,
 `swift_vapor_scheduled_scans_active`, `swift_vapor_plugin_cache_rows`,
 `swift_vapor_plugin_cache_hits_total`, `swift_vapor_plugin_cache_misses_total`,
-`swift_vapor_notifications_sent_total{channel="..."}`.
+`swift_vapor_notifications_sent_total{channel="..."}`,
+`swift_vapor_backup_last_success_unixtime`, `swift_vapor_backup_age_seconds`
+and `swift_vapor_backup_fresh`. Starter availability and backup alerts live in
+`ops/prometheus/swift-vapor-alerts.yml`; validate and load them through the
+Prometheus rule-file mechanism used by your monitoring installation.
 
 If `METRICS_TOKEN` is unset, the endpoint falls back to requiring an admin
 session cookie (legacy behaviour).

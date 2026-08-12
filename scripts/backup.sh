@@ -22,6 +22,7 @@ ENV_FILE="/home/micu/swift+vapor/.env"
 BACKUP_DIR="${BACKUP_OUTPUT_DIR:-/home/micu/swift-vapor-backups}"
 RETENTION="${BACKUP_RETENTION:-7}"
 LOCKFILE="${BACKUP_DIR}/.backup.lock"
+STATUS_FILE="${BACKUP_STATUS_FILE:-${BACKUP_DIR}/.last-success}"
 
 if [[ "$BACKUP_DIR" != /* || "$BACKUP_DIR" == "/" ]]; then
     echo "backup: BACKUP_OUTPUT_DIR must be a specific absolute directory." >&2
@@ -29,6 +30,10 @@ if [[ "$BACKUP_DIR" != /* || "$BACKUP_DIR" == "/" ]]; then
 fi
 if [[ ! "$RETENTION" =~ ^[1-9][0-9]{0,2}$ ]] || (( RETENTION > 365 )); then
     echo "backup: BACKUP_RETENTION must be an integer from 1 to 365." >&2
+    exit 1
+fi
+if [[ "$STATUS_FILE" != /* || "$STATUS_FILE" == "/" ]]; then
+    echo "backup: BACKUP_STATUS_FILE must be a specific absolute path." >&2
     exit 1
 fi
 
@@ -154,4 +159,22 @@ if (( ${#plaintext[@]} > 0 )); then
 fi
 
 SIZE="$(stat -c %s "$OUT" 2>/dev/null || echo '?')"
+
+# Publish a non-secret freshness signal only after the encrypted stream has
+# passed authenticated decryption and gzip verification. Prometheus and the
+# deploy preflight can read this without access to the backup or passphrase.
+STATUS_DIR="$(dirname "$STATUS_FILE")"
+mkdir -p "$STATUS_DIR"
+STATUS_TMP=""
+cleanup_status() {
+    [[ -z "$STATUS_TMP" ]] || rm -f -- "$STATUS_TMP"
+}
+trap cleanup_status EXIT
+STATUS_TMP="$(mktemp --tmpdir="$STATUS_DIR" .last-success.partial.XXXXXX)"
+printf '%s\n' "$(date -u +%s)" > "$STATUS_TMP"
+chmod 0644 "$STATUS_TMP"
+mv -f -- "$STATUS_TMP" "$STATUS_FILE"
+STATUS_TMP=""
+trap - EXIT
+
 echo "backup: complete and verified (${SIZE} encrypted bytes, ${kept_count} kept)"

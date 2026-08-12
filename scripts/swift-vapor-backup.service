@@ -11,6 +11,9 @@ Group=micu
 WorkingDirectory=/home/micu/swift+vapor
 ExecStart=/home/micu/swift+vapor/scripts/backup.sh
 LoadCredentialEncrypted=backup-passphrase:/etc/credstore.encrypted/swift-vapor-backup-passphrase
+Environment=BACKUP_STATUS_FILE=/var/lib/swift-vapor-backup/last-success
+StateDirectory=swift-vapor-backup
+StateDirectoryMode=0755
 
 # The job sees this repository read-only, localhost, its private credential, and
 # the backup directory. It has no reason to inspect other homes or use internet.
