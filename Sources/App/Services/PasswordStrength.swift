@@ -17,7 +17,8 @@ enum PasswordStrength {
         "abc123", "abcd1234", "a1b2c3d4", "changeme", "secret", "trustno1", "whatever",
         "superman", "batman", "master", "hello123", "test1234", "google", "starwars",
         "computer", "michael", "jordan", "harley", "ranger", "shadow", "hunter2",
-        "zaq12wsx", "1q2w3e4r", "1qaz2wsx", "qazwsx", "asdfghjkl", "zxcvbnm"
+        "zaq12wsx", "1q2w3e4r", "1qaz2wsx", "qazwsx", "asdfghjkl", "zxcvbnm",
+        "your_strong_password"
     ]
 
     static func validate(_ password: String, username: String, email: String) throws {

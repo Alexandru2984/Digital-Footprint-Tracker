@@ -145,10 +145,27 @@ public func configure(_ app: Application) async throws {
         // swiftlint:disable:next first_where
         let existing = try await User.query(on: app.db).filter(\.$username == adminUsername).first()
         if existing == nil {
+            let normalizedAdminEmail = try CredentialPolicy.validateNewCredential(
+                username: adminUsername,
+                email: adminEmail,
+                password: adminPassword,
+                minimumPasswordCharacters: 12
+            )
             let hash = try await app.password.async.hash(adminPassword)
-            let admin = User(username: adminUsername, email: adminEmail, passwordHash: hash, isAdmin: true, emailVerified: true)
+            let admin = User(
+                username: adminUsername,
+                email: normalizedAdminEmail,
+                passwordHash: hash,
+                isAdmin: true,
+                emailVerified: true
+            )
             try await admin.save(on: app.db)
             app.logger.notice("Configured administrator account created.")
+        } else if existing?.isAdmin != true {
+            throw Abort(
+                .internalServerError,
+                reason: "ADMIN_USERNAME belongs to a non-admin account; refusing ambiguous bootstrap."
+            )
         }
     } else {
         app.logger.warning("ADMIN_PASSWORD not set — admin account will not be seeded.")

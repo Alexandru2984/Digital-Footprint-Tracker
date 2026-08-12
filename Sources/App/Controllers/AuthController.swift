@@ -57,22 +57,11 @@ struct AuthController: RouteCollection {
     func register(req: Request) async throws -> User.Public {
         let body = try req.content.decode(RegisterRequest.self)
 
-        // Validate
-        guard body.username.count >= 3, body.username.count <= 30 else {
-            throw Abort(.badRequest, reason: "Username must be 3–30 characters.")
-        }
-        guard body.username.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else {
-            throw Abort(.badRequest, reason: "Username may only contain letters, numbers, hyphens and underscores.")
-        }
-        guard let normalizedEmail = EmailAddress.normalize(body.email) else {
-            throw Abort(.badRequest, reason: "Invalid email address.")
-        }
-        guard body.password.count >= 8 else {
-            throw Abort(.badRequest, reason: "Password must be at least 8 characters.")
-        }
-        // Offline weak-password rejection — no third-party HIBP call, honours the
-        // privacy-first stance. Blocks the passwords attackers try first.
-        try PasswordStrength.validate(body.password, username: body.username, email: normalizedEmail)
+        let normalizedEmail = try CredentialPolicy.validateNewCredential(
+            username: body.username,
+            email: body.email,
+            password: body.password
+        )
 
         // Uniqueness check. Both queries run concurrently and the response
         // returns a single generic reason regardless of which constraint

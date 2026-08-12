@@ -214,6 +214,35 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testCredentialPolicyCoversBootstrapAndBCryptByteLimit() throws {
+        XCTAssertEqual(
+            try CredentialPolicy.validateNewCredential(
+                username: "Admin_User",
+                email: " ADMIN@Example.test ",
+                password: "K8!vapor-safe-passphrase",
+                minimumPasswordCharacters: 12
+            ),
+            "admin@example.test"
+        )
+        XCTAssertThrowsError(try CredentialPolicy.validateNewCredential(
+            username: "admin",
+            email: "admin@example.test",
+            password: "short",
+            minimumPasswordCharacters: 12
+        ))
+        XCTAssertThrowsError(try CredentialPolicy.validateNewCredential(
+            username: "admin",
+            email: "admin@example.test",
+            password: String(repeating: "🛡", count: 19)
+        ), "19 four-byte characters exceed BCrypt's 72-byte input limit")
+        XCTAssertThrowsError(try CredentialPolicy.validateNewCredential(
+            username: "admin",
+            email: "admin@example.test",
+            password: "your_strong_password",
+            minimumPasswordCharacters: 12
+        ), "Deployment-documentation placeholders must never become credentials")
+    }
+
     func testBoundedProcessCapturesCapsAndTimesOut() async throws {
         func executable(_ candidates: [String]) throws -> String {
             try XCTUnwrap(candidates.first(where: FileManager.default.isExecutableFile(atPath:)))
