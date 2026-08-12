@@ -6,7 +6,7 @@ import Darwin
 #endif
 
 /// SSRF guard utilities — used to reject targets and outbound URLs that resolve
-/// to private, loopback, or link-local hosts (including cloud metadata endpoints).
+/// to non-global hosts (including private networks and cloud metadata endpoints).
 ///
 /// Used by the scan endpoint (`ScanController.scan`, `BulkScanController.bulkScan`)
 /// and by outbound webhook / notification dispatchers to prevent the server from
@@ -43,7 +43,7 @@ enum SSRFGuard {
     static func isInternalURL(_ url: URL) -> Bool {
         guard let host = url.host, !host.isEmpty else { return true }
         if isInternalHostname(host) { return true }
-        if let greedy = parseGreedyIPv4(host) { return isPrivateIPv4(greedy) }
+        if let greedy = parseGreedyIPv4(host) { return isNonGlobalIPv4(greedy) }
         return false
     }
 
@@ -69,10 +69,10 @@ enum SSRFGuard {
 
         // Strict dotted-quad IPv4 (inet_pton rejects "12345" and "2130706433",
         // so a numeric username is left for the scan layer to treat as text).
-        if let v4 = parseStrictIPv4(lower) { return isPrivateIPv4(v4) }
+        if let v4 = parseStrictIPv4(lower) { return isNonGlobalIPv4(v4) }
 
         // IPv6 literal.
-        if let v6 = parseIPv6(lower) { return isInternalIPv6(v6) }
+        if let v6 = parseIPv6(lower) { return isNonGlobalIPv6(v6) }
 
         // Unknown / public hostname. DNS resolution is handled separately.
         return false
@@ -86,7 +86,7 @@ enum SSRFGuard {
         guard !host.isEmpty else { return true }
         if isInternalHostname(host) { return true }
         // Greedy numeric forms resolve locally without touching DNS.
-        if let greedy = parseGreedyIPv4(host) { return isPrivateIPv4(greedy) }
+        if let greedy = parseGreedyIPv4(host) { return isNonGlobalIPv4(greedy) }
 
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC
@@ -103,13 +103,13 @@ enum SSRFGuard {
                     let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
                         UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
                     }
-                    if isPrivateIPv4(v4) { return true }
+                    if isNonGlobalIPv4(v4) { return true }
                 case AF_INET6:
                     let bytes = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p -> [UInt8] in
                         var a6 = p.pointee.sin6_addr
                         return withUnsafeBytes(of: &a6) { Array($0) }
                     }
-                    if isInternalIPv6(bytes) { return true }
+                    if isNonGlobalIPv6(bytes) { return true }
                 default:
                     break
                 }
@@ -128,7 +128,7 @@ enum SSRFGuard {
     static func resolveValidatedIP(_ host: String) -> String? {
         guard !host.isEmpty, !isInternalHostname(host) else { return nil }
         // Numeric literal forms are deterministic (no DNS) — return as-is once public.
-        if let greedy = parseGreedyIPv4(host) { return isPrivateIPv4(greedy) ? nil : host }
+        if let greedy = parseGreedyIPv4(host) { return isNonGlobalIPv4(greedy) ? nil : host }
 
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC
@@ -146,7 +146,7 @@ enum SSRFGuard {
                     let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
                         UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
                     }
-                    if isPrivateIPv4(v4) { return nil } // any internal answer → block
+                    if isNonGlobalIPv4(v4) { return nil } // any non-global answer → block
                     if chosen == nil {
                         chosen = "\((v4 >> 24) & 0xff).\((v4 >> 16) & 0xff).\((v4 >> 8) & 0xff).\(v4 & 0xff)"
                     }
@@ -155,7 +155,7 @@ enum SSRFGuard {
                         var a6 = p.pointee.sin6_addr
                         return withUnsafeBytes(of: &a6) { Array($0) }
                     }
-                    if isInternalIPv6(bytes) { return nil }
+                    if isNonGlobalIPv6(bytes) { return nil }
                     if chosen == nil { chosen = ipv6String(bytes) }
                 default:
                     break
@@ -201,9 +201,13 @@ enum SSRFGuard {
         return UInt32(bigEndian: addr.s_addr)
     }
 
-    private static func isPrivateIPv4(_ a: UInt32) -> Bool {
+    /// IANA special-purpose ranges that are not globally reachable. Two
+    /// globally-reachable anycast exceptions inside 192.0.0.0/24 are retained.
+    private static func isNonGlobalIPv4(_ a: UInt32) -> Bool {
         let b0 = (a >> 24) & 0xff
         let b1 = (a >> 16) & 0xff
+        let b2 = (a >> 8) & 0xff
+        let b3 = a & 0xff
         if b0 == 0 { return true }                              // 0.0.0.0/8 ("this host")
         if b0 == 127 { return true }                            // loopback
         if b0 == 10 { return true }                             // RFC1918 class A
@@ -211,6 +215,14 @@ enum SSRFGuard {
         if b0 == 192 && b1 == 168 { return true }               // RFC1918 class C
         if b0 == 169 && b1 == 254 { return true }               // link-local + cloud metadata
         if b0 == 100 && (64...127).contains(b1) { return true } // CGNAT 100.64.0.0/10
+        if b0 == 192 && b1 == 0 && b2 == 0 {
+            return b3 != 9 && b3 != 10                          // IETF assignments; two global anycasts
+        }
+        if b0 == 192 && b1 == 0 && b2 == 2 { return true }      // TEST-NET-1
+        if b0 == 192 && b1 == 88 && b2 == 99 { return true }    // deprecated 6to4 relay anycast
+        if b0 == 198 && (b1 == 18 || b1 == 19) { return true }  // benchmarking 198.18.0.0/15
+        if b0 == 198 && b1 == 51 && b2 == 100 { return true }   // TEST-NET-2
+        if b0 == 203 && b1 == 0 && b2 == 113 { return true }    // TEST-NET-3
         if b0 >= 224 { return true }                            // multicast / reserved
         return false
     }
@@ -223,21 +235,62 @@ enum SSRFGuard {
         return withUnsafeBytes(of: &addr) { Array($0) }
     }
 
-    private static func isInternalIPv6(_ b: [UInt8]) -> Bool {
+    /// Allow the currently assignable global-unicast space (2000::/3), minus
+    /// its non-global special-purpose sub-ranges. The globally reachable NAT64
+    /// well-known prefix is also allowed when its embedded IPv4 is global.
+    /// Everything else fails closed so newly allocated address classes require
+    /// an explicit registry review before the application can dial them.
+    private static func isNonGlobalIPv6(_ b: [UInt8]) -> Bool {
         guard b.count == 16 else { return true }
-        // :: unspecified
-        if b.allSatisfy({ $0 == 0 }) { return true }
-        // ::1 loopback
-        if b[0..<15].allSatisfy({ $0 == 0 }) && b[15] == 1 { return true }
-        // fc00::/7 unique-local
-        if (b[0] & 0xfe) == 0xfc { return true }
-        // fe80::/10 link-local
-        if b[0] == 0xfe && (b[1] & 0xc0) == 0x80 { return true }
-        // IPv4-mapped ::ffff:a.b.c.d → re-check the embedded v4
+
+        // IPv4-mapped addresses are a special local representation, not an
+        // Internet destination. Reject all of them to avoid parser ambiguity.
         if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff {
-            let v4 = (UInt32(b[12]) << 24) | (UInt32(b[13]) << 16) | (UInt32(b[14]) << 8) | UInt32(b[15])
-            return isPrivateIPv4(v4)
+            return true
         }
+
+        // 64:ff9b::/96 is IANA's globally reachable NAT64 prefix. Re-check its
+        // embedded IPv4 so it cannot be used to encode a private destination.
+        if hasPrefix(b, [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0], bits: 96) {
+            let v4 = (UInt32(b[12]) << 24) | (UInt32(b[13]) << 16)
+                | (UInt32(b[14]) << 8) | UInt32(b[15])
+            return isNonGlobalIPv4(v4)
+        }
+
+        // Current globally assignable unicast space is 2000::/3.
+        guard (b[0] & 0xe0) == 0x20 else { return true }
+
+        // 2001::/23 is non-global by default, with these IANA-listed, globally
+        // reachable more-specific allocations.
+        if hasPrefix(b, [0x20, 0x01, 0x00], bits: 23) {
+            let globalException = b == ipv6Bytes("2001:1::1")
+                || b == ipv6Bytes("2001:1::2")
+                || b == ipv6Bytes("2001:1::3")
+                || hasPrefix(b, [0x20, 0x01, 0x00, 0x03], bits: 32)
+                || hasPrefix(b, [0x20, 0x01, 0x00, 0x04, 0x01, 0x12], bits: 48)
+                || hasPrefix(b, [0x20, 0x01, 0x00, 0x20], bits: 28)
+                || hasPrefix(b, [0x20, 0x01, 0x00, 0x30], bits: 28)
+            if !globalException { return true }
+        }
+
+        if hasPrefix(b, [0x20, 0x01, 0x0d, 0xb8], bits: 32) { return true } // documentation
+        if hasPrefix(b, [0x20, 0x02], bits: 16) { return true }              // 6to4
+        if hasPrefix(b, [0x3f, 0xff, 0x00], bits: 20) { return true }        // documentation
         return false
+    }
+
+    private static func hasPrefix(_ address: [UInt8], _ prefix: [UInt8], bits: Int) -> Bool {
+        guard bits >= 0, bits <= address.count * 8, prefix.count * 8 >= bits else { return false }
+        let bytes = bits / 8
+        if bytes > 0 && !address[0..<bytes].elementsEqual(prefix[0..<bytes]) { return false }
+        let remaining = bits % 8
+        guard remaining > 0 else { return true }
+        let mask = UInt8.max << UInt8(8 - remaining)
+        return (address[bytes] & mask) == (prefix[bytes] & mask)
+    }
+
+    private static func ipv6Bytes(_ value: String) -> [UInt8] {
+        // All callers use fixed, compile-time literals.
+        parseIPv6(value) ?? []
     }
 }

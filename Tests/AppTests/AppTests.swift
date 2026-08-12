@@ -937,6 +937,40 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(SSRFGuard.isInternalTarget("fe80::1"))
     }
 
+    func testSSRFGuardBlocksAllKnownNonGlobalAddressRanges() {
+        let blockedIPv4 = [
+            "192.0.0.1", "192.0.0.8", "192.0.0.170",
+            "192.0.2.1", "192.88.99.1",
+            "198.18.0.1", "198.19.255.255", "198.51.100.1",
+            "203.0.113.1", "224.0.0.1", "240.0.0.1", "255.255.255.255",
+        ]
+        for address in blockedIPv4 {
+            XCTAssertTrue(SSRFGuard.isInternalHostname(address), "Expected to block \(address)")
+            XCTAssertNil(SSRFGuard.resolveValidatedIP(address), "Expected no pin for \(address)")
+        }
+
+        let blockedIPv6 = [
+            "::ffff:8.8.8.8", "64:ff9b::127.0.0.1", "64:ff9b:1::1",
+            "100::1", "100:0:0:1::1", "2001:2::1", "2001:db8::1",
+            "2002:7f00:1::", "3fff::1", "5f00::1", "fec0::1", "ff02::1",
+        ]
+        for address in blockedIPv6 {
+            XCTAssertTrue(SSRFGuard.isInternalHostname(address), "Expected to block \(address)")
+            XCTAssertNil(SSRFGuard.resolveValidatedIP(address), "Expected no pin for \(address)")
+        }
+    }
+
+    func testSSRFGuardKeepsGlobalRangeBoundariesAndExceptionsReachable() {
+        for address in [
+            "192.0.0.9", "192.0.0.10", "192.31.196.1",
+            "198.17.255.255", "198.20.0.1", "203.0.114.1",
+            "2001:1::1", "2001:3::1", "2001:20::1",
+            "2001:4860:4860::8888", "2606:4700:4700::1111", "64:ff9b::8.8.8.8",
+        ] {
+            XCTAssertFalse(SSRFGuard.isInternalHostname(address), "Expected to allow \(address)")
+        }
+    }
+
     func testSSRFGuardAllowsPublicHosts() {
         XCTAssertFalse(SSRFGuard.isInternalTarget("example.com"))
         XCTAssertFalse(SSRFGuard.isInternalTarget("8.8.8.8"))
