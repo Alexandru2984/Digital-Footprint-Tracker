@@ -1,5 +1,36 @@
 # Extreme security audit — 2026-08-12
 
+## Post-audit production update — 2026-08-12 12:12 UTC
+
+Two edge incidents from the snapshot below were mitigated without deploying the
+pending backend/systemd/immutable-release cutover:
+
+- Commit `13ef89c` added a 128-bit nginx `$request_id` nonce to `script-src`
+  while retaining exact hashes and forbidding JavaScript `unsafe-inline`. The
+  root-owned installer updated the live CSP with backup, successful `nginx -t`
+  and graceful reload.
+- Two independent Cloudflare responses had different CSP nonces. In each
+  response Cloudflare propagated the matching nonce to the outer and nested
+  JavaScript Detections scripts; all four current application hashes were
+  present and `cf-cache-status` was `DYNAMIC`.
+- The already-versioned Cloudflare peer guard was enabled only for the live
+  `swift.micutu.com` TLS vhost. Direct IPv4 and a direct request with a forged
+  `CF-Connecting-IP` now return 403; Cloudflare, `/health` and onion probes
+  return 200.
+- The host has no browser runtime, so actual browser execution and console
+  validation remain an acceptance gate. The Swift vhost has no matching direct
+  IPv6 TLS listener (the address presents another vhost's certificate), so the
+  site is not directly reachable there; explicit IPv6 closure and Cloudflare
+  Authenticated Origin Pulls remain open.
+- Cloudflare dashboard policy was not changed or inspected. Confirm that the
+  active bot/WAF product consumes the JSD outcome; JSD signal collection alone
+  is not an enforcement action.
+
+Rollback copies are retained under `/var/lib/swift-vapor-csp-backups/` and
+`/var/lib/swift-vapor-nginx-backups/`. The audit's overall **NO-GO** remains in
+force because backup recovery, runtime identity, broad host authority and the
+immutable release cutover are still open.
+
 ## Executive verdict
 
 **NO-GO for an unattended production rollout.** The repository is materially
@@ -139,14 +170,14 @@ Status meanings:
 |---|---|---|---|
 | P0-01 | Daily backup has failed at least 2026-08-09..12; only seven local plaintext dumps dated 2026-07-14..20 remain. Host/disk compromise or DB corruption can cause unrecoverable loss. | Live incident; monitoring code prepared | Provision systemd encrypted credential, install unit, create encrypted dump, copy off-host, isolated restore, record RPO/RTO |
 | P0-02 | Web runtime and deploy/personal user are `micu`, which has passwordless unrestricted root outside the service sandbox. Same-UID disclosure plus a sandbox/SSH boundary failure has host-wide blast radius. | Runtime split prepared; live open | Install non-login `swift-vapor`, move runtime to `/srv`, replace broad sudo, rotate affected credentials |
-| P0-03 | Main SPA scripts are blocked by the live CSP because nginx serves mutable checkout content. | Live incident; atomic release prepared | Restore compatible CSP during controlled rollout, verify real browser, move nginx to immutable release immediately |
+| P0-03 | Main SPA scripts were blocked by CSP drift while nginx served mutable checkout content. | Live edge mitigation applied; immutable release/browser gate open | Verify a real browser, then move nginx to the immutable release immediately |
 | P0-04 | Running backend and `/etc` configs predate the security commits while frontend files already changed. Security posture is mixed and rollback state is ambiguous. | Prepared | Execute and record the controlled rollout; production SHA/config checksums must match accepted release |
 
 ### P1 — high
 
 | ID | Finding and impact | Status | Required action |
 |---|---|---|---|
-| P1-01 | Installed public vhost lacks the Cloudflare-origin peer guard. WAF/bot/rate policies can be bypassed by direct origin access. | Prepared | Install generated guard; test CF path 200 and direct IPv4/IPv6 origin 403; add AOP/mTLS |
+| P1-01 | Direct origin access could bypass Cloudflare WAF/bot/rate policies. | IPv4 vhost guard deployed; AOP/IPv6 closure open | Add AOP/mTLS, cover every served address and continuously probe for bypass |
 | P1-02 | Five authorized SSH keys are unrestricted, including two automation-labelled keys. Theft provides an interactive `micu` shell and currently passwordless root. | Open | Identify owners out-of-band, replace per project with forced commands + `restrict`, revoke old keys |
 | P1-03 | Database, SMTP, vendors and encryption key share one flat process environment. RCE exposes all capabilities; key and data reside together. | Open | Split web/worker credentials, systemd credentials or secret manager, rotate after identity boundary is fixed |
 | P1-04 | One raw 256-bit key is used directly for AES-GCM and HMAC blind indexes, without HKDF domain separation, AAD row/table/field binding or an online key generation/rotation scheme. A DB writer can transplant valid ciphertext between compatible fields. | Open | Versioned envelope, HKDF subkeys, AAD, KEK/DEK registry, resumable rotation and rollback checkpoints |
@@ -210,6 +241,7 @@ contributor or co-author trailers.
 | `359a80b` | Disabled implicit production migrations without explicit opt-in |
 | `dfc9808` | Added immutable release manifests, atomic switch, CSP transition and rollback |
 | `049069f` | Prepared non-login runtime identity and `/srv` isolation |
+| `13ef89c` | Kept Cloudflare JavaScript Detections under nonce-based strict CSP |
 
 ## Validation evidence
 
@@ -226,6 +258,10 @@ contributor or co-author trailers.
 - sysusers/tmpfiles: parsed in dry-run.
 - systemd application target: offline exposure **2.8 OK**.
 - nginx installed config: syntax succeeds as root.
+- live edge CSP/JSD: two unique response nonces matched every injected JSD
+  script; four application hashes present and no JavaScript `unsafe-inline`.
+- live origin guard: direct and forged-header IPv4 requests return 403;
+  Cloudflare, health and onion probes return 200.
 
 The release builder itself was deliberately not run against the live checkout
 after these commits: the legacy unit executes `.build/release/Run`, so modifying
