@@ -50,7 +50,9 @@
     if (!types.length) { bar.innerHTML = '<span class="text-[11px] text-slate-600">No entities yet.</span>'; return; }
     bar.innerHTML = types.map(function (t) {
       var off = hiddenTypes[t];
-      return '<button data-type="' + t + '" class="board-filter-chip text-[11px] px-2 py-1 rounded border transition-colors ' +
+      // Entity types can originate in imported GraphML/JSON. Escape them in
+      // both attribute and text contexts so a crafted board cannot inject DOM.
+      return '<button data-type="' + escapeHtml(t) + '" class="board-filter-chip text-[11px] px-2 py-1 rounded border transition-colors ' +
         (off ? 'border-dark-700 bg-dark-800 text-slate-600' : 'border-dark-600 bg-dark-800 text-slate-200') + '">' +
         '<span style="color:' + color(t) + ';opacity:' + (off ? '.35' : '1') + '">●</span> ' + escapeHtml(t) + ' <span class="text-slate-500">' + counts[t] + '</span></button>';
     }).join('') + '<span class="text-[11px] text-slate-600 ml-auto self-center">' + board.nodes.length + ' nodes · ' + board.edges.length + ' links</span>';
@@ -467,7 +469,7 @@
       sel.innerHTML = '<option value="">— open a board —</option>' +
         list.map(function (b) {
           var badge = (b.watched ? ' 👁' : '') + (b.newCount ? ' ✨' + b.newCount : '');
-          return '<option value="' + b.id + '"' + (b.id === board.id ? ' selected' : '') + '>' + escapeHtml(b.name) + ' (' + b.nodeCount + ')' + badge + '</option>';
+          return '<option value="' + escapeHtml(b.id) + '"' + (b.id === board.id ? ' selected' : '') + '>' + escapeHtml(b.name) + ' (' + Number(b.nodeCount || 0) + ')' + badge + '</option>';
         }).join('');
     });
   }
@@ -783,7 +785,7 @@
     var transforms = TRANSFORMS[node.etype] || [];
     var html =
       '<div class="text-sm text-white break-all mb-1">' + escapeHtml(node.label) + '</div>' +
-      '<div class="text-[11px] mb-3"><span style="color:' + color(node.etype) + '">●</span> ' + node.etype + (node.root ? ' · root' : '') + '</div>';
+      '<div class="text-[11px] mb-3"><span style="color:' + color(node.etype) + '">●</span> ' + escapeHtml(node.etype) + (node.root ? ' · root' : '') + '</div>';
     if (canExpand) {
       html += '<button id="board-expand-btn" class="w-full text-xs py-1.5 mb-2 bg-brand-600 hover:bg-brand-500 text-white rounded">' + (node.expanded ? '↻ Re-expand (all)' : '⚡ Expand (all)') + '</button>';
       if (transforms.length) {
