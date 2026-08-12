@@ -83,6 +83,14 @@ Compare the two frontend hashes, test login/scan/report/share revocation from a
 real browser, verify Prometheus scraping and watch logs/error rates for at least
 one normal traffic cycle. Only then enable the CI deploy path.
 
+For the clearnet response, fetch two uncached HTML responses and confirm that
+the CSP `nonce-...` values differ. Cloudflare JavaScript Detections must remain
+present under `/cdn-cgi/challenge-platform/`, and every Cloudflare-injected
+inline `<script>` must carry the nonce from the same response header. Treat a
+CSP console error or a missing/mismatched nonce as a failed rollout. Never work
+around this with `script-src 'unsafe-inline'` or by pinning the transient
+Cloudflare bootstrap hash.
+
 ## Rollback
 
 Keep the previous release path recorded before cutover. For an application or

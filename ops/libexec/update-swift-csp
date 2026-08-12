@@ -2,7 +2,8 @@
 
 # Root-owned narrow privilege boundary used by the deploy account. The caller
 # can select only syntactically valid SHA-256 source hashes; file paths, policy
-# directives, nginx validation and rollback are fixed here.
+# directives, the per-request Cloudflare JSD nonce, nginx validation and
+# rollback are fixed here.
 
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -46,11 +47,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-NEW="$tokens" perl -0777 -pe \
-    "s{'sha256-[A-Za-z0-9+/=]+'(?:\\s+'sha256-[A-Za-z0-9+/=]+')*}{\$ENV{NEW}}" \
-    "$CSP" > "$temporary"
+printf '%s%s%s\n' \
+    "add_header Content-Security-Policy \"default-src 'self'; script-src 'self' 'nonce-\$request_id' " \
+    "$tokens" \
+    "; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' ; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';\" always;" \
+    > "$temporary"
 first="'${hashes[0]}'"
 grep -qF "$first" "$temporary" || { echo "csp-install: rewrite did not apply" >&2; exit 1; }
+grep -qF "script-src 'self' 'nonce-\$request_id'" "$temporary" || {
+    echo "csp-install: per-request nonce is missing" >&2
+    exit 1
+}
 [[ "$(grep -o "'sha256-[A-Za-z0-9+/=]*'" "$temporary" | wc -l)" -eq "${#hashes[@]}" ]] || {
     echo "csp-install: generated hash count mismatch" >&2
     exit 1

@@ -78,6 +78,14 @@ if (/localStorage\.(?:getItem|setItem)\(\s*["']authToken["']/i.test(firstPartySo
 }
 
 const csp = readFileSync(join(repositoryDir, 'ops/nginx/snippets/swift-csp.conf'), 'utf8');
+const scriptDirective = /script-src ([^;]+);/.exec(csp)?.[1];
+if (!scriptDirective) fail('CSP script-src directive is missing');
+if (!scriptDirective.includes("'nonce-$request_id'")) {
+    fail('CSP must expose a per-request nginx nonce for Cloudflare JSD');
+}
+if (scriptDirective.includes("'unsafe-inline'")) {
+    fail('CSP script-src must not permit unsafe-inline');
+}
 const configuredHashes = [...csp.matchAll(/'sha256-([^']+)'/g)].map(match => match[1]);
 const expected = new Set(inlineHashes);
 const configured = new Set(configuredHashes);
