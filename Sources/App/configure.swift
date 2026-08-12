@@ -35,6 +35,11 @@ public func configure(_ app: Application) async throws {
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
+    // Every API response can reveal either OSINT findings or account state.
+    // Install this at the beginning so it also wraps Vapor's error middleware;
+    // individual controllers must not be able to accidentally opt into browser
+    // or intermediary caching by omitting their own route group.
+    app.middleware.use(NoCacheMiddleware(), at: .beginning)
 
     // Sessions persisted to PostgreSQL via Fluent so they survive process
     // restarts and don't bloat heap memory under sustained traffic. The

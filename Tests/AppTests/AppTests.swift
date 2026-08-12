@@ -28,6 +28,7 @@ private func makeApp() async throws -> Application {
         allowedMethods: [.GET, .POST, .OPTIONS],
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )), at: .beginning)
+    app.middleware.use(NoCacheMiddleware(), at: .beginning)
 
     app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
@@ -100,6 +101,27 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    func testEveryAPIResponseDisablesCaching() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Cover both a successful public response and an error produced outside
+        // any controller-specific NoCacheMiddleware route group.
+        for path in ["/", "/route-that-does-not-exist"] {
+            try await app.test(.GET, path) { response in
+                XCTAssertEqual(response.headers.first(name: .cacheControl), "no-store")
+            }
+        }
+
+        let cookie = try await registerAndLogin(app, username: "no-cache-user")
+        try await app.test(.GET, "/auth/me", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertEqual(response.headers.first(name: .cacheControl), "no-store")
+        })
+    }
 
     func testEmailAddressNormalizationRejectsHeaderAndDomainAbuse() {
         XCTAssertEqual(EmailAddress.normalize("  User.Name+tag@Example.test  "),
