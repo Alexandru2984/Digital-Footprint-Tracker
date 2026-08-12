@@ -21,6 +21,10 @@ public func configure(_ app: Application) async throws {
     // because ENCRYPTION_KEY is absent or malformed. Validate before connecting,
     // migrating, seeding, or serving any request.
     try TokenEncryption.validateConfiguration(required: app.environment == .production)
+    // Dark-web collection is disabled unless every trust-boundary setting is
+    // explicit and valid. In particular, the worker endpoint can only be a
+    // loopback origin; arbitrary URLs would turn this integration into SSRF.
+    app.darkWebConfiguration = try DarkWebConfiguration.fromEnvironment()
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment == .production {
@@ -124,6 +128,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
+    app.migrations.add(CreateDarkWebInvestigations())
     app.migrations.add(CreateEncryptionMetadata())
     app.migrations.add(MigrateSensitiveFieldEncryption())
     app.migrations.add(EncryptTagNames())

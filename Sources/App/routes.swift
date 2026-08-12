@@ -79,4 +79,7 @@ func routes(_ app: Application) throws {
 
     let investigationController = InvestigationController()
     try app.register(collection: investigationController)
+
+    let darkWebInvestigationController = DarkWebInvestigationController()
+    try app.register(collection: darkWebInvestigationController)
 }

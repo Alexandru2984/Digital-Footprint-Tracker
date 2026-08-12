@@ -72,12 +72,21 @@ private func makeApp() async throws -> Application {
     app.migrations.add(AddInputHashToScans())
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
+    app.migrations.add(CreateDarkWebInvestigations())
     app.migrations.add(CreateEncryptionMetadata())
     app.migrations.add(MigrateSensitiveFieldEncryption())
     app.migrations.add(EncryptTagNames())
     app.migrations.add(SessionRecord.migration)
     try await app.autoMigrate()
 
+    app.darkWebConfiguration = DarkWebConfiguration(
+        enabled: true,
+        workerURL: URL(string: "http://127.0.0.1:8766")!,
+        sharedSecret: String(repeating: "t", count: 32),
+        retentionHours: 72,
+        maxOutstandingJobs: 5,
+        maxJobsPerUserPerDay: 3
+    )
     try routes(app)
     return app
 }
@@ -104,6 +113,104 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    func testDarkWebInvestigationQueueIsAuthorizedOwnerScopedAndCancellable() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.GET, "/dark-web/status") { response in
+            XCTAssertEqual(response.status, .unauthorized)
+        }
+
+        let aliceCookie = try await registerAndLogin(app, username: "darkweb-alice")
+        let aliceLookup = try await User.query(on: app.db)
+            .filter(\.$username == "darkweb-alice").first()
+        let alice = try XCTUnwrap(aliceLookup)
+        alice.emailVerified = true
+        try await alice.save(on: app.db)
+
+        try await app.test(.GET, "/dark-web/status", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: aliceCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertTrue(try response.content.decode(DarkWebInvestigationController.StatusResponse.self).enabled)
+        })
+
+        var jobID = ""
+        try await app.test(.POST, "/dark-web/investigations", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: aliceCookie)
+            try request.content.encode(DarkWebInvestigationController.CreateBody(
+                target: "Person@Example.test",
+                acknowledgedAuthorizedUse: true
+            ), as: .json)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .accepted)
+            let job = try response.content.decode(DarkWebInvestigationController.Detail.self)
+            jobID = job.id
+            XCTAssertEqual(job.target, "person@example.test")
+            XCTAssertEqual(job.targetKind, DarkWebTargetKind.email.rawValue)
+            XCTAssertEqual(job.status, DarkWebInvestigationStatus.pending.rawValue)
+            XCTAssertNil(job.result)
+        })
+        XCTAssertNotNil(UUID(uuidString: jobID))
+
+        let persistedLookup = try await DarkWebInvestigation.find(
+            UUID(uuidString: jobID)!, on: app.db
+        )
+        let persisted = try XCTUnwrap(persistedLookup)
+        XCTAssertEqual(persisted.target, "person@example.test")
+        XCTAssertEqual(persisted.targetHash, FieldCrypto.blindIndex("person@example.test"))
+        XCTAssertEqual(persisted.resultCount, 0)
+        XCTAssertLessThanOrEqual(
+            persisted.expiresAt.timeIntervalSinceNow,
+            TimeInterval(72 * 3_600 + 5)
+        )
+
+        let bobCookie = try await registerAndLogin(app, username: "darkweb-bob")
+        let bobLookup = try await User.query(on: app.db)
+            .filter(\.$username == "darkweb-bob").first()
+        let bob = try XCTUnwrap(bobLookup)
+        bob.emailVerified = true
+        try await bob.save(on: app.db)
+        try await app.test(.GET, "/dark-web/investigations/\(jobID)", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: bobCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .notFound)
+        })
+        try await app.test(.POST, "/dark-web/investigations", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: bobCookie)
+            try request.content.encode(DarkWebInvestigationController.CreateBody(
+                target: "example.test",
+                acknowledgedAuthorizedUse: false
+            ), as: .json)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .forbidden)
+        })
+
+        try await app.test(.POST, "/dark-web/investigations/\(jobID)/cancel", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: aliceCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let job = try response.content.decode(DarkWebInvestigationController.Detail.self)
+            XCTAssertEqual(job.status, DarkWebInvestigationStatus.cancelled.rawValue)
+            XCTAssertTrue(job.cancelRequested)
+        })
+
+        try await app.test(.DELETE, "/dark-web/investigations/\(jobID)", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: aliceCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .noContent)
+        })
+        let deleted = try await DarkWebInvestigation.find(UUID(uuidString: jobID)!, on: app.db)
+        XCTAssertNil(deleted)
+    }
+
+    func testDarkWebTargetClassificationIsDeterministic() {
+        XCTAssertEqual(DarkWebTargetKind.detect("person@example.test"), .email)
+        XCTAssertEqual(DarkWebTargetKind.detect("example.test"), .domain)
+        XCTAssertEqual(DarkWebTargetKind.detect("+40721234567"), .phone)
+        XCTAssertEqual(DarkWebTargetKind.detect("handle"), .username)
+    }
 
     func testClientIPOnlyTrustsForwardingHeadersFromLoopback() async throws {
         let app = try await Application.make(.testing)
@@ -541,6 +648,9 @@ final class AppTests: XCTestCase {
         try await app.test(.POST, "/investigations", beforeRequest: { req in
             req.headers.bearerAuthorization = .init(token: key.token)
             try req.content.encode(InvestigationController.CreateBody(name: "Nope", data: nil), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+        try await app.test(.GET, "/dark-web/status", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
         }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
 
         // Invalid bearer credentials must not silently fall back to anonymous.

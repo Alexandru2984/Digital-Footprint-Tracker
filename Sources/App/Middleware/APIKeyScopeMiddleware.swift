@@ -69,6 +69,10 @@ struct APIKeyScopeMiddleware: AsyncMiddleware {
         if first == "investigations" {
             return request.method == .GET ? .require(.investigationsRead) : .require(.investigationsWrite)
         }
+        // High-risk dark-web collection is deliberately interactive-session
+        // only for the initial release; API keys cannot acknowledge operator
+        // authorization or satisfy the tighter abuse controls.
+        if first == "dark-web" { return .deny }
 
         return .deny
     }
