@@ -109,7 +109,27 @@
         @media (max-width: 767px) {
             #hamburger-btn { display: flex; }
             #auth-widget   { display: none; }
-            #auth-widget.mobile-open { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; padding: 0.75rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 0.5rem; position: absolute; right: 1rem; top: 4.5rem; z-index: 100; }
+            #auth-widget.mobile-open {
+                display: flex; flex-direction: column; align-items: flex-start;
+                gap: 0.5rem; padding: 0.75rem; background: var(--bg-card);
+                border: 1px solid var(--border); border-radius: 0.75rem;
+                position: absolute; left: 0; right: 0; top: calc(100% + 0.75rem);
+                z-index: 100; max-height: calc(100dvh - 6rem); overflow-y: auto;
+                box-shadow: 0 18px 45px rgba(0,0,0,.45);
+            }
+            #auth-widget.mobile-open #auth-logged-in:not(.hidden),
+            #auth-widget.mobile-open #auth-logged-out:not(.hidden) {
+                display: flex; width: 100%; flex-wrap: wrap;
+            }
+            #auth-widget.mobile-open #auth-logged-out a { flex: 1; justify-content: center; }
+            #auth-widget.mobile-open #auth-username-badge { flex: 1; min-width: 0; }
+            #notif-dropdown {
+                position: fixed; left: 1rem; right: 1rem; top: 8rem;
+                width: auto; max-height: calc(100dvh - 9rem);
+            }
+            #share-modal { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+            #leaflet-map { height: min(420px, 55dvh); }
+            #kbd-help-trigger { bottom: max(1.25rem, env(safe-area-inset-bottom)) !important; }
         }
         /* ── Results grid: responsive columns ────────────────────────────── */
         #results-grid {
@@ -211,9 +231,9 @@
     <!-- Grid Background Pattern -->
     <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
 
-    <main class="flex-grow container mx-auto px-4 py-8 relative z-10 flex flex-col max-w-5xl">
+    <main class="flex-grow container mx-auto px-3 sm:px-4 py-5 sm:py-8 relative z-10 flex flex-col max-w-5xl">
         <!-- Header -->
-        <header class="mb-10 text-center sm:text-left border-b border-dark-700 pb-6 flex items-center gap-4 relative">
+        <header class="mb-6 sm:mb-10 text-left border-b border-dark-700 pb-4 sm:pb-6 flex items-center gap-3 sm:gap-4 relative">
             <div class="p-3 bg-dark-800 rounded-lg border border-dark-700 shadow-[0_0_15px_rgba(16,185,129,0.2)] text-brand-500">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -226,7 +246,7 @@
                 <p class="text-slate-400 text-sm mt-1">Aggregated target intel analysis module</p>
             </div>
             <!-- Hamburger (mobile only) -->
-            <button id="hamburger-btn" title="Menu" class="items-center justify-center w-10 h-10 rounded bg-dark-800 border border-dark-700 text-slate-400 hover:text-white flex-shrink-0" aria-label="Toggle menu">☰</button>
+            <button id="hamburger-btn" title="Menu" class="items-center justify-center w-10 h-10 rounded bg-dark-800 border border-dark-700 text-slate-400 hover:text-white flex-shrink-0" aria-label="Toggle menu" aria-expanded="false">☰</button>
             <!-- Auth widget -->
             <div id="auth-widget" class="flex items-center gap-2 flex-shrink-0">
                 <!-- Shown when logged out -->
@@ -328,8 +348,8 @@
             </div>
             <div class="mb-3">
                 <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Webhook URL (POST on scan completion)</label>
-                <div class="flex gap-2">
-                    <input type="url" id="webhook-url-input" placeholder="https://example.com/hook" class="flex-grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="url" id="webhook-url-input" placeholder="https://example.com/hook" class="flex-grow min-w-0 bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
                     <button id="save-webhook-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Save</button>
                 </div>
                 <p id="webhook-save-msg" class="text-[10px] mt-1 hidden"></p>
@@ -351,8 +371,8 @@
               <div id="api-keys-list" class="mb-2"></div>
               <div class="flex gap-2">
                 <input id="api-key-label" type="text" placeholder="Key label (e.g. My Script)"
-                       class="flex-1 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
-                <button onclick="generateAPIKey()" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded">Generate</button>
+                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                <button id="generate-api-key-btn" type="button" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded">Generate</button>
               </div>
             </div>
             <!-- Data Retention -->
@@ -445,14 +465,14 @@
         </section>
 
         <!-- Email verification banner (shown for unverified accounts) -->
-        <div id="email-verify-banner" class="hidden items-center gap-3 bg-amber-900/25 border border-amber-700/50 rounded-lg px-4 py-2.5 mb-6 text-xs text-amber-300">
+        <div id="email-verify-banner" class="hidden flex-col sm:flex-row sm:items-center gap-3 bg-amber-900/25 border border-amber-700/50 rounded-lg px-4 py-2.5 mb-6 text-xs text-amber-300">
             <span>✉ Please verify your email address to secure your account.</span>
-            <button id="resend-verify-btn" class="ml-auto px-3 py-1 bg-amber-700/40 hover:bg-amber-700/60 rounded text-amber-200 transition-colors whitespace-nowrap">Resend email</button>
+            <button id="resend-verify-btn" class="w-full sm:w-auto sm:ml-auto px-3 py-1 bg-amber-700/40 hover:bg-amber-700/60 rounded text-amber-200 transition-colors whitespace-nowrap">Resend email</button>
             <span id="resend-verify-msg" class="hidden"></span>
         </div>
 
         <!-- Search Panel -->
-        <section class="bg-dark-800 border border-dark-700 rounded-xl p-6 shadow-xl mb-8 relative overflow-hidden" id="search-panel">
+        <section class="bg-dark-800 border border-dark-700 rounded-xl p-4 sm:p-6 shadow-xl mb-8 relative overflow-hidden" id="search-panel">
             <div class="scan-line"></div>
             <form id="scan-form" class="relative z-10">
                 <div class="flex flex-col sm:flex-row gap-4">
@@ -564,7 +584,7 @@
         </section>
 
         <section id="results-panel" class="hidden flex-col gap-6">
-            <div class="flex items-center justify-between border-b border-dark-700 pb-2 gap-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-dark-700 pb-2 gap-4">
                 <div>
                     <h2 class="text-xl font-bold flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-brand-500">
@@ -576,7 +596,7 @@
                     </h2>
                     <p id="scan-age-display" class="text-xs text-slate-500 mt-1 hidden"></p>
                 </div>
-                <div class="flex items-center gap-2 flex-wrap justify-end">
+                <div class="flex w-full sm:w-auto items-center gap-2 flex-wrap justify-start sm:justify-end">
                     <button id="toggle-graph-btn" title="Toggle identity graph visualization" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         GRAPH
@@ -639,7 +659,7 @@
                         PDF
                     </button>
                     <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner flex items-center gap-2">
-                        SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500"></span>
+                        SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500 break-all"></span>
                         <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                         </button>
@@ -648,20 +668,20 @@
             </div>
 
             <!-- Tab Bar: RESULTS | GRAPH | MAP -->
-            <div class="flex gap-0 border-b border-dark-700 -mb-2">
-                <button id="tab-results" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-400 -mb-px transition-colors flex items-center gap-1.5">
+            <div class="flex gap-0 border-b border-dark-700 -mb-2 overflow-x-auto">
+                <button id="tab-results" class="flex-shrink-0 text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-brand-500 text-brand-400 -mb-px transition-colors flex items-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
                     RESULTS
                 </button>
-                <button id="tab-graph" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
+                <button id="tab-graph" class="flex-shrink-0 text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                     GRAPH
                 </button>
-                <button id="tab-map" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
+                <button id="tab-map" class="flex-shrink-0 text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
                     MAP
                 </button>
-                <button id="tab-surface" class="text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
+                <button id="tab-surface" class="flex-shrink-0 text-xs px-4 py-2 font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-500 hover:text-slate-300 -mb-px transition-colors flex items-center gap-1.5">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg>
                     SURFACE
                 </button>
@@ -744,45 +764,52 @@
         </section>
 
         <!-- D1: Share Report Modal -->
-        <div id="share-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 w-full max-w-md shadow-2xl mx-4">
+        <div id="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4">
+            <div class="bg-dark-800 border border-dark-700 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full max-w-md shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-bold text-white uppercase tracking-widest">Share Report</h3>
-                    <button id="share-modal-close" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
+                    <h3 id="share-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Share Report</h3>
+                    <button id="share-modal-close" type="button" aria-label="Close share dialog" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
                 </div>
                 <div class="space-y-3">
                     <div>
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Expires In</label>
                         <select id="share-expires-select" class="w-full bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
-                            <option value="">Never</option>
                             <option value="3600">1 hour</option>
                             <option value="86400">24 hours</option>
-                            <option value="604800">7 days</option>
+                            <option value="604800" selected>7 days (recommended)</option>
                             <option value="2592000">30 days</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Password (optional)</label>
-                        <input type="password" id="share-password-input" placeholder="Leave blank for no password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                        <input type="password" id="share-password-input" autocomplete="new-password" minlength="8" maxlength="72" placeholder="8–72 UTF-8 bytes" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                     </div>
                     <button id="share-create-btn" class="w-full text-xs py-2 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors font-bold">Generate Share Link</button>
-                    <div id="share-result" class="hidden">
+                    <div id="share-result" class="hidden" aria-live="polite">
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Share URL</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="share-url-output" readonly class="flex-grow bg-dark-900 border border-dark-700 text-brand-400 text-xs rounded px-3 py-1.5 focus:outline-none select-all">
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="text" id="share-url-output" readonly class="flex-grow min-w-0 bg-dark-900 border border-dark-700 text-brand-400 text-xs rounded px-3 py-1.5 focus:outline-none select-all">
                             <button id="share-copy-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">Copy</button>
                         </div>
+                        <p id="share-expiry-output" class="text-[10px] text-slate-500 mt-1"></p>
+                    </div>
+                    <div class="border-t border-dark-700 pt-3">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Links</p>
+                            <button id="share-refresh-btn" type="button" class="text-[10px] text-slate-500 hover:text-brand-400 transition-colors">↻ Refresh</button>
+                        </div>
+                        <div id="share-list" class="space-y-2 text-xs text-slate-500" aria-live="polite">Open this dialog to load links.</div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- E1: Bulk Scan Modal -->
-        <div id="bulk-scan-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 w-full max-w-lg shadow-2xl mx-4">
+        <div id="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-modal-title" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4">
+            <div class="bg-dark-800 border border-dark-700 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full max-w-lg shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-sm font-bold text-white uppercase tracking-widest">Bulk Scan</h3>
-                    <button id="bulk-modal-close" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
+                    <h3 id="bulk-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Bulk Scan</h3>
+                    <button id="bulk-modal-close" aria-label="Close bulk scan dialog" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
                 </div>
                 <p class="text-xs text-slate-500 mb-3">Enter one target per line (max 50). Scans run in parallel.</p>
                 <textarea id="bulk-targets-textarea" rows="8" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-2 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
@@ -836,9 +863,8 @@
 
     <!-- Keyboard shortcut help trigger (bottom-right corner) -->
     <button id="kbd-help-trigger" title="Keyboard shortcuts (?)" aria-label="Show keyboard shortcuts"
-        style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;"
-        onmouseover="this.style.color='#10b981';this.style.borderColor='rgba(16,185,129,0.5)'"
-        onmouseout="this.style.color='#64748b';this.style.borderColor='#334155'">?</button>
+        class="hover:text-brand-500 hover:border-brand-500/50"
+        style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
     <script>
         const form = document.getElementById('scan-form');
@@ -1807,30 +1833,160 @@
         document.getElementById('export-pdf-btn').addEventListener('click', () => window.print());
 
         // ─── SHARE LINK ───────────────────────────────────────────────────────────
-        document.getElementById('share-btn').addEventListener('click', () => {
+        const shareModal = document.getElementById('share-modal');
+        const shareButton = document.getElementById('share-btn');
+        const shareList = document.getElementById('share-list');
+        const SHARE_DEFAULT_EXPIRY = '604800';
+
+        function closeShareModal() {
+            shareModal.classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
+            shareButton.focus();
+        }
+
+        function formatShareDate(epochSeconds) {
+            const value = Number(epochSeconds);
+            if (!Number.isFinite(value)) return 'Unknown';
+            return new Intl.DateTimeFormat(undefined, {
+                dateStyle: 'medium', timeStyle: 'short'
+            }).format(new Date(value * 1000));
+        }
+
+        function renderShareLinks(shares) {
+            shareList.replaceChildren();
+            if (!Array.isArray(shares) || shares.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'text-[10px] text-slate-500 py-1';
+                empty.textContent = 'No share links for this scan.';
+                shareList.appendChild(empty);
+                return;
+            }
+
+            for (const share of shares) {
+                const row = document.createElement('div');
+                row.className = 'flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-dark-900 border border-dark-700 rounded-lg px-3 py-2';
+
+                const details = document.createElement('div');
+                details.className = 'min-w-0';
+                const expiry = Number(share.expiresAt);
+                const hasExpiry = share.expiresAt !== null && share.expiresAt !== undefined && Number.isFinite(expiry);
+                const expired = hasExpiry && expiry * 1000 <= Date.now();
+                const headline = document.createElement('p');
+                headline.className = expired ? 'text-[10px] text-red-400' : hasExpiry ? 'text-[10px] text-slate-300' : 'text-[10px] text-amber-400';
+                headline.textContent = expired
+                    ? `Expired ${formatShareDate(expiry)}`
+                    : hasExpiry ? `Expires ${formatShareDate(expiry)}` : 'No expiry (legacy link)';
+
+                const metadata = document.createElement('p');
+                metadata.className = 'text-[9px] text-slate-500 mt-0.5';
+                const views = Number.isFinite(Number(share.viewCount)) ? Number(share.viewCount) : 0;
+                const created = share.createdAt !== null && share.createdAt !== undefined && Number.isFinite(Number(share.createdAt))
+                    ? `Created ${formatShareDate(share.createdAt)} · ` : '';
+                metadata.textContent = `${created}${views} view${views === 1 ? '' : 's'}${share.hasPassword ? ' · Password protected' : ''}`;
+                details.append(headline, metadata);
+                row.appendChild(details);
+
+                const shareID = typeof share.id === 'string' ? share.id : '';
+                if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(shareID)) {
+                    const revoke = document.createElement('button');
+                    revoke.type = 'button';
+                    revoke.className = 'w-full sm:w-auto flex-shrink-0 text-[10px] px-3 py-1.5 rounded bg-red-900/40 text-red-300 hover:bg-red-800/60 transition-colors';
+                    revoke.textContent = 'Revoke';
+                    revoke.addEventListener('click', () => revokeShareLink(shareID, revoke));
+                    row.appendChild(revoke);
+                } else {
+                    const legacy = document.createElement('span');
+                    legacy.className = 'text-[9px] text-amber-500';
+                    legacy.textContent = 'Revocation unavailable until backend update';
+                    row.appendChild(legacy);
+                }
+                shareList.appendChild(row);
+            }
+        }
+
+        async function loadShareLinks() {
+            if (!lastScanData) return;
+            shareList.textContent = 'Loading links…';
+            try {
+                const response = await fetch('/api/scans/' + encodeURIComponent(lastScanData.scanID) + '/shares', {
+                    credentials: 'include'
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                renderShareLinks(await response.json());
+            } catch (error) {
+                shareList.textContent = 'Could not load share links: ' + String(error && error.message || error);
+            }
+        }
+
+        async function revokeShareLink(shareID, button) {
+            if (!confirm('Revoke this share link immediately?')) return;
+            button.disabled = true;
+            button.textContent = 'Revoking…';
+            try {
+                const response = await fetch('/api/shares/' + encodeURIComponent(shareID), {
+                    method: 'DELETE', credentials: 'include'
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                showToast('Share link revoked.');
+                await loadShareLinks();
+            } catch (error) {
+                showToast('Could not revoke share: ' + String(error && error.message || error), 'error');
+                button.disabled = false;
+                button.textContent = 'Revoke';
+            }
+        }
+
+        shareButton.addEventListener('click', () => {
             if (!lastScanData) return;
             document.getElementById('share-result').classList.add('hidden');
             document.getElementById('share-url-output').value = '';
+            document.getElementById('share-expiry-output').textContent = '';
             document.getElementById('share-password-input').value = '';
-            document.getElementById('share-expires-select').value = '';
-            document.getElementById('share-modal').classList.remove('hidden');
+            document.getElementById('share-expires-select').value = SHARE_DEFAULT_EXPIRY;
+            shareModal.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+            loadShareLinks();
+            requestAnimationFrame(() => document.getElementById('share-expires-select').focus());
         });
         document.getElementById('share-modal-close').addEventListener('click', () => {
-            document.getElementById('share-modal').classList.add('hidden');
+            closeShareModal();
         });
-        document.getElementById('share-modal').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('share-modal')) document.getElementById('share-modal').classList.add('hidden');
+        shareModal.addEventListener('click', (event) => {
+            if (event.target === shareModal) closeShareModal();
         });
+        shareModal.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeShareModal();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            const focusable = [...shareModal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')];
+            if (!focusable.length) return;
+            const first = focusable[0], last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        });
+        document.getElementById('share-refresh-btn').addEventListener('click', loadShareLinks);
         document.getElementById('share-create-btn').addEventListener('click', async () => {
             if (!lastScanData) return;
             const expiresIn = document.getElementById('share-expires-select').value;
             const password = document.getElementById('share-password-input').value.trim();
             const btn = document.getElementById('share-create-btn');
+            if (password) {
+                const passwordBytes = new TextEncoder().encode(password).length;
+                if (passwordBytes < 8 || passwordBytes > 72) {
+                    showToast('Share password must be 8–72 UTF-8 bytes.', 'error');
+                    return;
+                }
+            }
             btn.textContent = 'Creating…';
             btn.disabled = true;
             try {
-                const body = {};
-                if (expiresIn) body.expiresIn = parseInt(expiresIn);
+                const body = { expiresIn: parseInt(expiresIn, 10) };
                 if (password) body.password = password;
                 const resp = await fetch('/api/scans/' + lastScanData.scanID + '/share', {
                     method: 'POST',
@@ -1841,9 +1997,12 @@
                 if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const data = await resp.json();
                 document.getElementById('share-url-output').value = data.url;
+                document.getElementById('share-expiry-output').textContent = Number.isFinite(Number(data.expiresAt))
+                    ? 'Expires ' + formatShareDate(data.expiresAt) : '';
                 document.getElementById('share-result').classList.remove('hidden');
+                await loadShareLinks();
             } catch(err) {
-                alert('Failed to create share link: ' + err.message);
+                showToast('Failed to create share link: ' + String(err && err.message || err), 'error');
             } finally {
                 btn.textContent = 'Generate Share Link';
                 btn.disabled = false;
@@ -2678,7 +2837,7 @@
                     wrapper.id = 'scan-card-' + s.scanID;
                     wrapper.className = 'bg-dark-900 rounded border border-dark-700';
                     const div = document.createElement('div');
-                    div.className = 'flex items-center justify-between px-3 py-2 gap-2';
+                    div.className = 'flex flex-wrap sm:flex-nowrap items-center justify-between px-3 py-2 gap-2';
                     const inputEl = document.createElement('span');
                     inputEl.className = 'text-slate-300 font-mono text-xs flex-grow truncate';
                     inputEl.textContent = s.input || '';
@@ -3137,11 +3296,27 @@
         }
         function renderAPIKeys(keys, container) {
             if (!keys.length) { container.innerHTML = '<p class="text-[10px] text-slate-500">No API keys yet.</p>'; return; }
-            container.innerHTML = keys.map(k => `
-                <div class="flex items-center justify-between gap-2 mb-1 bg-dark-900 rounded px-2 py-1">
-                    <span class="text-[10px] text-slate-300 font-mono truncate">${escapeHtml(k.label)} — <code>${escapeHtml(k.keyPreview)}</code></span>
-                    <button onclick="deleteAPIKey('${escapeHtml(String(k.id))}')" class="text-red-400 hover:text-red-300 text-[10px]">✕</button>
-                </div>`).join('');
+            container.replaceChildren();
+            for (const key of keys) {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-2 mb-1 bg-dark-900 rounded px-2 py-1';
+
+                const label = document.createElement('span');
+                label.className = 'text-[10px] text-slate-300 font-mono truncate';
+                label.append(document.createTextNode(String(key.label || 'Unnamed') + ' — '));
+                const preview = document.createElement('code');
+                preview.textContent = String(key.keyPreview || '');
+                label.appendChild(preview);
+
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'text-red-400 hover:text-red-300 text-[10px]';
+                remove.setAttribute('aria-label', 'Delete API key ' + String(key.label || 'Unnamed'));
+                remove.textContent = '✕';
+                remove.addEventListener('click', () => deleteAPIKey(String(key.id || '')));
+                row.append(label, remove);
+                container.appendChild(row);
+            }
         }
         async function generateAPIKey() {
             const label = document.getElementById('api-key-label').value.trim() || 'Unnamed';
@@ -3158,9 +3333,16 @@
         }
         async function deleteAPIKey(id) {
             if (!confirm('Delete this API key?')) return;
-            await fetch(`/api/auth/api-keys/${id}`, { method: 'DELETE', credentials: 'include' });
+            const response = await fetch(`/api/auth/api-keys/${encodeURIComponent(id)}`, {
+                method: 'DELETE', credentials: 'include'
+            });
+            if (!response.ok) {
+                showToast('Failed to delete API key (HTTP ' + response.status + ').', 'error');
+                return;
+            }
             loadAPIKeys();
         }
+        document.getElementById('generate-api-key-btn')?.addEventListener('click', generateAPIKey);
 
         // ── Data Retention ────────────────────────────────────────────────
         document.getElementById('save-retention-btn')?.addEventListener('click', async () => {
@@ -3333,11 +3515,27 @@
 
         // ── Mobile hamburger ────────────────────────────────────────────────────
         const hamburgerBtn  = document.getElementById('hamburger-btn');
-        const mobileMenuEl  = document.getElementById('mobile-menu');
+        const mobileMenuEl  = document.getElementById('auth-widget');
+        function closeMobileMenu() {
+            if (!hamburgerBtn || !mobileMenuEl) return;
+            mobileMenuEl.classList.remove('mobile-open');
+            hamburgerBtn.setAttribute('aria-expanded', 'false');
+        }
         if (hamburgerBtn && mobileMenuEl) {
-            hamburgerBtn.addEventListener('click', () => {
-                const open = mobileMenuEl.classList.toggle('hidden');
-                hamburgerBtn.setAttribute('aria-expanded', String(!open));
+            hamburgerBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const isOpen = mobileMenuEl.classList.toggle('mobile-open');
+                hamburgerBtn.setAttribute('aria-expanded', String(isOpen));
+            });
+            document.addEventListener('click', (event) => {
+                if (mobileMenuEl.classList.contains('mobile-open')
+                    && !mobileMenuEl.contains(event.target)) closeMobileMenu();
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeMobileMenu();
+            });
+            window.addEventListener('resize', () => {
+                if (window.innerWidth >= 768) closeMobileMenu();
             });
         }
 
@@ -3351,8 +3549,9 @@
             header.textContent = '';
             modal.classList.add('active');
             try {
-                const token = localStorage.getItem('authToken') || '';
-                const res = await fetch(`/api/scans/${encodeURIComponent(scanIDA)}/diff/${encodeURIComponent(scanIDB)}`, { headers: {'Authorization':'Bearer ' + token} });
+                const res = await fetch(`/api/scans/${encodeURIComponent(scanIDA)}/diff/${encodeURIComponent(scanIDB)}`, {
+                    credentials: 'include'
+                });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const diff = await res.json();
                 header.innerHTML = `Comparing scan <b class="text-brand-400">${scanIDA.slice(-6)}</b> vs <b class="text-brand-400">${scanIDB.slice(-6)}</b> — `

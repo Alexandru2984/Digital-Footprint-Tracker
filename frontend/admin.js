@@ -203,7 +203,7 @@
             if (!items.length) { container.innerHTML = '<p class="text-[11px] text-slate-500">No audit entries found.</p>'; return; }
             const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
             container.innerHTML = `
-                <table class="w-full text-[10px] border-collapse">
+                <div class="overflow-x-auto"><table class="w-full min-w-[640px] text-[10px] border-collapse">
                     <thead><tr class="border-b border-dark-700 text-slate-400">
                         <th class="text-left py-1 pr-2">Time</th>
                         <th class="text-left py-1 pr-2">User</th>
@@ -220,7 +220,7 @@
                         <td class="py-1 text-slate-500">${esc(e.ip ?? '')}</td>
                     </tr>`).join('')}
                     </tbody>
-                </table>
+                </table></div>
                 ${body.metadata && body.metadata.total > 50 ? `<p class="text-[10px] text-slate-500 mt-2">Showing first 50 of ${body.metadata.total}. Use pagination for more.</p>` : ''}`;
         } catch (err) {
             const msg = String(err && err.message || err).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

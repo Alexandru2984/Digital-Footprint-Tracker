@@ -10,6 +10,32 @@ on:
     branches: [main]
 
 jobs:
+  frontend:
+    name: Frontend integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Check frontend integrity
+        working-directory: frontend
+        run: |
+          npm test
+          npm run build:css
+          git diff --exit-code -- tailwind.css
+
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
   test:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -68,7 +94,7 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    needs: [test, lint]
+    needs: [frontend, test, lint]
     # Only push events on main trigger a deploy. Pull requests run the
     # test + lint jobs above but never reach this job.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
