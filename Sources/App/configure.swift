@@ -133,8 +133,18 @@ public func configure(_ app: Application) async throws {
     // never expires them itself). Must run after SessionRecord.migration.
     app.migrations.add(AddSessionCreatedAt())
 
-    // Run migrations automatically
-    try await app.autoMigrate()
+    // Production migrations are a distinct deployment step. Running them as a
+    // side effect of every web-process restart makes rollback and concurrency
+    // control impossible. The dedicated migration unit opts in explicitly;
+    // local development and tests retain the convenient automatic behaviour.
+    if try MigrationPolicy.shouldAutoMigrate(
+        environment: app.environment,
+        productionSetting: Environment.get("AUTO_MIGRATE")
+    ) {
+        try await app.autoMigrate()
+    } else {
+        app.logger.notice("Automatic production migrations disabled; expecting the deployment migration gate.")
+    }
     try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
 
     // Seed admin user from environment variables if not already present.
@@ -185,4 +195,29 @@ public func configure(_ app: Application) async throws {
     app.lifecycle.use(ScanCleanupLifecycle())
     app.lifecycle.use(ScheduledScanRunner())
     app.lifecycle.use(InvestigationWatchRunner())
+}
+
+enum MigrationPolicy {
+    static func shouldAutoMigrate(
+        environment: Environment,
+        productionSetting: String?
+    ) throws -> Bool {
+        guard environment == .production else { return true }
+        guard let raw = productionSetting?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return false
+        }
+
+        switch raw.lowercased() {
+        case "true", "1", "yes":
+            return true
+        case "false", "0", "no":
+            return false
+        default:
+            throw Abort(
+                .internalServerError,
+                reason: "AUTO_MIGRATE must be an explicit boolean in production."
+            )
+        }
+    }
 }
