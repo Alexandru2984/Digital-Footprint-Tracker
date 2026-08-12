@@ -1,9 +1,10 @@
 import Vapor
+import NIOCore
 
 extension Request {
     /// Best-effort real-client IP behind the deployment's reverse-proxy chain.
     ///
-    /// Trust order:
+    /// Trust order, but only when the socket peer is loopback:
     ///   1. `X-Real-IP` — set by *our* nginx to `$remote_addr`, which the
     ///      `ngx_http_realip_module` (see `snippets/cloudflare-realip.conf`)
     ///      derives from `CF-Connecting-IP` ONLY when the TCP peer is a
@@ -13,26 +14,60 @@ extension Request {
     ///      by nginx, kept as a redundant source.
     ///   3. raw socket peer.
     ///
-    /// The origin's port 443 is reachable directly (not only via Cloudflare), so
-    /// a naive "trust CF-Connecting-IP first" is spoofable: a direct request can
-    /// carry an arbitrary `CF-Connecting-IP` and bypass per-IP rate limiting and
-    /// forge audit attribution. The nginx real_ip trust list closes that; this
-    /// order makes the app rely on the header nginx controls. **Never** trust raw
-    /// `X-Forwarded-For` — clients can prepend arbitrary entries.
+    /// A direct request to Vapor can carry arbitrary forwarding headers. Such
+    /// headers are ignored unless the TCP peer is the local reverse proxy. The
+    /// nginx real_ip trust list independently validates Cloudflare peers before
+    /// nginx overwrites X-Real-IP. **Never** trust raw `X-Forwarded-For` — clients
+    /// can prepend arbitrary entries.
     ///
     /// Used by `AuditLogger`, `ScanRateLimiter`, `AuthRateLimiter`, and
     /// `ScanController.scan` so the same source of truth applies to rate
     /// limiting, audit attribution, and abuse correlation.
     var clientIP: String {
-        if let realIP = headers.first(name: "X-Real-IP")?
-            .trimmingCharacters(in: .whitespaces), !realIP.isEmpty {
-            return realIP
+        let peerIP = remoteAddress?.ipAddress
+        // In-memory Vapor tests have no socket peer. They still exercise the
+        // proxy path using explicit headers; real non-test requests must prove
+        // that they arrived from a loopback peer.
+        let fromTrustedProxy = peerIP.map(ClientIPResolver.isLoopback)
+            ?? (application.environment == .testing)
+
+        if fromTrustedProxy {
+            if let realIP = ClientIPResolver.normalizedIPAddress(
+                headers.first(name: "X-Real-IP")
+            ) {
+                return realIP
+            }
+            if let cf = ClientIPResolver.normalizedIPAddress(
+                headers.first(name: "CF-Connecting-IP")
+            ) {
+                return cf
+            }
         }
-        if let cf = headers.first(name: "CF-Connecting-IP")?
-            .trimmingCharacters(in: .whitespaces), !cf.isEmpty {
-            return cf
+        return peerIP ?? "unknown"
+    }
+}
+
+enum ClientIPResolver {
+    /// The supported deployment has nginx and Vapor on the same host. Keeping
+    /// this trust boundary to loopback avoids silently trusting every RFC1918
+    /// host if the Vapor listener is ever exposed to a private network.
+    static func isLoopback(_ ip: String) -> Bool {
+        let value = ip.lowercased()
+        return value == "::1"
+            || value.hasPrefix("127.")
+            || value.hasPrefix("::ffff:127.")
+    }
+
+    /// Accept only a single numeric IP address. Besides preventing malformed
+    /// audit data, this rejects forwarding chains, hostnames, and control text.
+    static func normalizedIPAddress(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty, value.utf8.count <= 64, !value.contains("%"),
+              let address = try? SocketAddress(ipAddress: value, port: 0) else {
+            return nil
         }
-        return remoteAddress?.ipAddress ?? "unknown"
+        return address.ipAddress
     }
 }
 

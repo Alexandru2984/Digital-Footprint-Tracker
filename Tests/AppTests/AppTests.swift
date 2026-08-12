@@ -2,6 +2,7 @@ import XCTest
 import XCTVapor
 import Fluent
 import FluentSQLiteDriver
+import NIOCore
 @testable import App
 #if canImport(Glibc)
 import Glibc
@@ -101,6 +102,43 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    func testClientIPOnlyTrustsForwardingHeadersFromLoopback() async throws {
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        func request(peer: String, realIP: String?, cloudflareIP: String? = nil) throws -> Request {
+            var headers = HTTPHeaders()
+            if let realIP { headers.add(name: "X-Real-IP", value: realIP) }
+            if let cloudflareIP { headers.add(name: "CF-Connecting-IP", value: cloudflareIP) }
+            return Request(
+                application: app,
+                headers: headers,
+                remoteAddress: try SocketAddress(ipAddress: peer, port: 12_345),
+                on: app.eventLoopGroup.next()
+            )
+        }
+
+        let direct = try request(
+            peer: "198.51.100.20", realIP: "1.2.3.4", cloudflareIP: "5.6.7.8"
+        )
+        XCTAssertEqual(direct.clientIP, "198.51.100.20",
+                       "A direct client must not be able to forge proxy headers.")
+
+        let proxied = try request(peer: "127.0.0.1", realIP: " 1.2.3.4 ")
+        XCTAssertEqual(proxied.clientIP, "1.2.3.4")
+
+        let invalidPrimary = try request(
+            peer: "::1", realIP: "attacker.example", cloudflareIP: "2001:4860:4860::8888"
+        )
+        XCTAssertEqual(invalidPrimary.clientIP, "2001:4860:4860::8888")
+        XCTAssertTrue(ClientIPResolver.isLoopback("::ffff:127.0.0.1"))
+        XCTAssertFalse(ClientIPResolver.isLoopback("10.0.0.1"))
+
+        for invalid in ["1.2.3.4, 5.6.7.8", "example.test", "1.2.3.4%eth0", ""] {
+            XCTAssertNil(ClientIPResolver.normalizedIPAddress(invalid))
+        }
+    }
 
     func testEveryAPIResponseDisablesCaching() async throws {
         let app = try await makeApp()
