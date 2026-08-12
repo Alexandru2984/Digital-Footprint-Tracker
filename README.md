@@ -16,17 +16,19 @@ graph.
 
 ## Highlights
 
-- **Production-hosted** on Ubuntu behind nginx + Cloudflare, with systemd
-  confinement and daily PostgreSQL backups. A July 2026 hardening pass is
-  prepared in the repository; its production rollout and remaining findings
-  are tracked explicitly in
-  [`docs/SECURITY_AUDIT_2026-07-20.md`](docs/SECURITY_AUDIT_2026-07-20.md).
+- **Production-hosted** on Ubuntu behind nginx + Cloudflare. The hardened
+  systemd, backup and atomic-release configuration is prepared in the repository,
+  but the live recovery/configuration gaps are rollout blockers—not completed
+  controls. See the current
+  [`security audit`](docs/SECURITY_AUDIT_2026-08-12.md),
+  [`rollout runbook`](docs/PRODUCTION_ROLLOUT.md) and
+  [`roadmap`](docs/ROADMAP.md).
 - **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
   deadline; results streamed live via SSE as each plugin completes.
 - **Cross-plugin result cache** with per-plugin TTL (1 h for volatile threat
   intel, 24 h for breach data) — cuts external API calls dramatically on
   repeated scans of the same target.
-- **GDPR self-service** — every user can export their full account data
+- **GDPR self-service** — every user can request an account data bundle
   (`GET /account/export`) or permanently delete it with confirmation-gated
   `DELETE /account`.
 - **Prometheus `/metrics`** endpoint (text exposition 0.0.4) — scan counts by
@@ -37,7 +39,7 @@ graph.
   email, generic webhook — silent by default, with enriched diff messages
   that list which sources surfaced new findings.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite; 128 tests at the July 2026 audit), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 161 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---

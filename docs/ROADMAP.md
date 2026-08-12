@@ -4,6 +4,20 @@ This roadmap deliberately puts containment, recoverability and abuse controls
 before feature volume. Priorities are ordered; items within a phase can run in
 parallel only when their dependencies are satisfied.
 
+## Current checkpoint — 2026-08-12
+
+- Repository: 19 atomic security/operations commits after `618ab63`; Swift
+  **161/161**, frontend integrity, npm audit, ShellCheck, Prometheus rules and
+  release-tamper tests pass.
+- Prepared: immutable commit-named releases, explicit production migrations,
+  backend/frontend/CSP rollback, dedicated non-login runtime, verified-backup
+  metrics and responsive/mobile workflow hardening.
+- Live blockers: main SPA/CSP drift, failed encrypted-backup job, no restore
+  proof, runtime still `micu`, broad sudo, unrestricted SSH keys, stale nginx and
+  systemd configs, direct-origin guard absent and Python runtime broken.
+- CISO verdict: **NO-GO** until the acceptance gate in
+  `SECURITY_AUDIT_2026-08-12.md` is evidenced.
+
 ## North-star architecture
 
 ```text
@@ -31,20 +45,60 @@ secrets, and have per-plugin egress allowlists and resource budgets.
 
 ## Phase 0 — production safety (now / 72 hours)
 
-- Complete the controlled rollout in the dated security audit.
-- Provision encrypted systemd backup credential before the next timer.
-- Restore-test a backup off-host; add backup-failure paging.
-- Create dedicated `swift-vapor` and `swift-deploy` Unix identities.
-- Remove `micu NOPASSWD: ALL`; revoke or restrict automation SSH keys.
-- Deploy Cloudflare-only origin guard; enable Authenticated Origin Pulls/mTLS.
-- Upgrade native toolchain to Swift 6.2 and install the locked Python venv.
-- Make app/frontend/CSP an immutable, atomic release with automatic rollback.
-- Move migrations out of application startup into an explicit locked step.
-- Provision `METRICS_TOKEN`, Prometheus scraping and five essential alerts.
-- Record production SHA/config checksums and create a one-command rollback.
+| Gate | Repo | Production | Exit evidence |
+|---|---|---|---|
+| Restore main SPA/CSP compatibility | Exact hashes tested | **Incident/open** | Real browser loads app with zero CSP errors |
+| Encrypted backup credential/job | Prepared | **Failed/open** | New encrypted dump and healthy marker |
+| Restore/offsite recovery | Runbook only | **Open** | Isolated restore + off-host immutable copy + measured RPO/RTO |
+| Dedicated runtime identity | Prepared | **Open** | `swift-vapor`, `/srv`, no personal-home access, systemd score reviewed |
+| Narrow deploy authority | Prepared sudoers | **Open** | Broad sudo removed; forced keys only; independent root recovery retained |
+| Immutable atomic deployment | Prepared/tested | **Open** | Manifest SHA equals production, frontend/backend/CSP rollback rehearsed |
+| Explicit migration gate | Fixed/tested | **Open** | Candidate unit applies compatible migrations once, web unit forces false |
+| Cloudflare-only origin | Prepared | **Open** | CF/onion healthy; direct IPv4 and IPv6 origin return 403 |
+| Native/Python runtime | Container/lock prepared | **Open** | Swift 6.2 and report/holehe smoke tests under exact runtime sandbox |
+| Monitoring/paging | Rules prepared | **Open** | Metrics scrape + target/backup/security alert reaches operator |
+| Configuration provenance | Manifest prepared | **Open** | Binary, frontend and `/etc` checksums recorded against accepted commit |
 
 Exit gate: verified restore, direct origin denied, service has no personal-home
 access, broad sudo removed, and production SHA equals an accepted CI artifact.
+
+## Next atomic delivery stages
+
+Each stage should be one reviewable commit (or a short, explicitly linked
+series), with its own rollback note and production evidence before the next one.
+
+1. **Emergency edge consistency:** install a backed-up CSP containing the exact
+   currently served hashes; `nginx -t`, reload, real-browser CSP smoke test.
+2. **Recovery first:** provision encrypted credential, run verified backup,
+   isolated restore and off-host copy; connect timer failure to paging.
+3. **Identity cutover:** create `swift-vapor`, `/srv` releases and scoped secret
+   access; remove broad sudo and constrain/revoke automation SSH keys.
+4. **Atomic release bootstrap:** install desired systemd/nginx/helper configs,
+   run explicit migrations, select immutable release and rehearse rollback.
+5. **Origin closure:** deploy peer map/guard, add Cloudflare AOP/mTLS, probe both
+   origin address families and alert if direct access ever succeeds.
+6. **Crypto envelope v2:** HKDF-separated encryption/index keys, AAD binding,
+   key IDs, corruption quarantine and chunked online rotation.
+7. **Durable execution:** Postgres/Redis queue, idempotency keys, leases,
+   cancellation, retry classes, DLQ and separated worker identities/secrets.
+8. **Streaming correctness:** ordered result cursor, `Last-Event-ID`, bounded
+   batches and a constant-cost public liveness/internal readiness split.
+9. **Truthful delivery:** typed notification outcomes, retry/DLQ, channel opt-in,
+   bounce handling and success/failure/provider-latency dashboards.
+10. **Bounded data plane:** asynchronous paged exports/correlation/report jobs,
+    completeness manifests, encryption, download expiry and cancellation.
+11. **Security telemetry:** append-only audit writer, signed remote stream,
+    auth/egress/admin alerts, drift detection and incident runbooks/tabletop.
+12. **Browser quality gate:** extract inline code, strict static CSP, Playwright
+    viewports, keyboard/screen-reader checks, reduced motion and WCAG 2.2 AA.
+13. **Timeline intelligence pack:** RDAP creation, certificate transparency,
+    Wayback first capture, provider join dates, breach recurrence and confidence.
+14. **Case/team model:** workspaces, RBAC, case tasks/evidence, dual approval,
+    property-based tenant isolation and scoped service accounts.
+15. **Evidence provenance:** source/version/time/hash/license/freshness on every
+    finding, suppression/false-positive lineage and signed export manifests.
+16. **Disaster-recovery maturity:** encrypted WAL/PITR, immutable retention tiers,
+    quarterly game day and documented RTO/RPO/error-budget decisions.
 
 ## Phase 1 — security platform
 
@@ -150,6 +204,11 @@ access, broad sudo removed, and production SHA equals an accepted CI artifact.
 - Merge/split entities with reversible lineage and conflict review.
 - Alias, relationship and confidence editing with complete audit history.
 - Timeline view across scans, findings, certificates, DNS and account events.
+- Timeline source adapters for RDAP/WHOIS domain creation, Wayback first capture,
+  certificate-transparency first/last seen, GitHub/GitLab/account join dates,
+  breach disclosure dates, DNS history and BGP ownership changes.
+- Timeline confidence/provenance, timezone normalization, conflicting-date
+  review, zoom/range filters, density grouping and snapshot-to-snapshot diff.
 - Path finder, neighborhood expansion and graph clustering/community detection.
 - Evidence pinning, annotations, attachments and cryptographic evidence hashes.
 - Case snapshots and comparison between two investigation dates.
@@ -194,6 +253,12 @@ access, broad sudo removed, and production SHA equals an accepted CI artifact.
 
 ## Phase 4 — user experience and product depth
 
+- Tokenized design system for spacing/type/color/elevation with dark/high-
+  contrast themes and visual-regression snapshots.
+- Mobile-first navigation with 44px touch targets, safe-area insets, bottom-sheet
+  actions, card alternatives for wide tables and no horizontal page overflow.
+- Responsive scan/results/report/share/admin screens at 320/375/768/1024/1440px,
+  including long identifiers, empty/error/loading/offline states.
 - Guided onboarding and demo workspace with synthetic, non-PII data.
 - Unified command palette and complete keyboard navigation.
 - WCAG 2.2 AA accessibility pass, screen-reader graph alternatives.
@@ -210,6 +275,8 @@ access, broad sudo removed, and production SHA equals an accepted CI artifact.
 - Provider status page and per-plugin incident banners.
 - API explorer with scoped temporary tokens and copy-safe examples.
 - Versioned API, SDK generation and webhook playground.
+- Installable PWA update UX with explicit version/rollback messaging; cache only
+  public shell assets and never OSINT/account/API responses.
 
 ## Phase 5 — operations, scale and disaster recovery
 
