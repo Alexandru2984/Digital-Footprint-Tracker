@@ -28,6 +28,13 @@ struct DarkWebWorkerResult: Codable, Sendable, Equatable {
 }
 
 enum DarkWebWorkerClient {
+    static let allowedFindingTypes: Set<String> = [
+        "email", "domain", "onion_service", "ip", "phone", "username",
+        "messaging_handle", "crypto_wallet", "file_hash", "vulnerability",
+        "malware", "threat_actor", "organization", "date", "technique",
+        "credential_exposure", "network_indicator",
+    ]
+
     enum ClientError: Error {
         case configuration
         case transport
@@ -194,9 +201,11 @@ enum DarkWebWorkerClient {
         guard safeText(originalTarget, maxBytes: 255),
               result.sources.allSatisfy({ safeText($0, maxBytes: 80) }),
               result.findings.allSatisfy({ finding in
-                  safeText(finding.type, maxBytes: 64)
+                  allowedFindingTypes.contains(finding.type)
                     && safeText(finding.value, maxBytes: 512)
+                    && !finding.value.contains("://")
                     && safeText(finding.source, maxBytes: 80)
+                    && result.sources.contains(finding.source)
                     && finding.confidence.isFinite
                     && (0...1).contains(finding.confidence)
                     && safeDate(finding.firstSeen)
@@ -209,6 +218,16 @@ enum DarkWebWorkerClient {
                     && relationship.confidence.isFinite
                     && (0...1).contains(relationship.confidence)
               }) else {
+            throw ClientError.invalidResponse
+        }
+
+        let entityValues = Set(
+            result.findings.map { $0.value.lowercased() } + [originalTarget.lowercased()]
+        )
+        guard result.relationships.allSatisfy({ relationship in
+            entityValues.contains(relationship.source.lowercased())
+                && entityValues.contains(relationship.target.lowercased())
+        }) else {
             throw ClientError.invalidResponse
         }
 

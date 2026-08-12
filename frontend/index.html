@@ -264,6 +264,10 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="2" y="2" rx="1"/><rect width="8" height="8" x="14" y="2" rx="1"/><rect width="8" height="8" x="14" y="14" rx="1"/><rect width="8" height="8" x="2" y="14" rx="1"/></svg>
                         BULK
                     </button>
+                    <button id="dark-web-toggle-btn" title="Authorized dark-web investigation" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-red-400 hover:border-red-500/50 transition-colors flex items-center gap-1">
+                        <span aria-hidden="true">◈</span>
+                        <span class="hidden lg:inline">DARK WEB</span>
+                    </button>
                     <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded text-brand-400 font-bold flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         <span id="auth-username-text">—</span>
@@ -3635,6 +3639,148 @@
         loadAuthState();
     </script>
 
+    <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
+    <style>
+        #dark-web-overlay {
+            padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+                     max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+            background: rgba(2, 6, 23, .82); backdrop-filter: blur(8px);
+        }
+        #dark-web-panel {
+            width: min(1120px, 100%); height: min(780px, calc(100dvh - 2rem));
+            background: var(--bg-card); color: var(--text-pri);
+            box-shadow: 0 30px 90px rgba(0, 0, 0, .58);
+        }
+        #dark-web-panel button, #dark-web-panel input { min-height: 38px; }
+        .dw-layout { display: grid; grid-template-columns: minmax(280px, 355px) minmax(0, 1fr); }
+        .dw-scroll { scrollbar-gutter: stable; }
+        .dw-job[aria-current="true"] { border-color: rgba(248, 113, 113, .65); background: rgba(127, 29, 29, .18); }
+        .dw-state { border: 1px solid var(--border); background: var(--bg-deep); color: var(--text-sec); }
+        .dw-state-pending { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+        .dw-state-running { color: #38bdf8; border-color: rgba(56,189,248,.35); }
+        .dw-state-completed { color: #34d399; border-color: rgba(52,211,153,.35); }
+        .dw-state-failed { color: #f87171; border-color: rgba(248,113,113,.35); }
+        .dw-state-cancelled { color: #94a3b8; }
+        .dw-value { overflow-wrap: anywhere; word-break: break-word; }
+        .dw-table th { color: var(--text-muted); background: var(--bg-deep); }
+        .dw-table th, .dw-table td { padding: .65rem .75rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+        .dw-table tbody tr:last-child td { border-bottom: 0; }
+        @media (max-width: 800px) {
+            #dark-web-overlay { padding: 0; align-items: stretch; }
+            #dark-web-panel { width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; }
+            .dw-layout { grid-template-columns: 1fr; overflow-y: auto; }
+            .dw-sidebar { max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
+            .dw-detail { min-height: 60dvh; overflow: visible; }
+        }
+        @media (max-width: 560px) {
+            .dw-table thead { display: none; }
+            .dw-table, .dw-table tbody, .dw-table tr, .dw-table td { display: block; width: 100%; }
+            .dw-table tr { padding: .45rem .7rem; border-bottom: 1px solid var(--border); }
+            .dw-table td { display: grid; grid-template-columns: 6.5rem minmax(0,1fr); gap: .5rem; padding: .3rem 0; border: 0; }
+            .dw-table td::before { content: attr(data-label); color: var(--text-muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
+        }
+    </style>
+    <div id="dark-web-overlay" class="hidden fixed inset-0 z-[9400] items-center justify-center" aria-hidden="true">
+        <div id="dark-web-panel" role="dialog" aria-modal="true" aria-labelledby="dark-web-title" tabindex="-1" class="rounded-xl border border-dark-700 overflow-hidden flex flex-col">
+            <div class="flex items-center gap-3 px-4 sm:px-5 py-3 border-b border-dark-700 bg-dark-900 flex-shrink-0">
+                <div class="w-9 h-9 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400" aria-hidden="true">◈</div>
+                <div class="min-w-0 flex-1">
+                    <h2 id="dark-web-title" class="text-sm sm:text-base font-bold text-white">Dark Web Investigation</h2>
+                    <p class="text-[11px] text-slate-500 truncate">Isolated worker · Tor-only · shallow collection · no LLM</p>
+                </div>
+                <span id="dark-web-availability" class="dw-state text-[10px] uppercase tracking-wider rounded-full px-2.5 py-1">Checking…</span>
+                <button id="dark-web-close-btn" type="button" class="rounded bg-dark-700 hover:bg-dark-600 text-slate-300 px-3" aria-label="Close dark-web investigations">✕</button>
+            </div>
+
+            <div class="dw-layout min-h-0 flex-1">
+                <aside class="dw-sidebar dw-scroll border-r border-dark-700 p-4 overflow-y-auto bg-dark-800/40">
+                    <div class="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 mb-4">
+                        <p class="text-xs font-semibold text-amber-300">Authorized defensive use only</p>
+                        <p class="text-[11px] leading-relaxed text-slate-400 mt-1">Only normalized indicators cross the worker boundary. Raw pages, source URLs, snippets and discovered secrets are not retained.</p>
+                    </div>
+
+                    <form id="dark-web-form" novalidate>
+                        <label for="dark-web-target" class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Email, domain, phone or username</label>
+                        <input id="dark-web-target" name="target" type="text" maxlength="255" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="target@example.com" class="w-full bg-dark-900 border border-dark-700 text-white text-sm rounded-lg px-3 outline-none focus:border-red-500 placeholder-slate-600">
+                        <label class="flex items-start gap-2.5 mt-3 cursor-pointer text-[11px] leading-relaxed text-slate-400">
+                            <input id="dark-web-ack" type="checkbox" class="mt-0.5 w-4 h-4 accent-red-500 flex-shrink-0">
+                            <span>I confirm that I am authorized to investigate this target for defensive purposes.</span>
+                        </label>
+                        <button id="dark-web-submit" type="submit" class="w-full mt-3 px-4 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">START SHALLOW INVESTIGATION</button>
+                        <p id="dark-web-form-message" role="status" aria-live="polite" class="min-h-[1.25rem] mt-2 text-[11px] text-slate-500"></p>
+                    </form>
+
+                    <div class="flex items-center justify-between mt-4 mb-2">
+                        <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recent jobs</h3>
+                        <button id="dark-web-refresh-btn" type="button" class="text-[10px] px-2.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Refresh</button>
+                    </div>
+                    <div id="dark-web-jobs" class="space-y-2" aria-live="polite"></div>
+                </aside>
+
+                <section class="dw-detail dw-scroll p-4 sm:p-6 overflow-y-auto bg-dark-900/30" aria-label="Investigation details">
+                    <div id="dark-web-detail-empty" class="h-full min-h-[16rem] flex flex-col items-center justify-center text-center px-6">
+                        <div class="text-4xl text-slate-700 mb-3" aria-hidden="true">◈</div>
+                        <p class="text-sm font-semibold text-slate-300">Select an investigation</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-sm">Completed findings appear here as a bounded indicator set, ready to move into an investigation board.</p>
+                    </div>
+
+                    <div id="dark-web-detail" class="hidden">
+                        <div class="flex flex-col sm:flex-row sm:items-start gap-3 mb-5">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span id="dark-web-detail-status" class="dw-state text-[10px] uppercase tracking-wider rounded-full px-2.5 py-1">—</span>
+                                    <span id="dark-web-detail-kind" class="text-[10px] uppercase tracking-wider text-slate-500">—</span>
+                                </div>
+                                <h3 id="dark-web-detail-target" class="dw-value text-lg font-bold text-white mt-2">—</h3>
+                                <p id="dark-web-detail-meta" class="text-[11px] text-slate-500 mt-1">—</p>
+                            </div>
+                            <div class="flex gap-2 flex-wrap">
+                                <button id="dark-web-board-btn" type="button" class="hidden px-3 bg-brand-600 hover:bg-brand-500 text-white text-xs rounded">🕸 Add to board</button>
+                                <button id="dark-web-cancel-btn" type="button" class="hidden px-3 bg-amber-700 hover:bg-amber-600 text-white text-xs rounded">Cancel</button>
+                                <button id="dark-web-delete-btn" type="button" class="hidden px-3 bg-red-900/70 hover:bg-red-800 text-red-100 text-xs rounded">Delete</button>
+                            </div>
+                        </div>
+
+                        <div id="dark-web-progress" class="hidden rounded-lg border border-sky-500/25 bg-sky-500/5 p-4 mb-5">
+                            <div class="flex items-center gap-2 text-sky-300 text-xs font-semibold"><span class="inline-block w-2 h-2 bg-sky-400 rounded-full animate-pulse"></span><span id="dark-web-progress-text">Worker queued…</span></div>
+                            <p class="text-[11px] text-slate-500 mt-1">This view refreshes automatically. Closing it does not stop the job.</p>
+                        </div>
+                        <div id="dark-web-failure" class="hidden rounded-lg border border-red-500/25 bg-red-500/5 p-4 mb-5 text-xs text-red-300"></div>
+
+                        <div id="dark-web-results" class="hidden space-y-5">
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <div class="rounded-lg border border-dark-700 bg-dark-800 p-3"><p class="text-[10px] uppercase tracking-wider text-slate-500">Findings</p><p id="dark-web-finding-count" class="text-xl font-bold text-white mt-1">0</p></div>
+                                <div class="rounded-lg border border-dark-700 bg-dark-800 p-3"><p class="text-[10px] uppercase tracking-wider text-slate-500">Relations</p><p id="dark-web-relation-count" class="text-xl font-bold text-white mt-1">0</p></div>
+                                <div class="rounded-lg border border-dark-700 bg-dark-800 p-3"><p class="text-[10px] uppercase tracking-wider text-slate-500">Sources</p><p id="dark-web-source-count" class="text-xl font-bold text-white mt-1">0</p></div>
+                                <div class="rounded-lg border border-dark-700 bg-dark-800 p-3"><p class="text-[10px] uppercase tracking-wider text-slate-500">Retention</p><p id="dark-web-retention" class="text-xl font-bold text-white mt-1">—</p></div>
+                            </div>
+
+                            <div>
+                                <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Sources</h4>
+                                <div id="dark-web-sources" class="flex flex-wrap gap-1.5"></div>
+                            </div>
+                            <div id="dark-web-timeline-section" class="hidden">
+                                <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Exposure timeline</h4>
+                                <div id="dark-web-timeline" class="space-y-1.5"></div>
+                            </div>
+                            <div>
+                                <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Normalized findings</h4>
+                                <div class="rounded-lg border border-dark-700 overflow-hidden overflow-x-auto">
+                                    <table class="dw-table w-full text-xs"><thead><tr><th>Type</th><th>Indicator</th><th>Source</th><th>Confidence</th><th>Observed</th></tr></thead><tbody id="dark-web-findings"></tbody></table>
+                                </div>
+                                <p id="dark-web-findings-empty" class="hidden text-xs text-slate-500 py-3">No normalized indicators were returned.</p>
+                            </div>
+                            <div>
+                                <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Relationships</h4>
+                                <div id="dark-web-relationships" class="space-y-1.5"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Investigation Boards (FlowSint-style interactive relationship graph) ── -->
     <style>
         /* Board-specific layout. Uses #id selectors so it overrides the global
@@ -3723,5 +3869,6 @@
         </div>
     </div>
     <script src="/investigation.js"></script>
+    <script src="/dark-web.js"></script>
 </body>
 </html>

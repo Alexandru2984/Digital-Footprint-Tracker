@@ -66,15 +66,24 @@ for (const page of pages) {
     }
 }
 
-for (const script of ['admin.js', 'investigation.js']) {
+for (const script of ['admin.js', 'investigation.js', 'dark-web.js']) {
     new Function(readFileSync(join(frontendDir, script), 'utf8'));
 }
 
-const firstPartySource = pages.concat(['admin.js', 'investigation.js'])
+const firstPartySource = pages.concat(['admin.js', 'investigation.js', 'dark-web.js'])
     .map(file => readFileSync(join(frontendDir, file), 'utf8'))
     .join('\n');
 if (/localStorage\.(?:getItem|setItem)\(\s*["']authToken["']/i.test(firstPartySource)) {
     fail('Bearer credentials must not be persisted in localStorage');
+}
+const darkWebSource = readFileSync(join(frontendDir, 'dark-web.js'), 'utf8');
+if (/\.innerHTML\s*=/.test(darkWebSource)) {
+    fail('dark-web.js must render untrusted worker data without innerHTML');
+}
+for (const required of ['dark-web-overlay', 'dark-web-form', 'dark-web-jobs', 'dark-web-findings']) {
+    if (!readFileSync(join(frontendDir, 'index.html'), 'utf8').includes(`id="${required}"`)) {
+        fail(`index.html: missing dark-web UI element #${required}`);
+    }
 }
 
 const csp = readFileSync(join(repositoryDir, 'ops/nginx/snippets/swift-csp.conf'), 'utf8');

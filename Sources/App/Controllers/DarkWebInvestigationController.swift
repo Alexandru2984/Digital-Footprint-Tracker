@@ -31,7 +31,7 @@ struct DarkWebInvestigationController: RouteCollection {
         let resultCount: Int
         let failureCode: String?
         let cancelRequested: Bool
-        let result: String?
+        let result: DarkWebWorkerResult?
         let createdAt: Double?
         let startedAt: Double?
         let completedAt: Double?
@@ -93,6 +93,9 @@ struct DarkWebInvestigationController: RouteCollection {
                         reason: "Confirm that this investigation is authorized and for defensive use.")
         }
         let target = try InputValidator.validateScanInput(body.target)
+        guard target.unicodeScalars.allSatisfy(\.isASCII) else {
+            throw Abort(.badRequest, reason: "Dark-web targets currently support ASCII characters only.")
+        }
 
         let pending = try await DarkWebInvestigation.query(on: req.db)
             .filter(\.$statusRaw == DarkWebInvestigationStatus.pending.rawValue)
@@ -195,6 +198,9 @@ struct DarkWebInvestigationController: RouteCollection {
 
     private func detail(_ job: DarkWebInvestigation) -> Detail {
         let item = summary(job)
+        let result = job.resultJSON.flatMap { stored in
+            try? JSONDecoder().decode(DarkWebWorkerResult.self, from: Data(stored.utf8))
+        }
         return Detail(
             id: item.id,
             target: item.target,
@@ -203,7 +209,7 @@ struct DarkWebInvestigationController: RouteCollection {
             resultCount: item.resultCount,
             failureCode: item.failureCode,
             cancelRequested: item.cancelRequested,
-            result: job.resultJSON,
+            result: result,
             createdAt: item.createdAt,
             startedAt: item.startedAt,
             completedAt: item.completedAt,

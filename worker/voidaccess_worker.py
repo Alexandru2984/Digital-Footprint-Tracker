@@ -33,6 +33,98 @@ TARGET_RE = re.compile(r"^[A-Za-z0-9@._+\-]{1,255}$")
 DATE_RE = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2})?)?$")
 ALLOWED_KINDS = {"email", "domain", "phone", "username"}
 ALLOWED_DEPTH = {"shallow"}
+NORMALIZED_TYPES = {
+    "email",
+    "domain",
+    "onion_service",
+    "ip",
+    "phone",
+    "username",
+    "messaging_handle",
+    "crypto_wallet",
+    "file_hash",
+    "vulnerability",
+    "malware",
+    "threat_actor",
+    "organization",
+    "date",
+    "technique",
+    "credential_exposure",
+    "network_indicator",
+}
+
+TYPE_MAP = {
+    "EMAIL": "email",
+    "EMAIL_ADDRESS": "email",
+    "DOMAIN": "domain",
+    "ENS_DOMAIN": "domain",
+    "IP_ADDRESS": "ip",
+    "IPV6_ADDRESS": "ip",
+    "PHONE": "phone",
+    "PHONE_NUMBER": "phone",
+    "THREAT_ACTOR_HANDLE": "threat_actor",
+    "RANSOMWARE_GROUP": "threat_actor",
+    "MALWARE": "malware",
+    "MALWARE_FAMILY": "malware",
+    "ORGANIZATION_NAME": "organization",
+    "DATE": "date",
+    "CVE": "vulnerability",
+    "CVE_NUMBER": "vulnerability",
+    "EXPLOIT_DB_ID": "vulnerability",
+    "MITRE_TACTIC": "technique",
+    "MITRE_TECHNIQUE": "technique",
+    "YARA_RULE": "technique",
+    "NUCLEI_TEMPLATE": "technique",
+    "MAC_ADDRESS": "network_indicator",
+    "IPFS_CID": "file_hash",
+    "FILE_HASH_MD5": "file_hash",
+    "FILE_HASH_SHA1": "file_hash",
+    "FILE_HASH_SHA256": "file_hash",
+    "TELEGRAM_HANDLE": "messaging_handle",
+    "DISCORD_HANDLE": "messaging_handle",
+    "XMPP_JID": "messaging_handle",
+    "TOX_ID": "messaging_handle",
+    "MATRIX_HANDLE": "messaging_handle",
+    "WIRE_HANDLE": "messaging_handle",
+    "ICQ_NUMBER": "messaging_handle",
+    "WICKR_ID": "messaging_handle",
+}
+
+WALLET_TYPES = {
+    "CRYPTO_WALLET",
+    "BITCOIN_ADDRESS",
+    "BTC_ADDRESS",
+    "ETHEREUM_ADDRESS",
+    "ETH_ADDRESS",
+    "MONERO_ADDRESS",
+    "XMR_ADDRESS",
+    "LITECOIN_ADDRESS",
+    "ZCASH_ADDRESS",
+    "DOGECOIN_ADDRESS",
+    "XRP_ADDRESS",
+    "SOLANA_ADDRESS",
+    "TRON_ADDRESS",
+    "BITCOIN_CASH_ADDRESS",
+    "DASH_ADDRESS",
+}
+
+# VoidAccess extracts live tokens and credential material as first-class
+# entities. Those values must never cross this adapter boundary. Preserve the
+# defensive signal while replacing the secret with a non-reversible label.
+SENSITIVE_TYPE_MARKERS = (
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PRIVATE_KEY",
+    "_KEY",
+    "API_KEY",
+    "ACCESS_KEY",
+    "SEED_PHRASE",
+    "STEALER_LOG",
+    "COMBO_LIST",
+    "SESSION_ID",
+    "CREDENTIAL",
+)
 
 _job_lock = threading.Lock()
 _active_lock = threading.Lock()
@@ -78,6 +170,27 @@ def _source_name(entity: dict) -> str:
     return "voidaccess"
 
 
+def _normalized_entity(entity_type: str, value: str) -> tuple[str, str] | None:
+    upper_type = entity_type.strip().upper()
+    if any(marker in upper_type for marker in SENSITIVE_TYPE_MARKERS):
+        label = upper_type.lower().replace("_", " ")[:48]
+        return "credential_exposure", f"{label} detected"
+
+    if upper_type in {"ONION_URL", "PASTE_URL", "URL"}:
+        parsed = urlsplit(value if "://" in value else f"http://{value}")
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if not host or len(host.encode("utf-8")) > 253:
+            return None
+        return ("onion_service" if host.endswith(".onion") else "domain", host)
+
+    if upper_type in WALLET_TYPES:
+        return "crypto_wallet", value
+    normalized_type = TYPE_MAP.get(upper_type)
+    if normalized_type not in NORMALIZED_TYPES:
+        return None
+    return normalized_type, value
+
+
 def normalize(raw: dict) -> dict:
     entities = raw.get("entities") if isinstance(raw.get("entities"), list) else []
     findings: list[dict] = []
@@ -92,13 +205,17 @@ def normalize(raw: dict) -> dict:
         source = _source_name(entity)
         if not entity_type or not value or not source:
             continue
-        key = (entity_type.upper(), value.casefold(), source.casefold())
+        normalized = _normalized_entity(entity_type, value)
+        if normalized is None:
+            continue
+        normalized_type, normalized_value = normalized
+        key = (normalized_type, normalized_value.casefold(), source.casefold())
         if key in seen:
             continue
         seen.add(key)
         finding = {
-            "type": entity_type.upper(),
-            "value": value,
+            "type": normalized_type,
+            "value": normalized_value,
             "source": source,
             "confidence": _confidence(entity.get("confidence")),
             "firstSeen": _valid_date(entity.get("first_seen")),
@@ -107,7 +224,7 @@ def normalize(raw: dict) -> dict:
         findings.append(finding)
         entity_id = _bounded_text(entity.get("id"), 80)
         if entity_id:
-            id_to_value[entity_id] = value
+            id_to_value[entity_id] = normalized_value
         if len(findings) >= MAX_FINDINGS:
             break
 

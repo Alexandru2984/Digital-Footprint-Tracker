@@ -210,6 +210,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(DarkWebTargetKind.detect("person@example.test"), .email)
         XCTAssertEqual(DarkWebTargetKind.detect("example.test"), .domain)
         XCTAssertEqual(DarkWebTargetKind.detect("+40721234567"), .phone)
+        XCTAssertEqual(DarkWebTargetKind.detect("+40-721-234-567"), .phone)
         XCTAssertEqual(DarkWebTargetKind.detect("handle"), .username)
     }
 
@@ -217,14 +218,24 @@ final class AppTests: XCTestCase {
         let valid = DarkWebWorkerResult(
             schemaVersion: 1,
             status: "completed",
-            findings: [DarkWebFinding(
-                type: "EMAIL",
-                value: "person@example.test",
-                source: "onion-search",
-                confidence: 0.8,
-                firstSeen: "2024-01-02",
-                lastSeen: nil
-            )],
+            findings: [
+                DarkWebFinding(
+                    type: "email",
+                    value: "person@example.test",
+                    source: "onion-search",
+                    confidence: 0.8,
+                    firstSeen: "2024-01-02",
+                    lastSeen: nil
+                ),
+                DarkWebFinding(
+                    type: "domain",
+                    value: "example.test",
+                    source: "onion-search",
+                    confidence: 0.7,
+                    firstSeen: nil,
+                    lastSeen: nil
+                ),
+            ],
             relationships: [DarkWebRelationship(
                 source: "person@example.test",
                 target: "example.test",
@@ -242,7 +253,7 @@ final class AppTests: XCTestCase {
             schemaVersion: 1,
             status: "completed",
             findings: [DarkWebFinding(
-                type: "EMAIL\nINJECTED",
+                type: "email\nINJECTED",
                 value: "person@example.test",
                 source: "onion-search",
                 confidence: 0.8,
@@ -256,11 +267,27 @@ final class AppTests: XCTestCase {
             hostile, originalTarget: "person@example.test"
         ))
 
+        let orphanRelationship = DarkWebWorkerResult(
+            schemaVersion: 1,
+            status: "completed",
+            findings: valid.findings,
+            relationships: [DarkWebRelationship(
+                source: "person@example.test",
+                target: "secret-not-in-findings",
+                type: "USES",
+                confidence: 0.7
+            )],
+            sources: valid.sources
+        )
+        XCTAssertThrowsError(try DarkWebWorkerClient.validate(
+            orphanRelationship, originalTarget: "person@example.test"
+        ))
+
         let oversized = DarkWebWorkerResult(
             schemaVersion: 1,
             status: "completed",
             findings: (0...DarkWebWorkerClient.maximumFindings).map { index in
-                DarkWebFinding(type: "DOMAIN", value: "\(index).example.test",
+                DarkWebFinding(type: "domain", value: "\(index).example.test",
                                source: "test", confidence: 0.5,
                                firstSeen: nil, lastSeen: nil)
             },

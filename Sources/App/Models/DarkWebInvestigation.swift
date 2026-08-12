@@ -24,7 +24,7 @@ enum DarkWebTargetKind: String, Codable, Sendable {
 
     static func detect(_ target: String) -> Self {
         if target.contains("@") { return .email }
-        let phoneCharacters = CharacterSet(charactersIn: "+0123456789")
+        let phoneCharacters = CharacterSet(charactersIn: "+-0123456789")
         let digits = target.filter(\.isNumber)
         if (7...15).contains(digits.count),
            target.unicodeScalars.allSatisfy({ phoneCharacters.contains($0) }) {

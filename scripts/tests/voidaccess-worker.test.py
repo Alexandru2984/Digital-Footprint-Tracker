@@ -66,13 +66,26 @@ out = pathlib.Path(sys.argv[sys.argv.index('--output') + 1])
 if target == 'slowuser': time.sleep(30)
 payload = {
   'entities': [{
-    'id': 'e1', 'entity_type': 'EMAIL', 'value': 'person@example.test',
+    'id': 'e1', 'entity_type': 'EMAIL_ADDRESS', 'value': 'person@example.test',
     'confidence': 0.8, 'corroborating_sources': 'onion-search',
     'context_snippet': 'must never cross the boundary',
     'source_url': 'http://secret-example.onion/page'
   }, {
     'id': 'e2', 'entity_type': 'DOMAIN', 'value': 'example.test',
     'confidence': 0.7, 'corroborating_sources': 'onion-search'
+  }, {
+    'id': 'e3', 'entity_type': 'GITHUB_TOKEN', 'value': 'ghp_live_secret',
+    'confidence': 0.9, 'corroborating_sources': 'onion-search'
+  }, {
+    'id': 'e4', 'entity_type': 'ONION_URL',
+    'value': 'http://hidden-service.onion/private?q=secret',
+    'confidence': 0.6, 'corroborating_sources': 'onion-search'
+  }, {
+    'id': 'e5', 'entity_type': 'HTML_SNIPPET', 'value': '<script>bad()</script>',
+    'confidence': 1.0, 'corroborating_sources': 'onion-search'
+  }, {
+    'id': 'e6', 'entity_type': 'STRIPE_KEY', 'value': 'sk_live_secret',
+    'confidence': 0.9, 'corroborating_sources': 'onion-search'
   }],
   'relationships': [{
     'entity_a_id': 'e1', 'entity_b_id': 'e2',
@@ -123,12 +136,27 @@ payload = {
             status, result = request(port, secret, "/v1/investigations", payload)
             assert status == 200, (status, result)
             assert result["schemaVersion"] == 1
-            assert len(result["findings"]) == 2
+            assert len(result["findings"]) == 5
+            assert result["findings"][0]["type"] == "email"
+            assert any(
+                finding["type"] == "credential_exposure"
+                and finding["value"] == "github token detected"
+                for finding in result["findings"]
+            )
+            assert any(
+                finding["type"] == "onion_service"
+                and finding["value"] == "hidden-service.onion"
+                for finding in result["findings"]
+            )
             assert result["relationships"][0]["type"] == "USES"
             serialized = json.dumps(result)
             assert "context_snippet" not in serialized
             assert "pages_scraped" not in serialized
             assert "secret-example.onion" not in serialized
+            assert "ghp_live_secret" not in serialized
+            assert "sk_live_secret" not in serialized
+            assert "/private" not in serialized
+            assert "<script>" not in serialized
 
             slow_id = str(uuid.uuid4())
             slow_payload = {

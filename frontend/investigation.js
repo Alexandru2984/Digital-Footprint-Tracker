@@ -516,6 +516,56 @@
     open(); render(); scheduleSave(); setTimeout(fitToView, 900);
   }
 
+  /// Seed a board from the normalized dark-web worker contract. Secret values,
+  /// page bodies and source URLs cannot reach this function by design.
+  function seedFromDarkWeb(target, result) {
+    if (!target || !result || !Array.isArray(result.findings)) {
+      status('No dark-web findings to import.'); return;
+    }
+    newBoard();
+    board.name = ('Dark web: ' + target).slice(0, 64);
+    document.getElementById('board-name-input').value = board.name;
+    var root = addNode(target, target, inferType(target), true);
+    root.expanded = true;
+    var ids = {}; ids[String(target).toLowerCase()] = root.id;
+    var added = 0;
+    function shortID(type, value) {
+      if (value.length <= 240) return value;
+      var hash = 2166136261;
+      for (var i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i); hash = Math.imul(hash, 16777619);
+      }
+      return 'darkweb:' + type + ':' + (hash >>> 0).toString(16);
+    }
+    function boardType(finding) {
+      var t = String(finding.type || '').toLowerCase();
+      if (t === 'messaging_handle' || t === 'threat_actor') return 'username';
+      if (t === 'onion_service') return 'onion_service';
+      if (t === 'credential_exposure') return 'exposure';
+      if (t === 'vulnerability') return 'risk';
+      if (t === 'network_indicator') return 'network_indicator';
+      return t || inferType(finding.value || '');
+    }
+    result.findings.slice(0, 250).forEach(function (finding) {
+      if (!finding || typeof finding.value !== 'string' || !finding.value.trim()) return;
+      var value = finding.value.trim(), type = boardType(finding);
+      var id = shortID(type, value).toLowerCase();
+      var before = nodeById(id);
+      var created = addNode(id, value, type, false);
+      if (!before && created) added++;
+      ids[value.toLowerCase()] = id;
+      addEdge(root.id, id, 'dark-web finding');
+    });
+    (result.relationships || []).slice(0, 500).forEach(function (relationship) {
+      if (!relationship) return;
+      var source = ids[String(relationship.source || '').toLowerCase()];
+      var destination = ids[String(relationship.target || '').toLowerCase()];
+      if (source && destination) addEdge(source, destination, String(relationship.type || 'related').slice(0, 32));
+    });
+    status('Imported ' + added + ' normalized dark-web finding' + (added === 1 ? '' : 's') + '.');
+    open(); render(); scheduleSave(); setTimeout(fitToView, 900);
+  }
+
   function loadBoard(id) {
     if (!id) return;
     api('GET', '/investigations/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
@@ -1088,7 +1138,7 @@
   }
 
   // Small public surface so the page can drive the board too.
-  window.InvestigationBoards = { open: open, seedFromScan: seedFromScan };
+  window.InvestigationBoards = { open: open, seedFromScan: seedFromScan, seedFromDarkWeb: seedFromDarkWeb };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();
