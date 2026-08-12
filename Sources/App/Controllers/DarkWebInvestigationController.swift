@@ -154,6 +154,9 @@ struct DarkWebInvestigationController: RouteCollection {
             job.completedAt = Date()
         }
         try await job.save(on: req.db)
+        await req.application.darkWebRunner.requestCancellation(
+            jobID: job.id!, app: req.application
+        )
         await AuditLogger.log(
             req: req,
             action: "dark_web_investigation_cancel",

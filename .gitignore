@@ -46,3 +46,7 @@ frontend/dist/
 frontend/.cache/
 *.sqlite
 *.db
+
+# Isolated Python worker
+__pycache__/
+*.py[cod]

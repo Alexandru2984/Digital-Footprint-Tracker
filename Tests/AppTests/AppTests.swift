@@ -85,7 +85,8 @@ private func makeApp() async throws -> Application {
         sharedSecret: String(repeating: "t", count: 32),
         retentionHours: 72,
         maxOutstandingJobs: 5,
-        maxJobsPerUserPerDay: 3
+        maxJobsPerUserPerDay: 3,
+        jobTimeoutSeconds: 600
     )
     try routes(app)
     return app
@@ -210,6 +211,84 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(DarkWebTargetKind.detect("example.test"), .domain)
         XCTAssertEqual(DarkWebTargetKind.detect("+40721234567"), .phone)
         XCTAssertEqual(DarkWebTargetKind.detect("handle"), .username)
+    }
+
+    func testDarkWebWorkerContractRejectsHostileOrOversizedResults() throws {
+        let valid = DarkWebWorkerResult(
+            schemaVersion: 1,
+            status: "completed",
+            findings: [DarkWebFinding(
+                type: "EMAIL",
+                value: "person@example.test",
+                source: "onion-search",
+                confidence: 0.8,
+                firstSeen: "2024-01-02",
+                lastSeen: nil
+            )],
+            relationships: [DarkWebRelationship(
+                source: "person@example.test",
+                target: "example.test",
+                type: "USES",
+                confidence: 0.7
+            )],
+            sources: ["onion-search"]
+        )
+        XCTAssertEqual(
+            try DarkWebWorkerClient.validate(valid, originalTarget: "person@example.test"),
+            valid
+        )
+
+        let hostile = DarkWebWorkerResult(
+            schemaVersion: 1,
+            status: "completed",
+            findings: [DarkWebFinding(
+                type: "EMAIL\nINJECTED",
+                value: "person@example.test",
+                source: "onion-search",
+                confidence: 0.8,
+                firstSeen: nil,
+                lastSeen: nil
+            )],
+            relationships: [],
+            sources: ["onion-search"]
+        )
+        XCTAssertThrowsError(try DarkWebWorkerClient.validate(
+            hostile, originalTarget: "person@example.test"
+        ))
+
+        let oversized = DarkWebWorkerResult(
+            schemaVersion: 1,
+            status: "completed",
+            findings: (0...DarkWebWorkerClient.maximumFindings).map { index in
+                DarkWebFinding(type: "DOMAIN", value: "\(index).example.test",
+                               source: "test", confidence: 0.5,
+                               firstSeen: nil, lastSeen: nil)
+            },
+            relationships: [],
+            sources: ["test"]
+        )
+        XCTAssertThrowsError(try DarkWebWorkerClient.validate(
+            oversized, originalTarget: "example.test"
+        ))
+    }
+
+    func testDarkWebWorkerSignatureIsStableAndBodyBound() throws {
+        let secret = String(repeating: "s", count: 32)
+        let first = DarkWebWorkerClient.sign(
+            timestamp: "1786550400", method: "POST", path: "/v1/investigations",
+            body: Data(#"{"target":"alice"}"#.utf8), secret: secret
+        )
+        let second = DarkWebWorkerClient.sign(
+            timestamp: "1786550400", method: "POST", path: "/v1/investigations",
+            body: Data(#"{"target":"bob"}"#.utf8), secret: secret
+        )
+        let otherPath = DarkWebWorkerClient.sign(
+            timestamp: "1786550400", method: "POST", path: "/v1/other",
+            body: Data(#"{"target":"alice"}"#.utf8), secret: secret
+        )
+        XCTAssertEqual(first.count, 64)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(first, otherPath)
     }
 
     func testClientIPOnlyTrustsForwardingHeadersFromLoopback() async throws {

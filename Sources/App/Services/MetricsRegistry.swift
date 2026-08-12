@@ -18,11 +18,15 @@ actor MetricsRegistry {
     /// Per-channel notification attempt counts. Channel labels:
     /// "webhook", "discord", "telegram", "slack", "email".
     private(set) var notificationsSent: [String: UInt64] = [:]
+    private(set) var darkWebJobs: [String: UInt64] = [:]
 
     func incPluginCacheHit()   { pluginCacheHits   &+= 1 }
     func incPluginCacheMiss()  { pluginCacheMisses &+= 1 }
     func incNotificationSent(channel: String) {
         notificationsSent[channel, default: 0] &+= 1
+    }
+    func incDarkWebJob(status: String) {
+        darkWebJobs[status, default: 0] &+= 1
     }
 
     /// Immutable snapshot consumed by the Prometheus formatter. Returned via
@@ -31,13 +35,15 @@ actor MetricsRegistry {
         let pluginCacheHits:   UInt64
         let pluginCacheMisses: UInt64
         let notificationsSent: [String: UInt64]
+        let darkWebJobs: [String: UInt64]
     }
 
     func snapshot() -> Snapshot {
         Snapshot(
             pluginCacheHits:   pluginCacheHits,
             pluginCacheMisses: pluginCacheMisses,
-            notificationsSent: notificationsSent
+            notificationsSent: notificationsSent,
+            darkWebJobs: darkWebJobs
         )
     }
 }

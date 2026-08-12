@@ -123,6 +123,10 @@ struct HealthController: RouteCollection {
         let runningScans   = (try? await Scan.query(on: req.db).filter(\.$statusRaw == "running").count()) ?? 0
         let activeScheduled = (try? await ScheduledScan.query(on: req.db).filter(\.$isActive == true).count()) ?? 0
         let pluginCacheRows = (try? await PluginCacheEntry.query(on: req.db).count()) ?? 0
+        let darkWebPending = (try? await DarkWebInvestigation.query(on: req.db)
+            .filter(\.$statusRaw == DarkWebInvestigationStatus.pending.rawValue).count()) ?? 0
+        let darkWebRunning = (try? await DarkWebInvestigation.query(on: req.db)
+            .filter(\.$statusRaw == DarkWebInvestigationStatus.running.rawValue).count()) ?? 0
 
         let yesterday    = Date().addingTimeInterval(-86400)
         let scansLast24h = (try? await Scan.query(on: req.db).filter(\.$createdAt >= yesterday).count()) ?? 0
@@ -169,6 +173,12 @@ struct HealthController: RouteCollection {
         writeGauge(name: "swift_vapor_plugin_cache_rows",
                    help: "Live (non-expired plus expired-but-unswept) rows in plugin_cache.",
                    value: pluginCacheRows)
+        writeGauge(name: "swift_vapor_dark_web_queue_depth",
+                   help: "Pending dark-web investigations in the durable queue.",
+                   value: darkWebPending)
+        writeGauge(name: "swift_vapor_dark_web_jobs_running",
+                   help: "Dark-web investigations currently leased to a worker.",
+                   value: darkWebRunning)
         writeGauge(name: "swift_vapor_backup_last_success_unixtime",
                    help: "Unix timestamp of the last locally verified encrypted database backup, or zero when unknown.",
                    value: backup?.lastSuccessUnix ?? 0)
@@ -192,6 +202,11 @@ struct HealthController: RouteCollection {
         for channel in snap.notificationsSent.keys.sorted() {
             let count = snap.notificationsSent[channel] ?? 0
             out += "swift_vapor_notifications_sent_total{channel=\"\(channel)\"} \(count)\n"
+        }
+        out += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
+        out += "# TYPE swift_vapor_dark_web_jobs_total counter\n"
+        for status in snap.darkWebJobs.keys.sorted() {
+            out += "swift_vapor_dark_web_jobs_total{status=\"\(status)\"} \(snap.darkWebJobs[status] ?? 0)\n"
         }
 
         return Response(

@@ -1,0 +1,348 @@
+#!/usr/bin/python3
+"""Loopback-only, one-job-at-a-time adapter for VoidAccess CLI 2.0.3.
+
+This service deliberately returns only normalized entities and relationships.
+It never returns page bodies, snippets, scraped URLs, local paths or the query.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+MAX_REQUEST_BYTES = 4096
+MAX_RESULT_BYTES = 8 * 1024 * 1024
+MAX_FINDINGS = 250
+MAX_RELATIONSHIPS = 500
+MAX_CLOCK_SKEW_SECONDS = 60
+MAX_JOB_SECONDS = int(os.environ.get("VOIDACCESS_JOB_TIMEOUT_SECONDS", "540"))
+TARGET_RE = re.compile(r"^[A-Za-z0-9@._+\-]{1,255}$")
+DATE_RE = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2})?)?$")
+ALLOWED_KINDS = {"email", "domain", "phone", "username"}
+ALLOWED_DEPTH = {"shallow"}
+
+_job_lock = threading.Lock()
+_active_lock = threading.Lock()
+_active_job_id: str | None = None
+_active_process: subprocess.Popen | None = None
+_replay_lock = threading.Lock()
+_seen_signatures: dict[str, float] = {}
+
+
+def _bounded_text(value: object, maximum: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    clean = " ".join(value.split()).strip()
+    if not clean or len(clean.encode("utf-8")) > maximum:
+        return None
+    if any(ord(char) < 32 or ord(char) == 127 for char in clean):
+        return None
+    return clean
+
+
+def _valid_date(value: object) -> str | None:
+    clean = _bounded_text(value, 10) if value is not None else None
+    return clean if clean and DATE_RE.fullmatch(clean) else None
+
+
+def _confidence(value: object) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return min(1.0, max(0.0, number))
+
+
+def _source_name(entity: dict) -> str:
+    source = _bounded_text(entity.get("corroborating_sources"), 80)
+    if source:
+        return source.split(",", 1)[0].strip()
+    source_url = _bounded_text(entity.get("source_url"), 2048)
+    if source_url:
+        host = urlsplit(source_url).hostname
+        if host:
+            return host[:80]
+    return "voidaccess"
+
+
+def normalize(raw: dict) -> dict:
+    entities = raw.get("entities") if isinstance(raw.get("entities"), list) else []
+    findings: list[dict] = []
+    id_to_value: dict[str, str] = {}
+    seen: set[tuple[str, str, str]] = set()
+
+    for entity in entities[:2000]:
+        if not isinstance(entity, dict):
+            continue
+        entity_type = _bounded_text(entity.get("entity_type"), 64)
+        value = _bounded_text(entity.get("value"), 512)
+        source = _source_name(entity)
+        if not entity_type or not value or not source:
+            continue
+        key = (entity_type.upper(), value.casefold(), source.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        finding = {
+            "type": entity_type.upper(),
+            "value": value,
+            "source": source,
+            "confidence": _confidence(entity.get("confidence")),
+            "firstSeen": _valid_date(entity.get("first_seen")),
+            "lastSeen": _valid_date(entity.get("last_seen")),
+        }
+        findings.append(finding)
+        entity_id = _bounded_text(entity.get("id"), 80)
+        if entity_id:
+            id_to_value[entity_id] = value
+        if len(findings) >= MAX_FINDINGS:
+            break
+
+    relationships: list[dict] = []
+    relationship_rows = raw.get("relationships")
+    if isinstance(relationship_rows, list):
+        for relationship in relationship_rows[:2000]:
+            if not isinstance(relationship, dict):
+                continue
+            source = id_to_value.get(str(relationship.get("entity_a_id", "")))
+            target = id_to_value.get(str(relationship.get("entity_b_id", "")))
+            kind = _bounded_text(relationship.get("relationship_type"), 64)
+            if not source or not target or not kind:
+                continue
+            relationships.append({
+                "source": source,
+                "target": target,
+                "type": kind,
+                "confidence": _confidence(relationship.get("confidence")),
+            })
+            if len(relationships) >= MAX_RELATIONSHIPS:
+                break
+
+    sources = sorted({finding["source"] for finding in findings})[:64]
+    return {
+        "schemaVersion": 1,
+        "status": "completed",
+        "findings": findings,
+        "relationships": relationships,
+        "sources": sources,
+    }
+
+
+def verify_request(headers, method: str, path: str, body: bytes) -> bool:
+    secret = os.environ.get("VOIDACCESS_SHARED_SECRET", "").encode()
+    timestamp = headers.get("X-DFT-Timestamp", "")
+    signature = headers.get("X-DFT-Signature", "")
+    if len(secret) < 32 or not timestamp.isdigit() or len(signature) != 64:
+        return False
+    if abs(time.time() - int(timestamp)) > MAX_CLOCK_SKEW_SECONDS:
+        return False
+    message = timestamp.encode() + b"\n" + method.upper().encode() + b"\n" + path.encode() + b"\n" + body
+    expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return False
+    now = time.time()
+    with _replay_lock:
+        stale = [item for item, seen_at in _seen_signatures.items() if now - seen_at > 120]
+        for item in stale:
+            _seen_signatures.pop(item, None)
+        if signature in _seen_signatures:
+            return False
+        if len(_seen_signatures) >= 1024:
+            return False
+        _seen_signatures[signature] = now
+    return True
+
+
+def run_voidaccess(payload: dict) -> dict:
+    global _active_job_id, _active_process
+    target = payload.get("target")
+    job_id = payload.get("jobID")
+    kind = payload.get("targetKind")
+    depth = payload.get("depth")
+    if (
+        not isinstance(job_id, str)
+        or str(uuid.UUID(job_id)) != job_id.lower()
+        or not isinstance(target, str)
+        or not TARGET_RE.fullmatch(target)
+        or kind not in ALLOWED_KINDS
+        or depth not in ALLOWED_DEPTH
+        or payload.get("useTor") is not True
+        or payload.get("useLLM") is not False
+    ):
+        raise ValueError("invalid_request")
+
+    executable = os.environ.get("VOIDACCESS_EXECUTABLE", "/opt/voidaccess/venv/bin/voidaccess")
+    if not Path(executable).is_file() or not os.access(executable, os.X_OK):
+        raise RuntimeError("worker_not_installed")
+
+    with tempfile.TemporaryDirectory(prefix="voidaccess-job-") as temp:
+        job_home = Path(temp)
+        output_dir = job_home / "result"
+        output_dir.mkdir(mode=0o700)
+        environment = {
+            "HOME": str(job_home),
+            "TMPDIR": str(job_home),
+            "PATH": "/usr/bin:/bin",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+            "PYTHONUNBUFFERED": "1",
+            "VOIDACCESS_NO_BANNER": "1",
+            "VOIDACCESS_PACE": "normal",
+            "TOR_PROXY_HOST": "127.0.0.1",
+            "TOR_PROXY_PORT": os.environ.get("TOR_PROXY_PORT", "9050"),
+            "PLAYWRIGHT_ENABLED": "false",
+        }
+        command = [
+            executable,
+            "--no-banner",
+            "investigate",
+            target,
+            "--no-llm",
+            "--depth",
+            "shallow",
+            "--format",
+            "json",
+            "--output",
+            str(output_dir),
+            "--quiet",
+        ]
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            start_new_session=True,
+        )
+        with _active_lock:
+            _active_job_id = job_id.lower()
+            _active_process = process
+        try:
+            try:
+                exit_code = process.wait(timeout=MAX_JOB_SECONDS)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise TimeoutError("worker_timeout")
+        finally:
+            with _active_lock:
+                if _active_process is process:
+                    _active_job_id = None
+                    _active_process = None
+        if exit_code != 0:
+            raise RuntimeError("worker_failed")
+
+        outputs = list(output_dir.glob("*.json"))
+        if len(outputs) != 1 or outputs[0].stat().st_size > MAX_RESULT_BYTES:
+            raise RuntimeError("invalid_output")
+        with outputs[0].open("rb") as stream:
+            raw = json.load(stream)
+        if not isinstance(raw, dict):
+            raise RuntimeError("invalid_output")
+        return normalize(raw)
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "DFT-VoidAccess-Worker/1"
+
+    def log_message(self, _format: str, *_args) -> None:
+        return
+
+    def _json(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == "/health":
+            self._json(200, {"status": "ok"})
+        else:
+            self._json(404, {"error": "not_found"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        cancel_match = re.fullmatch(
+            r"/v1/investigations/([0-9A-Fa-f-]{36})/cancel", self.path
+        )
+        if self.path != "/v1/investigations" and cancel_match is None:
+            self._json(404, {"error": "not_found"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = 0
+        if self.path == "/v1/investigations" and (length <= 0 or length > MAX_REQUEST_BYTES):
+            self._json(413, {"error": "invalid_size"})
+            return
+        if cancel_match is not None and length != 0:
+            self._json(413, {"error": "invalid_size"})
+            return
+        body = self.rfile.read(length)
+        if not verify_request(self.headers, "POST", self.path, body):
+            self._json(401, {"error": "unauthorized"})
+            return
+        if cancel_match is not None:
+            try:
+                requested_id = str(uuid.UUID(cancel_match.group(1)))
+            except ValueError:
+                self._json(400, {"error": "invalid_request"})
+                return
+            with _active_lock:
+                process = _active_process if _active_job_id == requested_id else None
+            if process is None or process.poll() is not None:
+                self._json(404, {"status": "not_running"})
+                return
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                self._json(202, {"status": "cancelled"})
+            except ProcessLookupError:
+                self._json(404, {"status": "not_running"})
+            return
+        if not _job_lock.acquire(blocking=False):
+            self._json(429, {"error": "busy"})
+            return
+        try:
+            payload = json.loads(body)
+            if not isinstance(payload, dict):
+                raise ValueError("invalid_request")
+            result = run_voidaccess(payload)
+            self._json(200, result)
+        except ValueError:
+            self._json(400, {"error": "invalid_request"})
+        except TimeoutError:
+            self._json(504, {"error": "timeout"})
+        except Exception:
+            self._json(502, {"error": "worker_failed"})
+        finally:
+            _job_lock.release()
+
+
+def main() -> None:
+    host = os.environ.get("VOIDACCESS_LISTEN_HOST", "127.0.0.1")
+    port = int(os.environ.get("VOIDACCESS_LISTEN_PORT", "8766"))
+    if host not in {"127.0.0.1", "::1"}:
+        raise SystemExit("Refusing a non-loopback listen address")
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True
+    server.serve_forever(poll_interval=0.5)
+
+
+if __name__ == "__main__":
+    main()

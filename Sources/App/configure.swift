@@ -200,6 +200,7 @@ public func configure(_ app: Application) async throws {
     app.lifecycle.use(ScanCleanupLifecycle())
     app.lifecycle.use(ScheduledScanRunner())
     app.lifecycle.use(InvestigationWatchRunner())
+    app.lifecycle.use(app.darkWebRunner)
 }
 
 enum MigrationPolicy {

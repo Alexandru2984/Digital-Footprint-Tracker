@@ -11,6 +11,7 @@ struct DarkWebConfiguration: Sendable {
     let retentionHours: Int
     let maxOutstandingJobs: Int
     let maxJobsPerUserPerDay: Int
+    let jobTimeoutSeconds: Int
 
     static let disabled = DarkWebConfiguration(
         enabled: false,
@@ -18,7 +19,8 @@ struct DarkWebConfiguration: Sendable {
         sharedSecret: nil,
         retentionHours: defaultRetentionHours,
         maxOutstandingJobs: 5,
-        maxJobsPerUserPerDay: 3
+        maxJobsPerUserPerDay: 3,
+        jobTimeoutSeconds: 600
     )
 
     static func fromEnvironment() throws -> Self {
@@ -34,6 +36,9 @@ struct DarkWebConfiguration: Sendable {
         let maxDaily = boundedInt(
             Environment.get("DARK_WEB_MAX_JOBS_PER_USER_DAY"), fallback: 3, range: 1...10
         )
+        let timeout = boundedInt(
+            Environment.get("DARK_WEB_JOB_TIMEOUT_SECONDS"), fallback: 600, range: 60...900
+        )
 
         guard enabled else {
             return DarkWebConfiguration(
@@ -42,7 +47,8 @@ struct DarkWebConfiguration: Sendable {
                 sharedSecret: nil,
                 retentionHours: retention,
                 maxOutstandingJobs: maxOutstanding,
-                maxJobsPerUserPerDay: maxDaily
+                maxJobsPerUserPerDay: maxDaily,
+                jobTimeoutSeconds: timeout
             )
         }
 
@@ -68,7 +74,8 @@ struct DarkWebConfiguration: Sendable {
             sharedSecret: secret,
             retentionHours: retention,
             maxOutstandingJobs: maxOutstanding,
-            maxJobsPerUserPerDay: maxDaily
+            maxJobsPerUserPerDay: maxDaily,
+            jobTimeoutSeconds: timeout
         )
     }
 

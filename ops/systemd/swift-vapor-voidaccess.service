@@ -1,0 +1,55 @@
+[Unit]
+Description=Isolated VoidAccess dark-web investigation worker
+After=network-online.target tor.service
+Wants=network-online.target
+Requires=tor.service
+
+[Service]
+Type=simple
+User=swift-voidaccess
+Group=swift-voidaccess
+WorkingDirectory=/var/lib/swift-voidaccess
+EnvironmentFile=/etc/swift-voidaccess/worker.env
+ExecStart=/usr/bin/python3 /opt/swift-voidaccess/voidaccess_worker.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+ReadWritePaths=/var/lib/swift-voidaccess
+
+# One analysis at a time, with host-safe ceilings. The Python adapter imposes a
+# second 9-minute child deadline and destroys the per-job HOME afterwards.
+CPUQuota=200%
+MemoryHigh=3G
+MemoryMax=4G
+TasksMax=256
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
