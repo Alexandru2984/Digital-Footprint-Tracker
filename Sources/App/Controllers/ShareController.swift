@@ -105,7 +105,14 @@ struct ShareController: RouteCollection {
         let token = [UInt8].random(count: 24).base64URLEncoded()
         let tokenHash = sha256Hex(token)
         let expiresAt = body.expiresIn.map { Date().addingTimeInterval(Double($0)) }
-        let passwordHash = try password.map { try Bcrypt.hash($0) }
+        let passwordHash: String?
+        if let password {
+            // BCrypt is intentionally expensive. Run it on Vapor's password
+            // thread pool instead of blocking an HTTP event loop.
+            passwordHash = try await req.password.async.hash(password)
+        } else {
+            passwordHash = nil
+        }
 
         let share = SharedReport(scanID: scanID, tokenHash: tokenHash, expiresAt: expiresAt, passwordHash: passwordHash)
         try await req.db.transaction { database in
@@ -221,7 +228,8 @@ struct ShareController: RouteCollection {
             throw Abort(.gone, reason: "This shared link has expired")
         }
         if let hash = share.passwordHash {
-            guard let password, (try? Bcrypt.verify(password, created: hash)) == true else {
+            guard let password, (1...72).contains(password.utf8.count),
+                  (try? await req.password.async.verify(password, created: hash)) == true else {
                 throw Abort(.unauthorized, reason: "Password required")
             }
         }
