@@ -2050,6 +2050,51 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(back.metadata?["username"], "alice")
     }
 
+    func testPluginResultLimitsAreUTF8ByteExact() throws {
+        let exact = String(repeating: "é", count: PluginResultLimits.maxRawDataBytes / 2)
+        XCTAssertEqual(exact.utf8.count, PluginResultLimits.maxRawDataBytes)
+        XCTAssertEqual(
+            PluginResultLimits.truncateUTF8(
+                exact, maxBytes: PluginResultLimits.maxRawDataBytes,
+                suffix: PluginResultLimits.truncationSuffix
+            ),
+            exact
+        )
+
+        let oversized = exact + "🛡️"
+        let truncated = PluginResultLimits.truncateUTF8(
+            oversized, maxBytes: PluginResultLimits.maxRawDataBytes,
+            suffix: PluginResultLimits.truncationSuffix
+        )
+        XCTAssertLessThanOrEqual(truncated.utf8.count, PluginResultLimits.maxRawDataBytes)
+        XCTAssertTrue(truncated.hasSuffix(PluginResultLimits.truncationSuffix))
+        XCTAssertNotNil(truncated.data(using: .utf8))
+
+        let hugeMetadata = ["value": String(repeating: "💣", count: 2_000)]
+        XCTAssertNil(PluginResultLimits.encodeMetadata(hugeMetadata))
+        XCTAssertNotNil(PluginResultLimits.encodeMetadata(["platform": "github"]))
+
+        let oversizedResult = PluginResult(
+            source: String(repeating: "🔎", count: 100),
+            type: String(repeating: "é", count: 100),
+            confidenceScore: .infinity,
+            rawData: String(repeating: "💣", count: 3_000),
+            metadata: hugeMetadata
+        )
+        let bounded = PluginResultLimits.sanitize(
+            Array(repeating: oversizedResult, count: PluginResultLimits.maxResultsPerCandidate + 1)
+        )
+        XCTAssertEqual(bounded.count, PluginResultLimits.maxResultsPerCandidate)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(bounded.first).source.utf8.count,
+                                 PluginResultLimits.maxSourceBytes)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(bounded.first).type.utf8.count,
+                                 PluginResultLimits.maxTypeBytes)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(bounded.first).rawData.utf8.count,
+                                 PluginResultLimits.maxRawDataBytes)
+        XCTAssertEqual(try XCTUnwrap(bounded.first).confidenceScore, 0)
+        XCTAssertNil(try XCTUnwrap(bounded.first).metadata)
+    }
+
     func testResultMetadataObjectDecodesStoredJSON() {
         let withMeta = App.Result(scanID: UUID(), source: "github", type: "account_presence",
                                   confidenceScore: 1.0, rawData: "x",

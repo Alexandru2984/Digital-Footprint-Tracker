@@ -168,13 +168,14 @@ enum ScanPluginRunner {
                             let cInput = candidate.value
                             let raw: [PluginResult]
                             if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
-                                raw = cached
+                                raw = PluginResultLimits.sanitize(cached)
                             } else {
                                 let fresh = try await plugin.scan(input: cInput, on: app)
+                                let bounded = PluginResultLimits.sanitize(fresh)
                                 if useCache {
-                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: fresh, ttl: pTTL, on: db, logger: app.logger)
+                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
                                 }
-                                raw = fresh
+                                raw = bounded
                             }
                             for pr in raw {
                                 try await persist(pr, origin: candidate.origin, scanID: scanID, on: db)
@@ -218,25 +219,20 @@ enum ScanPluginRunner {
     /// on the candidate's `origin`.
     private static func persist(_ pr: PluginResult, origin: TargetDeriver.Origin, scanID: UUID, on db: Database) async throws {
         let rawBase = origin.note.map { "\($0) \(pr.rawData)" } ?? pr.rawData
-        let cappedRawData = rawBase.count > 8192 ? String(rawBase.prefix(8192)) + "… [truncated]" : rawBase
+        let cappedRawData = PluginResultLimits.truncateUTF8(
+            rawBase, maxBytes: PluginResultLimits.maxRawDataBytes,
+            suffix: PluginResultLimits.truncationSuffix
+        )
 
         var metaDict = pr.metadata ?? [:]
         if origin.derived { metaDict["derivedFrom"] = origin.note ?? "derived" }
-        let metadataJSON: String?
-        if metaDict.isEmpty {
-            metadataJSON = nil
-        } else if let data = try? JSONEncoder().encode(metaDict),
-                  let json = String(data: data, encoding: .utf8), json.count <= 4096 {
-            metadataJSON = json
-        } else {
-            metadataJSON = nil
-        }
+        let metadataJSON = PluginResultLimits.encodeMetadata(metaDict)
 
         let confidence = max(0.0, min(1.0, pr.confidenceScore)) * origin.confidenceFactor
         let result = Result(
             scanID: scanID,
-            source: String(pr.source.prefix(64)),
-            type: String(pr.type.prefix(64)),
+            source: PluginResultLimits.truncateUTF8(pr.source, maxBytes: PluginResultLimits.maxSourceBytes),
+            type: PluginResultLimits.truncateUTF8(pr.type, maxBytes: PluginResultLimits.maxTypeBytes),
             confidenceScore: confidence,
             rawData: cappedRawData,
             metadata: metadataJSON
@@ -278,5 +274,68 @@ enum ScanPluginRunner {
     private static func redactedDestination(_ url: URL) -> String {
         guard let scheme = url.scheme, let host = url.host else { return "invalid-destination" }
         return "\(scheme.lowercased())://\(host.lowercased())\(url.port.map { ":\($0)" } ?? "")"
+    }
+}
+
+/// Hard storage/cache boundaries for data returned by plugins. Limits are in
+/// UTF-8 bytes (the representation sent over HTTP and stored before encryption),
+/// never Swift grapheme-cluster counts.
+enum PluginResultLimits {
+    static let maxResultsPerCandidate = 512
+    static let maxSourceBytes = 64
+    static let maxTypeBytes = 64
+    static let maxRawDataBytes = 8_192
+    static let maxMetadataBytes = 4_096
+    static let maxCachePayloadBytes = 2 * 1_024 * 1_024
+    // AES-GCM adds 28 bytes, then Base64 expands by roughly 4/3. Keep a little
+    // envelope headroom while rejecting oversized rows before decryption.
+    static let maxStoredCachePayloadBytes = 3 * 1_024 * 1_024
+    static let truncationSuffix = "… [truncated]"
+
+    static func sanitize(_ results: [PluginResult]) -> [PluginResult] {
+        results.prefix(maxResultsPerCandidate).map { result in
+            let metadata = result.metadata.flatMap { encodeMetadata($0) == nil ? nil : $0 }
+            return PluginResult(
+                source: truncateUTF8(result.source, maxBytes: maxSourceBytes),
+                type: truncateUTF8(result.type, maxBytes: maxTypeBytes),
+                confidenceScore: result.confidenceScore.isFinite
+                    ? max(0, min(1, result.confidenceScore)) : 0,
+                rawData: truncateUTF8(
+                    result.rawData, maxBytes: maxRawDataBytes, suffix: truncationSuffix
+                ),
+                metadata: metadata
+            )
+        }
+    }
+
+    static func encodeMetadata(_ metadata: [String: String]) -> String? {
+        guard !metadata.isEmpty,
+              let data = try? JSONEncoder().encode(metadata),
+              data.count <= maxMetadataBytes else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Truncates at a Character boundary, preserving valid Unicode and keeping
+    /// the optional suffix inside (not in addition to) the byte budget.
+    static func truncateUTF8(_ value: String, maxBytes: Int, suffix: String = "") -> String {
+        precondition(maxBytes >= 0)
+        guard value.utf8.count > maxBytes else { return value }
+
+        let suffixBytes = suffix.utf8.count
+        precondition(suffixBytes <= maxBytes)
+        let prefixBudget = maxBytes - suffixBytes
+        var used = 0
+        var output = ""
+        output.reserveCapacity(maxBytes)
+        for character in value {
+            let bytes = String(character).utf8.count
+            guard used + bytes <= prefixBudget else { break }
+            output.append(character)
+            used += bytes
+        }
+        output.append(suffix)
+        return output
     }
 }

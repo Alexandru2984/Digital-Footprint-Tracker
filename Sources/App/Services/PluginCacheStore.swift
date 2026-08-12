@@ -43,6 +43,9 @@ enum PluginCacheStore {
                     .first()
                 else { return nil }
                 guard entry.expiresAt > Date() else { return nil }
+                guard entry.payload.utf8.count <= PluginResultLimits.maxStoredCachePayloadBytes else {
+                    return nil
+                }
                 let payload: String
                 if let decrypted = TokenEncryption.decrypt(entry.payload) {
                     payload = decrypted
@@ -51,7 +54,8 @@ enum PluginCacheStore {
                 } else {
                     payload = entry.payload // legacy plaintext cache row
                 }
-                guard let data = payload.data(using: .utf8),
+                guard payload.utf8.count <= PluginResultLimits.maxCachePayloadBytes,
+                      let data = payload.data(using: .utf8),
                       let decoded = try? JSONDecoder().decode([PluginResult].self, from: data)
                 else { return nil }
                 return decoded
@@ -77,6 +81,7 @@ enum PluginCacheStore {
         guard isEnabled else { return }
         let h = hash(input)
         guard let body = try? JSONEncoder().encode(results),
+              body.count <= PluginResultLimits.maxCachePayloadBytes,
               let plaintext = String(data: body, encoding: .utf8)
         else { return }
         let payload = FieldCrypto.encrypt(plaintext)
