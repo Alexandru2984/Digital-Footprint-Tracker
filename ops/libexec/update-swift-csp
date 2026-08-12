@@ -39,8 +39,9 @@ chmod 0700 "$BACKUP_DIR"
 temporary="$(mktemp --tmpdir="$(dirname "$CSP")" .swift-csp.XXXXXX)"
 restore_temporary=""
 backup="$BACKUP_DIR/swift-csp.$(date -u +%Y%m%dT%H%M%S%N).conf"
-# Invoked indirectly by the EXIT trap.
-# shellcheck disable=SC2329
+# Invoked indirectly by the EXIT trap. ShellCheck versions before and after
+# its reachability-analysis change report this as SC2317 and SC2329 respectively.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     [[ -z "$temporary" ]] || rm -f -- "$temporary"
     [[ -z "$restore_temporary" ]] || rm -f -- "$restore_temporary"
