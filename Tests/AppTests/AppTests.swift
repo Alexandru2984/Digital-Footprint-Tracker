@@ -219,11 +219,10 @@ final class AppTests: XCTestCase {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
         _ = try await registerAndLogin(app, username: "darkweb-unique")
-        let user = try XCTUnwrap(
-            try await User.query(on: app.db)
-                .filter(\.$username == "darkweb-unique")
-                .first()
-        )
+        let loadedUser = try await User.query(on: app.db)
+            .filter(\.$username == "darkweb-unique")
+            .first()
+        let user = try XCTUnwrap(loadedUser)
         let userID = try XCTUnwrap(user.id)
 
         let first = DarkWebInvestigation(
