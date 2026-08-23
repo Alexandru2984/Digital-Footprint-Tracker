@@ -11,7 +11,7 @@ WorkingDirectory=/srv/swift-vapor/next
 EnvironmentFile=/home/micu/swift+vapor/.env
 # /usr/bin/env overrides any stale values from the shared legacy EnvironmentFile;
 # the web unit independently forces AUTO_MIGRATE=false.
-ExecStart=/usr/bin/env AUTO_MIGRATE=true REPORT_SCRIPT_PATH=/srv/swift-vapor/next/scripts/generate_report.py /srv/swift-vapor/next/Run migrate --yes --env production
+ExecStart=/usr/bin/env AUTO_MIGRATE=true DARK_WEB_ENABLED=false REPORT_SCRIPT_PATH=/srv/swift-vapor/next/scripts/generate_report.py /srv/swift-vapor/next/Run migrate --yes --env production
 
 NoNewPrivileges=true
 ProtectSystem=strict

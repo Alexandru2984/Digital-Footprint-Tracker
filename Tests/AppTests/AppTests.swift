@@ -73,6 +73,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
     app.migrations.add(CreateDarkWebInvestigations())
+    app.migrations.add(EnforceDarkWebActiveJobUniqueness())
     app.migrations.add(CreateEncryptionMetadata())
     app.migrations.add(MigrateSensitiveFieldEncryption())
     app.migrations.add(EncryptTagNames())
@@ -212,6 +213,42 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(DarkWebTargetKind.detect("+40721234567"), .phone)
         XCTAssertEqual(DarkWebTargetKind.detect("+40-721-234-567"), .phone)
         XCTAssertEqual(DarkWebTargetKind.detect("handle"), .username)
+    }
+
+    func testDarkWebQueueEnforcesOneActiveJobPerUserAtDatabaseBoundary() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        _ = try await registerAndLogin(app, username: "darkweb-unique")
+        let user = try XCTUnwrap(
+            try await User.query(on: app.db)
+                .filter(\.$username == "darkweb-unique")
+                .first()
+        )
+        let userID = try XCTUnwrap(user.id)
+
+        let first = DarkWebInvestigation(
+            userID: userID, target: "first.example.test", retentionHours: 72
+        )
+        try await first.save(on: app.db)
+
+        let competing = DarkWebInvestigation(
+            userID: userID, target: "second.example.test", retentionHours: 72
+        )
+        do {
+            try await competing.save(on: app.db)
+            XCTFail("The partial unique index accepted two active jobs for one user.")
+        } catch let error as any DatabaseError {
+            XCTAssertTrue(error.isConstraintFailure)
+        }
+
+        first.status = .cancelled
+        first.cancelRequested = true
+        first.completedAt = Date()
+        try await first.save(on: app.db)
+        let replacement = DarkWebInvestigation(
+            userID: userID, target: "replacement.example.test", retentionHours: 72
+        )
+        try await replacement.save(on: app.db)
     }
 
     func testDarkWebWorkerContractRejectsHostileOrOversizedResults() throws {
@@ -2764,6 +2801,71 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testAccountExportIncludesInvestigationData() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "export-investigations")
+        let userCandidate = try await User.query(on: app.db)
+            .filter(\.$username == "export-investigations")
+            .first()
+        let user = try XCTUnwrap(userCandidate)
+        let userID = try XCTUnwrap(user.id)
+
+        let board = Investigation(
+            userID: userID,
+            name: "Exposure case",
+            data: #"{"nodes":[{"id":"root"}],"edges":[]}"#
+        )
+        try await board.save(on: app.db)
+
+        let result = DarkWebWorkerResult(
+            schemaVersion: 1,
+            status: "completed",
+            findings: [DarkWebFinding(
+                type: "domain",
+                value: "example.test",
+                source: "Torch",
+                confidence: 0.8,
+                firstSeen: "2024-01",
+                lastSeen: nil
+            )],
+            relationships: [],
+            sources: ["Torch"]
+        )
+        let job = DarkWebInvestigation(
+            userID: userID,
+            target: "example.test",
+            retentionHours: 72
+        )
+        job.status = .completed
+        job.resultJSON = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        job.resultCount = 1
+        job.completedAt = Date()
+        try await job.save(on: app.db)
+
+        try await app.test(.GET, "/account/export", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let root = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(response.body.readableBytesView))
+                    as? [String: Any]
+            )
+            XCTAssertEqual(root["formatVersion"] as? Int, 2)
+            let boards = try XCTUnwrap(root["investigationBoards"] as? [[String: Any]])
+            XCTAssertEqual(boards.count, 1)
+            XCTAssertEqual(boards[0]["name"] as? String, "Exposure case")
+            let investigations = try XCTUnwrap(
+                root["darkWebInvestigations"] as? [[String: Any]]
+            )
+            XCTAssertEqual(investigations.count, 1)
+            XCTAssertEqual(investigations[0]["target"] as? String, "example.test")
+            let exportedResult = try XCTUnwrap(investigations[0]["result"] as? [String: Any])
+            let findings = try XCTUnwrap(exportedResult["findings"] as? [[String: Any]])
+            XCTAssertEqual(findings.first?["value"] as? String, "example.test")
+        })
+    }
+
     func testAccountDeleteRequiresAuth() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
@@ -2836,6 +2938,18 @@ final class AppTests: XCTestCase {
         let scan = Scan(input: "erasure-target", status: .completed, userID: userID)
         try await scan.save(on: app.db)
         let scanID = try XCTUnwrap(scan.id)
+        let board = Investigation(
+            userID: userID,
+            name: "Erase board",
+            data: #"{"nodes":[],"edges":[]}"#
+        )
+        try await board.save(on: app.db)
+        let darkWebJob = DarkWebInvestigation(
+            userID: userID,
+            target: "erase.example",
+            retentionHours: 72
+        )
+        try await darkWebJob.save(on: app.db)
         let share = SharedReport(
             scanID: scanID,
             tokenHash: sha256Hex("abcdefghijklmnopqrstuvwxyzABCDEF")
@@ -2855,9 +2969,13 @@ final class AppTests: XCTestCase {
         let deletedUser = try await User.find(userID, on: app.db)
         let deletedScan = try await Scan.find(scanID, on: app.db)
         let remainingShares = try await SharedReport.query(on: app.db).count()
+        let remainingBoards = try await Investigation.query(on: app.db).count()
+        let remainingDarkWebJobs = try await DarkWebInvestigation.query(on: app.db).count()
         XCTAssertNil(deletedUser)
         XCTAssertNil(deletedScan)
         XCTAssertEqual(remainingShares, 0)
+        XCTAssertEqual(remainingBoards, 0)
+        XCTAssertEqual(remainingDarkWebJobs, 0)
 
         let retainedAudit = try await AuditLog.query(on: app.db).all()
         XCTAssertFalse(retainedAudit.isEmpty)

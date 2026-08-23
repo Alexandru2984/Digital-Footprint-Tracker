@@ -63,9 +63,10 @@ struct DarkWebConfiguration: Sendable {
             throw Abort(.internalServerError,
                         reason: "DARK_WEB_WORKER_URL must be an HTTP loopback origin without credentials or a path.")
         }
-        guard let secret = Environment.get("DARK_WEB_SHARED_SECRET"), secret.utf8.count >= 32 else {
+        let secret = try sharedSecret()
+        guard let secret else {
             throw Abort(.internalServerError,
-                        reason: "DARK_WEB_SHARED_SECRET must contain at least 32 bytes when dark-web jobs are enabled.")
+                        reason: "A valid dark-web worker shared secret is required when dark-web jobs are enabled.")
         }
 
         return DarkWebConfiguration(
@@ -90,6 +91,47 @@ struct DarkWebConfiguration: Sendable {
     private static func boundedInt(_ raw: String?, fallback: Int, range: ClosedRange<Int>) -> Int {
         guard let raw, let value = Int(raw), range.contains(value) else { return fallback }
         return value
+    }
+
+    private static func sharedSecret() throws -> String? {
+        let inline = Environment.get("DARK_WEB_SHARED_SECRET")?.trimmingCharacters(in: .newlines)
+        let file = Environment.get("DARK_WEB_SHARED_SECRET_FILE")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard inline?.isEmpty != false || file?.isEmpty != false else {
+            throw Abort(.internalServerError,
+                        reason: "Configure only one dark-web shared-secret source.")
+        }
+
+        let secret: String?
+        if let file, !file.isEmpty {
+            guard file.hasPrefix("/"), file != "/" else {
+                throw Abort(.internalServerError,
+                            reason: "DARK_WEB_SHARED_SECRET_FILE must be a specific absolute path.")
+            }
+            let data: Data
+            do {
+                let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: file))
+                defer { try? handle.close() }
+                data = try handle.read(upToCount: 513) ?? Data()
+            } catch {
+                throw Abort(.internalServerError,
+                            reason: "The dark-web shared-secret credential cannot be read.")
+            }
+            guard data.count <= 512, let value = String(data: data, encoding: .utf8) else {
+                throw Abort(.internalServerError,
+                            reason: "The dark-web shared-secret credential is invalid.")
+            }
+            secret = value.trimmingCharacters(in: .newlines)
+        } else {
+            secret = inline
+        }
+
+        guard let secret, (32...512).contains(secret.utf8.count),
+              secret.unicodeScalars.allSatisfy({ (33...126).contains($0.value) }) else {
+            return nil
+        }
+        return secret
     }
 }
 

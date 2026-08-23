@@ -4,6 +4,7 @@ import Vapor
 struct DarkWebInvestigationController: RouteCollection {
     struct StatusResponse: Content {
         let enabled: Bool
+        let workerHealthy: Bool
         let retentionHours: Int
         let maxOutstandingJobs: Int
         let maxJobsPerUserPerDay: Int
@@ -60,8 +61,12 @@ struct DarkWebInvestigationController: RouteCollection {
     func status(req: Request) async throws -> StatusResponse {
         _ = try await verifiedUser(req)
         let config = req.application.darkWebConfiguration
+        let workerHealthy = await DarkWebWorkerClient.isHealthy(
+            configuration: config, on: req.application
+        )
         return StatusResponse(
             enabled: config.enabled,
+            workerHealthy: workerHealthy,
             retentionHours: config.retentionHours,
             maxOutstandingJobs: config.maxOutstandingJobs,
             maxJobsPerUserPerDay: config.maxJobsPerUserPerDay
@@ -81,7 +86,7 @@ struct DarkWebInvestigationController: RouteCollection {
 
     @Sendable
     func create(req: Request) async throws -> Response {
-        let user = try await verifiedUser(req)
+        let user = try await verifiedUser(req, requireRecentAuthentication: true)
         let config = req.application.darkWebConfiguration
         guard config.enabled else {
             throw Abort(.serviceUnavailable, reason: "Dark-web investigations are not enabled on this deployment.")
@@ -130,7 +135,12 @@ struct DarkWebInvestigationController: RouteCollection {
         let job = DarkWebInvestigation(
             userID: user.id!, target: target, retentionHours: config.retentionHours
         )
-        try await job.save(on: req.db)
+        do {
+            try await job.save(on: req.db)
+        } catch let error as any DatabaseError where error.isConstraintFailure {
+            throw Abort(.conflict,
+                        reason: "This account already has an active dark-web investigation.")
+        }
         await AuditLogger.log(
             req: req,
             action: "dark_web_investigation_create",
@@ -217,11 +227,20 @@ struct DarkWebInvestigationController: RouteCollection {
         )
     }
 
-    private func verifiedUser(_ req: Request) async throws -> User {
+    private func verifiedUser(
+        _ req: Request,
+        requireRecentAuthentication: Bool = false
+    ) async throws -> User {
         guard req.apiKeyAuthorization == nil else {
             throw Abort(.forbidden, reason: "Dark-web investigations require an interactive user session.")
         }
-        guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
+        let user: User
+        if requireRecentAuthentication {
+            user = try await req.requireRecentSessionUser()
+        } else {
+            guard let current = try await req.currentUser() else { throw Abort(.unauthorized) }
+            user = current
+        }
         guard user.emailVerified else {
             throw Abort(.forbidden, reason: "Verify your email before running dark-web investigations.")
         }

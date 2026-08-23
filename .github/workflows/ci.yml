@@ -111,7 +111,9 @@ jobs:
             scripts/build-release.sh
             scripts/check-backup.sh
             scripts/deploy.sh
+            scripts/install-voidaccess.sh
             scripts/release-lib.sh
+            scripts/update-cloudflare-ips.sh
             scripts/update-csp-hashes.sh
             scripts/tests/check-backup.test.sh
             scripts/tests/csp-hashes.test.sh
@@ -119,11 +121,20 @@ jobs:
             ops/libexec/update-swift-csp
           )
           bash -n "${scripts[@]}"
-          shellcheck "${scripts[@]}"
+          sh -n worker/voidaccess-entrypoint.sh
+          shellcheck "${scripts[@]}" worker/voidaccess-entrypoint.sh
           sudo visudo -cf ops/sudoers/swift-vapor-deploy
           scripts/tests/check-backup.test.sh
           scripts/tests/csp-hashes.test.sh
           scripts/tests/release-lib.test.sh
+          python3 -m py_compile worker/voidaccess_worker.py scripts/tests/voidaccess-worker.test.py
+          python3 scripts/tests/voidaccess-worker.test.py
+
+      - name: Audit locked dependencies with pinned OSV-Scanner
+        run: |
+          docker run --rm --volume "$PWD:/scan:ro" \
+            ghcr.io/google/osv-scanner@sha256:8108ae94eadea5a02c9bec6e646909d5b790b44bd62d7f5b7f0b1d6d0ffc7734 \
+            scan source --recursive /scan
 
   deploy:
     name: Deploy to VPS

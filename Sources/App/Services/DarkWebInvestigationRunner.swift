@@ -9,11 +9,13 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
     private var loopTask: Task<Void, Never>?
     private var activeJobID: UUID?
     private var activeTask: Task<Void, Never>?
+    private var nextPurgeAt = Date.distantPast
 
     nonisolated func didBoot(_ application: Application) throws {
-        guard application.darkWebConfiguration.enabled else {
-            application.logger.notice("[DarkWeb] Worker integration disabled.")
-            return
+        if application.darkWebConfiguration.enabled {
+            application.logger.notice("[DarkWeb] Worker integration enabled.")
+        } else {
+            application.logger.notice("[DarkWeb] Dispatch disabled; retention cleanup remains active.")
         }
         let app = application
         Task { await self.start(app: app) }
@@ -52,12 +54,19 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
     }
 
     private func recoverInterruptedJobs(app: Application) async {
-        let jobs = (try? await DarkWebInvestigation.query(on: app.db)
-            .filter(\.$statusRaw == DarkWebInvestigationStatus.running.rawValue)
-            .all()) ?? []
+        let recoverableStatuses: [DarkWebInvestigationStatus] =
+            app.darkWebConfiguration.enabled ? [.running] : [.pending, .running]
+        var jobs: [DarkWebInvestigation] = []
+        for status in recoverableStatuses {
+            jobs += (try? await DarkWebInvestigation.query(on: app.db)
+                .filter(\.$statusRaw == status.rawValue)
+                .all()) ?? []
+        }
         for job in jobs {
-            job.status = job.cancelRequested ? .cancelled : .failed
-            job.failureCode = job.cancelRequested ? nil : "worker_interrupted"
+            let featureDisabled = !app.darkWebConfiguration.enabled
+            job.status = (featureDisabled || job.cancelRequested) ? .cancelled : .failed
+            job.failureCode = job.status == .failed ? "worker_interrupted" : nil
+            if featureDisabled { job.cancelRequested = true }
             job.completedAt = Date()
             job.leaseExpiresAt = nil
             try? await job.save(on: app.db)
@@ -65,7 +74,11 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
     }
 
     private func tick(app: Application) async {
-        await purgeExpired(app: app)
+        if Date() >= nextPurgeAt {
+            await purgeExpired(app: app)
+            nextPurgeAt = Date().addingTimeInterval(3_600)
+        }
+        guard app.darkWebConfiguration.enabled else { return }
         guard activeTask == nil else { return }
 
         guard let job = try? await DarkWebInvestigation.query(on: app.db)

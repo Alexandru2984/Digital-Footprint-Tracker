@@ -251,9 +251,10 @@ components:
 
     DarkWebStatus:
       type: object
-      required: [enabled, retentionHours, maxOutstandingJobs, maxJobsPerUserPerDay]
+      required: [enabled, workerHealthy, retentionHours, maxOutstandingJobs, maxJobsPerUserPerDay]
       properties:
         enabled: { type: boolean }
+        workerHealthy: { type: boolean, description: Authenticated loopback worker health at request time. }
         retentionHours: { type: integer, minimum: 1, maximum: 168 }
         maxOutstandingJobs: { type: integer, minimum: 1 }
         maxJobsPerUserPerDay: { type: integer, minimum: 1 }
@@ -954,12 +955,14 @@ paths:
                 type: object
                 properties:
                   exportedAt:    { type: integer, format: int64 }
-                  formatVersion: { type: integer }
+                  formatVersion: { type: integer, example: 2 }
                   profile:       { type: object }
                   scans:         { type: array,  items: { $ref: '#/components/schemas/Scan' } }
                   scheduled:     { type: array,  items: { type: object } }
                   tags:          { type: array,  items: { type: object } }
                   notifications: { type: array,  items: { type: object } }
+                  investigationBoards: { type: array, items: { type: object } }
+                  darkWebInvestigations: { type: array, items: { $ref: '#/components/schemas/DarkWebDetail' } }
                   apiKeys:       { type: array,  items: { type: object } }
                   auditLog:      { type: array,  items: { type: object } }
         '401':

@@ -68,6 +68,41 @@ enum DarkWebWorkerClient {
     static let maximumFindings = 250
     static let maximumRelationships = 500
 
+    private struct HealthResponse: Decodable {
+        let status: String
+    }
+
+    static func isHealthy(
+        configuration: DarkWebConfiguration,
+        on app: Application
+    ) async -> Bool {
+        guard configuration.enabled,
+              let baseURL = configuration.workerURL,
+              let secret = configuration.sharedSecret,
+              let endpoint = URL(string: "/health", relativeTo: baseURL)?.absoluteURL else {
+            return false
+        }
+        let timestamp = String(Int(Date().timeIntervalSince1970))
+        let signature = sign(
+            timestamp: timestamp, method: "GET", path: "/health", body: Data(), secret: secret
+        )
+        var request = HTTPClientRequest(url: endpoint.absoluteString)
+        request.method = .GET
+        request.headers.add(name: "X-DFT-Timestamp", value: timestamp)
+        request.headers.add(name: "X-DFT-Signature", value: signature)
+        do {
+            let response = try await app.http.client.shared.execute(request, timeout: .seconds(2))
+            guard response.status == .ok else { return false }
+            let buffer = try await response.body.collect(upTo: 1_024)
+            let health = try JSONDecoder().decode(
+                HealthResponse.self, from: Data(buffer.readableBytesView)
+            )
+            return health.status == "ok"
+        } catch {
+            return false
+        }
+    }
+
     static func execute(
         jobID: UUID,
         target: String,
@@ -197,6 +232,11 @@ enum DarkWebWorkerClient {
             return value.range(of: #"^\d{4}(-\d{2}(-\d{2})?)?$"#,
                                options: .regularExpression) != nil
         }
+        func safeRelationshipType(_ value: String) -> Bool {
+            safeText(value, maxBytes: 64)
+                && value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._ \-]{0,63}$"#,
+                               options: .regularExpression) != nil
+        }
 
         guard safeText(originalTarget, maxBytes: 255),
               result.sources.allSatisfy({ safeText($0, maxBytes: 80) }),
@@ -214,7 +254,7 @@ enum DarkWebWorkerClient {
               result.relationships.allSatisfy({ relationship in
                   safeText(relationship.source, maxBytes: 512)
                     && safeText(relationship.target, maxBytes: 512)
-                    && safeText(relationship.type, maxBytes: 64)
+                    && safeRelationshipType(relationship.type)
                     && relationship.confidence.isFinite
                     && (0...1).contains(relationship.confidence)
               }) else {

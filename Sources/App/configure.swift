@@ -129,6 +129,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateInvestigations())
     app.migrations.add(AddWatchToInvestigations())
     app.migrations.add(CreateDarkWebInvestigations())
+    app.migrations.add(EnforceDarkWebActiveJobUniqueness())
     app.migrations.add(CreateEncryptionMetadata())
     app.migrations.add(MigrateSensitiveFieldEncryption())
     app.migrations.add(EncryptTagNames())

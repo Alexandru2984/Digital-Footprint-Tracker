@@ -103,6 +103,53 @@ struct AccountController: RouteCollection {
             "createdAt":       n.createdAt.map { $0.timeIntervalSince1970 } as Any
         ] }
 
+        let boards = try await Investigation.query(on: req.db)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let boardsPayload: [[String: Any]] = boards.map { board in
+            var row: [String: Any] = [
+                "id": board.id?.uuidString ?? "",
+                "name": board.name,
+                "watched": board.watched,
+                "watchInterval": board.watchInterval as Any,
+                "nextCheckAt": board.nextCheckAt.map { $0.timeIntervalSince1970 } as Any,
+                "lastCheckedAt": board.lastCheckedAt.map { $0.timeIntervalSince1970 } as Any,
+                "createdAt": board.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "updatedAt": board.updatedAt.map { $0.timeIntervalSince1970 } as Any,
+            ]
+            if let data = board.data.data(using: .utf8),
+               let graph = try? JSONSerialization.jsonObject(with: data) {
+                row["data"] = graph
+            }
+            return row
+        }
+
+        let darkWebJobs = try await DarkWebInvestigation.query(on: req.db)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let darkWebPayload: [[String: Any]] = darkWebJobs.map { job in
+            var row: [String: Any] = [
+                "id": job.id?.uuidString ?? "",
+                "target": job.target,
+                "targetKind": job.targetKind.rawValue,
+                "status": job.status.rawValue,
+                "resultCount": job.resultCount,
+                "failureCode": job.failureCode as Any,
+                "cancelRequested": job.cancelRequested,
+                "createdAt": job.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "startedAt": job.startedAt.map { $0.timeIntervalSince1970 } as Any,
+                "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
+                "expiresAt": job.expiresAt.timeIntervalSince1970,
+            ]
+            if let result = job.resultJSON?.data(using: .utf8),
+               let normalized = try? JSONSerialization.jsonObject(with: result) {
+                row["result"] = normalized
+            }
+            return row
+        }
+
         // API keys — metadata only. Never include the hashed key column; an
         // attacker with the hash can still brute-force short keys offline.
         let apiKeys = try await APIKey.query(on: req.db).filter(\.$user.$id == userID).all()
@@ -128,12 +175,14 @@ struct AccountController: RouteCollection {
 
         let bundle: [String: Any] = [
             "exportedAt":    Date().timeIntervalSince1970,
-            "formatVersion": 1,
+            "formatVersion": 2,
             "profile":       profile,
             "scans":         scansPayload,
             "scheduled":     scheduledPayload,
             "tags":          tagsPayload,
             "notifications": notificationsPayload,
+            "investigationBoards": boardsPayload,
+            "darkWebInvestigations": darkWebPayload,
             "apiKeys":       apiKeysPayload,
             "auditLog":      auditPayload
         ]
@@ -188,7 +237,7 @@ struct AccountController: RouteCollection {
         try await req.db.transaction { database in
             // FK cascade summary:
             //   scheduled_scans, notifications, tags, API keys,
-            //   investigations                                  → CASCADE
+            //   investigations, dark_web_investigations         → CASCADE
             //   scans.user_id                                    → SET NULL
             // For erasure we delete scans before the user, otherwise their
             // encrypted targets would survive as anonymous history.

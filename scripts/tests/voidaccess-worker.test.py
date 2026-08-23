@@ -50,6 +50,21 @@ def request(port: int, secret: str, path: str, payload: dict | None):
     return response.status, json.loads(data)
 
 
+def health(port: int, secret: str) -> int:
+    timestamp = str(int(time.time()))
+    path = "/health"
+    headers = {
+        "X-DFT-Timestamp": timestamp,
+        "X-DFT-Signature": signature(secret, timestamp, "GET", path, b""),
+    }
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+    connection.request("GET", path, headers=headers)
+    response = connection.getresponse()
+    response.read()
+    connection.close()
+    return response.status
+
+
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
     worker = repository / "worker" / "voidaccess_worker.py"
@@ -102,6 +117,10 @@ payload = {
             **os.environ,
             "VOIDACCESS_SHARED_SECRET": secret,
             "VOIDACCESS_EXECUTABLE": str(fake),
+            # /bin/true accepts the preflight's `-c` arguments, giving this
+            # adapter contract test a tiny fake NLP runtime without weakening
+            # the production check.
+            "VOIDACCESS_PYTHON": "/bin/true",
             "VOIDACCESS_LISTEN_PORT": str(port),
             "VOIDACCESS_JOB_TIMEOUT_SECONDS": "60",
         }
@@ -114,15 +133,17 @@ payload = {
         try:
             for _ in range(100):
                 try:
-                    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
-                    connection.request("GET", "/health")
-                    if connection.getresponse().status == 200:
-                        connection.close()
+                    if health(port, secret) == 200:
                         break
                 except OSError:
                     time.sleep(0.05)
             else:
                 raise AssertionError("worker did not become healthy")
+
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+            connection.request("GET", "/health")
+            assert connection.getresponse().status == 401
+            connection.close()
 
             job_id = str(uuid.uuid4())
             payload = {

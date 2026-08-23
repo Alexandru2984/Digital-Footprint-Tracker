@@ -13,6 +13,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,8 @@ MAX_CLOCK_SKEW_SECONDS = 60
 MAX_JOB_SECONDS = int(os.environ.get("VOIDACCESS_JOB_TIMEOUT_SECONDS", "540"))
 TARGET_RE = re.compile(r"^[A-Za-z0-9@._+\-]{1,255}$")
 DATE_RE = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2})?)?$")
+SOURCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+ \-]{0,79}$")
+RELATIONSHIP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ \-]{0,63}$")
 ALLOWED_KINDS = {"email", "domain", "phone", "username"}
 ALLOWED_DEPTH = {"shallow"}
 NORMALIZED_TYPES = {
@@ -132,6 +135,7 @@ _active_job_id: str | None = None
 _active_process: subprocess.Popen | None = None
 _replay_lock = threading.Lock()
 _seen_signatures: dict[str, float] = {}
+_shared_secret = b""
 
 
 def _bounded_text(value: object, maximum: int) -> str | None:
@@ -161,7 +165,11 @@ def _confidence(value: object) -> float:
 def _source_name(entity: dict) -> str:
     source = _bounded_text(entity.get("corroborating_sources"), 80)
     if source:
-        return source.split(",", 1)[0].strip()
+        candidate = source.split(",", 1)[0].strip()
+        if "://" in candidate:
+            candidate = urlsplit(candidate).hostname or ""
+        if SOURCE_RE.fullmatch(candidate):
+            return candidate
     source_url = _bounded_text(entity.get("source_url"), 2048)
     if source_url:
         host = urlsplit(source_url).hostname
@@ -237,7 +245,7 @@ def normalize(raw: dict) -> dict:
             source = id_to_value.get(str(relationship.get("entity_a_id", "")))
             target = id_to_value.get(str(relationship.get("entity_b_id", "")))
             kind = _bounded_text(relationship.get("relationship_type"), 64)
-            if not source or not target or not kind:
+            if not source or not target or not kind or not RELATIONSHIP_RE.fullmatch(kind):
                 continue
             relationships.append({
                 "source": source,
@@ -258,8 +266,71 @@ def normalize(raw: dict) -> dict:
     }
 
 
-def verify_request(headers, method: str, path: str, body: bytes) -> bool:
-    secret = os.environ.get("VOIDACCESS_SHARED_SECRET", "").encode()
+def _load_shared_secret() -> bytes:
+    inline = os.environ.get("VOIDACCESS_SHARED_SECRET", "")
+    file_name = os.environ.get("VOIDACCESS_SHARED_SECRET_FILE", "")
+    if inline and file_name:
+        raise RuntimeError("multiple_shared_secret_sources")
+    if file_name:
+        path = Path(file_name)
+        if not path.is_absolute() or path == Path("/") or not path.is_file():
+            raise RuntimeError("invalid_shared_secret_file")
+        if path.stat().st_size > 512:
+            raise RuntimeError("invalid_shared_secret_file")
+        try:
+            secret = path.read_bytes().rstrip(b"\r\n")
+        except OSError as error:
+            raise RuntimeError("invalid_shared_secret_file") from error
+    else:
+        secret = inline.encode()
+    if not 32 <= len(secret) <= 512 or any(byte < 33 or byte > 126 for byte in secret):
+        raise RuntimeError("invalid_shared_secret")
+    return secret
+
+
+def _validate_runtime(check_tor: bool) -> None:
+    executable = Path(os.environ.get(
+        "VOIDACCESS_EXECUTABLE", "/opt/voidaccess/current/venv/bin/voidaccess"
+    ))
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise RuntimeError("worker_not_installed")
+
+    runtime_python = os.environ.get("VOIDACCESS_PYTHON")
+    python_path = Path(runtime_python) if runtime_python else executable.parent / "python"
+    if not python_path.is_file() or not os.access(python_path, os.X_OK):
+        raise RuntimeError("worker_python_unavailable")
+    result = subprocess.run(
+        [str(python_path), "-c", "import spacy; spacy.load('en_core_web_sm')"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=30,
+        check=False,
+        env={
+            "HOME": os.environ.get("HOME", "/var/lib/swift-voidaccess"),
+            "PATH": "/usr/bin:/bin",
+            "PYTHONNOUSERSITE": "1",
+        },
+    )
+    if result.returncode != 0:
+        raise RuntimeError("spacy_model_unavailable")
+
+    if check_tor:
+        tor_host = os.environ.get("TOR_PROXY_HOST", "127.0.0.1")
+        tor_port = int(os.environ.get("TOR_PROXY_PORT", "9050"))
+        if tor_host not in {"127.0.0.1", "::1"} or not 1 <= tor_port <= 65535:
+            raise RuntimeError("invalid_tor_endpoint")
+        try:
+            with socket.create_connection((tor_host, tor_port), timeout=2):
+                pass
+        except OSError as error:
+            raise RuntimeError("tor_unavailable") from error
+
+
+def verify_request(
+    headers, method: str, path: str, body: bytes, *, reject_replay: bool = True
+) -> bool:
+    secret = _shared_secret
     timestamp = headers.get("X-DFT-Timestamp", "")
     signature = headers.get("X-DFT-Signature", "")
     if len(secret) < 32 or not timestamp.isdigit() or len(signature) != 64:
@@ -270,6 +341,8 @@ def verify_request(headers, method: str, path: str, body: bytes) -> bool:
     expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature, expected):
         return False
+    if not reject_replay:
+        return True
     now = time.time()
     with _replay_lock:
         stale = [item for item, seen_at in _seen_signatures.items() if now - seen_at > 120]
@@ -301,7 +374,9 @@ def run_voidaccess(payload: dict) -> dict:
     ):
         raise ValueError("invalid_request")
 
-    executable = os.environ.get("VOIDACCESS_EXECUTABLE", "/opt/voidaccess/venv/bin/voidaccess")
+    executable = os.environ.get(
+        "VOIDACCESS_EXECUTABLE", "/opt/voidaccess/current/venv/bin/voidaccess"
+    )
     if not Path(executable).is_file() or not os.access(executable, os.X_OK):
         raise RuntimeError("worker_not_installed")
 
@@ -389,10 +464,19 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/health":
-            self._json(200, {"status": "ok"})
-        else:
+        if self.path != "/health":
             self._json(404, {"error": "not_found"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length != 0 or not verify_request(
+            self.headers, "GET", self.path, b"", reject_replay=False
+        ):
+            self._json(401, {"error": "unauthorized"})
+            return
+        self._json(200, {"status": "ok"})
 
     def do_POST(self) -> None:  # noqa: N802
         cancel_match = re.fullmatch(
@@ -452,6 +536,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    global _shared_secret
+    args = sys.argv[1:]
+    if args not in ([], ["--check"]):
+        raise SystemExit("Usage: voidaccess_worker.py [--check]")
+    _shared_secret = _load_shared_secret()
+    _validate_runtime(check_tor=args == ["--check"])
+    if args == ["--check"]:
+        return
     host = os.environ.get("VOIDACCESS_LISTEN_HOST", "127.0.0.1")
     port = int(os.environ.get("VOIDACCESS_LISTEN_PORT", "8766"))
     if host not in {"127.0.0.1", "::1"}:

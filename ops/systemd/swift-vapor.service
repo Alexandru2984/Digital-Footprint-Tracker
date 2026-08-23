@@ -7,6 +7,8 @@ User=swift-vapor
 Group=swift-vapor
 WorkingDirectory=/srv/swift-vapor/current
 EnvironmentFile=/home/micu/swift+vapor/.env
+LoadCredentialEncrypted=dark-web-shared-secret:/etc/credstore.encrypted/swift-vapor-dark-web-shared-secret
+Environment=DARK_WEB_SHARED_SECRET_FILE=%d/dark-web-shared-secret
 # ExecStart's env assignments deliberately override stale values in the legacy
 # EnvironmentFile: only the migration unit may opt production into migrations.
 ExecStart=/usr/bin/env AUTO_MIGRATE=false DARK_WEB_WORKER_URL=http://127.0.0.1:8766 REPORT_SCRIPT_PATH=/srv/swift-vapor/current/scripts/generate_report.py /srv/swift-vapor/current/Run serve --env production --hostname 127.0.0.1 --port 8085

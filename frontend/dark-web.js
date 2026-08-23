@@ -157,13 +157,16 @@
     try {
       var config = await api('GET', '/status');
       state.config = config && typeof config === 'object' ? config : null;
-      var enabled = !!(state.config && state.config.enabled);
-      setAvailability(enabled, enabled ? 'Available' : 'Disabled');
+      var configured = !!(state.config && state.config.enabled);
+      var enabled = configured && state.config.workerHealthy === true;
+      setAvailability(enabled, enabled ? 'Available' : configured ? 'Worker down' : 'Disabled');
       if (enabled) {
         setMessage('Up to ' + number(state.config.maxJobsPerUserPerDay, 3) + ' jobs/day · ' +
           number(state.config.retentionHours, 72) + 'h encrypted retention.', 'info');
-      } else {
+      } else if (!configured) {
         setMessage('The isolated worker is disabled on this deployment.', 'error');
+      } else {
+        setMessage('The isolated worker is not healthy. No new job can be submitted from this console.', 'error');
       }
       return enabled;
     } catch (error) {
@@ -398,7 +401,7 @@
 
   async function submitInvestigation(event) {
     event.preventDefault();
-    if (state.busy || !state.config || !state.config.enabled) return;
+    if (state.busy || !state.config || !state.config.enabled || !state.config.workerHealthy) return;
     var target = byID('dark-web-target').value.trim();
     if (!target) { setMessage('Enter a target first.', 'error'); byID('dark-web-target').focus(); return; }
     if (!byID('dark-web-ack').checked) { setMessage('Confirm that the investigation is authorized.', 'error'); byID('dark-web-ack').focus(); return; }
@@ -419,7 +422,8 @@
       setMessage(error.message, 'error');
     } finally {
       state.busy = false;
-      setAvailability(!!(state.config && state.config.enabled), state.config && state.config.enabled ? 'Available' : 'Disabled');
+      var available = !!(state.config && state.config.enabled && state.config.workerHealthy);
+      setAvailability(available, available ? 'Available' : state.config && state.config.enabled ? 'Worker down' : 'Disabled');
     }
   }
 
