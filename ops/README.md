@@ -80,6 +80,10 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
   the newest retained encrypted dump and the success marker written only after
   backup authentication and decompression checks. A passing result does not
   replace an isolated restore drill.
+- `scripts/restore-drill.sh` performs that drill only inside a digest-pinned,
+  networkless, tmpfs-backed PostgreSQL container with no host mounts. It
+  publishes a no-clobber JSON recovery manifest after logical read-back and
+  container disposal; see `docs/RECOVERY_DRILL.md`.
 
 ## CI deploy trust
 

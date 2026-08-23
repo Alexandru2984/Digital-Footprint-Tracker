@@ -12,7 +12,8 @@ parallel only when their dependencies are satisfied.
   still requires a clean accepted run before release.
 - Prepared: immutable commit-named releases, explicit production migrations,
   backend/frontend/CSP rollback, dedicated non-login runtime, verified-backup
-  metrics and responsive/mobile workflow hardening.
+  metrics, a guarded isolated restore drill with JSON evidence, and
+  responsive/mobile workflow hardening.
 - Live mitigations: the SPA CSP now has the exact hashes plus a unique
   per-request nonce accepted by Cloudflare JSD; direct IPv4 origin requests and
   forged Cloudflare headers return 403 while edge/onion traffic remains healthy.
@@ -55,7 +56,7 @@ secrets, and have per-plugin egress allowlists and resource budgets.
 |---|---|---|---|
 | Restore main SPA/CSP compatibility | Exact hashes + JSD nonce tested | **Edge probes pass; browser gate open** | Real browser loads app/JSD with zero CSP errors |
 | Encrypted backup credential/job | Prepared | **Disabled/missing** | New encrypted dump and healthy marker |
-| Restore/offsite recovery | Runbook only | **Open** | Isolated restore + off-host immutable copy + measured RPO/RTO |
+| Restore/offsite recovery | Guarded drill + manifest prepared | **Open** | Isolated restore + off-host immutable copy + measured RPO/RTO |
 | Dedicated runtime identity | Prepared | **Open** | `swift-vapor`, `/srv`, no personal-home access, systemd score reviewed |
 | Narrow deploy authority | Prepared sudoers | **Open** | Broad sudo removed; forced keys only; independent root recovery retained |
 | Immutable atomic deployment | Prepared/tested | **Open** | Manifest SHA equals production, frontend/backend/CSP rollback rehearsed |

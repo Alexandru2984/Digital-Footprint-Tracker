@@ -113,11 +113,13 @@ jobs:
             scripts/deploy.sh
             scripts/install-voidaccess.sh
             scripts/release-lib.sh
+            scripts/restore-drill.sh
             scripts/update-cloudflare-ips.sh
             scripts/update-csp-hashes.sh
             scripts/tests/check-backup.test.sh
             scripts/tests/csp-hashes.test.sh
             scripts/tests/release-lib.test.sh
+            scripts/tests/restore-drill.test.sh
             ops/libexec/update-swift-csp
           )
           bash -n "${scripts[@]}"
@@ -127,6 +129,7 @@ jobs:
           scripts/tests/check-backup.test.sh
           scripts/tests/csp-hashes.test.sh
           scripts/tests/release-lib.test.sh
+          scripts/tests/restore-drill.test.sh
           python3 -m py_compile worker/voidaccess_worker.py scripts/tests/voidaccess-worker.test.py
           python3 scripts/tests/voidaccess-worker.test.py
 

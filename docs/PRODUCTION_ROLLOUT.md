@@ -12,9 +12,10 @@ Proceed only when all are true:
 
 1. `scripts/check-backup.sh --status-file /var/lib/swift-vapor-backup/last-success`
    passes after a new encrypted backup.
-2. That backup has been restored into an isolated PostgreSQL instance and the
-   application-level spot checks are recorded. Freshness/integrity is not proof
-   of restorability.
+2. `scripts/restore-drill.sh` has restored that exact artifact into its
+   networkless disposable PostgreSQL instance, and the new mode-`0600` JSON
+   manifest from `docs/RECOVERY_DRILL.md` is retained off-host with the backup.
+   Freshness/integrity alone is not proof of restorability.
 3. VPS console access works independently of Cloudflare, nginx and the deploy
    SSH key.
 4. `git status --short` is empty and the intended commit is recorded.
