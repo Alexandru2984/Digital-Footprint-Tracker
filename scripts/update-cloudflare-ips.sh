@@ -18,7 +18,11 @@
 set -euo pipefail
 umask 077
 
-REALIP_SNIPPET="${CF_REALIP_SNIPPET:-${CF_SNIPPET:-/etc/nginx/snippets/cloudflare-realip.conf}}"
+# NOTE: this must be a path nginx actually loads. nginx.conf includes
+# conf.d/*.conf but NOT snippets/, and no vhost includes the snippet, so the
+# old snippets/ default meant this timer refreshed a file nobody read while the
+# live ranges in conf.d/ silently went stale.
+REALIP_SNIPPET="${CF_REALIP_SNIPPET:-${CF_SNIPPET:-/etc/nginx/conf.d/cloudflare-realip.conf}}"
 ORIGIN_GUARD="${CF_ORIGIN_GUARD:-/etc/nginx/conf.d/cloudflare-origin-guard.conf}"
 CHECK_ONLY=0
 if [[ "${1:-}" == "--check" ]]; then
@@ -65,6 +69,13 @@ PY
 {
     echo "# Managed by scripts/update-cloudflare-ips.sh — do not edit by hand."
     echo "# Trust CF-Connecting-IP only from Cloudflare edge peers (anti-spoofing)."
+    echo "# Loopback is trusted as well: cloudflared terminates the Cloudflare Tunnel"
+    echo "# on this host and connects to nginx from 127.0.0.1. Without these two lines"
+    echo "# every tunnelled request logs as 127.0.0.1 and shares a single rate-limit"
+    echo "# key, which would neuter the per-IP limits on nim/prolog and mislead"
+    echo "# fail2ban into banning loopback."
+    echo "set_real_ip_from 127.0.0.1;"
+    echo "set_real_ip_from ::1;"
     while IFS= read -r cidr; do echo "set_real_ip_from $cidr;"; done < "$CIDRS"
     echo "real_ip_header CF-Connecting-IP;"
 } > "$REALIP_TMP"
@@ -72,7 +83,10 @@ PY
 {
     echo "# Managed by scripts/update-cloudflare-ips.sh — do not edit by hand."
     echo "# The peer address is captured before ngx_http_realip_module replaces"
+    # nginx variables must remain literal in the generated configuration.
+    # shellcheck disable=SC2016
     echo '# $remote_addr with CF-Connecting-IP.'
+    # shellcheck disable=SC2016
     echo 'geo $realip_remote_addr $from_cloudflare_origin {'
     echo "    default 0;"
     echo "    127.0.0.1/32 1;"
