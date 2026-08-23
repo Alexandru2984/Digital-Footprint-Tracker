@@ -1006,7 +1006,7 @@ paths:
   /health:
     get:
       summary: Liveness probe
-      description: Returns 200 with current status and DB reachability. Used by container orchestrators and the systemd watchdog.
+      description: Constant-cost public process liveness. Database readiness is intentionally available only to local deployment probes.
       tags: [Meta]
       security: []
       responses:
@@ -1018,5 +1018,4 @@ paths:
                 type: object
                 properties:
                   status:    { type: string, example: ok }
-                  db:        { type: string, example: ok }
                   timestamp: { type: string, format: date-time }

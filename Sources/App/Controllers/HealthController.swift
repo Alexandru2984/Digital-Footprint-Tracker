@@ -1,18 +1,22 @@
 import Vapor
 import Fluent
 import Foundation
+import SQLKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
 struct HealthController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        // /health runs a DB liveness query — rate-limit so a request flood
-        // can't saturate the Postgres connection pool. A 60/min ceiling is
-        // far above any legitimate monitor (Prometheus 30 s = 2/min,
-        // aggressive uptime checks at 5 s = 12/min).
+        // Public liveness is deliberately independent of PostgreSQL. A monitor
+        // can distinguish a running event loop from dependency readiness without
+        // letting an unauthenticated request flood consume the DB pool.
         routes.grouped(ScanRateLimiter(anonMax: 60, authedMax: 120, windowSeconds: 60))
             .get("health", use: health)
+        // Readiness is reached directly over the loopback-only application
+        // listener by deploy/container gates. nginx explicitly does not publish
+        // this path, and the handler independently rejects non-loopback peers.
+        routes.get("ready", use: readiness)
         routes.get("metrics", use: metrics)
         // Registered at /geolocate (not /api/geolocate) — nginx strips the /api/
         // prefix when forwarding, so the public URL remains /api/geolocate.
@@ -65,16 +69,41 @@ struct HealthController: RouteCollection {
     }
 
     @Sendable func health(req: Request) async throws -> Response {
+        let payload: [String: Any] = [
+            "status": "ok",
+            "timestamp": ISO8601DateFormatter().string(from: Date())
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted)
+        return Response(
+            status: .ok,
+            headers: HTTPHeaders([("Content-Type", "application/json")]),
+            body: .init(data: data)
+        )
+    }
+
+    @Sendable func readiness(req: Request) async throws -> Response {
+        let peerIP = req.remoteAddress?.ipAddress
+        let isLocal = peerIP.map(ClientIPResolver.isLoopback)
+            ?? (req.application.environment == .testing)
+        guard isLocal else {
+            // Do not disclose an internal dependency probe if the application is
+            // ever accidentally rebound beyond loopback.
+            throw Abort(.notFound)
+        }
+
         let dbOk: Bool
         do {
-            _ = try await User.query(on: req.db).count()
+            guard let sql = req.db as? SQLDatabase else {
+                throw Abort(.serviceUnavailable, reason: "SQL database unavailable.")
+            }
+            try await sql.raw("SELECT 1").run()
             dbOk = true
         } catch {
             dbOk = false
         }
 
         let payload: [String: Any] = [
-            "status": dbOk ? "ok" : "degraded",
+            "status": dbOk ? "ready" : "not_ready",
             "db": dbOk ? "ok" : "error",
             "timestamp": ISO8601DateFormatter().string(from: Date())
         ]

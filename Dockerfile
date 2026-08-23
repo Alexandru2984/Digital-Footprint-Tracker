@@ -75,8 +75,9 @@ ENV HOLEHE_PATH=/opt/python-runtime/bin/holehe \
 
 EXPOSE 8080
 
-# /health returns 200 OK once the DB is reachable. Orchestrators use this to
-# gate traffic + restart the container on prolonged failure.
+# /health is a constant-cost process liveness probe. Dependency readiness is
+# available separately at loopback-only /ready, so a DB outage does not create
+# an application restart loop.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8080/health || exit 1
 

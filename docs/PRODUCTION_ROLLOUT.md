@@ -73,7 +73,7 @@ reading the selected frontend rather than the checkout):
 sudo systemctl start swift-vapor-migrate.service
 sudo systemctl restart swift-vapor.service
 sudo systemctl reload nginx
-curl --fail --silent --show-error http://127.0.0.1:8085/health
+curl --fail --silent --show-error http://127.0.0.1:8085/ready
 curl --fail --silent --show-error -H 'Host: 5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion' \
   http://127.0.0.1:8110/index.html | sha256sum
 sha256sum "/srv/swift-vapor/releases/$commit/frontend/index.html"

@@ -116,6 +116,30 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 
 final class AppTests: XCTestCase {
 
+    func testPublicLivenessIsDatabaseIndependentAndLocalReadinessChecksSQL() async throws {
+        struct Probe: Decodable {
+            let status: String
+            let db: String?
+        }
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.GET, "/health") { response in
+            XCTAssertEqual(response.status, .ok)
+            let probe = try response.content.decode(Probe.self)
+            XCTAssertEqual(probe.status, "ok")
+            XCTAssertNil(probe.db, "Public liveness must not expose or query database readiness.")
+        }
+
+        try await app.test(.GET, "/ready") { response in
+            XCTAssertEqual(response.status, .ok)
+            let probe = try response.content.decode(Probe.self)
+            XCTAssertEqual(probe.status, "ready")
+            XCTAssertEqual(probe.db, "ok")
+        }
+    }
+
     func testDarkWebInvestigationQueueIsAuthorizedOwnerScopedAndCancellable() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

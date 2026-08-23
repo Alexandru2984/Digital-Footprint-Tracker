@@ -14,7 +14,7 @@ RELEASE_ROOT=/srv/swift-vapor/releases
 CURRENT_LINK=/srv/swift-vapor/current
 NEXT_LINK=/srv/swift-vapor/next
 LOCK_FILE=/srv/swift-vapor/deploy.lock
-HEALTH_URL=http://127.0.0.1:8085/health
+READINESS_URL=http://127.0.0.1:8085/ready
 STATIC_URL=http://127.0.0.1:8110/index.html
 ONION_HOST=5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,16 +41,16 @@ cleanup_work() {
     fi
 }
 
-wait_for_health() {
+wait_for_readiness() {
     local attempt
     for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        if curl --fail --silent --show-error --max-time 2 "$HEALTH_URL" >/dev/null; then
-            echo "[deploy] backend healthy after ${attempt}s"
+        if curl --fail --silent --show-error --max-time 2 "$READINESS_URL" >/dev/null; then
+            echo "[deploy] backend ready after ${attempt}s"
             return 0
         fi
         sleep 1
     done
-    echo "[deploy] backend healthcheck failed" >&2
+    echo "[deploy] backend readiness check failed" >&2
     return 1
 }
 
@@ -73,7 +73,7 @@ rollback() {
     if (( CURRENT_SWITCHED )) && [[ -n "$PREVIOUS" ]]; then
         switch_release_link "$PREVIOUS" "$CURRENT_LINK" "$RELEASE_ROOT" || rollback_failed=1
         sudo -n /bin/systemctl restart swift-vapor.service || rollback_failed=1
-        wait_for_health || rollback_failed=1
+        wait_for_readiness || rollback_failed=1
         verify_served_frontend "$PREVIOUS" || rollback_failed=1
     fi
     if (( CSP_TRANSITIONED )) && [[ -n "$PREVIOUS" && -n "$CANDIDATE_SOURCE" ]]; then
@@ -183,7 +183,7 @@ echo "[deploy] atomically selecting $REMOTE"
 switch_release_link "$RELEASE" "$CURRENT_LINK" "$RELEASE_ROOT"
 CURRENT_SWITCHED=1
 sudo -n /bin/systemctl restart swift-vapor.service
-wait_for_health
+wait_for_readiness
 NEW_PID="$(systemctl show --property MainPID --value swift-vapor.service)"
 [[ "$NEW_PID" =~ ^[1-9][0-9]*$ && "$NEW_PID" != "$OLD_PID" ]] || {
     echo "[deploy] service did not acquire a new main process" >&2

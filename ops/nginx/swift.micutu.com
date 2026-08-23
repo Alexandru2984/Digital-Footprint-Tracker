@@ -94,6 +94,9 @@ server {
         proxy_set_header  X-Forwarded-Proto $scheme;
     }
 
+    # Database readiness is an internal deploy signal, never a public endpoint.
+    location = /ready { return 404; }
+
     location /metrics {
         proxy_pass        http://127.0.0.1:8085/metrics;
         proxy_http_version 1.1;
