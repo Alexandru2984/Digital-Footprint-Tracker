@@ -4,23 +4,25 @@ This roadmap deliberately puts containment, recoverability and abuse controls
 before feature volume. Priorities are ordered; items within a phase can run in
 parallel only when their dependencies are satisfied.
 
-## Current checkpoint — 2026-08-12
+## Current checkpoint — 2026-08-24
 
-- Repository: 22 atomic security/operations commits after `618ab63`; Swift
-  **161/161**, frontend integrity, npm audit, ShellCheck, Prometheus rules and
-  release-tamper tests pass.
+- Repository: the dark-web queue, isolated-worker contract, responsive console,
+  rollout hardening and Cloudflare refresh are committed locally on top of
+  `origin/main`. The current work is not deployed and the complete Swift suite
+  still requires a clean accepted run before release.
 - Prepared: immutable commit-named releases, explicit production migrations,
   backend/frontend/CSP rollback, dedicated non-login runtime, verified-backup
   metrics and responsive/mobile workflow hardening.
 - Live mitigations: the SPA CSP now has the exact hashes plus a unique
   per-request nonce accepted by Cloudflare JSD; direct IPv4 origin requests and
   forged Cloudflare headers return 403 while edge/onion traffic remains healthy.
-- Remaining live blockers: failed encrypted-backup job, no restore proof,
-  runtime still `micu`, broad sudo, unrestricted SSH keys, stale nginx/systemd
-  configs, no AOP/mTLS, no matching Swift IPv6 TLS vhost, and broken Python
-  runtime.
-- CISO verdict: **NO-GO** until the acceptance gate in
-  `SECURITY_AUDIT_2026-08-12.md` is evidenced.
+- Remaining live blockers: the backup timer is disabled and its credential,
+  success marker and output directory are absent; no restore proof exists;
+  runtime remains `micu` with broad sudo; immutable `/srv` layout and monitoring
+  are absent; backend/schema/configs lag the local commits; no AOP/mTLS or
+  matching Swift IPv6 TLS vhost exists; and the isolated worker is not staged.
+- CISO verdict: **BLOCK** until the acceptance gate in
+  `SECURITY_AUDIT_2026-08-24.md` is evidenced.
 
 ## North-star architecture
 
@@ -52,7 +54,7 @@ secrets, and have per-plugin egress allowlists and resource budgets.
 | Gate | Repo | Production | Exit evidence |
 |---|---|---|---|
 | Restore main SPA/CSP compatibility | Exact hashes + JSD nonce tested | **Edge probes pass; browser gate open** | Real browser loads app/JSD with zero CSP errors |
-| Encrypted backup credential/job | Prepared | **Failed/open** | New encrypted dump and healthy marker |
+| Encrypted backup credential/job | Prepared | **Disabled/missing** | New encrypted dump and healthy marker |
 | Restore/offsite recovery | Runbook only | **Open** | Isolated restore + off-host immutable copy + measured RPO/RTO |
 | Dedicated runtime identity | Prepared | **Open** | `swift-vapor`, `/srv`, no personal-home access, systemd score reviewed |
 | Narrow deploy authority | Prepared sudoers | **Open** | Broad sudo removed; forced keys only; independent root recovery retained |
@@ -60,7 +62,7 @@ secrets, and have per-plugin egress allowlists and resource budgets.
 | Explicit migration gate | Fixed/tested | **Open** | Candidate unit applies compatible migrations once, web unit forces false |
 | Cloudflare-only origin | Prepared | **IPv4 enforced; AOP/IPv6 open** | CF/onion healthy; direct origin denied on every served address; AOP/mTLS active |
 | Native/Python runtime | Container/lock prepared | **Open** | Swift 6.2 and report/holehe smoke tests under exact runtime sandbox |
-| Monitoring/paging | Rules prepared | **Open** | Metrics scrape + target/backup/security alert reaches operator |
+| Monitoring/paging | Rules prepared | **Inactive** | Metrics scrape + target/backup/security alert reaches operator |
 | Configuration provenance | Manifest prepared | **Open** | Binary, frontend and `/etc` checksums recorded against accepted commit |
 
 Exit gate: verified restore, direct origin denied, service has no personal-home
