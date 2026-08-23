@@ -14,15 +14,16 @@ enum SafeHTTP {
         let bodyPrefix: String?
     }
 
+    @discardableResult
     static func post(
         url: URL,
         body: Data,
         contentType: String = "application/json",
         timeout: TimeInterval = 10,
         on app: Application
-    ) async throws {
+    ) async throws -> Response {
         do {
-            _ = try await OutboundHTTP.request(
+            let response = try await OutboundHTTP.request(
                 url,
                 method: .POST,
                 headers: ["Content-Type": contentType],
@@ -31,6 +32,12 @@ enum SafeHTTP {
                 bodyMode: .prefix(maxBytes: 1_024),
                 maxRedirects: 0,
                 on: app
+            )
+            return Response(
+                status: response.status,
+                headers: response.headers,
+                finalURL: response.finalURL,
+                bodyPrefix: String(decoding: response.data, as: UTF8.self)
             )
         } catch OutboundHTTP.RequestError.blockedInternalHost {
             throw SafeHTTPError.blockedInternalHost

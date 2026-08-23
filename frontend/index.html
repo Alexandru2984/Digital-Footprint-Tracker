@@ -2719,10 +2719,18 @@
                     method: 'POST',
                     credentials: 'include'
                 });
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
                 const msg = document.getElementById('notif-settings-msg');
-                msg.textContent = '✓ Test sent!';
-                msg.className = 'text-[10px] mt-1 text-green-400';
+                const result = await resp.json().catch(() => null);
+                if (!result) throw new Error('Invalid server response');
+                const succeeded = result.succeeded || [];
+                const failed = result.failed || [];
+                const skipped = result.skipped || [];
+                const parts = [];
+                if (succeeded.length) parts.push('delivered: ' + succeeded.join(', '));
+                if (failed.length) parts.push('failed: ' + failed.join(', '));
+                if (skipped.length) parts.push('not configured: ' + skipped.join(', '));
+                msg.textContent = (failed.length ? '⚠ ' : succeeded.length ? '✓ ' : '✗ ') + parts.join(' · ');
+                msg.className = 'text-[10px] mt-1 ' + (failed.length ? 'text-amber-400' : succeeded.length ? 'text-green-400' : 'text-red-400');
                 msg.classList.remove('hidden');
                 setTimeout(() => msg.classList.add('hidden'), 2500);
             } catch(err) {

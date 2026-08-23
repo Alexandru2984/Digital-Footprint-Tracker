@@ -116,6 +116,40 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 
 final class AppTests: XCTestCase {
 
+    func testNotificationDeliveryOutcomesAndMetricsDoNotClaimFalseSuccess() async throws {
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+        let metrics = MetricsRegistry()
+        let user = User(
+            username: "notification-test",
+            email: "notification@example.test",
+            passwordHash: "unused",
+            webhookURL: "http://127.0.0.1/private-hook"
+        )
+
+        let deliveries = await NotificationDispatcher.notify(
+            user: user,
+            title: "Test",
+            message: "Test delivery",
+            scanID: nil,
+            app: app,
+            metrics: metrics
+        )
+        let outcomes = Dictionary(uniqueKeysWithValues: deliveries.map { ($0.channel, $0.outcome) })
+        XCTAssertEqual(outcomes[.webhook], .failed)
+        XCTAssertEqual(outcomes[.discord], .skipped)
+        XCTAssertEqual(outcomes[.telegram], .skipped)
+        XCTAssertEqual(outcomes[.slack], .skipped)
+        XCTAssertEqual(outcomes[.email], .skipped)
+
+        let snapshot = await metrics.snapshot()
+        XCTAssertEqual(snapshot.notificationDeliveries[.webhook]?["attempted"], 1)
+        XCTAssertEqual(snapshot.notificationDeliveries[.webhook]?["failed"], 1)
+        XCTAssertNil(snapshot.notificationDeliveries[.webhook]?["succeeded"])
+        XCTAssertEqual(snapshot.notificationDeliveries[.email]?["skipped"], 1)
+        XCTAssertNil(snapshot.notificationDeliveries[.email]?["attempted"])
+    }
+
     func testPublicLivenessIsDatabaseIndependentAndLocalReadinessChecksSQL() async throws {
         struct Probe: Decodable {
             let status: String

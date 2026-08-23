@@ -5,7 +5,10 @@ import FoundationNetworking
 #endif
 
 struct EmailService {
-    static func send(to: String, subject: String, body: String, app: Application) async {
+    @discardableResult
+    static func send(
+        to: String, subject: String, body: String, app: Application
+    ) async -> NotificationDeliveryOutcome {
         // Never deliver real mail from the test environment. `swift test` boots
         // with the box's `.env` (SMTP_* point at Resend for micutu.com), so
         // without this guard every test that registers a user would send a live
@@ -16,7 +19,7 @@ struct EmailService {
         // Resend's sink addresses (delivered@resend.dev / bounced@resend.dev).
         guard app.environment != .testing else {
             app.logger.debug("EmailService: test environment — skipping real delivery to \(EmailAddress.redactedDomain(to))")
-            return
+            return .skipped
         }
         guard let host = Environment.get("SMTP_HOST"),
               let portStr = Environment.get("SMTP_PORT"),
@@ -24,13 +27,13 @@ struct EmailService {
               let pass = Environment.get("SMTP_PASS"),
               let from = Environment.get("SMTP_FROM") else {
             app.logger.warning("EmailService: SMTP not configured; skipping one email delivery")
-            return
+            return .skipped
         }
 
         guard let safeFrom = EmailAddress.normalize(from),
               let safeTo = EmailAddress.normalize(to) else {
             app.logger.error("EmailService: rejected an invalid sender or recipient address")
-            return
+            return .failed
         }
         let safeSubject = boundedUTF8(sanitizeHeader(subject), maxBytes: 512)
         // Body: drop NULs and normalize any line endings to CRLF (some MUAs
@@ -59,7 +62,7 @@ struct EmailService {
 
         guard let port = Int(portStr), (1...65_535).contains(port) else {
             app.logger.error("EmailService: SMTP_PORT is invalid")
-            return
+            return .failed
         }
         let protocol_ = port == 465 ? "smtps" : "smtp"
         let sslFlag = port == 465 ? "--ssl" : "--ssl-reqd"
@@ -68,7 +71,7 @@ struct EmailService {
         guard !trimmedHost.isEmpty, trimmedHost.utf8.count <= 253,
               trimmedHost.unicodeScalars.allSatisfy(hostCharacters.contains) else {
             app.logger.error("EmailService: SMTP_HOST is invalid")
-            return
+            return .failed
         }
         var smtpComponents = URLComponents()
         smtpComponents.scheme = protocol_
@@ -76,14 +79,14 @@ struct EmailService {
         smtpComponents.port = port
         guard let smtpURL = smtpComponents.url else {
             app.logger.error("EmailService: SMTP endpoint is invalid")
-            return
+            return .failed
         }
 
         // Keep credentials in a 0700 directory and out of argv/environment.
         // Quoted netrc values prevent whitespace from changing its grammar.
         guard let safeUser = netrcValue(user), let safePass = netrcValue(pass) else {
             app.logger.error("EmailService: SMTP credentials contain unsupported characters")
-            return
+            return .failed
         }
         let processHome = FileManager.default.temporaryDirectory
             .appendingPathComponent("dft-smtp-\(UUID().uuidString)", isDirectory: true)
@@ -103,7 +106,7 @@ struct EmailService {
         } catch {
             app.logger.error("EmailService: failed to prepare private SMTP credentials")
             try? FileManager.default.removeItem(at: processHome)
-            return
+            return .failed
         }
         defer { try? FileManager.default.removeItem(at: processHome) }
 
@@ -117,7 +120,7 @@ struct EmailService {
             $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0)
         }) else {
             app.logger.error("EmailService: no trusted executable curl was found")
-            return
+            return .failed
         }
         let arguments = [
             // --disable must be the first option to prevent ~/.curlrc from
@@ -158,9 +161,12 @@ struct EmailService {
                     EmailService: SMTP delivery FAILED — nothing was delivered \
                     (curl exit \(execution.exitStatus), recipient domain: \(EmailAddress.redactedDomain(safeTo))).
                     """)
+                return .failed
             }
+            return .succeeded
         } catch {
             app.logger.error("EmailService: failed to start SMTP delivery subprocess (recipient domain: \(EmailAddress.redactedDomain(safeTo)))")
+            return .failed
         }
     }
 

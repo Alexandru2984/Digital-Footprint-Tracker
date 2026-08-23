@@ -15,15 +15,20 @@ actor MetricsRegistry {
     private(set) var pluginCacheHits:   UInt64 = 0
     private(set) var pluginCacheMisses: UInt64 = 0
 
-    /// Per-channel notification attempt counts. Channel labels:
-    /// "webhook", "discord", "telegram", "slack", "email".
-    private(set) var notificationsSent: [String: UInt64] = [:]
+    /// Bounded channel/outcome labels. A non-skipped delivery increments both
+    /// `attempted` and its terminal `succeeded`/`failed` outcome.
+    private(set) var notificationDeliveries: [NotificationChannel: [String: UInt64]] = [:]
     private(set) var darkWebJobs: [String: UInt64] = [:]
 
     func incPluginCacheHit()   { pluginCacheHits   &+= 1 }
     func incPluginCacheMiss()  { pluginCacheMisses &+= 1 }
-    func incNotificationSent(channel: String) {
-        notificationsSent[channel, default: 0] &+= 1
+    func recordNotificationDelivery(
+        channel: NotificationChannel, outcome: NotificationDeliveryOutcome
+    ) {
+        if outcome != .skipped {
+            notificationDeliveries[channel, default: [:]]["attempted", default: 0] &+= 1
+        }
+        notificationDeliveries[channel, default: [:]][outcome.rawValue, default: 0] &+= 1
     }
     func incDarkWebJob(status: String) {
         darkWebJobs[status, default: 0] &+= 1
@@ -34,7 +39,7 @@ actor MetricsRegistry {
     struct Snapshot: Sendable {
         let pluginCacheHits:   UInt64
         let pluginCacheMisses: UInt64
-        let notificationsSent: [String: UInt64]
+        let notificationDeliveries: [NotificationChannel: [String: UInt64]]
         let darkWebJobs: [String: UInt64]
     }
 
@@ -42,7 +47,7 @@ actor MetricsRegistry {
         Snapshot(
             pluginCacheHits:   pluginCacheHits,
             pluginCacheMisses: pluginCacheMisses,
-            notificationsSent: notificationsSent,
+            notificationDeliveries: notificationDeliveries,
             darkWebJobs: darkWebJobs
         )
     }

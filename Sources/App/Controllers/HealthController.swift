@@ -225,12 +225,14 @@ struct HealthController: RouteCollection {
                      help: "Plugin cache lookups that fell through to a live plugin run since process start.",
                      value: snap.pluginCacheMisses)
 
-        out += "# HELP swift_vapor_notifications_sent_total Notification dispatch attempts by channel since process start.\n"
-        out += "# TYPE swift_vapor_notifications_sent_total counter\n"
-        // Stable label-order — sort so scrapers don't see noise on output.
-        for channel in snap.notificationsSent.keys.sorted() {
-            let count = snap.notificationsSent[channel] ?? 0
-            out += "swift_vapor_notifications_sent_total{channel=\"\(channel)\"} \(count)\n"
+        out += "# HELP swift_vapor_notification_deliveries_total Notification delivery attempts and terminal outcomes by channel.\n"
+        out += "# TYPE swift_vapor_notification_deliveries_total counter\n"
+        for channel in NotificationChannel.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let outcomes = snap.notificationDeliveries[channel] else { continue }
+            for outcome in ["attempted", "succeeded", "failed", "skipped"] {
+                guard let count = outcomes[outcome] else { continue }
+                out += "swift_vapor_notification_deliveries_total{channel=\"\(channel.rawValue)\",outcome=\"\(outcome)\"} \(count)\n"
+            }
         }
         out += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
         out += "# TYPE swift_vapor_dark_web_jobs_total counter\n"

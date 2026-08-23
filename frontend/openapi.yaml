@@ -937,6 +937,17 @@ paths:
         '401':
           description: Not authenticated
 
+  /auth/notifications/test:
+    post:
+      summary: Test configured notification delivery
+      description: Returns per-channel delivery outcomes without exposing channel credentials.
+      tags: [Auth]
+      responses:
+        '200': { description: Every attempted channel accepted the notification }
+        '207': { description: At least one channel succeeded and at least one failed }
+        '422': { description: No notification channel is currently available }
+        '503': { description: Every attempted delivery failed }
+
   /account/export:
     get:
       summary: Export the caller's entire account data (GDPR)

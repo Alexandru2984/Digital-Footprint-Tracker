@@ -20,6 +20,13 @@ struct LoginResponse: Content {
     let user: User.Public?
 }
 
+struct NotificationTestResponse: Content {
+    let deliveries: [NotificationDelivery]
+    let succeeded: [NotificationChannel]
+    let failed: [NotificationChannel]
+    let skipped: [NotificationChannel]
+}
+
 struct AuthController: RouteCollection {
 
     /// Precomputed BCrypt hash used to keep login response time independent of
@@ -313,16 +320,36 @@ struct AuthController: RouteCollection {
     }
 
     @Sendable
-    func testNotifications(req: Request) async throws -> HTTPStatus {
+    func testNotifications(req: Request) async throws -> Response {
         let user = try await req.requireSessionUser()
-        await NotificationDispatcher.notify(
+        let deliveries = await NotificationDispatcher.notify(
             user: user,
             title: "Test Notification",
             message: "Your notification channels are configured correctly.",
             scanID: nil,
             app: req.application
         )
-        return .ok
+        let succeeded = deliveries.filter { $0.outcome == .succeeded }.map(\.channel)
+        let failed = deliveries.filter { $0.outcome == .failed }.map(\.channel)
+        let skipped = deliveries.filter { $0.outcome == .skipped }.map(\.channel)
+        let attemptedCount = succeeded.count + failed.count
+        let status: HTTPResponseStatus
+        if attemptedCount == 0 {
+            status = .unprocessableEntity
+        } else if failed.isEmpty {
+            status = .ok
+        } else if succeeded.isEmpty {
+            status = .serviceUnavailable
+        } else {
+            status = .multiStatus
+        }
+
+        let payload = NotificationTestResponse(
+            deliveries: deliveries, succeeded: succeeded, failed: failed, skipped: skipped
+        )
+        let response = Response(status: status)
+        try response.content.encode(payload)
+        return response
     }
 }
 
