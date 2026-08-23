@@ -62,7 +62,7 @@ final class DarkWebInvestigation: Model {
     }
 
     func setTarget(_ newValue: String) {
-        targetCipher = FieldCrypto.encrypt(newValue)
+        targetCipher = FieldCrypto.encrypt(newValue, field: .darkWebTarget, recordID: encryptionID)
         targetHash = FieldCrypto.blindIndex(newValue.lowercased())
     }
 
@@ -92,7 +92,11 @@ final class DarkWebInvestigation: Model {
             }
         }
     }
-    func setResultJSON(_ newValue: String?) { resultCipher = newValue.map(FieldCrypto.encrypt) }
+    func setResultJSON(_ newValue: String?) {
+        resultCipher = newValue.map {
+            FieldCrypto.encrypt($0, field: .darkWebResult, recordID: encryptionID)
+        }
+    }
 
     @Field(key: "result_count")
     var resultCount: Int
@@ -126,8 +130,10 @@ final class DarkWebInvestigation: Model {
     init() { }
 
     init(userID: UUID, target: String, retentionHours: Int) {
+        let recordID = UUID()
+        self.id = recordID
         self.$user.id = userID
-        self.targetCipher = FieldCrypto.encrypt(target)
+        self.targetCipher = FieldCrypto.encrypt(target, field: .darkWebTarget, recordID: recordID)
         self.targetHash = FieldCrypto.blindIndex(target.lowercased())
         self.targetKindRaw = DarkWebTargetKind.detect(target).rawValue
         self.statusRaw = DarkWebInvestigationStatus.pending.rawValue
@@ -135,5 +141,10 @@ final class DarkWebInvestigation: Model {
         self.cancelRequested = false
         self.attemptCount = 0
         self.expiresAt = Date().addingTimeInterval(TimeInterval(retentionHours * 3_600))
+    }
+
+    private var encryptionID: UUID {
+        guard let id else { preconditionFailure("DarkWebInvestigation must have an ID before encryption") }
+        return id
     }
 }

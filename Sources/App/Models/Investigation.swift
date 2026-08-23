@@ -24,7 +24,9 @@ final class Investigation: Model {
             try FieldCrypto.decryptStored(nameCipher, field: .investigationName, recordID: id)
         }
     }
-    func setName(_ newValue: String) { nameCipher = FieldCrypto.encrypt(newValue) }
+    func setName(_ newValue: String) {
+        nameCipher = FieldCrypto.encrypt(newValue, field: .investigationName, recordID: encryptionID)
+    }
 
     /// Ciphertext at rest — the graph JSON. Read/written via the `data` accessor.
     @Field(key: "data")
@@ -36,7 +38,9 @@ final class Investigation: Model {
             try FieldCrypto.decryptStored(dataCipher, field: .investigationData, recordID: id)
         }
     }
-    func setData(_ newValue: String) { dataCipher = FieldCrypto.encrypt(newValue) }
+    func setData(_ newValue: String) {
+        dataCipher = FieldCrypto.encrypt(newValue, field: .investigationData, recordID: encryptionID)
+    }
 
     // ── Live monitoring ("watched" board) ─────────────────────────────────
     /// When true, a background runner periodically re-scans the board's active
@@ -63,10 +67,16 @@ final class Investigation: Model {
     init() { }
 
     init(id: UUID? = nil, userID: UUID, name: String, data: String) {
-        self.id = id
+        let recordID = id ?? UUID()
+        self.id = recordID
         self.$user.id = userID
-        self.nameCipher = FieldCrypto.encrypt(name)
-        self.dataCipher = FieldCrypto.encrypt(data)
+        self.nameCipher = FieldCrypto.encrypt(name, field: .investigationName, recordID: recordID)
+        self.dataCipher = FieldCrypto.encrypt(data, field: .investigationData, recordID: recordID)
         self.watched = false
+    }
+
+    private var encryptionID: UUID {
+        guard let id else { preconditionFailure("Investigation must have an ID before encryption") }
+        return id
     }
 }

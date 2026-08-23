@@ -10,7 +10,8 @@ final class EncryptionMetadata: Model {
 
     init() {}
 
-    init(name: String, value: String) {
+    init(id: UUID? = nil, name: String, value: String) {
+        self.id = id ?? UUID()
         self.name = name
         self.value = value
     }

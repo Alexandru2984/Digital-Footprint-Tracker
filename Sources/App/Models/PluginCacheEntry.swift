@@ -19,10 +19,16 @@ final class PluginCacheEntry: Model {
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
 
     init() {}
-    init(pluginName: String, targetHash: String, payload: String, expiresAt: Date) {
+    init(id: UUID? = nil, pluginName: String, targetHash: String, plaintext: String, expiresAt: Date) {
+        let recordID = id ?? UUID()
+        self.id = recordID
         self.pluginName = pluginName
         self.targetHash = targetHash
-        self.payload    = payload
+        self.payload = FieldCrypto.encrypt(
+            plaintext,
+            field: .pluginCachePayload,
+            recordID: recordID
+        )
         self.expiresAt  = expiresAt
     }
 }

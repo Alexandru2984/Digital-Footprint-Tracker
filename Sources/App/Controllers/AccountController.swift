@@ -237,8 +237,6 @@ struct AccountController: RouteCollection {
         // captures who initiated the deletion, from where, and when.
         await AuditLogger.log(req: req, action: "account_deleted", target: user.username)
 
-        let redactedTarget = FieldCrypto.encrypt("[deleted-account]")
-        let redactedIP = FieldCrypto.encrypt("[deleted]")
         try await req.db.transaction { database in
             // FK cascade summary:
             //   scheduled_scans, notifications, tags, API keys,
@@ -266,12 +264,24 @@ struct AccountController: RouteCollection {
             // Retain only non-identifying action/timestamp evidence. Detaching
             // user_id alone was insufficient because target and IP still named
             // the deleted person/account.
-            try await AuditLog.query(on: database)
-                .filter(\.$userID == userID)
-                .set(\.$userID, to: nil)
-                .set(\.$targetCipher, to: redactedTarget)
-                .set(\.$ipCipher, to: redactedIP)
-                .update()
+            // V2 ciphertext authenticates each audit row UUID, so a single
+            // bulk ciphertext cannot be copied across records. Process bounded
+            // batches inside the transaction and detach each row as it is
+            // pseudonymized; the filter then naturally advances without an
+            // offset that could skip records.
+            while true {
+                let auditBatch = try await AuditLog.query(on: database)
+                    .filter(\.$userID == userID)
+                    .limit(200)
+                    .all()
+                guard !auditBatch.isEmpty else { break }
+                for entry in auditBatch {
+                    entry.userID = nil
+                    entry.setTarget("[deleted-account]")
+                    entry.setIP("[deleted]")
+                    try await entry.save(on: database)
+                }
+            }
 
             try await user.delete(on: database)
         }

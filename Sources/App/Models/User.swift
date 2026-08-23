@@ -26,7 +26,9 @@ final class User: Model {
             try decryptOptional(webhookURLCipher, field: .userWebhookURL)
         }
     }
-    func setWebhookURL(_ newValue: String?) { webhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    func setWebhookURL(_ newValue: String?) {
+        webhookURLCipher = encryptOptional(newValue, field: .userWebhookURL)
+    }
 
     @OptionalField(key: "retention_days")
     var retentionDays: Int?
@@ -38,7 +40,9 @@ final class User: Model {
             try decryptOptional(discordWebhookURLCipher, field: .userDiscordWebhookURL)
         }
     }
-    func setDiscordWebhookURL(_ newValue: String?) { discordWebhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    func setDiscordWebhookURL(_ newValue: String?) {
+        discordWebhookURLCipher = encryptOptional(newValue, field: .userDiscordWebhookURL)
+    }
 
     @OptionalField(key: "telegram_bot_token")
     var telegramBotTokenCipher: String?
@@ -47,7 +51,9 @@ final class User: Model {
             try decryptOptional(telegramBotTokenCipher, field: .userTelegramBotToken)
         }
     }
-    func setTelegramBotToken(_ newValue: String?) { telegramBotTokenCipher = newValue.map(FieldCrypto.encrypt) }
+    func setTelegramBotToken(_ newValue: String?) {
+        telegramBotTokenCipher = encryptOptional(newValue, field: .userTelegramBotToken)
+    }
 
     @OptionalField(key: "telegram_chat_id")
     var telegramChatIDCipher: String?
@@ -56,7 +62,9 @@ final class User: Model {
             try decryptOptional(telegramChatIDCipher, field: .userTelegramChatID)
         }
     }
-    func setTelegramChatID(_ newValue: String?) { telegramChatIDCipher = newValue.map(FieldCrypto.encrypt) }
+    func setTelegramChatID(_ newValue: String?) {
+        telegramChatIDCipher = encryptOptional(newValue, field: .userTelegramChatID)
+    }
 
     @OptionalField(key: "slack_webhook_url")
     var slackWebhookURLCipher: String?
@@ -65,7 +73,9 @@ final class User: Model {
             try decryptOptional(slackWebhookURLCipher, field: .userSlackWebhookURL)
         }
     }
-    func setSlackWebhookURL(_ newValue: String?) { slackWebhookURLCipher = newValue.map(FieldCrypto.encrypt) }
+    func setSlackWebhookURL(_ newValue: String?) {
+        slackWebhookURLCipher = encryptOptional(newValue, field: .userSlackWebhookURL)
+    }
 
     /// Opt-in: when true, the user receives a notification for every completed
     /// scheduled scan. When false (default), they're only notified when monitor
@@ -83,7 +93,9 @@ final class User: Model {
             try decryptOptional(totpSecretCipher, field: .userTOTPSecret)
         }
     }
-    func setTOTPSecret(_ newValue: String?) { totpSecretCipher = newValue.map(FieldCrypto.encrypt) }
+    func setTOTPSecret(_ newValue: String?) {
+        totpSecretCipher = encryptOptional(newValue, field: .userTOTPSecret)
+    }
 
     @Field(key: "totp_enabled")
     var totpEnabled: Bool
@@ -117,17 +129,28 @@ final class User: Model {
     init() { }
 
     init(id: UUID? = nil, username: String, email: String, passwordHash: String, isAdmin: Bool = false, webhookURL: String? = nil, retentionDays: Int? = 30, discordWebhookURL: String? = nil, telegramBotToken: String? = nil, telegramChatID: String? = nil, slackWebhookURL: String? = nil, verboseAlerts: Bool = false, emailVerified: Bool = false) {
-        self.id = id
+        let recordID = id ?? UUID()
+        self.id = recordID
         self.username = username
         self.email = email
         self.passwordHash = passwordHash
         self.isAdmin = isAdmin
-        self.webhookURLCipher = webhookURL.map(FieldCrypto.encrypt)
+        self.webhookURLCipher = webhookURL.map {
+            FieldCrypto.encrypt($0, field: .userWebhookURL, recordID: recordID)
+        }
         self.retentionDays = retentionDays
-        self.discordWebhookURLCipher = discordWebhookURL.map(FieldCrypto.encrypt)
-        self.telegramBotTokenCipher = telegramBotToken.map(FieldCrypto.encrypt)
-        self.telegramChatIDCipher = telegramChatID.map(FieldCrypto.encrypt)
-        self.slackWebhookURLCipher = slackWebhookURL.map(FieldCrypto.encrypt)
+        self.discordWebhookURLCipher = discordWebhookURL.map {
+            FieldCrypto.encrypt($0, field: .userDiscordWebhookURL, recordID: recordID)
+        }
+        self.telegramBotTokenCipher = telegramBotToken.map {
+            FieldCrypto.encrypt($0, field: .userTelegramBotToken, recordID: recordID)
+        }
+        self.telegramChatIDCipher = telegramChatID.map {
+            FieldCrypto.encrypt($0, field: .userTelegramChatID, recordID: recordID)
+        }
+        self.slackWebhookURLCipher = slackWebhookURL.map {
+            FieldCrypto.encrypt($0, field: .userSlackWebhookURL, recordID: recordID)
+        }
         self.verboseAlerts = verboseAlerts
         self.totpEnabled = false
         self.emailVerified = emailVerified
@@ -138,6 +161,15 @@ final class User: Model {
         field: FieldCrypto.StoredField
     ) throws -> String? {
         try stored.map { try FieldCrypto.decryptStored($0, field: field, recordID: id) }
+    }
+
+    private func encryptOptional(_ plaintext: String?, field: FieldCrypto.StoredField) -> String? {
+        plaintext.map { FieldCrypto.encrypt($0, field: field, recordID: encryptionID) }
+    }
+
+    private var encryptionID: UUID {
+        guard let id else { preconditionFailure("User must have an ID before encryption") }
+        return id
     }
 }
 

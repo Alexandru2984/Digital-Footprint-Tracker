@@ -26,39 +26,58 @@ enum PluginCacheStore {
     }
 
     /// Normalize before hashing so "user@x.com" and "  USER@X.com " share a cache row.
+    private static func normalized(_ input: String) -> String {
+        input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     private static func hash(_ input: String) -> String {
-        let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return FieldCrypto.blindIndex(normalized)
+        FieldCrypto.blindIndex(normalized(input))
+    }
+
+    private static func hashCandidates(_ input: String) -> [String] {
+        FieldCrypto.blindIndexCandidates(normalized(input))
     }
 
     /// Returns cached results if the entry exists and hasn't expired, else nil.
-    static func lookup(pluginName: String, input: String, on db: Database) async -> [PluginResult]? {
+    static func lookup(
+        pluginName: String,
+        input: String,
+        on db: Database,
+        logger: Logger
+    ) async -> [PluginResult]? {
         guard isEnabled else { return nil }
-        let h = hash(input)
+        let hashes = hashCandidates(input)
         let result: [PluginResult]? = await {
             do {
                 guard let entry = try await PluginCacheEntry.query(on: db)
                     .filter(\.$pluginName == pluginName)
-                    .filter(\.$targetHash == h)
+                    .filter(\.$targetHash ~~ hashes)
+                    .sort(\.$createdAt, .descending)
                     .first()
                 else { return nil }
                 guard entry.expiresAt > Date() else { return nil }
                 guard entry.payload.utf8.count <= PluginResultLimits.maxStoredCachePayloadBytes else {
                     return nil
                 }
-                let payload: String
-                if let decrypted = TokenEncryption.decrypt(entry.payload) {
-                    payload = decrypted
-                } else if TokenEncryption.isEncryptedEnvelope(entry.payload) {
-                    return nil
-                } else {
-                    payload = entry.payload // legacy plaintext cache row
-                }
+                let payload = try FieldCrypto.decryptStored(
+                    entry.payload,
+                    field: .pluginCachePayload,
+                    recordID: entry.id
+                )
                 guard payload.utf8.count <= PluginResultLimits.maxCachePayloadBytes,
                       let data = payload.data(using: .utf8),
                       let decoded = try? JSONDecoder().decode([PluginResult].self, from: data)
                 else { return nil }
                 return decoded
+            } catch let failure as FieldCrypto.DecryptionFailure {
+                await MetricsRegistry.shared.recordSensitiveFieldFailure(
+                    field: failure.field,
+                    reason: failure.reason
+                )
+                logger.critical(
+                    "Sensitive encrypted field quarantined from plugin_cache: field=\(failure.field.rawValue) reason=\(failure.reason.rawValue) record_id=\(failure.recordID?.uuidString ?? "unknown")"
+                )
+                return nil
             } catch {
                 return nil
             }
@@ -80,11 +99,11 @@ enum PluginCacheStore {
     static func store(pluginName: String, input: String, results: [PluginResult], ttl: TimeInterval, on db: Database, logger: Logger) async {
         guard isEnabled else { return }
         let h = hash(input)
+        let hashes = hashCandidates(input)
         guard let body = try? JSONEncoder().encode(results),
               body.count <= PluginResultLimits.maxCachePayloadBytes,
               let plaintext = String(data: body, encoding: .utf8)
         else { return }
-        let payload = FieldCrypto.encrypt(plaintext)
         let expires = Date().addingTimeInterval(ttl)
 
         // Delete-then-insert keeps the upsert dialect-neutral. The unique
@@ -92,12 +111,12 @@ enum PluginCacheStore {
         do {
             try await PluginCacheEntry.query(on: db)
                 .filter(\.$pluginName == pluginName)
-                .filter(\.$targetHash == h)
+                .filter(\.$targetHash ~~ hashes)
                 .delete()
             let entry = PluginCacheEntry(
                 pluginName: pluginName,
                 targetHash: h,
-                payload: payload,
+                plaintext: plaintext,
                 expiresAt: expires
             )
             try await entry.save(on: db)

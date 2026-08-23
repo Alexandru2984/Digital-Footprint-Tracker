@@ -36,7 +36,7 @@ final class Scan: Model, Content {
     }
 
     func setInput(_ newValue: String) {
-        inputCipher = FieldCrypto.encrypt(newValue)
+        inputCipher = FieldCrypto.encrypt(newValue, field: .scanInput, recordID: encryptionID)
         inputHash = FieldCrypto.blindIndex(newValue)
     }
 
@@ -66,11 +66,17 @@ final class Scan: Model, Content {
     init() { }
 
     init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {
-        self.id = id
-        self.inputCipher = FieldCrypto.encrypt(input)
+        let recordID = id ?? UUID()
+        self.id = recordID
+        self.inputCipher = FieldCrypto.encrypt(input, field: .scanInput, recordID: recordID)
         self.inputHash = FieldCrypto.blindIndex(input)
         self.statusRaw = status.rawValue
         self.$user.id = userID
+    }
+
+    private var encryptionID: UUID {
+        guard let id else { preconditionFailure("Scan must have an ID before encryption") }
+        return id
     }
 }
 
@@ -80,8 +86,9 @@ extension QueryBuilder where Model == Scan {
     /// raw column). Use this instead of `filter(\.$input == …)`, which no longer
     /// exists now that the column holds ciphertext.
     func filterInput(_ plaintext: String) -> Self {
-        self.group(.or) { or in
-            or.filter(\.$inputHash == FieldCrypto.blindIndex(plaintext))
+        let hashes = FieldCrypto.blindIndexCandidates(plaintext)
+        return self.group(.or) { or in
+            or.filter(\.$inputHash ~~ hashes)
             or.filter(\.$inputCipher == plaintext)
         }
     }

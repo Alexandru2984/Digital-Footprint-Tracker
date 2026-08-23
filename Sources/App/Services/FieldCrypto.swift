@@ -34,6 +34,7 @@ enum FieldCrypto {
         case userTelegramChatID = "users.telegram_chat_id"
         case userSlackWebhookURL = "users.slack_webhook_url"
         case userTOTPSecret = "users.totp_secret"
+        case pluginCachePayload = "plugin_cache.payload"
     }
 
     enum DecryptionReason: String, CaseIterable, Hashable, Sendable {
@@ -48,15 +49,23 @@ enum FieldCrypto {
         let reason: DecryptionReason
     }
 
-    static func encrypt(_ plaintext: String) -> String {
+    static func encrypt(
+        _ plaintext: String,
+        field: StoredField,
+        recordID: UUID
+    ) -> String {
         guard TokenEncryption.isConfigured() else { return plaintext }
         do {
-            return try TokenEncryption.encrypt(plaintext)
+            return try TokenEncryption.encrypt(
+                plaintext,
+                context: .init(field: field.rawValue, recordID: recordID)
+            )
         } catch {
-            // Model computed setters cannot throw. Crashing before persistence is
-            // preferable to silently storing a secret in cleartext; production
-            // validates this key during startup, so this only catches runtime
-            // configuration corruption.
+            // Explicit model mutation methods cannot currently throw without
+            // changing Fluent's construction surface. Production validates the
+            // complete keyring before serving, so reaching this branch means the
+            // process configuration changed or was corrupted at runtime. Never
+            // fall back to a plaintext write.
             preconditionFailure("Sensitive-field encryption failed: \(error)")
         }
     }
@@ -76,13 +85,20 @@ enum FieldCrypto {
     ) throws -> String {
         if TokenEncryption.isEncryptedEnvelope(stored) {
             do {
+                if let recordID {
+                    return try TokenEncryption.decryptRequired(
+                        stored,
+                        context: .init(field: field.rawValue, recordID: recordID)
+                    )
+                }
                 return try TokenEncryption.decryptRequired(stored)
             } catch let error as TokenEncryption.Error {
                 let reason: DecryptionReason
                 switch error {
-                case .invalidCiphertext:
+                case .invalidCiphertext, .unsupportedVersion, .contextMissing:
                     reason = .invalidEnvelope
-                case .keyMissing, .invalidKey:
+                case .keyMissing, .invalidKey, .invalidKeyring,
+                     .invalidWriteVersion, .unknownKeyID:
                     reason = .keyUnavailable
                 case .decryptionFailed:
                     reason = .authenticationFailed
@@ -102,26 +118,28 @@ enum FieldCrypto {
     /// column. Falls back to plain SHA-256 only when no key is configured (local
     /// development); a malformed configured key fails closed.
     static func blindIndex(_ value: String) -> String {
-        let msg = Data(value.utf8)
-        if let key = keyBytes() {
-            let mac = HMAC<SHA256>.authenticationCode(for: msg, using: SymmetricKey(data: key))
-            return mac.map { String(format: "%02x", $0) }.joined()
+        if TokenEncryption.isConfigured() {
+            do { return try TokenEncryption.blindIndex(value) }
+            catch { preconditionFailure("Blind-index derivation failed: \(error)") }
         }
-        precondition(!TokenEncryption.isConfigured(), "ENCRYPTION_KEY is configured but invalid")
-        return SHA256.hash(data: msg).map { String(format: "%02x", $0) }.joined()
+        return sha256Hex(value)
     }
 
-    /// Parse the 64-hex-char ENCRYPTION_KEY into 32 bytes (nil if absent/malformed).
-    private static func keyBytes() -> [UInt8]? {
-        guard let hex = Environment.get("ENCRYPTION_KEY") else { return nil }
-        var bytes: [UInt8] = []
-        var idx = hex.startIndex
-        while idx < hex.endIndex {
-            let next = hex.index(idx, offsetBy: 2, limitedBy: hex.endIndex) ?? hex.endIndex
-            guard let byte = UInt8(hex[idx..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            idx = next
+    static func blindIndexCandidates(_ value: String) -> [String] {
+        if TokenEncryption.isConfigured() {
+            do { return try TokenEncryption.blindIndexCandidates(value) }
+            catch { preconditionFailure("Blind-index candidate derivation failed: \(error)") }
         }
-        return bytes.count == 32 ? bytes : nil
+        return [sha256Hex(value)]
+    }
+
+    static func isCurrentEnvelope(_ value: String) -> Bool {
+        TokenEncryption.isCurrentEnvelope(value)
+    }
+
+    private static func sha256Hex(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }

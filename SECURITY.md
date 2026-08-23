@@ -197,9 +197,10 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | **SMTP credentials visible in `ps`**         | curl invoked with `--netrc-file /tmp/smtp-<uuid>.netrc` (mode `0600`, deleted on `defer`); never `--user user:pass` in argv               | `Sources/App/Services/EmailService.swift`                                       |
 | API keys plaintext at rest                   | SHA-256 hashed; raw token shown once on creation                                                                                          | `HashAPIKeyColumn` migration; `APIKey.swift`                                    |
 | Share-link tokens plaintext at rest          | SHA-256 hashed                                                                                                                           | `HashSharedReportTokens` migration; `SharedReport.swift`                         |
-| Sensitive fields plaintext at rest           | Versioned AES-256-GCM envelopes cover scan/result/board data, all notification credentials, schedules, notifications, audit details, and cache payloads; production refuses to boot without a valid key | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
-| Accidental encryption-key replacement        | Persistent encrypted key-check marker aborts startup when a different valid-looking key is supplied                                     | `EncryptionKeyVerifier`, `CreateEncryptionMetadata`                             |
-| Cache target dictionary attacks              | Normalized targets use HMAC-SHA256 blind indexes; payload JSON is encrypted                                                              | `PluginCacheStore`                                                              |
+| Sensitive fields plaintext at rest           | Dual-read v1/v2 AES-256-GCM envelopes cover scan/result/board data, notification credentials, schedules, notifications, audit details, and cache payloads; v2 authenticates field + row UUID as AAD | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
+| Encryption/index key reuse                   | V2 derives independent encryption and blind-index keys with HKDF-SHA256                                                                  | `TokenEncryption`                                                               |
+| Accidental encryption-key replacement        | Key IDs plus a persistent encrypted marker verify the active/previous bounded keyring before traffic starts                             | `EncryptionKeyVerifier`, `CreateEncryptionMetadata`                             |
+| Cache target dictionary attacks              | Normalized targets use keyed blind indexes; rotation queries a bounded active/previous candidate set and payload JSON is encrypted       | `PluginCacheStore`                                                              |
 | Secrets in app logs                          | PII masked at INFO: `***@domain.com` for emails, `use***` for usernames                                                                  | `ScanController.scan`                                                           |
 | Secrets in audit log                         | Audit log stores `action` + truncated `target` (200 chars) + IP — never request bodies, never tokens                                      | `Sources/App/Services/AuditLogger.swift`                                        |
 
@@ -381,6 +382,11 @@ For anyone deploying this stack on their own host:
       Production aborts startup when it is absent, malformed, or does not
       match the persistent key-check marker. Back it up separately before
       deployment; losing it makes encrypted data unrecoverable.
+- [ ] `ENCRYPTION_KEY_ID` is stable and unique for the active root key;
+      `ENCRYPTION_WRITE_VERSION` remains `1` until every process has the dual
+      reader. Any `ENCRYPTION_PREVIOUS_KEYS` value is supplied through the
+      secret channel, contains at most four `id=64hex` entries, and is removed
+      only after rewrap verification.
 - [ ] `ALLOWED_ORIGIN` in production matches the exact public origin
 - [ ] nginx CSP `script-src` SHA-256 hashes are regenerated after any
       change to the inline `<script>` block (see deployment notes in

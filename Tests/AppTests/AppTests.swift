@@ -10,6 +10,45 @@ import Glibc
 import Darwin
 #endif
 
+private struct EnvironmentSnapshot {
+    private let values: [(name: String, value: String?)]
+
+    init(_ names: [String]) {
+        values = names.map { ($0, ProcessInfo.processInfo.environment[$0]) }
+    }
+
+    func restore() {
+        for item in values {
+            if let value = item.value {
+                setenv(item.name, value, 1)
+            } else {
+                unsetenv(item.name)
+            }
+        }
+    }
+}
+
+private let encryptionEnvironmentNames = [
+    "ENCRYPTION_KEY",
+    "ENCRYPTION_KEY_ID",
+    "ENCRYPTION_PREVIOUS_KEYS",
+    "ENCRYPTION_WRITE_VERSION",
+]
+
+private func configureEncryptionEnvironment(
+    key: String,
+    keyID: String? = nil,
+    previousKeys: String? = nil,
+    writeVersion: String = "1"
+) {
+    setenv("ENCRYPTION_KEY", key, 1)
+    setenv("ENCRYPTION_WRITE_VERSION", writeVersion, 1)
+    if let keyID { setenv("ENCRYPTION_KEY_ID", keyID, 1) }
+    else { unsetenv("ENCRYPTION_KEY_ID") }
+    if let previousKeys { setenv("ENCRYPTION_PREVIOUS_KEYS", previousKeys, 1) }
+    else { unsetenv("ENCRYPTION_PREVIOUS_KEYS") }
+}
+
 // Builds a fresh in-memory app for each test so tests are fully isolated.
 // SQLite is used instead of PostgreSQL to avoid a live database dependency.
 // AddScanStatus gracefully skips the PostgreSQL-specific ALTER COLUMN statements.
@@ -1007,12 +1046,9 @@ final class AppTests: XCTestCase {
     // MARK: - Sensitive-field encryption
 
     func testSensitiveFieldEncryptionEnvelopeRoundTrip() throws {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
-        setenv("ENCRYPTION_KEY", String(repeating: "ab", count: 32), 1)
-        defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
-        }
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(key: String(repeating: "ab", count: 32))
 
         try TokenEncryption.validateConfiguration(required: true)
         let ciphertext = try TokenEncryption.encrypt("person@example.test")
@@ -1030,15 +1066,161 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(try user.webhookURL, "https://hooks.example.test/secret")
     }
 
-    func testCorruptSensitiveEnvelopesThrowTypedFailuresWithoutCrashing() throws {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
-        defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
-        }
+    func testV2EnvelopeBindsCiphertextToFieldAndRecord() throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(
+            key: String(repeating: "21", count: 32),
+            keyID: "epoch-a",
+            writeVersion: "2"
+        )
 
         let recordID = UUID()
-        setenv("ENCRYPTION_KEY", String(repeating: "31", count: 32), 1)
+        let ciphertext = try TokenEncryption.encrypt(
+            "person@example.test",
+            context: .init(field: FieldCrypto.StoredField.scanInput.rawValue, recordID: recordID)
+        )
+        XCTAssertTrue(ciphertext.hasPrefix("enc:v2:epoch-a:"))
+        XCTAssertFalse(ciphertext.contains("person@example.test"))
+        XCTAssertEqual(
+            try FieldCrypto.decryptStored(ciphertext, field: .scanInput, recordID: recordID),
+            "person@example.test"
+        )
+
+        do {
+            _ = try FieldCrypto.decryptStored(
+                ciphertext,
+                field: .resultRawData,
+                recordID: recordID
+            )
+            XCTFail("A v2 envelope must not be transferable to another field")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.reason, .authenticationFailed)
+        }
+
+        do {
+            _ = try FieldCrypto.decryptStored(
+                ciphertext,
+                field: .scanInput,
+                recordID: UUID()
+            )
+            XCTFail("A v2 envelope must not be transferable to another record")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.reason, .authenticationFailed)
+        }
+
+        let unavailableKey = ciphertext.replacingOccurrences(
+            of: "enc:v2:epoch-a:",
+            with: "enc:v2:missing-key:"
+        )
+        do {
+            _ = try FieldCrypto.decryptStored(
+                unavailableKey,
+                field: .scanInput,
+                recordID: recordID
+            )
+            XCTFail("An envelope that names an unavailable key must fail closed")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.reason, .keyUnavailable)
+        }
+    }
+
+    func testV2KeyringReadsPreviousV2AndLegacyV1Data() throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        let keyA = String(repeating: "61", count: 32)
+        let keyB = String(repeating: "62", count: 32)
+        let recordID = UUID()
+        let context = TokenEncryption.Context(
+            field: FieldCrypto.StoredField.scanInput.rawValue,
+            recordID: recordID
+        )
+
+        configureEncryptionEnvironment(key: keyA, keyID: "epoch-a", writeVersion: "1")
+        let legacyCiphertext = try TokenEncryption.encrypt("legacy-value", context: context)
+        let legacyBlindIndex = try TokenEncryption.blindIndex("lookup-value")
+
+        setenv("ENCRYPTION_WRITE_VERSION", "2", 1)
+        let previousV2Ciphertext = try TokenEncryption.encrypt("v2-value", context: context)
+        let previousV2BlindIndex = try TokenEncryption.blindIndex("lookup-value")
+
+        configureEncryptionEnvironment(
+            key: keyB,
+            keyID: "epoch-b",
+            previousKeys: "epoch-a=\(keyA)",
+            writeVersion: "2"
+        )
+        XCTAssertEqual(
+            try TokenEncryption.decryptRequired(legacyCiphertext, context: context),
+            "legacy-value"
+        )
+        XCTAssertEqual(
+            try TokenEncryption.decryptRequired(previousV2Ciphertext, context: context),
+            "v2-value"
+        )
+        let candidates = try TokenEncryption.blindIndexCandidates("lookup-value")
+        XCTAssertTrue(candidates.contains(legacyBlindIndex))
+        XCTAssertTrue(candidates.contains(previousV2BlindIndex))
+
+        let currentCiphertext = try TokenEncryption.encrypt("current-value", context: context)
+        XCTAssertTrue(currentCiphertext.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(TokenEncryption.isCurrentEnvelope(currentCiphertext))
+        XCTAssertFalse(TokenEncryption.isCurrentEnvelope(previousV2Ciphertext))
+
+        unsetenv("ENCRYPTION_PREVIOUS_KEYS")
+        XCTAssertThrowsError(try TokenEncryption.decryptRequired(previousV2Ciphertext, context: context)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .unknownKeyID)
+        }
+        XCTAssertThrowsError(try TokenEncryption.decryptRequired(legacyCiphertext, context: context)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .decryptionFailed)
+        }
+    }
+
+    func testEncryptionConfigurationRejectsInvalidV2Keyrings() throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        let key = String(repeating: "71", count: 32)
+
+        configureEncryptionEnvironment(key: key, keyID: "epoch-a", writeVersion: "3")
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .invalidWriteVersion)
+        }
+
+        configureEncryptionEnvironment(key: key, keyID: "spaces are invalid", writeVersion: "2")
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .invalidKeyring)
+        }
+
+        configureEncryptionEnvironment(
+            key: key,
+            keyID: "epoch-a",
+            previousKeys: "epoch-a=\(String(repeating: "72", count: 32))",
+            writeVersion: "2"
+        )
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .invalidKeyring)
+        }
+
+        let tooMany = (0..<5)
+            .map { "old-\($0)=\(String(repeating: String(format: "%02x", $0 + 1), count: 32))" }
+            .joined(separator: ",")
+        configureEncryptionEnvironment(
+            key: key,
+            keyID: "epoch-a",
+            previousKeys: tooMany,
+            writeVersion: "2"
+        )
+        XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true)) {
+            XCTAssertEqual($0 as? TokenEncryption.Error, .invalidKeyring)
+        }
+    }
+
+    func testCorruptSensitiveEnvelopesThrowTypedFailuresWithoutCrashing() throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+
+        let recordID = UUID()
+        configureEncryptionEnvironment(key: String(repeating: "31", count: 32))
 
         do {
             _ = try FieldCrypto.decryptStored(
@@ -1074,13 +1256,12 @@ final class AppTests: XCTestCase {
     }
 
     func testCorruptSensitiveFieldReturnsGeneric500AndIncrementsMetric() async throws {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
         let previousMetricsToken = ProcessInfo.processInfo.environment["METRICS_TOKEN"]
-        setenv("ENCRYPTION_KEY", String(repeating: "41", count: 32), 1)
+        configureEncryptionEnvironment(key: String(repeating: "41", count: 32))
         unsetenv("METRICS_TOKEN")
         defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
+            environment.restore()
             if let previousMetricsToken { setenv("METRICS_TOKEN", previousMetricsToken, 1) }
             else { unsetenv("METRICS_TOKEN") }
         }
@@ -1129,12 +1310,9 @@ final class AppTests: XCTestCase {
     }
 
     func testScheduledScanWithUnreadableInputIsQuarantined() async throws {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
-        setenv("ENCRYPTION_KEY", String(repeating: "51", count: 32), 1)
-        defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
-        }
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(key: String(repeating: "51", count: 32))
 
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
@@ -1170,12 +1348,12 @@ final class AppTests: XCTestCase {
     }
 
     func testEncryptionConfigurationRejectsMissingAndMalformedKeys() {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
-        defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
-        }
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
 
+        unsetenv("ENCRYPTION_KEY_ID")
+        unsetenv("ENCRYPTION_PREVIOUS_KEYS")
+        setenv("ENCRYPTION_WRITE_VERSION", "1", 1)
         unsetenv("ENCRYPTION_KEY")
         XCTAssertNoThrow(try TokenEncryption.validateConfiguration(required: false))
         XCTAssertThrowsError(try TokenEncryption.validateConfiguration(required: true))
@@ -1185,12 +1363,9 @@ final class AppTests: XCTestCase {
     }
 
     func testEncryptionKeyVerifierRejectsKeyReplacement() async throws {
-        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
-        setenv("ENCRYPTION_KEY", String(repeating: "11", count: 32), 1)
-        defer {
-            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
-            else { unsetenv("ENCRYPTION_KEY") }
-        }
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(key: String(repeating: "11", count: 32))
 
         let app = try await Application.make(.testing)
         addTeardownBlock { try await app.asyncShutdown() }
@@ -1206,6 +1381,39 @@ final class AppTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is TokenEncryption.Error)
         }
+    }
+
+    func testEncryptionKeyVerifierRewrapsMarkerBeforePreviousKeyRemoval() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        let keyA = String(repeating: "81", count: 32)
+        let keyB = String(repeating: "82", count: 32)
+        configureEncryptionEnvironment(key: keyA, keyID: "epoch-a", writeVersion: "2")
+
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.databases.use(.sqlite(.memory), as: .psql, isDefault: true)
+        app.migrations.add(CreateEncryptionMetadata())
+        try await app.autoMigrate()
+        try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
+
+        let initialMarker = try await EncryptionMetadata.query(on: app.db).first()
+        var marker = try XCTUnwrap(initialMarker)
+        XCTAssertTrue(marker.value.hasPrefix("enc:v2:epoch-a:"))
+
+        configureEncryptionEnvironment(
+            key: keyB,
+            keyID: "epoch-b",
+            previousKeys: "epoch-a=\(keyA)",
+            writeVersion: "2"
+        )
+        try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
+        let rotatedMarker = try await EncryptionMetadata.query(on: app.db).first()
+        marker = try XCTUnwrap(rotatedMarker)
+        XCTAssertTrue(marker.value.hasPrefix("enc:v2:epoch-b:"))
+
+        unsetenv("ENCRYPTION_PREVIOUS_KEYS")
+        try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
     }
 
     // MARK: - Root route

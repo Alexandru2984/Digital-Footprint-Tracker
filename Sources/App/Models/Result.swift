@@ -61,19 +61,28 @@ final class Result: Model, Content {
         }
     }
 
-    func setRawData(_ newValue: String) { rawDataCipher = Result.encryptField(newValue) }
-    func setMetadata(_ newValue: String?) { metadataCipher = newValue.map(Result.encryptField) }
+    func setRawData(_ newValue: String) {
+        rawDataCipher = FieldCrypto.encrypt(newValue, field: .resultRawData, recordID: encryptionID)
+    }
+    func setMetadata(_ newValue: String?) {
+        metadataCipher = newValue.map {
+            FieldCrypto.encrypt($0, field: .resultMetadata, recordID: encryptionID)
+        }
+    }
 
     init() { }
 
     init(id: UUID? = nil, scanID: UUID, source: String, type: String, confidenceScore: Double, rawData: String, metadata: String? = nil) {
-        self.id = id
+        let recordID = id ?? UUID()
+        self.id = recordID
         self.$scan.id = scanID
         self.source = source
         self.type = type
         self.confidenceScore = confidenceScore
-        self.rawDataCipher = Result.encryptField(rawData)
-        self.metadataCipher = metadata.map(Result.encryptField)
+        self.rawDataCipher = FieldCrypto.encrypt(rawData, field: .resultRawData, recordID: recordID)
+        self.metadataCipher = metadata.map {
+            FieldCrypto.encrypt($0, field: .resultMetadata, recordID: recordID)
+        }
     }
 
     /// Decodes the stored `metadata` JSON string into a dictionary for API
@@ -84,16 +93,6 @@ final class Result: Model, Content {
             return try? JSONDecoder().decode([String: String].self, from: data)
         }
     }
-
-    // MARK: - Field encryption helpers
-
-    /// Encrypt when a key is configured. Production requires a valid key at startup;
-    /// encryption errors fail closed before a finding can be persisted.
-    static func encryptField(_ plaintext: String) -> String { FieldCrypto.encrypt(plaintext) }
-
-    /// Returns plaintext if `stored` is decryptable ciphertext, else nil (caller
-    /// falls back to treating it as a legacy plaintext value).
-    static func decryptField(_ stored: String) -> String? { FieldCrypto.decrypt(stored) }
 
     // MARK: - Codable (plaintext JSON, identical shape to the pre-encryption model)
 
@@ -119,14 +118,26 @@ final class Result: Model, Content {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try c.decodeIfPresent(UUID.self, forKey: .id)
+        let recordID = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.id = recordID
         if let ref = try c.decodeIfPresent(ScanRef.self, forKey: .scan), let sid = ref.id {
             self.$scan.id = sid
         }
         self.source = try c.decode(String.self, forKey: .source)
         self.type = try c.decode(String.self, forKey: .type)
         self.confidenceScore = try c.decode(Double.self, forKey: .confidenceScore)
-        self.rawDataCipher = Result.encryptField(try c.decode(String.self, forKey: .rawData))
-        self.metadataCipher = try c.decodeIfPresent(String.self, forKey: .metadata).map(Result.encryptField)
+        self.rawDataCipher = FieldCrypto.encrypt(
+            try c.decode(String.self, forKey: .rawData),
+            field: .resultRawData,
+            recordID: recordID
+        )
+        self.metadataCipher = try c.decodeIfPresent(String.self, forKey: .metadata).map {
+            FieldCrypto.encrypt($0, field: .resultMetadata, recordID: recordID)
+        }
+    }
+
+    private var encryptionID: UUID {
+        guard let id else { preconditionFailure("Result must have an ID before encryption") }
+        return id
     }
 }

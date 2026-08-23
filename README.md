@@ -181,8 +181,11 @@ PostgreSQL
   the factor once, and rotates the authenticated session.
 - Versioned AES-256-GCM envelopes for scan targets/results, investigation
   boards, notification credentials, scheduler targets, notifications, audit
-  details, and plugin-cache payloads; production refuses to boot without a
-  valid `ENCRYPTION_KEY` and detects accidental key replacement
+  details, and plugin-cache payloads. V2 derives separate encryption and blind-
+  index keys with HKDF-SHA256, embeds a key ID, and authenticates the storage
+  field plus row UUID as AAD. Readers accept v1 and v2 during staged rotation;
+  production refuses to boot without a valid keyring and verifies a persistent
+  marker before serving traffic.
 - SMTP header-injection guard (CRLF stripped from `From` / `To` / `Subject`)
 - Per-user `retention_days` + daily `ScanCleanupLifecycle` (default 30 d)
 
@@ -235,6 +238,13 @@ open http://localhost:8085
 
 The app container runs read-only, dropped capabilities, non-root user, with `/tmp` on tmpfs.
 Postgres data persists in the `pgdata` named volume.
+
+Encryption rollout is reader-first: leave `ENCRYPTION_WRITE_VERSION=1` for the
+first deployment, give the active key a stable `ENCRYPTION_KEY_ID`, and switch
+writes to `2` only after every web/worker process runs the dual reader. During a
+key change, expose the old root only through the bounded
+`ENCRYPTION_PREVIOUS_KEYS=id=64hex` keyring. Treat that variable exactly like the
+active key; it must not be committed, logged, or retained after verified rewrap.
 
 ### Option B: Native build
 

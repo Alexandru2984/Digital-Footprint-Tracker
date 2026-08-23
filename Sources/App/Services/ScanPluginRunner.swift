@@ -173,7 +173,12 @@ enum ScanPluginRunner {
                         for candidate in pCandidates {
                             let cInput = candidate.value
                             let raw: [PluginResult]
-                            if useCache, let cached = await PluginCacheStore.lookup(pluginName: pName, input: cInput, on: db) {
+                            if useCache, let cached = await PluginCacheStore.lookup(
+                                pluginName: pName,
+                                input: cInput,
+                                on: db,
+                                logger: app.logger
+                            ) {
                                 raw = PluginResultLimits.sanitize(cached)
                             } else {
                                 let fresh = try await plugin.scan(input: cInput, on: app)
