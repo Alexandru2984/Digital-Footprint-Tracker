@@ -27,6 +27,11 @@ struct AccountController: RouteCollection {
 
         // Profile — never include the password hash or the encrypted Telegram
         // token. Both are at-rest secrets that should never leave the box.
+        let webhookURL = try user.webhookURL
+        let discordWebhookURL = try user.discordWebhookURL
+        let telegramBotToken = try user.telegramBotToken
+        let slackWebhookURL = try user.slackWebhookURL
+        let telegramChatID = try user.telegramChatID
         let profile: [String: Any] = [
             "id":               userID.uuidString,
             "username":         user.username,
@@ -35,11 +40,11 @@ struct AccountController: RouteCollection {
             "createdAt":        user.createdAt.map { $0.timeIntervalSince1970 } as Any,
             "retentionDays":    user.retentionDays as Any,
             "verboseAlerts":    user.verboseAlerts,
-            "webhookURL":       user.webhookURL as Any,
-            "discordConfigured":  user.discordWebhookURL != nil,
-            "telegramConfigured": user.telegramBotToken != nil,
-            "slackConfigured":    user.slackWebhookURL != nil,
-            "telegramChatID":   user.telegramChatID as Any
+            "webhookURL":       webhookURL as Any,
+            "discordConfigured":  discordWebhookURL != nil,
+            "telegramConfigured": telegramBotToken != nil,
+            "slackConfigured":    slackWebhookURL != nil,
+            "telegramChatID":   telegramChatID as Any
         ]
 
         // Scans + nested results.
@@ -48,24 +53,24 @@ struct AccountController: RouteCollection {
             .with(\.$results)
             .sort(\.$createdAt, .descending)
             .all()
-        let scansPayload: [[String: Any]] = scans.map { s in
-            let risk = RiskScorer.compute(results: s.results)
+        let scansPayload: [[String: Any]] = try scans.map { s in
+            let risk = try RiskScorer.compute(results: s.results)
             return [
                 "id":            s.id?.uuidString ?? "",
-                "input":         s.input,
+                "input":         try s.input,
                 "status":        s.status.rawValue,
                 "riskScore":     risk.value,
                 "riskLevel":     risk.level.rawValue,
                 "scannedAt":     s.createdAt.map { $0.timeIntervalSince1970 } as Any,
                 "completedAt":   s.completedAt.map { $0.timeIntervalSince1970 } as Any,
-                "results":       s.results.map { r -> [String: Any] in
+                "results":       try s.results.map { r -> [String: Any] in
                     var row: [String: Any] = [
                         "source":          r.source,
                         "type":            r.type,
                         "confidenceScore": r.confidenceScore,
-                        "rawData":         r.rawData
+                        "rawData":         try r.rawData
                     ]
-                    if let meta = r.metadataObject { row["metadata"] = meta }
+                    if let meta = try r.metadataObject { row["metadata"] = meta }
                     return row
                 }
             ]
@@ -74,9 +79,9 @@ struct AccountController: RouteCollection {
         let scheduled = try await ScheduledScan.query(on: req.db)
             .filter(\.$user.$id == userID)
             .all()
-        let scheduledPayload: [[String: Any]] = scheduled.map { s in [
+        let scheduledPayload: [[String: Any]] = try scheduled.map { s in [
             "id":         s.id?.uuidString ?? "",
-            "input":      s.input,
+            "input":      try s.input,
             "interval":   s.interval.rawValue,
             "isActive":   s.isActive,
             "lastRunAt":  s.lastRunAt.map { $0.timeIntervalSince1970 } as Any,
@@ -84,9 +89,9 @@ struct AccountController: RouteCollection {
         ] }
 
         let tags = try await Tag.query(on: req.db).filter(\.$user.$id == userID).all()
-        let tagsPayload: [[String: Any]] = tags.map { t in [
+        let tagsPayload: [[String: Any]] = try tags.map { t in [
             "id":     t.id?.uuidString ?? "",
-            "name":   t.name,
+            "name":   try t.name,
             "colour": t.colour
         ] }
 
@@ -94,10 +99,10 @@ struct AccountController: RouteCollection {
             .filter(\.$user.$id == userID)
             .sort(\.$createdAt, .descending)
             .all()
-        let notificationsPayload: [[String: Any]] = notifications.map { n in [
+        let notificationsPayload: [[String: Any]] = try notifications.map { n in [
             "id":              n.id?.uuidString ?? "",
             "scanID":          n.scanID.uuidString,
-            "message":         n.message,
+            "message":         try n.message,
             "newResultsCount": n.newResultsCount,
             "isRead":          n.isRead,
             "createdAt":       n.createdAt.map { $0.timeIntervalSince1970 } as Any
@@ -107,10 +112,10 @@ struct AccountController: RouteCollection {
             .filter(\.$user.$id == userID)
             .sort(\.$createdAt, .descending)
             .all()
-        let boardsPayload: [[String: Any]] = boards.map { board in
+        let boardsPayload: [[String: Any]] = try boards.map { board in
             var row: [String: Any] = [
                 "id": board.id?.uuidString ?? "",
-                "name": board.name,
+                "name": try board.name,
                 "watched": board.watched,
                 "watchInterval": board.watchInterval as Any,
                 "nextCheckAt": board.nextCheckAt.map { $0.timeIntervalSince1970 } as Any,
@@ -118,7 +123,7 @@ struct AccountController: RouteCollection {
                 "createdAt": board.createdAt.map { $0.timeIntervalSince1970 } as Any,
                 "updatedAt": board.updatedAt.map { $0.timeIntervalSince1970 } as Any,
             ]
-            if let data = board.data.data(using: .utf8),
+            if let data = try board.data.data(using: .utf8),
                let graph = try? JSONSerialization.jsonObject(with: data) {
                 row["data"] = graph
             }
@@ -129,10 +134,10 @@ struct AccountController: RouteCollection {
             .filter(\.$user.$id == userID)
             .sort(\.$createdAt, .descending)
             .all()
-        let darkWebPayload: [[String: Any]] = darkWebJobs.map { job in
+        let darkWebPayload: [[String: Any]] = try darkWebJobs.map { job in
             var row: [String: Any] = [
                 "id": job.id?.uuidString ?? "",
-                "target": job.target,
+                "target": try job.target,
                 "targetKind": job.targetKind.rawValue,
                 "status": job.status.rawValue,
                 "resultCount": job.resultCount,
@@ -143,7 +148,7 @@ struct AccountController: RouteCollection {
                 "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
                 "expiresAt": job.expiresAt.timeIntervalSince1970,
             ]
-            if let result = job.resultJSON?.data(using: .utf8),
+            if let result = try job.resultJSON?.data(using: .utf8),
                let normalized = try? JSONSerialization.jsonObject(with: result) {
                 row["result"] = normalized
             }
@@ -166,10 +171,10 @@ struct AccountController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .limit(1000)
             .all()
-        let auditPayload: [[String: Any]] = auditLogs.map { l in [
+        let auditPayload: [[String: Any]] = try auditLogs.map { l in [
             "action":    l.action,
-            "target":    l.target,
-            "ip":        l.ip,
+            "target":    try l.target,
+            "ip":        try l.ip,
             "createdAt": l.createdAt.map { $0.timeIntervalSince1970 } as Any
         ] }
 

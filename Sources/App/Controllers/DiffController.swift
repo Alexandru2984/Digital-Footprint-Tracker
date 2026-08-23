@@ -56,33 +56,43 @@ struct DiffController: RouteCollection {
         }
 
         var query = Scan.query(on: req.db)
-            .filterInput(scan.input)
+            .filterInput(try scan.input)
             .filter(\.$user.$id == userID)
             .filter(\.$statusRaw == "completed")
             .filter(\.$id != id)
         if let created = scan.createdAt { query = query.filter(\.$createdAt < created) }
         let previous = try await query.sort(\.$createdAt, .descending).with(\.$results).first()
 
-        let curInputs = Self.inputs(from: scan.results)
-        let delta = previous.map { ExposureDiff.between(previous: Self.inputs(from: $0.results), current: curInputs) }
-            ?? .empty
+        let curInputs = try Self.inputs(from: scan.results)
+        let delta: ExposureDiff.Delta
+        let previousInfo: ScanDiffInfo?
+        if let previous {
+            delta = ExposureDiff.between(
+                previous: try Self.inputs(from: previous.results),
+                current: curInputs
+            )
+            previousInfo = try Self.info(previous)
+        } else {
+            delta = .empty
+            previousInfo = nil
+        }
 
         return ExposureDiffResponse(
-            current: Self.info(scan),
-            previous: previous.map(Self.info),
+            current: try Self.info(scan),
+            previous: previousInfo,
             delta: delta
         )
     }
 
-    private static func inputs(from results: [Result]) -> [IdentitySynthesizer.Input] {
-        results.map {
+    private static func inputs(from results: [Result]) throws -> [IdentitySynthesizer.Input] {
+        try results.map {
             IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
-                                      metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
+                                      metadata: try $0.metadataObject ?? [:], rawData: try $0.rawData)
         }
     }
 
-    private static func info(_ scan: Scan) -> ScanDiffInfo {
-        ScanDiffInfo(scanID: scan.id!, input: scan.input, status: scan.status.rawValue,
+    private static func info(_ scan: Scan) throws -> ScanDiffInfo {
+        ScanDiffInfo(scanID: scan.id!, input: try scan.input, status: scan.status.rawValue,
                      scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 },
                      resultCount: scan.results.count)
     }
@@ -118,30 +128,38 @@ struct DiffController: RouteCollection {
             throw Abort(.notFound, reason: "Scan B not found or not owned by you.")
         }
 
-        func key(for result: Result) -> String {
-            "\(result.source):\(result.type):\(result.rawData.prefix(100))"
+        func key(for result: Result) throws -> String {
+            "\(result.source):\(result.type):\(try result.rawData.prefix(100))"
         }
         func riskLabel(score: Double) -> String {
             score >= 0.8 ? "High" : score >= 0.5 ? "Medium" : "Low"
         }
-        func toDiffResult(_ r: Result) -> DiffResultItem {
-            DiffResultItem(source: r.source, type: r.type, rawData: r.rawData, risk: riskLabel(score: r.confidenceScore))
+        func toDiffResult(_ r: Result) throws -> DiffResultItem {
+            DiffResultItem(source: r.source, type: r.type, rawData: try r.rawData, risk: riskLabel(score: r.confidenceScore))
         }
 
-        let aMap = Dictionary(grouping: scanA.results, by: key(for:)).mapValues { $0.first! }
-        let bMap = Dictionary(grouping: scanB.results, by: key(for:)).mapValues { $0.first! }
+        var aMap: [String: Result] = [:]
+        for result in scanA.results {
+            let resultKey = try key(for: result)
+            if aMap[resultKey] == nil { aMap[resultKey] = result }
+        }
+        var bMap: [String: Result] = [:]
+        for result in scanB.results {
+            let resultKey = try key(for: result)
+            if bMap[resultKey] == nil { bMap[resultKey] = result }
+        }
 
-        let newResults     = bMap.filter { aMap[$0.key] == nil }.values.map(toDiffResult)
-        let removedResults = aMap.filter { bMap[$0.key] == nil }.values.map(toDiffResult)
-        let unchanged      = aMap.filter { bMap[$0.key] != nil }.values.map(toDiffResult)
+        let newResults = try bMap.filter { aMap[$0.key] == nil }.values.map(toDiffResult)
+        let removedResults = try aMap.filter { bMap[$0.key] == nil }.values.map(toDiffResult)
+        let unchanged = try aMap.filter { bMap[$0.key] != nil }.values.map(toDiffResult)
 
         let infoA = ScanDiffInfo(
-            scanID: scanA.id!, input: scanA.input, status: scanA.status.rawValue,
+            scanID: scanA.id!, input: try scanA.input, status: scanA.status.rawValue,
             scannedAt: scanA.createdAt.map { $0.timeIntervalSince1970 },
             resultCount: scanA.results.count
         )
         let infoB = ScanDiffInfo(
-            scanID: scanB.id!, input: scanB.input, status: scanB.status.rawValue,
+            scanID: scanB.id!, input: try scanB.input, status: scanB.status.rawValue,
             scannedAt: scanB.createdAt.map { $0.timeIntervalSince1970 },
             resultCount: scanB.results.count
         )

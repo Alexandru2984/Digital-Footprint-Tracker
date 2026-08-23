@@ -27,13 +27,17 @@ final class Scan: Model, Content {
     var inputHash: String?
 
     /// Plaintext view of the target. Decrypts on read (legacy plaintext rows fall
-    /// through unchanged); on write, encrypts and refreshes the blind index.
+    /// through unchanged). Mutations go through `setInput`, which encrypts and
+    /// refreshes the blind index.
     var input: String {
-        get { FieldCrypto.decryptStored(inputCipher) }
-        set {
-            inputCipher = FieldCrypto.encrypt(newValue)
-            inputHash = FieldCrypto.blindIndex(newValue)
+        get throws {
+            try FieldCrypto.decryptStored(inputCipher, field: .scanInput, recordID: id)
         }
+    }
+
+    func setInput(_ newValue: String) {
+        inputCipher = FieldCrypto.encrypt(newValue)
+        inputHash = FieldCrypto.blindIndex(newValue)
     }
 
     @Field(key: "status")
@@ -63,7 +67,8 @@ final class Scan: Model, Content {
 
     init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {
         self.id = id
-        self.input = input        // computed setter encrypts + sets the blind index
+        self.inputCipher = FieldCrypto.encrypt(input)
+        self.inputHash = FieldCrypto.blindIndex(input)
         self.statusRaw = status.rawValue
         self.$user.id = userID
     }

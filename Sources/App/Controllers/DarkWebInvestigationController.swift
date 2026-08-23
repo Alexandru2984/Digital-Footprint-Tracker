@@ -81,7 +81,7 @@ struct DarkWebInvestigationController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .limit(25)
             .all()
-        return jobs.map(summary)
+        return try jobs.map(summary)
     }
 
     @Sendable
@@ -148,19 +148,19 @@ struct DarkWebInvestigationController: RouteCollection {
         )
 
         let response = Response(status: .accepted)
-        try response.content.encode(detail(job))
+        try response.content.encode(try detail(job))
         return response
     }
 
     @Sendable
     func get(req: Request) async throws -> Detail {
-        detail(try await owned(req))
+        try detail(try await owned(req))
     }
 
     @Sendable
     func cancel(req: Request) async throws -> Detail {
         let job = try await owned(req)
-        guard !job.status.isTerminal else { return detail(job) }
+        guard !job.status.isTerminal else { return try detail(job) }
         job.cancelRequested = true
         if job.status == .pending {
             job.status = .cancelled
@@ -175,7 +175,7 @@ struct DarkWebInvestigationController: RouteCollection {
             action: "dark_web_investigation_cancel",
             target: job.id?.uuidString ?? "unknown"
         )
-        return detail(job)
+        return try detail(job)
     }
 
     @Sendable
@@ -190,10 +190,10 @@ struct DarkWebInvestigationController: RouteCollection {
         return .noContent
     }
 
-    private func summary(_ job: DarkWebInvestigation) -> Summary {
+    private func summary(_ job: DarkWebInvestigation) throws -> Summary {
         Summary(
             id: job.id?.uuidString ?? "",
-            target: job.target,
+            target: try job.target,
             targetKind: job.targetKind.rawValue,
             status: job.status.rawValue,
             resultCount: job.resultCount,
@@ -206,9 +206,9 @@ struct DarkWebInvestigationController: RouteCollection {
         )
     }
 
-    private func detail(_ job: DarkWebInvestigation) -> Detail {
-        let item = summary(job)
-        let result = job.resultJSON.flatMap { stored in
+    private func detail(_ job: DarkWebInvestigation) throws -> Detail {
+        let item = try summary(job)
+        let result = try job.resultJSON.flatMap { stored in
             try? JSONDecoder().decode(DarkWebWorkerResult.self, from: Data(stored.utf8))
         }
         return Detail(

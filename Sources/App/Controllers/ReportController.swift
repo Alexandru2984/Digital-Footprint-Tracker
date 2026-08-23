@@ -37,17 +37,18 @@ struct ReportController: RouteCollection {
         }
 
         // Serialise scan + results to JSON for the Python script.
+        let input = try scan.input
         let payload: [String: Any] = [
             "scanID":      scan.id?.uuidString ?? "",
-            "input":       scan.input,
+            "input":       input,
             "status":      scan.status.rawValue,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
             "scannedAt":   scan.createdAt.map  { $0.timeIntervalSince1970 } as Any,
-            "results": scan.results.map { r in [
+            "results": try scan.results.map { r in [
                 "source":          r.source,
                 "type":            r.type,
                 "confidenceScore": r.confidenceScore,
-                "rawData":         r.rawData
+                "rawData":         try r.rawData
             ] as [String: Any] }
         ]
         let jsonData = try JSONSerialization.data(withJSONObject: payload)
@@ -96,7 +97,7 @@ struct ReportController: RouteCollection {
             throw Abort(.internalServerError, reason: "Report generation failed.")
         }
 
-        let safeName = scan.input
+        let safeName = input
             .replacingOccurrences(of: "@", with: "_at_")
             .filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
         var headers = HTTPHeaders()

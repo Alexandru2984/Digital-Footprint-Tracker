@@ -12,13 +12,15 @@ struct ScheduledScanRunner: LifecycleHandler {
         Task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000) // 1-minute tick
-                await runDueScans(app: app)
+                await runDueScheduledScansOnce(app: app)
             }
         }
     }
 }
 
-private func runDueScans(app: Application) async {
+/// One bounded scheduler tick. Internal visibility keeps the quarantine path
+/// directly regression-testable without booting an endless lifecycle loop.
+func runDueScheduledScansOnce(app: Application) async {
     let db = app.db
     let now = Date()
     let due: [ScheduledScan]
@@ -34,7 +36,29 @@ private func runDueScans(app: Application) async {
     }
 
     for ss in due {
-        let rawInput = ss.input
+        let rawInput: String
+        do {
+            rawInput = try ss.input
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(
+                failure,
+                app: app,
+                context: "scheduled_scan"
+            )
+            // Quarantine this recurring source. Leaving it active would retry the
+            // same unreadable ciphertext every minute and create an alert storm.
+            ss.isActive = false
+            ss.lastRunAt = now
+            do {
+                try await ss.save(on: db)
+            } catch {
+                app.logger.error("[ScheduledScanRunner] Failed to quarantine unreadable schedule \(ss.id?.uuidString ?? "unknown").")
+            }
+            continue
+        } catch {
+            app.logger.error("[ScheduledScanRunner] Failed to read encrypted schedule input.")
+            continue
+        }
         let userID = ss.$user.id
         guard let owner = try? await User.find(userID, on: db), owner.emailVerified else {
             app.logger.warning("[ScheduledScanRunner] Disabling schedule \(ss.id?.uuidString ?? "?") for an unverified or missing owner.")
@@ -114,82 +138,102 @@ private func runDueScans(app: Application) async {
             // the user twice for the same run.
             var firedDiffAlert = false
 
-            if let prev = previousScan, let prevID = prev.id {
-                let prevResults = (try? await App.Result.query(on: db).filter(\.$scan.$id == prevID).all()) ?? []
-                let prevFingerprints = Set(prevResults.map { "\($0.source):\($0.type):\(String($0.rawData.prefix(200)))" })
-                let newResults = allResults.filter { r in
-                    !prevFingerprints.contains("\(r.source):\(r.type):\(String(r.rawData.prefix(200)))")
-                }
-                // Attack-surface delta: lead the alert with newly opened ports / CVEs /
-                // subdomains when present — far more actionable than a source list.
-                let toInput: (App.Result) -> IdentitySynthesizer.Input = {
-                    IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
-                                              metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
-                }
-                let exposureDelta = ExposureDiff.between(previous: prevResults.map(toInput), current: allResults.map(toInput))
-                let exposureLine = exposureDelta.hasExposureChange ? exposureDelta.headline : ""
-                if !newResults.isEmpty {
-                    // Build an actionable summary line: the top distinct sources
-                    // where new findings appeared, capped to keep messages short
-                    // enough for Telegram + SMS-style channels. Order-preserving
-                    // dedup so the highest-confidence source surfaces first.
-                    var seen = Set<String>()
-                    let distinctSources = newResults
-                        .map { $0.source }
-                        .filter { seen.insert($0).inserted }
-                    let preview = distinctSources.prefix(5).joined(separator: ", ")
-                    let remainder = max(0, distinctSources.count - 5)
-                    let sourceLine = remainder > 0 ? "\(preview), +\(remainder) more" : preview
-
-                    let notification = ScanNotification(
-                        userID: userID,
-                        scanID: scanID,
-                        message: exposureLine.isEmpty
-                            ? "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)"
-                            : "🚨 New exposure for \u{201C}\(String(input.prefix(30)))\u{201D}: \(exposureLine)",
-                        newResultsCount: newResults.count
-                    )
-                    try? await notification.save(on: db)
-
-                    if let monitorUser = try? await User.find(userID, on: db) {
-                        let risk = RiskScorer.compute(results: allResults)
-                        var body = "Your monitored target '\(input)' has \(newResults.count) new result(s).\n"
-                        if !exposureLine.isEmpty { body += "New exposure: \(exposureLine)\n" }
-                        body += "Sources: \(sourceLine)\nRisk: \(risk.level.rawValue) (\(risk.value)/100)."
-                        let title = exposureLine.isEmpty
-                            ? "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
-                            : "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
-                        await NotificationDispatcher.notify(
-                            user: monitorUser,
-                            title: title,
-                            message: body,
-                            scanID: scanID,
-                            app: app
-                        )
-                        firedDiffAlert = true
+            do {
+                if let prev = previousScan, let prevID = prev.id {
+                    let prevResults = (try? await App.Result.query(on: db).filter(\.$scan.$id == prevID).all()) ?? []
+                    let prevFingerprints = Set(try prevResults.map {
+                        "\($0.source):\($0.type):\(String(try $0.rawData.prefix(200)))"
+                    })
+                    let newResults = try allResults.filter { r in
+                        !prevFingerprints.contains("\(r.source):\(r.type):\(String(try r.rawData.prefix(200)))")
                     }
-                    app.logger.info(
-                        "[ScheduledScanRunner] Schedule \(scheduleID): \(newResults.count) new finding(s); exposure_changed=\(!exposureLine.isEmpty)"
+                    // Attack-surface delta: lead the alert with newly opened ports / CVEs /
+                    // subdomains when present — far more actionable than a source list.
+                    let toInput: (App.Result) throws -> IdentitySynthesizer.Input = {
+                        IdentitySynthesizer.Input(
+                            source: $0.source,
+                            type: $0.type,
+                            confidence: $0.confidenceScore,
+                            metadata: try $0.metadataObject ?? [:],
+                            rawData: try $0.rawData
+                        )
+                    }
+                    let exposureDelta = ExposureDiff.between(
+                        previous: try prevResults.map(toInput),
+                        current: try allResults.map(toInput)
+                    )
+                    let exposureLine = exposureDelta.hasExposureChange ? exposureDelta.headline : ""
+                    if !newResults.isEmpty {
+                        // Build an actionable summary line: the top distinct sources
+                        // where new findings appeared, capped to keep messages short
+                        // enough for Telegram + SMS-style channels. Order-preserving
+                        // dedup so the highest-confidence source surfaces first.
+                        var seen = Set<String>()
+                        let distinctSources = newResults
+                            .map { $0.source }
+                            .filter { seen.insert($0).inserted }
+                        let preview = distinctSources.prefix(5).joined(separator: ", ")
+                        let remainder = max(0, distinctSources.count - 5)
+                        let sourceLine = remainder > 0 ? "\(preview), +\(remainder) more" : preview
+
+                        let notification = ScanNotification(
+                            userID: userID,
+                            scanID: scanID,
+                            message: exposureLine.isEmpty
+                                ? "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)"
+                                : "🚨 New exposure for \u{201C}\(String(input.prefix(30)))\u{201D}: \(exposureLine)",
+                            newResultsCount: newResults.count
+                        )
+                        try? await notification.save(on: db)
+
+                        if let monitorUser = try? await User.find(userID, on: db) {
+                            let risk = try RiskScorer.compute(results: allResults)
+                            var body = "Your monitored target '\(input)' has \(newResults.count) new result(s).\n"
+                            if !exposureLine.isEmpty { body += "New exposure: \(exposureLine)\n" }
+                            body += "Sources: \(sourceLine)\nRisk: \(risk.level.rawValue) (\(risk.value)/100)."
+                            let title = exposureLine.isEmpty
+                                ? "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
+                                : "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
+                            await NotificationDispatcher.notify(
+                                user: monitorUser,
+                                title: title,
+                                message: body,
+                                scanID: scanID,
+                                app: app
+                            )
+                            firedDiffAlert = true
+                        }
+                        app.logger.info(
+                            "[ScheduledScanRunner] Schedule \(scheduleID): \(newResults.count) new finding(s); exposure_changed=\(!exposureLine.isEmpty)"
+                        )
+                    }
+                }
+
+                // Completion notification — silent by default. Users who actually
+                // want a per-run heartbeat opt-in via `verboseAlerts`. This stops
+                // the per-target-per-day spam that the unconditional notify was
+                // producing for everyone (one alert per scheduled target per run,
+                // regardless of whether anything changed).
+                if !firedDiffAlert,
+                   let user = try? await User.find(userID, on: db),
+                   user.verboseAlerts {
+                    let risk = try RiskScorer.compute(results: allResults)
+                    await NotificationDispatcher.notify(
+                        user: user,
+                        title: "Scheduled Scan Complete: \(String(input.prefix(30)))",
+                        message: "Scheduled scan for '\(input)' completed with \(allResults.count) result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
+                        scanID: scanID,
+                        app: app
                     )
                 }
-            }
-
-            // Completion notification — silent by default. Users who actually
-            // want a per-run heartbeat opt-in via `verboseAlerts`. This stops
-            // the per-target-per-day spam that the unconditional notify was
-            // producing for everyone (one alert per scheduled target per run,
-            // regardless of whether anything changed).
-            if !firedDiffAlert,
-               let user = try? await User.find(userID, on: db),
-               user.verboseAlerts {
-                let risk = RiskScorer.compute(results: allResults)
-                await NotificationDispatcher.notify(
-                    user: user,
-                    title: "Scheduled Scan Complete: \(String(input.prefix(30)))",
-                    message: "Scheduled scan for '\(input)' completed with \(allResults.count) result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
-                    scanID: scanID,
-                    app: app
+            } catch let failure as FieldCrypto.DecryptionFailure {
+                await SensitiveFieldFailureReporter.report(
+                    failure,
+                    app: app,
+                    context: "scheduled_scan_diff"
                 )
+            } catch {
+                app.logger.error("[ScheduledScanRunner] Schedule \(scheduleID): diff processing failed.")
             }
         }
     }

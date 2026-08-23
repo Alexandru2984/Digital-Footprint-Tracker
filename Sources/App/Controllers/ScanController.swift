@@ -159,7 +159,7 @@ struct ScanController: RouteCollection {
                 if let createdAt = pendingScan.createdAt, createdAt > inFlightCutoff {
                     return ScanResponse(
                         scanID: pendingScan.id!,
-                        input: pendingScan.input,
+                        input: try pendingScan.input,
                         status: pendingScan.status.rawValue,
                         results: [],
                         completedAt: nil,
@@ -191,7 +191,7 @@ struct ScanController: RouteCollection {
                createdAt > staleThreshold {
                 return ScanResponse(
                     scanID: existingScan.id!,
-                    input: existingScan.input,
+                    input: try existingScan.input,
                     status: existingScan.status.rawValue,
                     results: existingScan.results,
                     completedAt: existingScan.completedAt.map { $0.timeIntervalSince1970 },
@@ -242,7 +242,7 @@ struct ScanController: RouteCollection {
 
         return ScanResponse(
             scanID: scan.id!,
-            input: scan.input,
+            input: try scan.input,
             status: scan.status.rawValue,
             results: scan.results,
             completedAt: scan.completedAt.map { $0.timeIntervalSince1970 },
@@ -282,6 +282,7 @@ struct ScanController: RouteCollection {
 
         let db = req.db
         let logger = req.logger
+        let application = req.application
         let encoder = JSONEncoder()
 
         let body = Response.Body(managedAsyncStream: { writer in
@@ -296,25 +297,37 @@ struct ScanController: RouteCollection {
                     .all()) ?? []
 
 
-                // Stream any results added since the last poll.
-                for result in results.dropFirst(lastCount) {
-                    let pr = PluginResult(
-                        source: result.source,
-                        type: result.type,
-                        confidenceScore: result.confidenceScore,
-                        rawData: result.rawData
-                    )
-                    if let data = try? encoder.encode(pr),
-                       let json = String(data: data, encoding: .utf8) {
-                        try await writer.writeBuffer(ByteBuffer(string: "event: result\ndata: \(json)\n\n"))
+                do {
+                    // Stream any results added since the last poll.
+                    for result in results.dropFirst(lastCount) {
+                        let pr = PluginResult(
+                            source: result.source,
+                            type: result.type,
+                            confidenceScore: result.confidenceScore,
+                            rawData: try result.rawData
+                        )
+                        if let data = try? encoder.encode(pr),
+                           let json = String(data: data, encoding: .utf8) {
+                            try await writer.writeBuffer(ByteBuffer(string: "event: result\ndata: \(json)\n\n"))
+                        }
                     }
-                }
-                lastCount = results.count
+                    lastCount = results.count
 
-                if scan.status == .completed || scan.status == .failed {
-                    let risk = RiskScorer.compute(results: results)
-                    let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count),\"riskScore\":\(risk.value),\"riskLevel\":\"\(risk.level.rawValue)\"}"
-                    try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
+                    if scan.status == .completed || scan.status == .failed {
+                        let risk = try RiskScorer.compute(results: results)
+                        let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count),\"riskScore\":\(risk.value),\"riskLevel\":\"\(risk.level.rawValue)\"}"
+                        try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
+                        return
+                    }
+                } catch let failure as FieldCrypto.DecryptionFailure {
+                    await SensitiveFieldFailureReporter.report(
+                        failure,
+                        app: application,
+                        context: "scan_stream"
+                    )
+                    try await writer.writeBuffer(ByteBuffer(
+                        string: "event: error\ndata: {\"code\":\"stored_data_unavailable\"}\n\n"
+                    ))
                     return
                 }
 

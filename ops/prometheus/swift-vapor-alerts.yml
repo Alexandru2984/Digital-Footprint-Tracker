@@ -27,3 +27,11 @@ groups:
         annotations:
           summary: Swift Vapor encrypted database backup is stale or missing
           description: No locally verified encrypted backup exists inside the configured freshness window.
+
+      - alert: SwiftVaporSensitiveFieldDecryptionFailure
+        expr: increase(swift_vapor_sensitive_field_failures_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor rejected a corrupted encrypted field
+          description: Authenticated field decryption failed; the affected read/job path was quarantined and requires operator investigation.

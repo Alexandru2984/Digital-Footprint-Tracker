@@ -32,42 +32,73 @@ struct NotificationDispatcher {
 
         // 1. Existing webhook (backward compat)
         let webhookOutcome: NotificationDeliveryOutcome
-        if let webhookURL = user.webhookURL, let url = URL(string: webhookURL) {
-            var payload: [String: Any] = ["title": title, "message": message]
-            if let sid = scanID { payload["scanID"] = sid.uuidString }
-            webhookOutcome = await sendWebhook(url: url, payload: payload, app: app)
-        } else {
-            webhookOutcome = user.webhookURL == nil ? .skipped : .failed
+        do {
+            if let webhookURL = try user.webhookURL {
+                if let url = URL(string: webhookURL) {
+                    var payload: [String: Any] = ["title": title, "message": message]
+                    if let sid = scanID { payload["scanID"] = sid.uuidString }
+                    webhookOutcome = await sendWebhook(url: url, payload: payload, app: app)
+                } else {
+                    webhookOutcome = .failed
+                }
+            } else {
+                webhookOutcome = .skipped
+            }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(failure, app: app, context: "notification_webhook")
+            webhookOutcome = .failed
+        } catch {
+            webhookOutcome = .failed
         }
         await metrics.recordNotificationDelivery(channel: .webhook, outcome: webhookOutcome)
         deliveries.append(.init(channel: .webhook, outcome: webhookOutcome))
 
         // 2. Discord
         let discordOutcome: NotificationDeliveryOutcome
-        if let discordURL = user.discordWebhookURL, let url = URL(string: discordURL) {
-            let embed: [String: Any] = [
-                "title": title,
-                "description": message,
-                "color": 5793266,
-                "footer": ["text": "Digital Footprint Tracker"]
-            ]
-            let payload: [String: Any] = ["embeds": [embed]]
-            discordOutcome = await sendWebhook(url: url, payload: payload, app: app)
-        } else {
-            discordOutcome = user.discordWebhookURL == nil ? .skipped : .failed
+        do {
+            if let discordURL = try user.discordWebhookURL {
+                if let url = URL(string: discordURL) {
+                    let embed: [String: Any] = [
+                        "title": title,
+                        "description": message,
+                        "color": 5793266,
+                        "footer": ["text": "Digital Footprint Tracker"]
+                    ]
+                    let payload: [String: Any] = ["embeds": [embed]]
+                    discordOutcome = await sendWebhook(url: url, payload: payload, app: app)
+                } else {
+                    discordOutcome = .failed
+                }
+            } else {
+                discordOutcome = .skipped
+            }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(failure, app: app, context: "notification_discord")
+            discordOutcome = .failed
+        } catch {
+            discordOutcome = .failed
         }
         await metrics.recordNotificationDelivery(channel: .discord, outcome: discordOutcome)
         deliveries.append(.init(channel: .discord, outcome: discordOutcome))
 
         // 3. Telegram
         let telegramOutcome: NotificationDeliveryOutcome
-        if let token = user.telegramBotToken, let chatID = user.telegramChatID, !token.isEmpty, !chatID.isEmpty {
-            telegramOutcome = await sendTelegram(
-                token: token, chatID: chatID, text: "**\(title)**\n\(message)", app: app
-            )
-        } else if user.telegramBotToken == nil, user.telegramChatID == nil {
-            telegramOutcome = .skipped
-        } else {
+        do {
+            let token = try user.telegramBotToken
+            let chatID = try user.telegramChatID
+            if let token, let chatID, !token.isEmpty, !chatID.isEmpty {
+                telegramOutcome = await sendTelegram(
+                    token: token, chatID: chatID, text: "**\(title)**\n\(message)", app: app
+                )
+            } else if token == nil, chatID == nil {
+                telegramOutcome = .skipped
+            } else {
+                telegramOutcome = .failed
+            }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(failure, app: app, context: "notification_telegram")
+            telegramOutcome = .failed
+        } catch {
             telegramOutcome = .failed
         }
         await metrics.recordNotificationDelivery(channel: .telegram, outcome: telegramOutcome)
@@ -75,15 +106,26 @@ struct NotificationDispatcher {
 
         // 4. Slack
         let slackOutcome: NotificationDeliveryOutcome
-        if let slackURL = user.slackWebhookURL, let url = URL(string: slackURL) {
-            let payload: [String: Any] = [
-                "blocks": [
-                    ["type": "section", "text": ["type": "mrkdwn", "text": "*\(title)*\n\(message)"]]
-                ]
-            ]
-            slackOutcome = await sendWebhook(url: url, payload: payload, app: app)
-        } else {
-            slackOutcome = user.slackWebhookURL == nil ? .skipped : .failed
+        do {
+            if let slackURL = try user.slackWebhookURL {
+                if let url = URL(string: slackURL) {
+                    let payload: [String: Any] = [
+                        "blocks": [
+                            ["type": "section", "text": ["type": "mrkdwn", "text": "*\(title)*\n\(message)"]]
+                        ]
+                    ]
+                    slackOutcome = await sendWebhook(url: url, payload: payload, app: app)
+                } else {
+                    slackOutcome = .failed
+                }
+            } else {
+                slackOutcome = .skipped
+            }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(failure, app: app, context: "notification_slack")
+            slackOutcome = .failed
+        } catch {
+            slackOutcome = .failed
         }
         await metrics.recordNotificationDelivery(channel: .slack, outcome: slackOutcome)
         deliveries.append(.init(channel: .slack, outcome: slackOutcome))

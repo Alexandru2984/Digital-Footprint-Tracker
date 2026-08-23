@@ -20,26 +20,27 @@ struct ExportController: RouteCollection {
         // Owned scans are owner-only; anonymous scans are readable by anyone
         // holding the unguessable scanID (capability access).
         try await scan.authorizeRead(req)
-        await AuditLogger.log(req: req, action: "export_json", target: scan.input)
+        let input = try scan.input
+        await AuditLogger.log(req: req, action: "export_json", target: input)
 
-        let risk = RiskScorer.compute(results: scan.results)
+        let risk = try RiskScorer.compute(results: scan.results)
         let payload: [String: Any] = [
             "scanID": scan.id?.uuidString ?? "",
-            "input": scan.input,
+            "input": input,
             "status": scan.status.rawValue,
             "riskScore": risk.value,
             "riskLevel": risk.level.rawValue,
             "scannedAt": scan.createdAt.map { $0.timeIntervalSince1970 } as Any,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
-            "results": scan.results.map { r -> [String: Any] in
+            "results": try scan.results.map { r -> [String: Any] in
                 var row: [String: Any] = [
                     "id": r.id?.uuidString ?? "",
                     "source": r.source,
                     "type": r.type,
                     "confidenceScore": r.confidenceScore,
-                    "rawData": r.rawData
+                    "rawData": try r.rawData
                 ]
-                if let meta = r.metadataObject { row["metadata"] = meta }
+                if let meta = try r.metadataObject { row["metadata"] = meta }
                 return row
             }
         ]
@@ -47,7 +48,7 @@ struct ExportController: RouteCollection {
         let jsonData = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "application/json; charset=utf-8")
-        headers.add(name: .contentDisposition, value: "attachment; filename=\"export-\(Self.safeName(scan.input)).json\"")
+        headers.add(name: .contentDisposition, value: "attachment; filename=\"export-\(Self.safeName(input)).json\"")
         return Response(status: .ok, headers: headers, body: .init(data: jsonData))
     }
 
@@ -62,12 +63,13 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        await AuditLogger.log(req: req, action: "export_graphml", target: scan.input)
+        let input = try scan.input
+        await AuditLogger.log(req: req, action: "export_graphml", target: input)
 
-        let xml = IdentityGraph.graphml(from: scan.synthesizedIdentity(), target: scan.input)
+        let xml = IdentityGraph.graphml(from: try scan.synthesizedIdentity(), target: input)
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "application/graphml+xml; charset=utf-8")
-        headers.add(name: .contentDisposition, value: "attachment; filename=\"graph-\(Self.safeName(scan.input)).graphml\"")
+        headers.add(name: .contentDisposition, value: "attachment; filename=\"graph-\(Self.safeName(input)).graphml\"")
         return Response(status: .ok, headers: headers, body: .init(string: xml))
     }
 
@@ -83,13 +85,14 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        await AuditLogger.log(req: req, action: "export_report", target: scan.input)
+        let input = try scan.input
+        await AuditLogger.log(req: req, action: "export_report", target: input)
 
-        let (profile, surface) = Self.reportModel(for: scan)
-        let md = ExecutiveReport.markdown(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
+        let (profile, surface) = try Self.reportModel(for: scan)
+        let md = ExecutiveReport.markdown(input: input, profile: profile, surface: surface, generatedAt: Date())
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
-        headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(scan.input)).md\"")
+        headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(input)).md\"")
         return Response(status: .ok, headers: headers, body: .init(string: md))
     }
 
@@ -104,10 +107,11 @@ struct ExportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
         try await scan.authorizeRead(req)
-        await AuditLogger.log(req: req, action: "export_report_html", target: scan.input)
+        let input = try scan.input
+        await AuditLogger.log(req: req, action: "export_report_html", target: input)
 
-        let (profile, surface) = Self.reportModel(for: scan)
-        let html = ExecutiveReportHTML.html(input: scan.input, profile: profile, surface: surface, generatedAt: Date())
+        let (profile, surface) = try Self.reportModel(for: scan)
+        let html = ExecutiveReportHTML.html(input: input, profile: profile, surface: surface, generatedAt: Date())
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/html; charset=utf-8")
         // This document needs only its embedded CSS. A report contains data from
@@ -123,11 +127,11 @@ struct ExportController: RouteCollection {
 
     /// Builds the synthesized identity and attack-surface snapshot for a scan's
     /// results — shared by the Markdown and HTML report renderers.
-    private static func reportModel(for scan: Scan) -> (IdentitySynthesizer.IdentityProfile, ExposureDiff.Snapshot) {
-        let risk = RiskScorer.compute(results: scan.results)
-        let inputs = scan.results.map {
+    private static func reportModel(for scan: Scan) throws -> (IdentitySynthesizer.IdentityProfile, ExposureDiff.Snapshot) {
+        let risk = try RiskScorer.compute(results: scan.results)
+        let inputs = try scan.results.map {
             IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
-                                      metadata: $0.metadataObject ?? [:], rawData: $0.rawData)
+                                      metadata: try $0.metadataObject ?? [:], rawData: try $0.rawData)
         }
         let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
         return (profile, ExposureDiff.snapshot(from: inputs))

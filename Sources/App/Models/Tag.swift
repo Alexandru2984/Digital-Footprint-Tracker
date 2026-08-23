@@ -8,9 +8,11 @@ final class Tag: Model, Content {
     @Parent(key: "user_id") var user: User
     @Field(key: "name") var nameCipher: String
     var name: String {
-        get { FieldCrypto.decryptStored(nameCipher) }
-        set { nameCipher = FieldCrypto.encrypt(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(nameCipher, field: .tagName, recordID: id)
+        }
     }
+    func setName(_ newValue: String) { nameCipher = FieldCrypto.encrypt(newValue) }
     @Field(key: "colour") var colour: String
     @Siblings(through: ScanTag.self, from: \.$tag, to: \.$scan) var scans: [Scan]
 
@@ -18,7 +20,7 @@ final class Tag: Model, Content {
     init(id: UUID? = nil, userID: UUID, name: String, colour: String) {
         self.id = id
         self.$user.id = userID
-        self.name = name
+        self.nameCipher = FieldCrypto.encrypt(name)
         self.colour = colour
     }
 }

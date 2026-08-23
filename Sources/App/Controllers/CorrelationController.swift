@@ -41,13 +41,18 @@ struct CorrelationController: RouteCollection {
         // Build DB-free summaries and run the pure correlation core. It draws
         // entities from the scan input + each result's structured metadata
         // (falling back to regex over rawData for unmigrated plugins).
-        let summaries = scans.compactMap { scan -> Correlator.ScanSummary? in
+        let summaries = try scans.compactMap { scan -> Correlator.ScanSummary? in
             guard let id = scan.id else { return nil }
             return Correlator.ScanSummary(
                 id: id,
-                input: scan.input,
-                results: scan.results.map {
-                    Correlator.ResultEntry(source: $0.source, type: $0.type, rawData: $0.rawData, metadata: $0.metadataObject)
+                input: try scan.input,
+                results: try scan.results.map {
+                    Correlator.ResultEntry(
+                        source: $0.source,
+                        type: $0.type,
+                        rawData: try $0.rawData,
+                        metadata: try $0.metadataObject
+                    )
                 }
             )
         }

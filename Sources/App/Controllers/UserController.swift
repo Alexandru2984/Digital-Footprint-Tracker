@@ -48,7 +48,7 @@ struct UserController: RouteCollection {
                 .sort(\.$createdAt, .descending)
                 .range(..<500)
                 .all()
-            let matched = candidates.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            let matched = try candidates.filter { try $0.input.localizedCaseInsensitiveContains(q) }
             total = matched.count
             let offset = (page - 1) * limit
             paged = Array(matched.dropFirst(offset).prefix(limit))
@@ -71,10 +71,10 @@ struct UserController: RouteCollection {
             let scanResults = try await Result.query(on: req.db)
                 .filter(\Result.$scan.$id == scanID)
                 .all()
-            let risk = RiskScorer.compute(results: scanResults)
+            let risk = try RiskScorer.compute(results: scanResults)
             items.append(ScanSummary(
                 scanID: scanID,
-                input: scan.input,
+                input: try scan.input,
                 status: scan.status.rawValue,
                 resultCount: scanResults.count,
                 riskScore: risk.value,
@@ -107,7 +107,7 @@ struct UserController: RouteCollection {
                 .sort(\.$createdAt, .descending)
                 .range(..<500)
                 .all()
-            let matched = candidates.filter { $0.input.localizedCaseInsensitiveContains(q) }
+            let matched = try candidates.filter { try $0.input.localizedCaseInsensitiveContains(q) }
             total = matched.count
             let offset = (page - 1) * limit
             paged = Array(matched.dropFirst(offset).prefix(limit))
@@ -127,10 +127,10 @@ struct UserController: RouteCollection {
             let scanResults = try await Result.query(on: req.db)
                 .filter(\Result.$scan.$id == scanID)
                 .all()
-            let risk = RiskScorer.compute(results: scanResults)
+            let risk = try RiskScorer.compute(results: scanResults)
             items.append(ScanSummary(
                 scanID: scanID,
-                input: maskInput(scan.input),
+                input: maskInput(try scan.input),
                 status: scan.status.rawValue,
                 resultCount: scanResults.count,
                 riskScore: risk.value,

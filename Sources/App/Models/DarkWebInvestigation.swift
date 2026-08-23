@@ -56,11 +56,14 @@ final class DarkWebInvestigation: Model {
     var targetHash: String
 
     var target: String {
-        get { FieldCrypto.decryptStored(targetCipher) }
-        set {
-            targetCipher = FieldCrypto.encrypt(newValue)
-            targetHash = FieldCrypto.blindIndex(newValue.lowercased())
+        get throws {
+            try FieldCrypto.decryptStored(targetCipher, field: .darkWebTarget, recordID: id)
         }
+    }
+
+    func setTarget(_ newValue: String) {
+        targetCipher = FieldCrypto.encrypt(newValue)
+        targetHash = FieldCrypto.blindIndex(newValue.lowercased())
     }
 
     @Field(key: "target_kind")
@@ -83,9 +86,13 @@ final class DarkWebInvestigation: Model {
     var resultCipher: String?
 
     var resultJSON: String? {
-        get { resultCipher.map(FieldCrypto.decryptStored) }
-        set { resultCipher = newValue.map(FieldCrypto.encrypt) }
+        get throws {
+            try resultCipher.map {
+                try FieldCrypto.decryptStored($0, field: .darkWebResult, recordID: id)
+            }
+        }
     }
+    func setResultJSON(_ newValue: String?) { resultCipher = newValue.map(FieldCrypto.encrypt) }
 
     @Field(key: "result_count")
     var resultCount: Int
@@ -120,7 +127,8 @@ final class DarkWebInvestigation: Model {
 
     init(userID: UUID, target: String, retentionHours: Int) {
         self.$user.id = userID
-        self.target = target
+        self.targetCipher = FieldCrypto.encrypt(target)
+        self.targetHash = FieldCrypto.blindIndex(target.lowercased())
         self.targetKindRaw = DarkWebTargetKind.detect(target).rawValue
         self.statusRaw = DarkWebInvestigationStatus.pending.rawValue
         self.resultCount = 0

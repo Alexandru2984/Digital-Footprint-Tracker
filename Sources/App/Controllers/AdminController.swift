@@ -26,12 +26,12 @@ struct AuditLogDTO: Content {
     let ip: String
     let createdAt: Date?
 
-    init(_ entry: AuditLog) {
+    init(_ entry: AuditLog) throws {
         id = entry.id
         userID = entry.userID
         action = entry.action
-        target = entry.target
-        ip = entry.ip
+        target = try entry.target
+        ip = try entry.ip
         createdAt = entry.createdAt
     }
 }
@@ -116,6 +116,6 @@ struct AdminController: RouteCollection {
         let page = try await AuditLog.query(on: req.db)
             .sort(\.$createdAt, .descending)
             .paginate(for: req)
-        return Page(items: page.items.map(AuditLogDTO.init), metadata: page.metadata)
+        return Page(items: try page.items.map(AuditLogDTO.init), metadata: page.metadata)
     }
 }

@@ -48,14 +48,14 @@ struct InvestigationController: RouteCollection {
         let lastCheckedAt: Double?
     }
 
-    private func summary(_ inv: Investigation) -> Summary {
-        let (n, new) = Self.nodeStats(inv.data)
-        return Summary(id: inv.id?.uuidString ?? "", name: inv.name,
+    private func summary(_ inv: Investigation) throws -> Summary {
+        let (n, new) = Self.nodeStats(try inv.data)
+        return Summary(id: inv.id?.uuidString ?? "", name: try inv.name,
                        nodeCount: n, updatedAt: inv.updatedAt?.timeIntervalSince1970,
                        watched: inv.watched, newCount: new)
     }
-    private func full(_ inv: Investigation) -> Full {
-        Full(id: inv.id?.uuidString ?? "", name: inv.name, data: inv.data,
+    private func full(_ inv: Investigation) throws -> Full {
+        Full(id: inv.id?.uuidString ?? "", name: try inv.name, data: try inv.data,
              createdAt: inv.createdAt?.timeIntervalSince1970,
              updatedAt: inv.updatedAt?.timeIntervalSince1970,
              watched: inv.watched, watchInterval: inv.watchInterval,
@@ -80,7 +80,7 @@ struct InvestigationController: RouteCollection {
             .filter(\.$user.$id == user.id!)
             .sort(\.$updatedAt, .descending)
             .all()
-        return boards.map(summary)
+        return try boards.map(summary)
     }
 
     struct CreateBody: Content { let name: String; let data: String? }
@@ -100,12 +100,12 @@ struct InvestigationController: RouteCollection {
         let inv = Investigation(userID: user.id!, name: name, data: data)
         try await inv.save(on: req.db)
         await AuditLogger.log(req: req, action: "investigation_create", target: name)
-        return full(inv)
+        return try full(inv)
     }
 
     @Sendable
     func get(req: Request) async throws -> Full {
-        full(try await owned(req))
+        try full(try await owned(req))
     }
 
     /// Compact index of every board the caller owns: just the node ids per board.
@@ -119,8 +119,8 @@ struct InvestigationController: RouteCollection {
         let boards = try await Investigation.query(on: req.db)
             .filter(\.$user.$id == user.id!)
             .all()
-        return boards.map { inv in
-            IndexEntry(id: inv.id?.uuidString ?? "", name: inv.name, nodes: Self.nodeIDs(inv.data))
+        return try boards.map { inv in
+            IndexEntry(id: inv.id?.uuidString ?? "", name: try inv.name, nodes: Self.nodeIDs(try inv.data))
         }
     }
 
@@ -137,10 +137,10 @@ struct InvestigationController: RouteCollection {
     func update(req: Request) async throws -> Full {
         let inv = try await owned(req)
         let body = try req.content.decode(UpdateBody.self)
-        if let name = body.name { inv.name = try Self.validName(name) }
-        if let data = body.data { inv.data = try Self.validData(data) }
+        if let name = body.name { inv.setName(try Self.validName(name)) }
+        if let data = body.data { inv.setData(try Self.validData(data)) }
         try await inv.save(on: req.db)
-        return full(inv)
+        return try full(inv)
     }
 
     @Sendable
@@ -174,14 +174,14 @@ struct InvestigationController: RouteCollection {
             inv.watched = true
             inv.watchInterval = (body.interval == "weekly") ? "weekly" : "daily"
             inv.nextCheckAt = Date().addingTimeInterval(300)
-            await AuditLogger.log(req: req, action: "investigation_watch_on", target: inv.name)
+            await AuditLogger.log(req: req, action: "investigation_watch_on", target: try inv.name)
         } else {
             inv.watched = false
             inv.nextCheckAt = nil
-            await AuditLogger.log(req: req, action: "investigation_watch_off", target: inv.name)
+            await AuditLogger.log(req: req, action: "investigation_watch_off", target: try inv.name)
         }
         try await inv.save(on: req.db)
-        return full(inv)
+        return try full(inv)
     }
 
     // MARK: - Helpers

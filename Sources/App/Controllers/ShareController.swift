@@ -256,19 +256,19 @@ struct ShareController: RouteCollection {
         return SharedReportResponse(
             scan: SharedReportResponse.ScanDTO(
                 id: scan.id!.uuidString,
-                input: scan.input,
+                input: try scan.input,
                 status: scan.status.rawValue,
                 completedAt: scan.completedAt.map { $0.timeIntervalSince1970 },
                 scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 }
             ),
-            results: results.map { r in
+            results: try results.map { r in
                 SharedReportResponse.ResultDTO(
                     id: r.id?.uuidString,
                     source: r.source,
                     type: r.type,
                     confidenceScore: r.confidenceScore,
-                    rawData: r.rawData,
-                    metadata: r.metadataObject
+                    rawData: try r.rawData,
+                    metadata: try r.metadataObject
                 )
             },
             sharedAt: share.createdAt.map { $0.timeIntervalSince1970 },

@@ -13,50 +13,50 @@ struct MigrateSensitiveFieldEncryption: AsyncMigration {
         try await EncryptionKeyVerifier.verifyOrInitialize(on: database)
 
         for result in try await Result.query(on: database).all() {
-            result.rawData = result.rawData
-            result.metadata = result.metadata
+            result.setRawData(try result.rawData)
+            result.setMetadata(try result.metadata)
             try await result.save(on: database)
         }
 
         for scan in try await Scan.query(on: database).all() {
-            scan.input = scan.input
+            scan.setInput(try scan.input)
             try await scan.save(on: database)
         }
 
         for board in try await Investigation.query(on: database).all() {
-            board.name = board.name
-            board.data = board.data
+            board.setName(try board.name)
+            board.setData(try board.data)
             try await board.save(on: database)
         }
 
         for user in try await User.query(on: database).all() {
-            user.webhookURL = user.webhookURL
-            user.discordWebhookURL = user.discordWebhookURL
-            user.telegramBotToken = user.telegramBotToken
-            user.telegramChatID = user.telegramChatID
-            user.slackWebhookURL = user.slackWebhookURL
-            user.totpSecret = user.totpSecret
+            user.setWebhookURL(try user.webhookURL)
+            user.setDiscordWebhookURL(try user.discordWebhookURL)
+            user.setTelegramBotToken(try user.telegramBotToken)
+            user.setTelegramChatID(try user.telegramChatID)
+            user.setSlackWebhookURL(try user.slackWebhookURL)
+            user.setTOTPSecret(try user.totpSecret)
             try await user.save(on: database)
         }
 
         for schedule in try await ScheduledScan.query(on: database).all() {
-            schedule.input = schedule.input
+            schedule.setInput(try schedule.input)
             try await schedule.save(on: database)
         }
 
         for notification in try await ScanNotification.query(on: database).all() {
-            notification.message = notification.message
+            notification.setMessage(try notification.message)
             try await notification.save(on: database)
         }
 
         for tag in try await Tag.query(on: database).all() {
-            tag.name = tag.name
+            tag.setName(try tag.name)
             try await tag.save(on: database)
         }
 
         for entry in try await AuditLog.query(on: database).all() {
-            entry.target = entry.target
-            entry.ip = entry.ip
+            entry.setTarget(try entry.target)
+            entry.setIP(try entry.ip)
             try await entry.save(on: database)
         }
 

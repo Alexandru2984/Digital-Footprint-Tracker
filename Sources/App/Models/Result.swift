@@ -10,10 +10,10 @@ import Vapor
 /// the app only ever sees plaintext through the computed `rawData` / `metadata`
 /// accessors. A stolen DB dump or backup is inert without `ENCRYPTION_KEY`.
 ///
-/// Transparency: encryption lives entirely behind the computed accessors and a
-/// custom Codable, so every existing call site (`result.rawData`, JSON responses,
-/// exports) is unchanged. Fluent's row I/O uses the `@Field` wrappers below
-/// (ciphertext); JSON uses the custom `encode(to:)` (plaintext).
+/// Encryption lives behind throwing read accessors, explicit mutation methods,
+/// and custom Codable. Fluent's row I/O uses the `@Field` wrappers below
+/// (ciphertext); JSON uses the custom `encode(to:)` (plaintext). A damaged tagged
+/// value therefore propagates a typed failure instead of terminating the process.
 ///
 /// Backward compatible: rows written before encryption was introduced hold
 /// plaintext. `TokenEncryption.decrypt` returns nil for a non-ciphertext value,
@@ -45,17 +45,24 @@ final class Result: Model, Content {
     var metadataCipher: String?
 
     /// Plaintext view of the finding. Decrypts on read (falling back to the raw
-    /// value for legacy plaintext rows), encrypts on write.
+    /// value for legacy plaintext rows); mutations go through `setRawData`.
     var rawData: String {
-        get { FieldCrypto.decryptStored(rawDataCipher) }
-        set { rawDataCipher = Result.encryptField(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(rawDataCipher, field: .resultRawData, recordID: id)
+        }
     }
 
     /// Plaintext view of the structured metadata JSON string.
     var metadata: String? {
-        get { metadataCipher.map(FieldCrypto.decryptStored) }
-        set { metadataCipher = newValue.map { Result.encryptField($0) } }
+        get throws {
+            try metadataCipher.map {
+                try FieldCrypto.decryptStored($0, field: .resultMetadata, recordID: id)
+            }
+        }
     }
+
+    func setRawData(_ newValue: String) { rawDataCipher = Result.encryptField(newValue) }
+    func setMetadata(_ newValue: String?) { metadataCipher = newValue.map(Result.encryptField) }
 
     init() { }
 
@@ -65,15 +72,17 @@ final class Result: Model, Content {
         self.source = source
         self.type = type
         self.confidenceScore = confidenceScore
-        self.rawData = rawData        // computed setter encrypts
-        self.metadata = metadata      // computed setter encrypts
+        self.rawDataCipher = Result.encryptField(rawData)
+        self.metadataCipher = metadata.map(Result.encryptField)
     }
 
     /// Decodes the stored `metadata` JSON string into a dictionary for API
     /// responses and exports. Returns nil when absent or unparseable.
     var metadataObject: [String: String]? {
-        guard let metadata, let data = metadata.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode([String: String].self, from: data)
+        get throws {
+            guard let metadata = try metadata, let data = metadata.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode([String: String].self, from: data)
+        }
     }
 
     // MARK: - Field encryption helpers
@@ -100,8 +109,12 @@ final class Result: Model, Content {
         try c.encode(source, forKey: .source)
         try c.encode(type, forKey: .type)
         try c.encode(confidenceScore, forKey: .confidenceScore)
-        try c.encode(rawData, forKey: .rawData)
-        if let m = metadata { try c.encode(m, forKey: .metadata) } else { try c.encodeNil(forKey: .metadata) }
+        try c.encode(try rawData, forKey: .rawData)
+        if let metadata = try metadata {
+            try c.encode(metadata, forKey: .metadata)
+        } else {
+            try c.encodeNil(forKey: .metadata)
+        }
     }
 
     init(from decoder: Decoder) throws {
@@ -113,7 +126,7 @@ final class Result: Model, Content {
         self.source = try c.decode(String.self, forKey: .source)
         self.type = try c.decode(String.self, forKey: .type)
         self.confidenceScore = try c.decode(Double.self, forKey: .confidenceScore)
-        self.rawData = try c.decode(String.self, forKey: .rawData)
-        self.metadata = try c.decodeIfPresent(String.self, forKey: .metadata)
+        self.rawDataCipher = Result.encryptField(try c.decode(String.self, forKey: .rawData))
+        self.metadataCipher = try c.decodeIfPresent(String.self, forKey: .metadata).map(Result.encryptField)
     }
 }

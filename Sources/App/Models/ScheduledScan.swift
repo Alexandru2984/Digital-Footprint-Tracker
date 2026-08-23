@@ -10,9 +10,11 @@ final class ScheduledScan: Model {
     @Parent(key: "user_id") var user: User
     @Field(key: "input") var inputCipher: String
     var input: String {
-        get { FieldCrypto.decryptStored(inputCipher) }
-        set { inputCipher = FieldCrypto.encrypt(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(inputCipher, field: .scheduledScanInput, recordID: id)
+        }
     }
+    func setInput(_ newValue: String) { inputCipher = FieldCrypto.encrypt(newValue) }
     @Field(key: "interval") var interval: Interval
     @Field(key: "is_active") var isActive: Bool
     @OptionalField(key: "last_run_at") var lastRunAt: Date?
@@ -22,7 +24,7 @@ final class ScheduledScan: Model {
     init(id: UUID? = nil, userID: UUID, input: String, interval: Interval, nextRunAt: Date) {
         self.id = id
         self.$user.id = userID
-        self.input = input
+        self.inputCipher = FieldCrypto.encrypt(input)
         self.interval = interval
         self.isActive = true
         self.lastRunAt = nil

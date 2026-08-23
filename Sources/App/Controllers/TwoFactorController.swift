@@ -39,7 +39,7 @@ struct TwoFactorController: RouteCollection {
             throw Abort(.conflict, reason: "Two-factor authentication is already enabled.")
         }
         let secret = TOTP.generateSecret()
-        user.totpSecret = Self.storeSecret(secret)
+        user.setTOTPSecret(Self.storeSecret(secret))
         try await user.save(on: req.db)
 
         let issuer = URL(string: Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com")?.host ?? "swift.micutu.com"
@@ -54,7 +54,7 @@ struct TwoFactorController: RouteCollection {
     func enable(req: Request) async throws -> EnableResponse {
         let user = try await req.requireRecentSessionUser()
         guard !user.totpEnabled else { throw Abort(.conflict, reason: "Already enabled.") }
-        guard let stored = user.totpSecret, let secret = Self.readSecret(stored) else {
+        guard let stored = try user.totpSecret, let secret = Self.readSecret(stored) else {
             throw Abort(.badRequest, reason: "Run setup first.")
         }
         let body = try req.content.decode(CodeBody.self)
@@ -96,7 +96,7 @@ struct TwoFactorController: RouteCollection {
             throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
         user.totpEnabled = false
-        user.totpSecret = nil
+        user.setTOTPSecret(nil)
         user.totpRecoveryCodes = nil
         user.lastTotpStep = nil
         try await user.save(on: req.db)
@@ -105,7 +105,7 @@ struct TwoFactorController: RouteCollection {
         // do not remain valid after this high-impact operation.
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         await AuditLogger.log(req: req, action: "2fa_disabled", target: user.username)
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     // MARK: - Login second step
@@ -137,11 +137,11 @@ struct TwoFactorController: RouteCollection {
         guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         await AuditLogger.log(req: req, action: "login_2fa", target: user.username)
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     static func verifySecondFactor(_ submitted: String, user: User, db: Database) async throws -> Bool {
-        guard let stored = user.totpSecret, let secret = readSecret(stored) else { return false }
+        guard let stored = try user.totpSecret, let secret = readSecret(stored) else { return false }
         let normalized = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, normalized.utf8.count <= 64 else { return false }
         if let step = TOTP.matchedStep(code: normalized, secret: secret) {

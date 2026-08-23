@@ -12,7 +12,7 @@ import Vapor
 /// ciphertext distinguishable from a legacy plaintext row instead of silently
 /// returning the ciphertext as if it were user data.
 enum TokenEncryption {
-    enum Error: Swift.Error, CustomStringConvertible {
+    enum Error: Swift.Error, CustomStringConvertible, Equatable, Sendable {
         case keyMissing, invalidKey, invalidCiphertext, decryptionFailed
 
         var description: String {
@@ -86,9 +86,10 @@ enum TokenEncryption {
         guard let data = Data(base64Encoded: encoded),
               let box = try? AES.GCM.SealedBox(combined: data)
         else { throw Error.invalidCiphertext }
+        let key = try symmetricKey()
         let plain: Data
         do {
-            plain = try AES.GCM.open(box, using: symmetricKey())
+            plain = try AES.GCM.open(box, using: key)
         } catch {
             throw Error.decryptionFailed
         }

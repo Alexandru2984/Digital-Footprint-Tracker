@@ -44,6 +44,11 @@ public func configure(_ app: Application) async throws {
     // individual controllers must not be able to accidentally opt into browser
     // or intermediary caching by omitting their own route group.
     app.middleware.use(NoCacheMiddleware(), at: .beginning)
+    // ErrorMiddleware is installed by Vapor before configuration begins. Keep
+    // this handler *inside* it so it sees the typed failure first and replaces
+    // it with a generic Abort; putting it at `.beginning` would let Vapor consume
+    // the original error before this middleware could record or sanitize it.
+    app.middleware.use(SensitiveFieldFailureMiddleware())
 
     // Sessions persisted to PostgreSQL via Fluent so they survive process
     // restarts and don't bloat heap memory under sustained traffic. The

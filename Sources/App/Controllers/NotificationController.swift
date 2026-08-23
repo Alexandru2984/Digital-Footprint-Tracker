@@ -9,10 +9,10 @@ struct ScanNotificationDTO: Content {
     let isRead: Bool
     let createdAt: Date?
 
-    init(_ notification: ScanNotification) {
+    init(_ notification: ScanNotification) throws {
         id = notification.id
         scanID = notification.scanID
-        message = notification.message
+        message = try notification.message
         newResultsCount = notification.newResultsCount
         isRead = notification.isRead
         createdAt = notification.createdAt
@@ -34,7 +34,7 @@ struct NotificationController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .limit(50)
             .all()
-        return notifications.map(ScanNotificationDTO.init)
+        return try notifications.map(ScanNotificationDTO.init)
     }
 
     @Sendable func markRead(req: Request) async throws -> HTTPStatus {

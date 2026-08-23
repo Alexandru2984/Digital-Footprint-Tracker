@@ -84,13 +84,13 @@ enum RiskScorer {
         }
     }
 
-    static func compute(results: [Result]) -> Score {
+    static func compute(results: [Result]) throws -> Score {
         // Drop exact duplicates (same source+type+rawData) so a cache re-add or
         // a repeat finding can't inflate the score.
         var seen = Set<String>()
         var contributions: [(Category, Double)] = []
         for r in results {
-            let key = "\(r.source)\u{1}\(r.type)\u{1}\(r.rawData)"
+            let key = "\(r.source)\u{1}\(r.type)\u{1}\(try r.rawData)"
             guard seen.insert(key).inserted else { continue }
             contributions.append((category(for: r.type), r.confidenceScore))
         }

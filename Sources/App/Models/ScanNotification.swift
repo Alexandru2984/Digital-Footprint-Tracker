@@ -9,9 +9,11 @@ final class ScanNotification: Model {
     @Field(key: "scan_id") var scanID: UUID
     @Field(key: "message") var messageCipher: String
     var message: String {
-        get { FieldCrypto.decryptStored(messageCipher) }
-        set { messageCipher = FieldCrypto.encrypt(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(messageCipher, field: .notificationMessage, recordID: id)
+        }
     }
+    func setMessage(_ newValue: String) { messageCipher = FieldCrypto.encrypt(newValue) }
     @Field(key: "new_results_count") var newResultsCount: Int
     @Field(key: "is_read") var isRead: Bool
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
@@ -20,7 +22,7 @@ final class ScanNotification: Model {
     init(userID: UUID, scanID: UUID, message: String, newResultsCount: Int) {
         self.$user.id = userID
         self.scanID = scanID
-        self.message = message
+        self.messageCipher = FieldCrypto.encrypt(message)
         self.newResultsCount = newResultsCount
         self.isRead = false
     }

@@ -20,9 +20,11 @@ final class Investigation: Model {
     @Field(key: "name")
     var nameCipher: String
     var name: String {
-        get { FieldCrypto.decryptStored(nameCipher) }
-        set { nameCipher = FieldCrypto.encrypt(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(nameCipher, field: .investigationName, recordID: id)
+        }
     }
+    func setName(_ newValue: String) { nameCipher = FieldCrypto.encrypt(newValue) }
 
     /// Ciphertext at rest — the graph JSON. Read/written via the `data` accessor.
     @Field(key: "data")
@@ -30,9 +32,11 @@ final class Investigation: Model {
 
     /// Plaintext view of the graph JSON (decrypts on read, encrypts on write).
     var data: String {
-        get { FieldCrypto.decryptStored(dataCipher) }
-        set { dataCipher = FieldCrypto.encrypt(newValue) }
+        get throws {
+            try FieldCrypto.decryptStored(dataCipher, field: .investigationData, recordID: id)
+        }
     }
+    func setData(_ newValue: String) { dataCipher = FieldCrypto.encrypt(newValue) }
 
     // ── Live monitoring ("watched" board) ─────────────────────────────────
     /// When true, a background runner periodically re-scans the board's active
@@ -61,8 +65,8 @@ final class Investigation: Model {
     init(id: UUID? = nil, userID: UUID, name: String, data: String) {
         self.id = id
         self.$user.id = userID
-        self.name = name
-        self.data = data   // computed setter encrypts
+        self.nameCipher = FieldCrypto.encrypt(name)
+        self.dataCipher = FieldCrypto.encrypt(data)
         self.watched = false
     }
 }

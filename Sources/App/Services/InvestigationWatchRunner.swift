@@ -58,6 +58,26 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
         return
     }
 
+    let boardData: String
+    let boardName: String
+    do {
+        boardData = try board.data
+        boardName = try board.name
+    } catch let failure as FieldCrypto.DecryptionFailure {
+        await SensitiveFieldFailureReporter.report(
+            failure,
+            app: app,
+            context: "investigation_watch"
+        )
+        board.watched = false
+        board.nextCheckAt = nil
+        try? await board.save(on: db)
+        return
+    } catch {
+        app.logger.error("[InvestigationWatch] board \(boardID): encrypted data could not be read.")
+        return
+    }
+
     // Advance the schedule up front so a crash mid-check doesn't busy-loop.
     let step: TimeInterval = (board.watchInterval == "weekly") ? 604_800 : 86_400
     board.lastCheckedAt = now
@@ -69,7 +89,7 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
         return
     }
 
-    guard var graph = BoardGraph.decode(board.data) else {
+    guard var graph = BoardGraph.decode(boardData) else {
         app.logger.warning("[InvestigationWatch] board \(boardID): unparseable graph, skipping.")
         return
     }
@@ -101,8 +121,26 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
                                    useCache: false, pivotDepth: 0)
 
         let results = (try? await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()) ?? []
-        let inputs = results.map {
-            BoardGraph.ResultInput(source: $0.source, type: $0.type, rawData: $0.rawData, metadata: $0.metadataObject ?? [:])
+        let inputs: [BoardGraph.ResultInput]
+        do {
+            inputs = try results.map {
+                BoardGraph.ResultInput(
+                    source: $0.source,
+                    type: $0.type,
+                    rawData: try $0.rawData,
+                    metadata: try $0.metadataObject ?? [:]
+                )
+            }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(
+                failure,
+                app: app,
+                context: "investigation_watch_results"
+            )
+            return
+        } catch {
+            app.logger.error("[InvestigationWatch] board \(boardID): result data could not be read.")
+            return
         }
         let extracted = BoardGraph.extract(rootId: node.id, results: inputs)
         totalNew += BoardGraph.merge(into: &graph, nodes: extracted.nodes, edges: extracted.edges)
@@ -118,7 +156,7 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
        json.utf8.count <= InvestigationController.maxDataBytes,
        graph.nodes.count <= InvestigationController.maxNodes,
        graph.edges.count <= InvestigationController.maxEdges {
-        board.data = json
+        board.setData(json)
         do {
             try await board.save(on: db)
         } catch {
@@ -135,8 +173,8 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
     let sample = newLabels.joined(separator: ", ")
     await NotificationDispatcher.notify(
         user: owner,
-        title: "🕸 Board grew: \(board.name)",
-        message: "Your watched investigation \u{201C}\(board.name)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
+        title: "🕸 Board grew: \(boardName)",
+        message: "Your watched investigation \u{201C}\(boardName)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
         scanID: lastScanID,
         app: app
     )

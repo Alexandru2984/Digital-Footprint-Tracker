@@ -22,6 +22,6 @@ struct IdentityController: RouteCollection {
         }
 
         try await scan.authorizeRead(req)
-        return scan.synthesizedIdentity()
+        return try scan.synthesizedIdentity()
     }
 }

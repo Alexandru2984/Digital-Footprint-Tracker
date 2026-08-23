@@ -30,6 +30,7 @@ private func makeApp() async throws -> Application {
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith]
     )), at: .beginning)
     app.middleware.use(NoCacheMiddleware(), at: .beginning)
+    app.middleware.use(SensitiveFieldFailureMiddleware())
 
     app.sessions.use(.fluent)
     app.middleware.use(app.sessions.middleware)
@@ -150,6 +151,45 @@ final class AppTests: XCTestCase {
         XCTAssertNil(snapshot.notificationDeliveries[.email]?["attempted"])
     }
 
+    func testCorruptNotificationCredentialFailsOnlyItsChannel() async throws {
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+        let metrics = MetricsRegistry()
+        let user = User(
+            username: "notification-corrupt-test",
+            email: "notification-corrupt@example.test",
+            passwordHash: "unused",
+            discordWebhookURL: "http://127.0.0.1/discord"
+        )
+        user.webhookURLCipher = "enc:v1:not-base64"
+
+        let before = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.userWebhookURL]?[.invalidEnvelope] ?? 0
+        let deliveries = await NotificationDispatcher.notify(
+            user: user,
+            title: "Test",
+            message: "Test delivery",
+            scanID: nil,
+            app: app,
+            metrics: metrics
+        )
+
+        let outcomes = Dictionary(uniqueKeysWithValues: deliveries.map { ($0.channel, $0.outcome) })
+        XCTAssertEqual(deliveries.count, NotificationChannel.allCases.count)
+        XCTAssertEqual(outcomes[.webhook], .failed)
+        XCTAssertEqual(outcomes[.discord], .failed, "Discord must still be evaluated after the corrupt webhook")
+        XCTAssertEqual(outcomes[.telegram], .skipped)
+        XCTAssertEqual(outcomes[.slack], .skipped)
+        XCTAssertEqual(outcomes[.email], .skipped)
+
+        let deliverySnapshot = await metrics.snapshot()
+        XCTAssertEqual(deliverySnapshot.notificationDeliveries[.webhook]?["failed"], 1)
+        XCTAssertEqual(deliverySnapshot.notificationDeliveries[.discord]?["failed"], 1)
+        let after = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.userWebhookURL]?[.invalidEnvelope] ?? 0
+        XCTAssertEqual(after, before + 1)
+    }
+
     func testPublicLivenessIsDatabaseIndependentAndLocalReadinessChecksSQL() async throws {
         struct Probe: Decodable {
             let status: String
@@ -218,7 +258,7 @@ final class AppTests: XCTestCase {
             UUID(uuidString: jobID)!, on: app.db
         )
         let persisted = try XCTUnwrap(persistedLookup)
-        XCTAssertEqual(persisted.target, "person@example.test")
+        XCTAssertEqual(try persisted.target, "person@example.test")
         XCTAssertEqual(persisted.targetHash, FieldCrypto.blindIndex("person@example.test"))
         XCTAssertEqual(persisted.resultCount, 0)
         XCTAssertLessThanOrEqual(
@@ -703,7 +743,7 @@ final class AppTests: XCTestCase {
             .filter(\.$username == "pending-twofa-user").first()
         let user = try XCTUnwrap(userLookup)
         let secret = TOTP.generateSecret()
-        user.totpSecret = secret
+        user.setTOTPSecret(secret)
         user.totpEnabled = true
         try await user.save(on: app.db)
 
@@ -737,7 +777,7 @@ final class AppTests: XCTestCase {
         let user = try XCTUnwrap(userLookup)
         let secret = TOTP.generateSecret()
         let recoveryCode = "abcd-efgh-jkmn"
-        user.totpSecret = secret
+        user.setTOTPSecret(secret)
         user.totpEnabled = true
         user.totpRecoveryCodes = String(decoding: try JSONEncoder().encode([
             RecoveryCodes.hash(recoveryCode),
@@ -773,7 +813,7 @@ final class AppTests: XCTestCase {
         let disabledLookup = try await User.find(try XCTUnwrap(user.id), on: app.db)
         let disabled = try XCTUnwrap(disabledLookup)
         XCTAssertFalse(disabled.totpEnabled)
-        XCTAssertNil(disabled.totpSecret)
+        XCTAssertNil(try disabled.totpSecret)
         XCTAssertNil(disabled.totpRecoveryCodes)
         XCTAssertNil(disabled.lastTotpStep)
     }
@@ -982,12 +1022,151 @@ final class AppTests: XCTestCase {
 
         let scan = Scan(input: "person@example.test")
         XCTAssertTrue(scan.inputCipher.hasPrefix("enc:v1:"))
-        XCTAssertEqual(scan.input, "person@example.test")
+        XCTAssertEqual(try scan.input, "person@example.test")
 
         let user = User(username: "alice", email: "alice@example.test", passwordHash: "hash",
                         webhookURL: "https://hooks.example.test/secret")
         XCTAssertTrue(user.webhookURLCipher?.hasPrefix("enc:v1:") == true)
-        XCTAssertEqual(user.webhookURL, "https://hooks.example.test/secret")
+        XCTAssertEqual(try user.webhookURL, "https://hooks.example.test/secret")
+    }
+
+    func testCorruptSensitiveEnvelopesThrowTypedFailuresWithoutCrashing() throws {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+        }
+
+        let recordID = UUID()
+        setenv("ENCRYPTION_KEY", String(repeating: "31", count: 32), 1)
+
+        do {
+            _ = try FieldCrypto.decryptStored(
+                "enc:v1:not-base64",
+                field: .scanInput,
+                recordID: recordID
+            )
+            XCTFail("A malformed tagged envelope must fail closed")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.field, .scanInput)
+            XCTAssertEqual(failure.recordID, recordID)
+            XCTAssertEqual(failure.reason, .invalidEnvelope)
+        }
+
+        let encrypted = try TokenEncryption.encrypt("sensitive")
+        setenv("ENCRYPTION_KEY", String(repeating: "32", count: 32), 1)
+        do {
+            _ = try FieldCrypto.decryptStored(encrypted, field: .resultRawData)
+            XCTFail("A ciphertext authenticated with another key must fail closed")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.field, .resultRawData)
+            XCTAssertEqual(failure.reason, .authenticationFailed)
+        }
+
+        unsetenv("ENCRYPTION_KEY")
+        do {
+            _ = try FieldCrypto.decryptStored(encrypted, field: .auditTarget)
+            XCTFail("An encrypted value without an available key must fail closed")
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            XCTAssertEqual(failure.field, .auditTarget)
+            XCTAssertEqual(failure.reason, .keyUnavailable)
+        }
+    }
+
+    func testCorruptSensitiveFieldReturnsGeneric500AndIncrementsMetric() async throws {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        let previousMetricsToken = ProcessInfo.processInfo.environment["METRICS_TOKEN"]
+        setenv("ENCRYPTION_KEY", String(repeating: "41", count: 32), 1)
+        unsetenv("METRICS_TOKEN")
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+            if let previousMetricsToken { setenv("METRICS_TOKEN", previousMetricsToken, 1) }
+            else { unsetenv("METRICS_TOKEN") }
+        }
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "corrupt-envelope-user")
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "corrupt-envelope-user")
+            .first()
+        let user = try XCTUnwrap(storedUser)
+        let scan = Scan(input: "person@example.test", userID: try XCTUnwrap(user.id))
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        scan.inputCipher = "enc:v1:not-base64"
+        try await scan.save(on: app.db)
+
+        let before = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.scanInput]?[.invalidEnvelope] ?? 0
+
+        try await app.test(.GET, "/results/\(scanID.uuidString)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { res in
+            let body = res.body.string
+            XCTAssertEqual(res.status, .internalServerError)
+            XCTAssertTrue(body.contains(SensitiveFieldFailureMiddleware.clientReason), body)
+            XCTAssertFalse(body.contains(FieldCrypto.StoredField.scanInput.rawValue), body)
+            XCTAssertFalse(body.contains(scanID.uuidString), body)
+            XCTAssertFalse(body.contains(scan.inputCipher), body)
+        })
+
+        let after = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.scanInput]?[.invalidEnvelope] ?? 0
+        XCTAssertEqual(after, before + 1)
+
+        user.isAdmin = true
+        try await user.save(on: app.db)
+        try await app.test(.GET, "/metrics", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(res.body.string.contains(
+                "swift_vapor_sensitive_field_failures_total{field=\"scans.input\",reason=\"invalid_envelope\"} \(after)"
+            ))
+        })
+    }
+
+    func testScheduledScanWithUnreadableInputIsQuarantined() async throws {
+        let previous = ProcessInfo.processInfo.environment["ENCRYPTION_KEY"]
+        setenv("ENCRYPTION_KEY", String(repeating: "51", count: 32), 1)
+        defer {
+            if let previous { setenv("ENCRYPTION_KEY", previous, 1) }
+            else { unsetenv("ENCRYPTION_KEY") }
+        }
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let user = User(
+            username: "quarantine-schedule-user",
+            email: "quarantine-schedule@example.test",
+            passwordHash: "unused",
+            emailVerified: true
+        )
+        try await user.save(on: app.db)
+        let schedule = ScheduledScan(
+            userID: try XCTUnwrap(user.id),
+            input: "person@example.test",
+            interval: .daily,
+            nextRunAt: Date().addingTimeInterval(-60)
+        )
+        try await schedule.save(on: app.db)
+        let scheduleID = try XCTUnwrap(schedule.id)
+        schedule.inputCipher = "enc:v1:not-base64"
+        try await schedule.save(on: app.db)
+
+        let before = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.scheduledScanInput]?[.invalidEnvelope] ?? 0
+        await runDueScheduledScansOnce(app: app)
+
+        let storedSchedule = try await ScheduledScan.find(scheduleID, on: app.db)
+        let quarantined = try XCTUnwrap(storedSchedule)
+        XCTAssertFalse(quarantined.isActive)
+        XCTAssertNotNil(quarantined.lastRunAt)
+        let after = await MetricsRegistry.shared.snapshot()
+            .sensitiveFieldFailures[.scheduledScanInput]?[.invalidEnvelope] ?? 0
+        XCTAssertEqual(after, before + 1)
     }
 
     func testEncryptionConfigurationRejectsMissingAndMalformedKeys() {
@@ -2480,30 +2659,30 @@ final class AppTests: XCTestCase {
         App.Result(scanID: UUID(), source: source, type: type, confidenceScore: confidence, rawData: raw)
     }
 
-    func testRiskScorerEmptyIsLow() {
-        let s = RiskScorer.compute(results: [])
+    func testRiskScorerEmptyIsLow() throws {
+        let s = try RiskScorer.compute(results: [])
         XCTAssertEqual(s.value, 0)
         XCTAssertEqual(s.level, .low)
     }
 
     // The regression that motivated the rewrite: HIBP's "no breaches found"
     // result (type breach_check, confidence 1.0) must contribute ZERO risk.
-    func testRiskScorerCleanBreachCheckIsZeroRisk() {
-        let s = RiskScorer.compute(results: [mkResult("breach_check", 1.0, raw: "No breaches found.")])
+    func testRiskScorerCleanBreachCheckIsZeroRisk() throws {
+        let s = try RiskScorer.compute(results: [mkResult("breach_check", 1.0, raw: "No breaches found.")])
         XCTAssertEqual(s.value, 0, "A clean breach check must not add risk")
     }
 
     // And it must not inflate a score built from real (account) findings.
-    func testRiskScorerCleanCheckDoesNotInflate() {
+    func testRiskScorerCleanCheckDoesNotInflate() throws {
         let accounts = (0..<5).map { mkResult("account_presence", 0.9, source: "s\($0)", raw: "acct \($0)") }
         let withClean = accounts + [mkResult("breach_check", 1.0, raw: "No breaches found.")]
-        XCTAssertEqual(RiskScorer.compute(results: accounts).value,
-                       RiskScorer.compute(results: withClean).value,
+        XCTAssertEqual(try RiskScorer.compute(results: accounts).value,
+                       try RiskScorer.compute(results: withClean).value,
                        "A clean breach check must not change the score")
     }
 
-    func testRiskScorerConfirmedBreachIsAtLeastMedium() {
-        let s = RiskScorer.compute(results: [mkResult("data_breach", 1.0, raw: "Found in 3 breaches")])
+    func testRiskScorerConfirmedBreachIsAtLeastMedium() throws {
+        let s = try RiskScorer.compute(results: [mkResult("data_breach", 1.0, raw: "Found in 3 breaches")])
         XCTAssertGreaterThanOrEqual(s.value, 25, "A confirmed breach should reach at least Medium")
     }
 
@@ -2546,9 +2725,9 @@ final class AppTests: XCTestCase {
     }
 
     // A single breach must outweigh a large pile of public account presences.
-    func testRiskScorerBreachOutweighsManyAccounts() {
-        let breach = RiskScorer.compute(results: [mkResult("data_breach", 1.0)])
-        let accounts = RiskScorer.compute(results: (0..<20).map {
+    func testRiskScorerBreachOutweighsManyAccounts() throws {
+        let breach = try RiskScorer.compute(results: [mkResult("data_breach", 1.0)])
+        let accounts = try RiskScorer.compute(results: (0..<20).map {
             mkResult("account_presence", 0.9, source: "s\($0)", raw: "acct \($0)")
         })
         XCTAssertGreaterThan(breach.value, accounts.value,
@@ -2557,11 +2736,11 @@ final class AppTests: XCTestCase {
 
     // Account presence saturates: 50 profiles aren't dramatically worse than 10,
     // and account presence alone never escalates past the Low band.
-    func testRiskScorerAccountPresenceSaturates() {
-        let ten = RiskScorer.compute(results: (0..<10).map {
+    func testRiskScorerAccountPresenceSaturates() throws {
+        let ten = try RiskScorer.compute(results: (0..<10).map {
             mkResult("account_presence", 1.0, source: "s\($0)", raw: "a\($0)")
         }).value
-        let fifty = RiskScorer.compute(results: (0..<50).map {
+        let fifty = try RiskScorer.compute(results: (0..<50).map {
             mkResult("account_presence", 1.0, source: "s\($0)", raw: "a\($0)")
         }).value
         XCTAssertLessThanOrEqual(fifty - ten, 3, "Account category must saturate")
@@ -2569,9 +2748,9 @@ final class AppTests: XCTestCase {
     }
 
     // Exact-duplicate findings (same source+type+rawData) are counted once.
-    func testRiskScorerDeduplicatesIdenticalFindings() {
-        let one = RiskScorer.compute(results: [mkResult("data_breach", 1.0, source: "hibp", raw: "X")]).value
-        let dup = RiskScorer.compute(results: [
+    func testRiskScorerDeduplicatesIdenticalFindings() throws {
+        let one = try RiskScorer.compute(results: [mkResult("data_breach", 1.0, source: "hibp", raw: "X")]).value
+        let dup = try RiskScorer.compute(results: [
             mkResult("data_breach", 1.0, source: "hibp", raw: "X"),
             mkResult("data_breach", 1.0, source: "hibp", raw: "X")
         ]).value
@@ -2645,10 +2824,10 @@ final class AppTests: XCTestCase {
         let withMeta = App.Result(scanID: UUID(), source: "github", type: "account_presence",
                                   confidenceScore: 1.0, rawData: "x",
                                   metadata: #"{"platform":"github","username":"alice"}"#)
-        XCTAssertEqual(withMeta.metadataObject?["username"], "alice")
+        XCTAssertEqual(try withMeta.metadataObject?["username"], "alice")
 
         let without = App.Result(scanID: UUID(), source: "s", type: "t", confidenceScore: 0.5, rawData: "x")
-        XCTAssertNil(without.metadataObject)
+        XCTAssertNil(try without.metadataObject)
     }
 
     // MARK: - Correlation engine
@@ -2895,7 +3074,7 @@ final class AppTests: XCTestCase {
             retentionHours: 72
         )
         job.status = .completed
-        job.resultJSON = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+        job.setResultJSON(String(decoding: try JSONEncoder().encode(result), as: UTF8.self))
         job.resultCount = 1
         job.completedAt = Date()
         try await job.save(on: app.db)
@@ -3037,8 +3216,8 @@ final class AppTests: XCTestCase {
         let retainedAudit = try await AuditLog.query(on: app.db).all()
         XCTAssertFalse(retainedAudit.isEmpty)
         XCTAssertTrue(retainedAudit.allSatisfy { $0.userID == nil })
-        XCTAssertTrue(retainedAudit.allSatisfy { $0.target == "[deleted-account]" })
-        XCTAssertTrue(retainedAudit.allSatisfy { $0.ip == "[deleted]" })
+        XCTAssertTrue(try retainedAudit.allSatisfy { try $0.target == "[deleted-account]" })
+        XCTAssertTrue(try retainedAudit.allSatisfy { try $0.ip == "[deleted]" })
     }
 
     // MARK: - TOTP (2FA)

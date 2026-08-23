@@ -13,6 +13,41 @@ import Vapor
 /// (unlike a bare SHA-256, which is dictionary-attackable for low-entropy values
 /// like emails or usernames).
 enum FieldCrypto {
+    /// Fixed identifiers keep metrics cardinality bounded and identify the
+    /// exact data class without ever logging ciphertext or plaintext.
+    enum StoredField: String, CaseIterable, Hashable, Sendable {
+        case scanInput = "scans.input"
+        case resultRawData = "results.raw_data"
+        case resultMetadata = "results.metadata"
+        case scheduledScanInput = "scheduled_scans.input"
+        case investigationName = "investigations.name"
+        case investigationData = "investigations.data"
+        case darkWebTarget = "dark_web_investigations.target"
+        case darkWebResult = "dark_web_investigations.result"
+        case notificationMessage = "scan_notifications.message"
+        case auditTarget = "audit_logs.target"
+        case auditIP = "audit_logs.ip"
+        case tagName = "tags.name"
+        case userWebhookURL = "users.webhook_url"
+        case userDiscordWebhookURL = "users.discord_webhook_url"
+        case userTelegramBotToken = "users.telegram_bot_token"
+        case userTelegramChatID = "users.telegram_chat_id"
+        case userSlackWebhookURL = "users.slack_webhook_url"
+        case userTOTPSecret = "users.totp_secret"
+    }
+
+    enum DecryptionReason: String, CaseIterable, Hashable, Sendable {
+        case invalidEnvelope = "invalid_envelope"
+        case keyUnavailable = "key_unavailable"
+        case authenticationFailed = "authentication_failed"
+    }
+
+    struct DecryptionFailure: Swift.Error, Sendable {
+        let field: StoredField
+        let recordID: UUID?
+        let reason: DecryptionReason
+    }
+
     static func encrypt(_ plaintext: String) -> String {
         guard TokenEncryption.isConfigured() else { return plaintext }
         do {
@@ -30,14 +65,36 @@ enum FieldCrypto {
         TokenEncryption.decrypt(stored)
     }
 
-    /// Plaintext view for model accessors. Legacy plaintext remains readable,
-    /// while a tagged value that cannot be decrypted fails closed instead of
-    /// leaking ciphertext through APIs or being re-saved as plaintext.
-    static func decryptStored(_ stored: String) -> String {
-        if let plaintext = TokenEncryption.decrypt(stored) { return plaintext }
-        guard !TokenEncryption.isEncryptedEnvelope(stored) else {
-            preconditionFailure("Encrypted field cannot be decrypted with the configured key")
+    /// Plaintext view for model accessors. Legacy plaintext remains readable.
+    /// A tagged value that cannot be authenticated throws a typed error so a
+    /// request can fail safely or a background job can quarantine the record;
+    /// corrupted database data must never terminate the process.
+    static func decryptStored(
+        _ stored: String,
+        field: StoredField,
+        recordID: UUID? = nil
+    ) throws -> String {
+        if TokenEncryption.isEncryptedEnvelope(stored) {
+            do {
+                return try TokenEncryption.decryptRequired(stored)
+            } catch let error as TokenEncryption.Error {
+                let reason: DecryptionReason
+                switch error {
+                case .invalidCiphertext:
+                    reason = .invalidEnvelope
+                case .keyMissing, .invalidKey:
+                    reason = .keyUnavailable
+                case .decryptionFailed:
+                    reason = .authenticationFailed
+                }
+                throw DecryptionFailure(field: field, recordID: recordID, reason: reason)
+            } catch {
+                throw DecryptionFailure(
+                    field: field, recordID: recordID, reason: .authenticationFailed
+                )
+            }
         }
+        if let plaintext = TokenEncryption.decrypt(stored) { return plaintext }
         return stored
     }
 

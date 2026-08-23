@@ -112,12 +112,18 @@ enum ScanPluginRunner {
                 // Fire webhook if user has one set.
                 if let userID = scan.$user.id,
                    let user = try? await User.find(userID, on: db),
-                   let hookURL = user.webhookURL {
+                   let hookURL = try user.webhookURL {
                     let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
-                    let risk = RiskScorer.compute(results: allResults)
-                    await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, app: app)
+                    let risk = try RiskScorer.compute(results: allResults)
+                    try await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, app: app)
                 }
             }
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(
+                failure,
+                app: app,
+                context: "scan_completion_webhook"
+            )
         } catch {
             app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
         }
@@ -240,7 +246,7 @@ enum ScanPluginRunner {
         try await result.save(on: db)
     }
 
-    private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, app: Application) async {
+    private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, app: Application) async throws {
         guard let hookURL = URL(string: url) else { return }
         let destination = redactedDestination(hookURL)
         guard !SSRFGuard.isInternalURL(hookURL) else {
@@ -250,7 +256,7 @@ enum ScanPluginRunner {
         let payload: [String: Any] = [
             "event": "scan.completed",
             "scanID": scanID.uuidString,
-            "input": scan.input,
+            "input": try scan.input,
             "status": scan.status.rawValue,
             "riskScore": risk.value,
             "riskLevel": risk.level.rawValue,

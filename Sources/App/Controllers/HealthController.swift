@@ -239,6 +239,17 @@ struct HealthController: RouteCollection {
         for status in snap.darkWebJobs.keys.sorted() {
             out += "swift_vapor_dark_web_jobs_total{status=\"\(status)\"} \(snap.darkWebJobs[status] ?? 0)\n"
         }
+        out += "# HELP swift_vapor_sensitive_field_failures_total Encrypted fields rejected because authenticated decryption failed.\n"
+        out += "# TYPE swift_vapor_sensitive_field_failures_total counter\n"
+        for field in FieldCrypto.StoredField.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
+            for reason in FieldCrypto.DecryptionReason.allCases {
+                // Emit the entire fixed label matrix from process start. Besides
+                // keeping cardinality bounded, this gives Prometheus a zero
+                // baseline so `increase(...[5m])` detects the very first failure.
+                let count = snap.sensitiveFieldFailures[field]?[reason] ?? 0
+                out += "swift_vapor_sensitive_field_failures_total{field=\"\(field.rawValue)\",reason=\"\(reason.rawValue)\"} \(count)\n"
+            }
+        }
 
         return Response(
             status: .ok,

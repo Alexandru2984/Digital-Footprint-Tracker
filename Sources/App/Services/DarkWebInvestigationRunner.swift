@@ -125,7 +125,7 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
         do {
             let result = try await DarkWebWorkerClient.execute(
                 jobID: jobID,
-                target: job.target,
+                target: try job.target,
                 targetKind: job.targetKind,
                 configuration: app.darkWebConfiguration,
                 on: app
@@ -136,11 +136,11 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
             guard let latest else { return }
             if latest.cancelRequested {
                 latest.status = .cancelled
-                latest.resultJSON = nil
+                latest.setResultJSON(nil)
                 latest.resultCount = 0
             } else {
                 latest.status = .completed
-                latest.resultJSON = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
+                latest.setResultJSON(String(decoding: try JSONEncoder().encode(result), as: UTF8.self))
                 latest.resultCount = result.findings.count
                 latest.failureCode = nil
             }
@@ -150,6 +150,18 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
             await MetricsRegistry.shared.incDarkWebJob(status: latest.status.rawValue)
         } catch is CancellationError {
             await finishFailure(jobID: jobID, code: nil, cancelled: true, app: app)
+        } catch let failure as FieldCrypto.DecryptionFailure {
+            await SensitiveFieldFailureReporter.report(
+                failure,
+                app: app,
+                context: "dark_web_job"
+            )
+            await finishFailure(
+                jobID: jobID,
+                code: "encrypted_field_unavailable",
+                cancelled: false,
+                app: app
+            )
         } catch let error as DarkWebWorkerClient.ClientError {
             await finishFailure(jobID: jobID, code: error.failureCode, cancelled: false, app: app)
         } catch {
@@ -166,7 +178,7 @@ actor DarkWebInvestigationRunner: LifecycleHandler {
         guard let job = try? await DarkWebInvestigation.find(jobID, on: app.db) else { return }
         job.status = (cancelled || job.cancelRequested) ? .cancelled : .failed
         job.failureCode = job.status == .failed ? code : nil
-        job.resultJSON = nil
+        job.setResultJSON(nil)
         job.resultCount = 0
         job.completedAt = Date()
         job.leaseExpiresAt = nil

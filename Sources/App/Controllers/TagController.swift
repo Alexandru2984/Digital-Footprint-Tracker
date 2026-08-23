@@ -27,7 +27,7 @@ struct TagController: RouteCollection {
     func listTags(req: Request) async throws -> [TagDTO] {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         let tags = try await Tag.query(on: req.db).filter(\.$user.$id == user.id!).all()
-        return tags.map(TagDTO.init)
+        return try tags.map(TagDTO.init)
     }
 
     @Sendable
@@ -59,15 +59,15 @@ struct TagController: RouteCollection {
             guard existingTags.count < Self.maxTagsPerUser else {
                 throw Abort(.tooManyRequests, reason: "Maximum \(Self.maxTagsPerUser) tags per account.")
             }
-            guard !existingTags.contains(where: {
-                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            guard try !existingTags.contains(where: {
+                try $0.name.caseInsensitiveCompare(name) == .orderedSame
             }) else {
                 throw Abort(.conflict, reason: "A tag with that name already exists.")
             }
             try await tag.save(on: database)
         }
         await AuditLogger.log(req: req, action: "tag_created", target: name)
-        return TagDTO(tag: tag)
+        return try TagDTO(tag: tag)
     }
 
     @Sendable
@@ -75,7 +75,7 @@ struct TagController: RouteCollection {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         guard let idStr = req.parameters.get("id"), let tagID = UUID(uuidString: idStr) else { throw Abort(.badRequest) }
         guard let tag = try await Tag.find(tagID, on: req.db), tag.$user.id == user.id else { throw Abort(.notFound) }
-        let name = tag.name
+        let name = try tag.name
         try await tag.delete(on: req.db)
         await AuditLogger.log(req: req, action: "tag_deleted", target: name)
         return .noContent
@@ -99,7 +99,7 @@ struct TagController: RouteCollection {
         guard let scanIDStr = req.parameters.get("scanID"), let scanID = UUID(uuidString: scanIDStr) else { throw Abort(.badRequest) }
         guard let scan = try await Scan.find(scanID, on: req.db), scan.$user.id == user.id else { throw Abort(.notFound) }
         try await scan.$tags.load(on: req.db)
-        return scan.tags.filter { $0.$user.id == user.id }.map(TagDTO.init)
+        return try scan.tags.filter { $0.$user.id == user.id }.map(TagDTO.init)
     }
 
     @Sendable
@@ -148,9 +148,9 @@ struct TagDTO: Content {
     let id: String
     let name: String
     let colour: String
-    init(tag: Tag) {
+    init(tag: Tag) throws {
         self.id = tag.id?.uuidString ?? ""
-        self.name = tag.name
+        self.name = try tag.name
         self.colour = tag.colour
     }
 }

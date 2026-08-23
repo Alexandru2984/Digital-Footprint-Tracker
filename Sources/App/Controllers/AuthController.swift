@@ -99,7 +99,7 @@ struct AuthController: RouteCollection {
 
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
 
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     // MARK: - Email verification
@@ -207,7 +207,7 @@ struct AuthController: RouteCollection {
         guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)
         await AuditLogger.log(req: req, action: "login", target: body.username)
-        return LoginResponse(twoFactorRequired: false, user: user.toPublic())
+        return LoginResponse(twoFactorRequired: false, user: try user.toPublic())
     }
 
     struct ReauthenticateRequest: Content {
@@ -246,7 +246,7 @@ struct AuthController: RouteCollection {
         guard let user = try await req.currentUser() else {
             throw Abort(.unauthorized, reason: "Not authenticated.")
         }
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     @Sendable
@@ -258,10 +258,10 @@ struct AuthController: RouteCollection {
         if let url, !url.isEmpty {
             try validateWebhookURL(url)
         }
-        user.webhookURL = (url?.isEmpty == false) ? url : nil
+        user.setWebhookURL((url?.isEmpty == false) ? url : nil)
         try await user.save(on: req.db)
         await AuditLogger.log(req: req, action: "update_webhook", target: user.username)
-        return user.toPublic()
+        return try user.toPublic()
     }
     @Sendable
     func setRetention(req: Request) async throws -> User.Public {
@@ -276,7 +276,7 @@ struct AuthController: RouteCollection {
         user.retentionDays = body.retentionDays
         try await user.save(on: req.db)
         await AuditLogger.log(req: req, action: "update_retention", target: user.username)
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     @Sendable
@@ -292,10 +292,12 @@ struct AuthController: RouteCollection {
         let body = try req.content.decode(Body.self)
         if let url = body.discordWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
         if let url = body.slackWebhookURL, !url.isEmpty { try validateWebhookURL(url) }
-        user.discordWebhookURL = body.discordWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.discordWebhookURL
+        if let discord = body.discordWebhookURL {
+            user.setDiscordWebhookURL(discord.isEmpty ? nil : discord)
+        }
         if let rawToken = body.telegramBotToken {
             if rawToken.isEmpty {
-                user.telegramBotToken = nil
+                user.setTelegramBotToken(nil)
             } else {
                 // Telegram bot tokens follow `<bot_id>:<secret>` — digits, a
                 // colon, then 30+ chars of [A-Za-z0-9_-]. Rejecting arbitrary
@@ -306,17 +308,21 @@ struct AuthController: RouteCollection {
                       rawToken.count <= 100 else {
                     throw Abort(.badRequest, reason: "Telegram bot token format is invalid (expected `<id>:<secret>`).")
                 }
-                // The model accessor encrypts every notification credential,
+                // The model mutation methods encrypt every notification credential,
                 // including Telegram, Discord, Slack, and generic webhooks.
-                user.telegramBotToken = rawToken
+                user.setTelegramBotToken(rawToken)
             }
         }
-        user.telegramChatID = body.telegramChatID.map { $0.isEmpty ? nil : $0 } ?? user.telegramChatID
-        user.slackWebhookURL = body.slackWebhookURL.map { $0.isEmpty ? nil : $0 } ?? user.slackWebhookURL
+        if let chatID = body.telegramChatID {
+            user.setTelegramChatID(chatID.isEmpty ? nil : chatID)
+        }
+        if let slack = body.slackWebhookURL {
+            user.setSlackWebhookURL(slack.isEmpty ? nil : slack)
+        }
         if let verbose = body.verboseAlerts { user.verboseAlerts = verbose }
         try await user.save(on: req.db)
         await AuditLogger.log(req: req, action: "update_settings", target: user.username)
-        return user.toPublic()
+        return try user.toPublic()
     }
 
     @Sendable

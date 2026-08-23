@@ -6,7 +6,7 @@ struct EncryptTagNames: AsyncMigration {
         guard TokenEncryption.isAvailable() else { return }
         for tag in try await Tag.query(on: database).all()
             where !TokenEncryption.isEncryptedEnvelope(tag.nameCipher) {
-            tag.name = tag.name
+            tag.setName(try tag.name)
             try await tag.save(on: database)
         }
     }

@@ -19,6 +19,7 @@ actor MetricsRegistry {
     /// `attempted` and its terminal `succeeded`/`failed` outcome.
     private(set) var notificationDeliveries: [NotificationChannel: [String: UInt64]] = [:]
     private(set) var darkWebJobs: [String: UInt64] = [:]
+    private(set) var sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]] = [:]
 
     func incPluginCacheHit()   { pluginCacheHits   &+= 1 }
     func incPluginCacheMiss()  { pluginCacheMisses &+= 1 }
@@ -33,6 +34,12 @@ actor MetricsRegistry {
     func incDarkWebJob(status: String) {
         darkWebJobs[status, default: 0] &+= 1
     }
+    func recordSensitiveFieldFailure(
+        field: FieldCrypto.StoredField,
+        reason: FieldCrypto.DecryptionReason
+    ) {
+        sensitiveFieldFailures[field, default: [:]][reason, default: 0] &+= 1
+    }
 
     /// Immutable snapshot consumed by the Prometheus formatter. Returned via
     /// the actor barrier so the formatter sees a self-consistent state.
@@ -41,6 +48,7 @@ actor MetricsRegistry {
         let pluginCacheMisses: UInt64
         let notificationDeliveries: [NotificationChannel: [String: UInt64]]
         let darkWebJobs: [String: UInt64]
+        let sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]]
     }
 
     func snapshot() -> Snapshot {
@@ -48,7 +56,8 @@ actor MetricsRegistry {
             pluginCacheHits:   pluginCacheHits,
             pluginCacheMisses: pluginCacheMisses,
             notificationDeliveries: notificationDeliveries,
-            darkWebJobs: darkWebJobs
+            darkWebJobs: darkWebJobs,
+            sensitiveFieldFailures: sensitiveFieldFailures
         )
     }
 }

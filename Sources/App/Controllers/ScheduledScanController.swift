@@ -8,9 +8,9 @@ struct ScheduledScanDTO: Content {
     let isActive: Bool
     let lastRunAt: Double?
     let nextRunAt: Double
-    init(_ s: ScheduledScan) {
+    init(_ s: ScheduledScan) throws {
         self.id = s.id?.uuidString ?? ""
-        self.input = s.input
+        self.input = try s.input
         self.interval = s.interval.rawValue
         self.isActive = s.isActive
         self.lastRunAt = s.lastRunAt.map { $0.timeIntervalSince1970 }
@@ -33,7 +33,7 @@ struct ScheduledScanController: RouteCollection {
     func list(req: Request) async throws -> [ScheduledScanDTO] {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         let scans = try await ScheduledScan.query(on: req.db).filter(\.$user.$id == user.id!).all()
-        return scans.map(ScheduledScanDTO.init)
+        return try scans.map(ScheduledScanDTO.init)
     }
 
     @Sendable
@@ -65,7 +65,7 @@ struct ScheduledScanController: RouteCollection {
             : Date().addingTimeInterval(604800)
         let ss = ScheduledScan(userID: user.id!, input: input, interval: interval, nextRunAt: nextRun)
         try await ss.save(on: req.db)
-        return ScheduledScanDTO(ss)
+        return try ScheduledScanDTO(ss)
     }
 
     @Sendable
@@ -87,6 +87,6 @@ struct ScheduledScanController: RouteCollection {
         }
         ss.isActive.toggle()
         try await ss.save(on: req.db)
-        return ScheduledScanDTO(ss)
+        return try ScheduledScanDTO(ss)
     }
 }
