@@ -45,7 +45,9 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
 
 ## systemd/
 - `swift-vapor.service` — the unit (runs the release binary as the non-login
-  `swift-vapor` identity, separated from the deploy/personal account).
+  `swift-vapor` identity, separated from deploy and personal accounts). Its
+  required database/encryption/audit secrets are encrypted systemd credentials;
+  `/etc/swift-vapor/app.env` is non-secret configuration only.
 - `swift-vapor-migrate.service` — sandboxed oneshot migration gate against the
   candidate `/srv/swift-vapor/next` release.
 - `swift-vapor.service.d/10-hardening.conf` — sandbox (read-only application
@@ -55,16 +57,27 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
   and Podman control sockets are explicitly hidden from all application units.
 - `swift-vapor.service.d/20-bind-loopback.conf` — binds the app to `127.0.0.1`
   only; nginx on localhost is the sole ingress.
+- `*.conf.example` files are deliberately inert credential drop-ins. Install
+  only mappings whose encrypted source has already been provisioned. The admin
+  password drop-in belongs on the migration unit for one empty-database boot and
+  must then be removed; it is never a permanent web-service credential.
 
 ## Runtime identity and privilege boundary
 
-- `sysusers.d/swift-vapor.conf` creates the non-login runtime account.
+- `sysusers.d/swift-vapor.conf` creates the non-login runtime account and the
+  separate locked-password `swift-deploy` account used only by a restricted,
+  forced SSH key.
 - `tmpfiles.d/swift-vapor.conf` creates `/srv/swift-vapor` and its release
-  directory for the deploy identity; release contents become read-only before
-  their manifest is accepted.
+  directory for `swift-deploy`; release contents become read-only before their
+  manifest is accepted. The deploy home and `.ssh` directory remain root-owned,
+  so deployed code cannot add a less-restricted login key.
 - `sudoers/swift-vapor-deploy` replaces broad passwordless sudo with only the
   migration gate, app restart and the root-owned CSP updater. Validate with
   `visudo -cf` before installation and keep an independent root console open.
+- Install `scripts/deploy.sh`, `scripts/build-release.sh` and
+  `scripts/release-lib.sh` together under root-owned
+  `/usr/local/libexec/swift-vapor/`. The forced SSH command must target that
+  installed copy, never a deploy-writable checkout script.
 - `libexec/update-swift-csp` accepts only validated SHA-256 tokens and owns the
   fixed policy (including the dynamic nonce), fixed-path atomic nginx update,
   syntax check, reload and rollback.
@@ -90,8 +103,9 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
 
 ## CI deploy trust
 
-The production GitHub Environment must define `DEPLOY_HOST_KEY` as one complete
-OpenSSH `known_hosts` line (`[host]:port key-type base64-key`). Obtain the public
-host key or its fingerprint directly from `/etc/ssh/ssh_host_*_key.pub` through
-an already trusted VPS session and compare it out-of-band. Do not populate this
-secret with a fresh `ssh-keyscan` over the network being authenticated.
+The production GitHub Environment must define `DEPLOY_HOST_PUBKEY` as the host
+key type and base64 public key (for example `ssh-ed25519 AAAA...`). The workflow
+constructs the hostname field from `DEPLOY_HOST` and `DEPLOY_PORT`. Obtain the
+public key or fingerprint directly from `/etc/ssh/ssh_host_*_key.pub` through an
+already trusted VPS session and compare it out-of-band. Do not populate this
+value with a fresh `ssh-keyscan` over the network being authenticated.

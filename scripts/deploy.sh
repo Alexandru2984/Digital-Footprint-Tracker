@@ -9,7 +9,7 @@ set -Eeuo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 022
 
-REPOSITORY=/home/micu/swift+vapor
+REPOSITORY="${SWIFT_VAPOR_REPOSITORY:-/var/lib/swift-deploy/repository}"
 RELEASE_ROOT=/srv/swift-vapor/releases
 CURRENT_LINK=/srv/swift-vapor/current
 NEXT_LINK=/srv/swift-vapor/next
@@ -18,6 +18,7 @@ READINESS_URL=http://127.0.0.1:8085/ready
 STATIC_URL=http://127.0.0.1:8110/index.html
 ONION_HOST=5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD_RELEASE="$SCRIPT_DIR/build-release.sh"
 # shellcheck source=scripts/release-lib.sh
 source "$SCRIPT_DIR/release-lib.sh"
 
@@ -156,7 +157,7 @@ echo "[deploy] enforcing recent verified-backup gate"
     --max-age-hours 30
 
 echo "[deploy] building immutable release $REMOTE"
-"$REPOSITORY/scripts/build-release.sh" "$REMOTE" >/dev/null
+"$BUILD_RELEASE" "$REMOTE" >/dev/null
 RELEASE="$RELEASE_ROOT/$REMOTE"
 verify_release "$RELEASE" "$RELEASE_ROOT" || { echo "[deploy] candidate verification failed" >&2; exit 1; }
 

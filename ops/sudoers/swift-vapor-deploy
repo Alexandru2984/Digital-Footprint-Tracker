@@ -1,6 +1,6 @@
 # Validate with: visudo -cf /etc/sudoers.d/swift-vapor-deploy
-# Remove any broader `micu ALL=(ALL) NOPASSWD: ALL` grant before enabling CI.
+# Remove every broader personal-account NOPASSWD grant before enabling CI.
 Cmnd_Alias SWIFT_VAPOR_DEPLOY = /bin/systemctl start swift-vapor-migrate.service, \
     /bin/systemctl restart swift-vapor.service, \
     /usr/local/sbin/update-swift-csp *
-micu ALL=(root) NOPASSWD: SWIFT_VAPOR_DEPLOY
+swift-deploy ALL=(root) NOPASSWD: SWIFT_VAPOR_DEPLOY

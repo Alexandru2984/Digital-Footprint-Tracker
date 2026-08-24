@@ -284,8 +284,8 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-        # The authorized_keys entry on the VPS has `command="…/deploy.sh"`
-        # set, so sshd runs scripts/deploy.sh regardless of what we send —
+        # The root-owned authorized_keys entry on the VPS forces the root-owned
+        # installed deploy orchestrator regardless of what we send —
         # the trailing "deploy" word is just a harmless placeholder.
         run: |
           set -euo pipefail

@@ -6,14 +6,22 @@ After=network.target postgresql.service swift-vapor-voidaccess.service
 User=swift-vapor
 Group=swift-vapor
 WorkingDirectory=/srv/swift-vapor/current
-EnvironmentFile=/home/micu/swift+vapor/.env
-LoadCredentialEncrypted=dark-web-shared-secret:/etc/credstore.encrypted/swift-vapor-dark-web-shared-secret
-Environment=DARK_WEB_SHARED_SECRET_FILE=%d/dark-web-shared-secret
-# ExecStart's env assignments deliberately override stale values in the legacy
-# EnvironmentFile: only the migration unit may opt production into migrations.
+EnvironmentFile=/etc/swift-vapor/app.env
+LoadCredentialEncrypted=database-password:/etc/credstore.encrypted/swift-vapor-database-password
+LoadCredentialEncrypted=encryption-key:/etc/credstore.encrypted/swift-vapor-encryption-key
+LoadCredentialEncrypted=audit-signing-key:/etc/credstore.encrypted/swift-vapor-audit-signing-key
+LoadCredentialEncrypted=audit-commitment-key:/etc/credstore.encrypted/swift-vapor-audit-commitment-key
+Environment=DATABASE_PASSWORD_FILE=%d/database-password
+Environment=ENCRYPTION_KEY_FILE=%d/encryption-key
+Environment=AUDIT_SIGNING_KEY_FILE=%d/audit-signing-key
+Environment=AUDIT_COMMITMENT_KEY_FILE=%d/audit-commitment-key
+# ExecStart's assignments are immutable safety overrides: only the migration
+# unit may opt production into migrations.
 ExecStart=/usr/bin/env AUTO_MIGRATE=false DARK_WEB_WORKER_URL=http://127.0.0.1:8766 REPORT_SCRIPT_PATH=/srv/swift-vapor/current/scripts/generate_report.py /srv/swift-vapor/current/Run serve --env production --hostname 127.0.0.1 --port 8085
 Restart=always
 RestartSec=3
+TimeoutStartSec=90
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

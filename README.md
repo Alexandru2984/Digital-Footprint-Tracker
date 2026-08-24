@@ -456,12 +456,14 @@ struct YourPlugin: FootprintPlugin {
 
 Production uses immutable, commit-named bundles under
 `/srv/swift-vapor/releases/` and a single `/srv/swift-vapor/current` symlink
-shared by systemd and nginx. The forced
-SSH command runs `scripts/deploy.sh`; it refuses dirty/diverged source, requires
-a recent verified encrypted backup, builds from `git archive`, runs migrations
-through a sandboxed oneshot unit, transitions CSP hashes, switches the symlink,
-and verifies both backend and served frontend. A failure restores the prior
-release automatically (database migrations are intentionally never auto-reverted).
+shared by systemd and nginx. A restricted key for the dedicated `swift-deploy`
+identity forces a root-owned copy of `scripts/deploy.sh`; its isolated source
+checkout lives under `/var/lib/swift-deploy`, while the personal checkout is
+never served or deployed. The script refuses dirty/diverged source, requires a recent verified encrypted
+backup, builds from `git archive`, runs migrations through a sandboxed oneshot
+unit, transitions CSP hashes, switches the symlink, and verifies both backend
+and served frontend. A failure restores the prior release automatically
+(database migrations are intentionally never auto-reverted).
 
 The initial conversion from the legacy live checkout is a privileged maintenance
 operation. Follow `docs/PRODUCTION_ROLLOUT.md`; do not point nginx/systemd at the

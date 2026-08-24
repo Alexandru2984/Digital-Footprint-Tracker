@@ -157,7 +157,9 @@ series), with its own rollback note and production evidence before the next one.
 ### Secrets and cryptography
 
 - Split database, SMTP, metrics and provider credentials by worker capability.
-- systemd credentials or Vault/SOPS-backed delivery; no flat personal `.env`.
+- systemd encrypted credentials with bounded `_FILE` loading are delivered for
+  database/encryption/audit secrets; optional provider credentials use reviewed
+  drop-ins and `/etc/swift-vapor/app.env` is non-secret configuration only.
 - Versioned key-encryption keys and per-record/data-class DEKs (v2 root-derived
   field keys are delivered; external KMS/DEK hierarchy remains future work).
 - Online key rotation with progress, verification and rollback checkpoints is

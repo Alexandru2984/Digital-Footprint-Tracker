@@ -8,9 +8,17 @@ Type=oneshot
 User=swift-vapor
 Group=swift-vapor
 WorkingDirectory=/srv/swift-vapor/next
-EnvironmentFile=/home/micu/swift+vapor/.env
-# /usr/bin/env overrides any stale values from the shared legacy EnvironmentFile;
-# the web unit independently forces AUTO_MIGRATE=false.
+EnvironmentFile=/etc/swift-vapor/app.env
+LoadCredentialEncrypted=database-password:/etc/credstore.encrypted/swift-vapor-database-password
+LoadCredentialEncrypted=encryption-key:/etc/credstore.encrypted/swift-vapor-encryption-key
+LoadCredentialEncrypted=audit-signing-key:/etc/credstore.encrypted/swift-vapor-audit-signing-key
+LoadCredentialEncrypted=audit-commitment-key:/etc/credstore.encrypted/swift-vapor-audit-commitment-key
+Environment=DATABASE_PASSWORD_FILE=%d/database-password
+Environment=ENCRYPTION_KEY_FILE=%d/encryption-key
+Environment=AUDIT_SIGNING_KEY_FILE=%d/audit-signing-key
+Environment=AUDIT_COMMITMENT_KEY_FILE=%d/audit-commitment-key
+# /usr/bin/env applies migration-only safety overrides; the web unit
+# independently forces AUTO_MIGRATE=false.
 ExecStart=/usr/bin/env AUTO_MIGRATE=true DARK_WEB_ENABLED=false NOTIFICATION_WORKER_ENABLED=false EXPORT_WORKER_ENABLED=false REPORT_SCRIPT_PATH=/srv/swift-vapor/next/scripts/generate_report.py /srv/swift-vapor/next/Run migrate --yes --env production
 
 NoNewPrivileges=true
@@ -44,3 +52,5 @@ KeyringMode=private
 RemoveIPC=true
 MemoryMax=512M
 CPUQuota=200%
+TasksMax=256
+LimitNOFILE=4096

@@ -7,7 +7,7 @@
 set -euo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-REPOSITORY="/home/micu/swift+vapor"
+REPOSITORY="${SWIFT_VAPOR_REPOSITORY:-/var/lib/swift-deploy/repository}"
 RELEASE_ROOT="/srv/swift-vapor/releases"
 REVISION="${1:-HEAD}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

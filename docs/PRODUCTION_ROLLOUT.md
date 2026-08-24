@@ -25,42 +25,136 @@ Proceed only when all are true:
 
 ## Prepare without changing traffic
 
-Create the non-login runtime identity and deploy-owned release directories,
-then build and verify the commit-named release as the unprivileged deploy user:
+Create distinct runtime and deploy identities. The deploy account has a locked
+password and a shell only because `sshd` needs one to execute its forced command;
+it must never receive an unrestricted key or interactive sudo:
 
 ```bash
 sudo systemd-sysusers "$PWD/ops/sysusers.d/swift-vapor.conf"
 sudo systemd-tmpfiles --create "$PWD/ops/tmpfiles.d/swift-vapor.conf"
-commit="$(git rev-parse HEAD)"
-scripts/build-release.sh "$commit"
-source scripts/release-lib.sh
-verify_release "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/releases
+getent passwd swift-vapor swift-deploy
 ```
 
-Install the narrow root helper and validate the sudoers policy before replacing
-the existing broad grant. Keep a root console open while changing sudo:
+Clone a clean deployment checkout owned only by `swift-deploy`. Do not reuse the
+personal working tree and do not copy its `.env`:
 
 ```bash
-sudo install -o root -g root -m 0755 ops/libexec/update-swift-csp /usr/local/sbin/update-swift-csp
-sudo visudo -cf ops/sudoers/swift-vapor-deploy
-sudo install -o root -g root -m 0440 ops/sudoers/swift-vapor-deploy /etc/sudoers.d/swift-vapor-deploy
+deploy_repo=/var/lib/swift-deploy/repository
+sudo -u swift-deploy -H git clone --branch main --single-branch \
+  https://github.com/Alexandru2984/Digital-Footprint-Tracker "$deploy_repo"
+commit="$(sudo -u swift-deploy -H git -C "$deploy_repo" rev-parse HEAD)"
+sudo -u swift-deploy -H "$deploy_repo/scripts/build-release.sh" "$commit"
+sudo -u swift-deploy -H bash -c \
+  'source "$1/scripts/release-lib.sh"; verify_release "$2" /srv/swift-vapor/releases' \
+  _ "$deploy_repo" "/srv/swift-vapor/releases/$commit"
+```
+
+Install the non-secret environment template and edit only host-specific routing,
+usernames and feature bounds. The negative grep must print nothing:
+
+```bash
+sudo install -d -o root -g root -m 0755 /etc/swift-vapor
+sudo install -o root -g root -m 0644 \
+  "$deploy_repo/ops/environment/swift-vapor.env.example" /etc/swift-vapor/app.env
+sudoedit /etc/swift-vapor/app.env
+sudo grep -E '^(DATABASE_PASSWORD|ENCRYPTION_KEY|ENCRYPTION_PREVIOUS_KEYS|AUDIT_SIGNING_KEY|AUDIT_COMMITMENT_KEY|ADMIN_PASSWORD|SMTP_PASS|METRICS_TOKEN|DARK_WEB_SHARED_SECRET|[A-Z0-9_]*API_KEY)=' \
+  /etc/swift-vapor/app.env
+```
+
+Provision the four mandatory values as encrypted, host-bound systemd
+credentials. Populate the named plaintext staging files through a trusted
+password manager or `sudoedit`; never place values in a command argument,
+shell variable, Git file or terminal transcript. `/run` is tmpfs, but remove
+the staging files immediately after encryption:
+
+```bash
+sudo install -d -o root -g root -m 0700 /run/swift-vapor-credential-staging
+sudo install -d -o root -g root -m 0700 /etc/credstore.encrypted
+sudoedit /run/swift-vapor-credential-staging/database-password
+sudoedit /run/swift-vapor-credential-staging/encryption-key
+sudoedit /run/swift-vapor-credential-staging/audit-signing-key
+sudoedit /run/swift-vapor-credential-staging/audit-commitment-key
+sudo chmod 0600 /run/swift-vapor-credential-staging/*
+sudo systemd-creds encrypt --name=database-password \
+  /run/swift-vapor-credential-staging/database-password \
+  /etc/credstore.encrypted/swift-vapor-database-password
+sudo systemd-creds encrypt --name=encryption-key \
+  /run/swift-vapor-credential-staging/encryption-key \
+  /etc/credstore.encrypted/swift-vapor-encryption-key
+sudo systemd-creds encrypt --name=audit-signing-key \
+  /run/swift-vapor-credential-staging/audit-signing-key \
+  /etc/credstore.encrypted/swift-vapor-audit-signing-key
+sudo systemd-creds encrypt --name=audit-commitment-key \
+  /run/swift-vapor-credential-staging/audit-commitment-key \
+  /etc/credstore.encrypted/swift-vapor-audit-commitment-key
+sudo chmod 0600 /etc/credstore.encrypted/swift-vapor-*
+sudo rm -f /run/swift-vapor-credential-staging/database-password \
+  /run/swift-vapor-credential-staging/encryption-key \
+  /run/swift-vapor-credential-staging/audit-signing-key \
+  /run/swift-vapor-credential-staging/audit-commitment-key
+sudo rmdir /run/swift-vapor-credential-staging
+```
+
+An existing database must not carry `ADMIN_PASSWORD` at runtime. For a genuinely
+empty database only, encrypt a one-time admin credential and install
+`30-admin-bootstrap-credential.conf.example` without the `.example` suffix on
+the migration unit. Remove both installed drop-in and encrypted source
+immediately after the first successful migration.
+
+Install the deployment orchestrator and its sourced helpers as root-owned files;
+the forced command must never resolve through the deploy-writable checkout.
+Put exactly one deployment public key in the root-owned
+`/var/lib/swift-deploy/.ssh/authorized_keys`, prefixed with
+`restrict,command="/usr/local/libexec/swift-vapor/deploy.sh"`. Set the GitHub
+production environment's `DEPLOY_USER` to `swift-deploy`. Install the narrow
+root helper and sudo policy while an independently authenticated root console
+remains open:
+
+```bash
+sudo install -d -o root -g root -m 0755 /usr/local/libexec/swift-vapor
+sudo install -o root -g root -m 0755 \
+  "$deploy_repo/scripts/deploy.sh" \
+  "$deploy_repo/scripts/build-release.sh" \
+  "$deploy_repo/scripts/release-lib.sh" \
+  /usr/local/libexec/swift-vapor/
+sudoedit /var/lib/swift-deploy/.ssh/authorized_keys
+sudo chown root:root /var/lib/swift-deploy/.ssh/authorized_keys
+sudo chmod 0644 /var/lib/swift-deploy/.ssh/authorized_keys
+sudo install -o root -g root -m 0755 "$deploy_repo/ops/libexec/update-swift-csp" \
+  /usr/local/sbin/update-swift-csp
+sudo visudo -cf "$deploy_repo/ops/sudoers/swift-vapor-deploy"
+sudo install -o root -g root -m 0440 "$deploy_repo/ops/sudoers/swift-vapor-deploy" \
+  /etc/sudoers.d/swift-vapor-deploy
 sudo visudo -c
 ```
 
-Create both links using the validated helper, then install the migration unit,
-application unit/drop-ins and nginx files. Preserve local TLS/onion details when
-diffing rather than overwriting unrelated configuration.
+Only after a second root session proves recovery, remove every broader
+`NOPASSWD: ALL` rule from the personal account. Confirm `swift-deploy` can run
+only the three commands in the committed alias and cannot obtain a shell as
+root.
+
+Create both release links, then install the application and migration units.
+Install only real `*.conf` drop-ins; files ending in `.conf.example` are inert
+templates and must not be copied. Preserve local TLS/onion details when diffing
+nginx rather than overwriting unrelated configuration:
 
 ```bash
-source scripts/release-lib.sh
-switch_release_link "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/current /srv/swift-vapor/releases
-switch_release_link "/srv/swift-vapor/releases/$commit" /srv/swift-vapor/next /srv/swift-vapor/releases
-sudo install -o root -g root -m 0644 ops/systemd/swift-vapor.service /etc/systemd/system/swift-vapor.service
-sudo install -o root -g root -m 0644 ops/systemd/swift-vapor-migrate.service /etc/systemd/system/swift-vapor-migrate.service
+sudo -u swift-deploy -H bash -c 'source "$1/scripts/release-lib.sh"; \
+  switch_release_link "$2" /srv/swift-vapor/current /srv/swift-vapor/releases; \
+  switch_release_link "$2" /srv/swift-vapor/next /srv/swift-vapor/releases' \
+  _ "$deploy_repo" "/srv/swift-vapor/releases/$commit"
+sudo install -o root -g root -m 0644 "$deploy_repo/ops/systemd/swift-vapor.service" \
+  /etc/systemd/system/swift-vapor.service
+sudo install -o root -g root -m 0644 "$deploy_repo/ops/systemd/swift-vapor-migrate.service" \
+  /etc/systemd/system/swift-vapor-migrate.service
 sudo install -d -o root -g root -m 0755 /etc/systemd/system/swift-vapor.service.d
-sudo install -o root -g root -m 0644 ops/systemd/swift-vapor.service.d/*.conf /etc/systemd/system/swift-vapor.service.d/
+sudo install -o root -g root -m 0644 \
+  "$deploy_repo/ops/systemd/swift-vapor.service.d/10-hardening.conf" \
+  "$deploy_repo/ops/systemd/swift-vapor.service.d/20-bind-loopback.conf" \
+  /etc/systemd/system/swift-vapor.service.d/
 sudo systemctl daemon-reload
-sudo systemd-analyze verify /etc/systemd/system/swift-vapor.service /etc/systemd/system/swift-vapor-migrate.service
+sudo systemd-analyze verify /etc/systemd/system/swift-vapor.service \
+  /etc/systemd/system/swift-vapor-migrate.service
 sudo nginx -t
 ```
 
