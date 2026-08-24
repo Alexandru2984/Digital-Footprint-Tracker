@@ -11,10 +11,12 @@ LoadCredentialEncrypted=database-password:/etc/credstore.encrypted/swift-vapor-d
 LoadCredentialEncrypted=encryption-key:/etc/credstore.encrypted/swift-vapor-encryption-key
 LoadCredentialEncrypted=audit-signing-key:/etc/credstore.encrypted/swift-vapor-audit-signing-key
 LoadCredentialEncrypted=audit-commitment-key:/etc/credstore.encrypted/swift-vapor-audit-commitment-key
+LoadCredentialEncrypted=smtp-pass:/etc/credstore.encrypted/swift-vapor-smtp-pass
 Environment=DATABASE_PASSWORD_FILE=%d/database-password
 Environment=ENCRYPTION_KEY_FILE=%d/encryption-key
 Environment=AUDIT_SIGNING_KEY_FILE=%d/audit-signing-key
 Environment=AUDIT_COMMITMENT_KEY_FILE=%d/audit-commitment-key
+Environment=SMTP_PASS_FILE=%d/smtp-pass
 # ExecStart's assignments are immutable safety overrides: only the migration
 # unit may opt production into migrations.
 ExecStart=/usr/bin/env AUTO_MIGRATE=false DARK_WEB_WORKER_URL=http://127.0.0.1:8766 REPORT_SCRIPT_PATH=/srv/swift-vapor/current/scripts/generate_report.py /srv/swift-vapor/current/Run serve --env production --hostname 127.0.0.1 --port 8085
