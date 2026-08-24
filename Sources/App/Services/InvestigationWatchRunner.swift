@@ -171,12 +171,17 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
     // Alert the owner across their configured channels.
     let newLabels = graph.nodes.filter { $0.new == true }.prefix(6).compactMap { $0.label ?? $0.id }
     let sample = newLabels.joined(separator: ", ")
-    await NotificationDispatcher.notify(
-        user: owner,
-        title: "🕸 Board grew: \(boardName)",
-        message: "Your watched investigation \u{201C}\(boardName)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
-        scanID: lastScanID,
-        app: app
-    )
+    do {
+        _ = try await NotificationOutbox.enqueue(
+            userID: userID,
+            title: "🕸 Board grew: \(boardName)",
+            message: "Your watched investigation \u{201C}\(boardName)\u{201D} has \(totalNew) new entit\(totalNew == 1 ? "y" : "ies").\(sample.isEmpty ? "" : "\nNew: \(sample)")",
+            scanID: lastScanID,
+            idempotencyKey: "investigation-watch:\(boardID):\(lastScanID?.uuidString.lowercased() ?? "no-scan")",
+            app: app
+        )
+    } catch {
+        app.logger.error("[InvestigationWatch] board \(boardID): notification enqueue failed.")
+    }
     app.logger.info("[InvestigationWatch] board \(boardID): +\(totalNew) new entities.")
 }

@@ -46,6 +46,18 @@ and an isolated PostgreSQL 16 run with 20 concurrent writers passed without
 missing, duplicate or gapped sequences. This does not change the production
 BLOCK verdict or any Phase 0 gate above.
 
+The notification-loss finding is also remediated in the repository only.
+Automatic verification email, scan webhook, scheduled-monitor and watched-board
+delivery now enters an encrypted PostgreSQL outbox with producer and per-channel
+unique keys. PostgreSQL claims use `FOR UPDATE SKIP LOCKED`, leases recover
+crashed work, retry is bounded/classified, permanent or exhausted work enters an
+admin-visible DLQ, and replay requires recent admin authentication and emits an
+audit record. A PostgreSQL 16 migration test plus ten concurrent claimers yielded
+five jobs with five distinct owners; an expired lease was then recovered at
+attempt two. Provider delivery remains honestly at-least-once, and SMTP bounce
+ingestion is not implemented. None of this changes the production BLOCK verdict:
+the live schema/release still predates these repository changes.
+
 ## CISO forcing review
 
 ### 1. STRIDE threat model

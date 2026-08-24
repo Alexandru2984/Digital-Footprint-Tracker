@@ -25,6 +25,10 @@ public func configure(_ app: Application) async throws {
     // explicit and valid. In particular, the worker endpoint can only be a
     // loopback origin; arbitrary URLs would turn this integration into SSRF.
     app.darkWebConfiguration = try DarkWebConfiguration.fromEnvironment()
+    // Parse durable-notification bounds once. A malformed production setting
+    // fails boot instead of silently disabling retries or creating an infinite
+    // retention/attempt loop.
+    app.notificationDeliveryConfiguration = try NotificationDeliveryConfiguration.fromEnvironment()
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment == .production {
@@ -115,6 +119,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateScanTags())
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
+    app.migrations.add(CreateNotificationOutbox())
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(CreateAuditLogs())
     app.migrations.add(AddRetentionDaysToUsers())
@@ -216,6 +221,7 @@ public func configure(_ app: Application) async throws {
         app.lifecycle.use(ScanCleanupLifecycle())
         app.lifecycle.use(ScheduledScanRunner())
         app.lifecycle.use(InvestigationWatchRunner())
+        app.lifecycle.use(app.notificationDeliveryWorker)
         app.lifecycle.use(app.darkWebRunner)
     }
 }

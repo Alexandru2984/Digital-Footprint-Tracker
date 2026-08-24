@@ -94,6 +94,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateScanTags())
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
+    app.migrations.add(CreateNotificationOutbox())
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(CreateAuditLogs())
@@ -228,6 +229,338 @@ final class AppTests: XCTestCase {
         let after = await MetricsRegistry.shared.snapshot()
             .sensitiveFieldFailures[.userWebhookURL]?[.invalidEnvelope] ?? 0
         XCTAssertEqual(after, before + 1)
+    }
+
+    func testNotificationOutboxIsIdempotentAndCascadesWithItsScan() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let user = User(
+            username: "outbox-idempotency",
+            email: "outbox-idempotency@example.test",
+            passwordHash: "unused",
+            emailVerified: true
+        )
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+        let scan = Scan(input: "outbox-target", userID: userID)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        let first = try await NotificationOutbox.enqueue(
+            userID: userID,
+            title: "Original title",
+            message: "Original message",
+            scanID: scanID,
+            idempotencyKey: "scan-alert:\(scanID)",
+            app: app
+        )
+        let duplicate = try await NotificationOutbox.enqueue(
+            userID: userID,
+            title: "Must not replace the original",
+            message: "Must not replace the original",
+            scanID: scanID,
+            idempotencyKey: "scan-alert:\(scanID)",
+            app: app
+        )
+
+        XCTAssertEqual(first.eventID, duplicate.eventID)
+        XCTAssertEqual(first.jobIDs, duplicate.jobIDs)
+        let eventCount = try await NotificationOutboxEvent.query(on: app.db).count()
+        let jobCount = try await NotificationDeliveryJob.query(on: app.db).count()
+        XCTAssertEqual(eventCount, 1)
+        XCTAssertEqual(jobCount, NotificationChannel.allCases.count)
+        let storedEvent = try await NotificationOutboxEvent.query(on: app.db).first()
+        let event = try XCTUnwrap(storedEvent)
+        let payload = try event.payload
+        XCTAssertEqual(payload.title, "Original title")
+        XCTAssertEqual(payload.message, "Original message")
+        let jobs = try await NotificationDeliveryJob.query(on: app.db).all()
+        XCTAssertEqual(Set(jobs.map(\.channelRaw)), Set(NotificationChannel.allCases.map(\.rawValue)))
+        XCTAssertTrue(jobs.allSatisfy { $0.status == .pending && $0.attemptCount == 0 })
+
+        try await scan.delete(on: app.db)
+        let remainingEvents = try await NotificationOutboxEvent.query(on: app.db).count()
+        let remainingJobs = try await NotificationDeliveryJob.query(on: app.db).count()
+        XCTAssertEqual(remainingEvents, 0)
+        XCTAssertEqual(remainingJobs, 0)
+    }
+
+    func testNotificationClaimsAreExclusiveAndExpiredLeasesAreRecovered() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let user = User(
+            username: "outbox-lease",
+            email: "outbox-lease@example.test",
+            passwordHash: "unused",
+            emailVerified: true
+        )
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+        _ = try await NotificationOutbox.enqueue(
+            userID: userID,
+            title: "Lease",
+            message: "Lease test",
+            scanID: nil,
+            idempotencyKey: "lease-test",
+            channels: [.email, .webhook],
+            app: app
+        )
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let firstClaim = try await NotificationDeliveryWorker.claimNext(
+            on: app.db, workerID: "worker-a", now: now, leaseSeconds: 60
+        )
+        let secondClaim = try await NotificationDeliveryWorker.claimNext(
+            on: app.db, workerID: "worker-b", now: now, leaseSeconds: 60
+        )
+        let first = try XCTUnwrap(firstClaim)
+        let second = try XCTUnwrap(secondClaim)
+        XCTAssertNotEqual(first.id, second.id)
+        let thirdClaim = try await NotificationDeliveryWorker.claimNext(
+            on: app.db, workerID: "worker-c", now: now, leaseSeconds: 60
+        )
+        XCTAssertNil(thirdClaim)
+        XCTAssertEqual(first.attemptCount, 1)
+        XCTAssertEqual(second.attemptCount, 1)
+
+        // Keep the second lease alive so only the first row is reclaimable.
+        second.leaseExpiresAt = now.addingTimeInterval(600)
+        try await second.update(on: app.db)
+        let reclaimedClaim = try await NotificationDeliveryWorker.claimNext(
+            on: app.db,
+            workerID: "worker-c",
+            now: now.addingTimeInterval(61),
+            leaseSeconds: 60
+        )
+        let reclaimed = try XCTUnwrap(reclaimedClaim)
+        XCTAssertEqual(reclaimed.id, first.id)
+        XCTAssertEqual(reclaimed.leaseOwner, "worker-c")
+        XCTAssertEqual(reclaimed.attemptCount, 2)
+
+        // The former owner cannot overwrite the row after worker-c reclaimed
+        // it, even if its provider call returns late.
+        let reclaimedID = try XCTUnwrap(reclaimed.id)
+        try await NotificationDeliveryWorker.finish(
+            jobID: reclaimedID,
+            workerID: "worker-a",
+            attemptCount: 1,
+            maxAttempts: reclaimed.maxAttempts,
+            result: .succeeded,
+            now: now.addingTimeInterval(62),
+            on: app.db
+        )
+        let afterStaleFinish = try await NotificationDeliveryJob.find(reclaimedID, on: app.db)
+        XCTAssertEqual(afterStaleFinish?.status, .processing)
+        XCTAssertEqual(afterStaleFinish?.leaseOwner, "worker-c")
+
+        try await NotificationDeliveryWorker.finish(
+            jobID: reclaimedID,
+            workerID: "worker-c",
+            attemptCount: 2,
+            maxAttempts: reclaimed.maxAttempts,
+            result: .succeeded,
+            now: now.addingTimeInterval(63),
+            on: app.db
+        )
+        let afterCurrentFinish = try await NotificationDeliveryJob.find(reclaimedID, on: app.db)
+        XCTAssertEqual(afterCurrentFinish?.status, .succeeded)
+        XCTAssertNil(afterCurrentFinish?.leaseOwner)
+    }
+
+    func testNotificationWorkerDeadLettersPermanentFailuresWithoutNetworkAccess() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let user = User(
+            username: "outbox-dlq",
+            email: "outbox-dlq@example.test",
+            passwordHash: "unused",
+            webhookURL: "http://127.0.0.1/private-hook",
+            emailVerified: true
+        )
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+        _ = try await NotificationOutbox.enqueue(
+            userID: userID,
+            title: "Blocked",
+            message: "Must not reach loopback",
+            scanID: nil,
+            idempotencyKey: "blocked-webhook",
+            channels: [.webhook],
+            app: app
+        )
+
+        let processed = try await NotificationDeliveryWorker.processNext(
+            app: app,
+            workerID: "worker-test",
+            now: Date(timeIntervalSince1970: 1_800_000_100)
+        )
+        let processedID = try XCTUnwrap(processed)
+        let storedJob = try await NotificationDeliveryJob.find(processedID, on: app.db)
+        let job = try XCTUnwrap(storedJob)
+        XCTAssertEqual(job.status, .deadLetter)
+        XCTAssertEqual(job.attemptCount, 1)
+        XCTAssertEqual(job.lastFailureCode, "blocked_destination")
+        XCTAssertNil(job.leaseOwner)
+        XCTAssertNil(job.leaseExpiresAt)
+        XCTAssertNotNil(job.completedAt)
+    }
+
+    func testNotificationDeadLetterAdminEndpointsRequireAdminAndReplaySafely() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let adminCookie = try await registerAndLogin(app, username: "notification-admin")
+        let memberCookie = try await registerAndLogin(app, username: "notification-member")
+        let storedAdmin = try await User.query(on: app.db)
+            .filter(\.$username == "notification-admin")
+            .first()
+        let admin = try XCTUnwrap(storedAdmin)
+        admin.isAdmin = true
+        try await admin.update(on: app.db)
+        let adminID = try XCTUnwrap(admin.id)
+
+        _ = try await NotificationOutbox.enqueue(
+            userID: adminID,
+            title: "DLQ",
+            message: "Operator replay test",
+            scanID: nil,
+            idempotencyKey: "admin-dlq-test",
+            channels: [.webhook],
+            app: app
+        )
+        let storedJob = try await NotificationDeliveryJob.query(on: app.db)
+            .filter(\.$channelRaw == NotificationChannel.webhook.rawValue)
+            .first()
+        let job = try XCTUnwrap(storedJob)
+        let jobID = try XCTUnwrap(job.id)
+        job.statusRaw = NotificationDeliveryJobStatus.deadLetter.rawValue
+        job.attemptCount = job.maxAttempts
+        job.lastFailureCode = "network_error"
+        job.completedAt = Date()
+        try await job.update(on: app.db)
+
+        try await app.test(.GET, "/admin/notification-deliveries") { response in
+            XCTAssertEqual(response.status, .unauthorized)
+        }
+        try await app.test(.GET, "/admin/notification-deliveries", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: memberCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .forbidden)
+        })
+        try await app.test(.GET, "/admin/notification-deliveries", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: adminCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let rows = try response.content.decode([NotificationDeliveryJobDTO].self)
+            XCTAssertEqual(rows.map(\.id), [jobID])
+            XCTAssertEqual(rows.first?.lastFailureCode, "network_error")
+        })
+        try await app.test(
+            .POST,
+            "/admin/notification-deliveries/\(jobID.uuidString)/retry",
+            beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: adminCookie)
+            },
+            afterResponse: { response in
+                XCTAssertEqual(response.status, .accepted)
+            }
+        )
+
+        let replayedJob = try await NotificationDeliveryJob.find(jobID, on: app.db)
+        let replayed = try XCTUnwrap(replayedJob)
+        XCTAssertEqual(replayed.status, .pending)
+        XCTAssertEqual(replayed.attemptCount, 0)
+        XCTAssertNil(replayed.lastFailureCode)
+        XCTAssertNil(replayed.completedAt)
+
+        // Replay is compare-and-set. A repeated request must not reset a row a
+        // worker may already have leased after the first accepted request.
+        try await app.test(
+            .POST,
+            "/admin/notification-deliveries/\(jobID.uuidString)/retry",
+            beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: adminCookie)
+            },
+            afterResponse: { response in
+                XCTAssertEqual(response.status, .conflict)
+            }
+        )
+    }
+
+    func testNotificationRetryPolicyIsBoundedDeterministicAndClassified() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let jobID = UUID(uuidString: "00000000-0000-4000-8000-000000000123")!
+        let transient = NotificationAttemptResult.failed(.transient, code: "network_error")
+        let first = NotificationRetryPolicy.decision(
+            for: transient, attemptCount: 1, maxAttempts: 5, jobID: jobID, now: now
+        )
+        let repeated = NotificationRetryPolicy.decision(
+            for: transient, attemptCount: 1, maxAttempts: 5, jobID: jobID, now: now
+        )
+        XCTAssertEqual(first, repeated)
+        guard case let .retry(nextAttempt) = first else {
+            return XCTFail("A transient first failure must be retried.")
+        }
+        XCTAssertGreaterThanOrEqual(nextAttempt.timeIntervalSince(now), 10)
+        XCTAssertLessThanOrEqual(nextAttempt.timeIntervalSince(now), 12.001)
+        XCTAssertEqual(
+            NotificationRetryPolicy.decision(
+                for: transient, attemptCount: 5, maxAttempts: 5, jobID: jobID, now: now
+            ),
+            .deadLetter
+        )
+        XCTAssertEqual(
+            NotificationRetryPolicy.decision(
+                for: .failed(.permanent, code: "blocked_destination"),
+                attemptCount: 1,
+                maxAttempts: 5,
+                jobID: jobID,
+                now: now
+            ),
+            .deadLetter
+        )
+        XCTAssertEqual(
+            NotificationRetryPolicy.decision(
+                for: .succeeded, attemptCount: 1, maxAttempts: 5, jobID: jobID, now: now
+            ),
+            .succeeded
+        )
+        XCTAssertEqual(
+            NotificationRetryPolicy.decision(
+                for: .skipped, attemptCount: 1, maxAttempts: 5, jobID: jobID, now: now
+            ),
+            .skipped
+        )
+    }
+
+    func testNotificationDeliveryConfigurationRejectsInvalidPresentValues() throws {
+        let names = [
+            "NOTIFICATION_WORKER_ENABLED",
+            "NOTIFICATION_MAX_ATTEMPTS",
+            "NOTIFICATION_POLL_SECONDS",
+            "NOTIFICATION_LEASE_SECONDS",
+            "NOTIFICATION_RETENTION_DAYS",
+        ]
+        let environment = EnvironmentSnapshot(names)
+        defer { environment.restore() }
+
+        setenv("NOTIFICATION_WORKER_ENABLED", "true", 1)
+        setenv("NOTIFICATION_MAX_ATTEMPTS", "0", 1)
+        setenv("NOTIFICATION_POLL_SECONDS", "2", 1)
+        setenv("NOTIFICATION_LEASE_SECONDS", "60", 1)
+        setenv("NOTIFICATION_RETENTION_DAYS", "30", 1)
+        XCTAssertThrowsError(try NotificationDeliveryConfiguration.fromEnvironment())
+
+        setenv("NOTIFICATION_WORKER_ENABLED", "false", 1)
+        setenv("NOTIFICATION_MAX_ATTEMPTS", "7", 1)
+        setenv("NOTIFICATION_POLL_SECONDS", "3", 1)
+        setenv("NOTIFICATION_LEASE_SECONDS", "90", 1)
+        setenv("NOTIFICATION_RETENTION_DAYS", "45", 1)
+        let configuration = try NotificationDeliveryConfiguration.fromEnvironment()
+        XCTAssertFalse(configuration.enabled)
+        XCTAssertEqual(configuration.maxAttempts, 7)
+        XCTAssertEqual(configuration.pollSeconds, 3)
+        XCTAssertEqual(configuration.leaseSeconds, 90)
+        XCTAssertEqual(configuration.retentionDays, 45)
     }
 
     func testPublicLivenessIsDatabaseIndependentAndLocalReadinessChecksSQL() async throws {
@@ -1471,6 +1804,16 @@ final class AppTests: XCTestCase {
             message: "new finding",
             newResultsCount: 1
         ).save(on: app.db)
+        try await NotificationOutboxEvent(
+            userID: userID,
+            scanID: firstScanID,
+            payload: .init(
+                title: "Sensitive delivery",
+                message: "Sensitive outbox payload",
+                webhookBody: #"{"secret":"value"}"#
+            ),
+            idempotencyKeyHash: sha256Hex("rewrap-outbox-event")
+        ).save(on: app.db)
         try await Tag(userID: userID, name: "Sensitive tag", colour: "#123456")
             .save(on: app.db)
         try await AuditLog(
@@ -1530,6 +1873,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(completed.rewrittenRows["tags"], 1)
         XCTAssertEqual(completed.rewrittenRows["audit_logs"], 1)
         XCTAssertEqual(completed.rewrittenRows["dark_web_investigations"], 1)
+        XCTAssertEqual(completed.rewrittenRows["notification_outbox"], 1)
         XCTAssertEqual(completed.rewrittenRows["plugin_cache"], 1)
         let remainingCacheRows = try await PluginCacheEntry.query(on: app.db).count()
         XCTAssertEqual(remainingCacheRows, 0)
@@ -1548,6 +1892,7 @@ final class AppTests: XCTestCase {
         let tagRow = try await Tag.query(on: app.db).first()
         let auditRow = try await AuditLog.query(on: app.db).first()
         let darkWebRow = try await DarkWebInvestigation.query(on: app.db).first()
+        let outboxRow = try await NotificationOutboxEvent.query(on: app.db).first()
         let storedResult = try XCTUnwrap(resultRow)
         let storedInvestigation = try XCTUnwrap(investigationRow)
         let storedUser = try XCTUnwrap(userRow)
@@ -1556,6 +1901,7 @@ final class AppTests: XCTestCase {
         let storedTag = try XCTUnwrap(tagRow)
         let storedAudit = try XCTUnwrap(auditRow)
         let storedDarkWeb = try XCTUnwrap(darkWebRow)
+        let storedOutbox = try XCTUnwrap(outboxRow)
 
         XCTAssertTrue(storedResult.rawDataCipher.hasPrefix("enc:v2:epoch-b:"))
         XCTAssertTrue(storedResult.metadataCipher?.hasPrefix("enc:v2:epoch-b:") == true)
@@ -1570,6 +1916,8 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(storedAudit.ipCipher.hasPrefix("enc:v2:epoch-b:"))
         XCTAssertTrue(storedDarkWeb.targetCipher.hasPrefix("enc:v2:epoch-b:"))
         XCTAssertTrue(storedDarkWeb.resultCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertTrue(storedOutbox.payloadCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertEqual(try storedOutbox.payload.message, "Sensitive outbox payload")
 
         // Verification covers deterministic indexes as well as ciphertext;
         // an old-key hash would make a valid row undiscoverable after removal.
@@ -3802,7 +4150,12 @@ final class AppTests: XCTestCase {
                 JSONSerialization.jsonObject(with: Data(response.body.readableBytesView))
                     as? [String: Any]
             )
-            XCTAssertEqual(root["formatVersion"] as? Int, 2)
+            XCTAssertEqual(root["formatVersion"] as? Int, 3)
+            let notificationOutbox = try XCTUnwrap(
+                root["notificationOutbox"] as? [[String: Any]]
+            )
+            XCTAssertEqual(notificationOutbox.count, 1)
+            XCTAssertEqual(notificationOutbox.first?["title"] as? String, "Verify your email")
             let boards = try XCTUnwrap(root["investigationBoards"] as? [[String: Any]])
             XCTAssertEqual(boards.count, 1)
             XCTAssertEqual(boards[0]["name"] as? String, "Exposure case")

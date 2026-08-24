@@ -124,7 +124,26 @@ struct AuthController: RouteCollection {
 
         This link expires in 24 hours. If you didn't create an account, ignore this email.
         """
-        await EmailService.send(to: user.email, subject: "Verify your email", body: body, app: req.application)
+        guard let userID = user.id else {
+            req.logger.error("Email verification could not be queued for a user without an ID.")
+            return
+        }
+        do {
+            _ = try await NotificationOutbox.enqueue(
+                userID: userID,
+                title: "Verify your email",
+                message: body,
+                scanID: nil,
+                idempotencyKey: "email-verification:\(sha256Hex(rawToken))",
+                channels: [.email],
+                app: req.application
+            )
+        } catch {
+            // Registration remains recoverable through resend-verification, but
+            // unlike the old fire-and-forget SMTP call the durable enqueue gap
+            // is now explicit in operations logs.
+            req.logger.error("Email verification could not be queued.")
+        }
     }
 
     /// GET /auth/verify-email?token=… — clicked from the email, so it returns a

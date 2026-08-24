@@ -108,6 +108,51 @@ struct AccountController: RouteCollection {
             "createdAt":       n.createdAt.map { $0.timeIntervalSince1970 } as Any
         ] }
 
+        // Durable automatic-delivery events also contain the caller's personal
+        // data. Export decrypted payloads and non-secret delivery metadata, but
+        // never the producer idempotency hash or channel credentials.
+        let outboxEvents = try await NotificationOutboxEvent.query(on: req.db)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let outboxEventIDs = outboxEvents.compactMap(\.id)
+        let outboxJobs: [NotificationDeliveryJob]
+        if outboxEventIDs.isEmpty {
+            outboxJobs = []
+        } else {
+            outboxJobs = try await NotificationDeliveryJob.query(on: req.db)
+                .filter(\.$event.$id ~~ outboxEventIDs)
+                .all()
+        }
+        let jobsByEvent = Dictionary(grouping: outboxJobs, by: { $0.$event.id })
+        let outboxPayload: [[String: Any]] = try outboxEvents.map { event in
+            let payload = try event.payload
+            var row: [String: Any] = [
+                "id": event.id?.uuidString ?? "",
+                "scanID": event.scanID?.uuidString as Any,
+                "title": payload.title,
+                "message": payload.message,
+                "createdAt": event.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "deliveries": (event.id.flatMap { jobsByEvent[$0] } ?? []).map { job in
+                    [
+                        "id": job.id?.uuidString ?? "",
+                        "channel": job.channelRaw,
+                        "status": job.statusRaw,
+                        "attemptCount": job.attemptCount,
+                        "maxAttempts": job.maxAttempts,
+                        "lastFailureCode": job.lastFailureCode as Any,
+                        "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
+                    ] as [String: Any]
+                },
+            ]
+            if let webhookBody = payload.webhookBody,
+               let data = webhookBody.data(using: .utf8),
+               let normalized = try? JSONSerialization.jsonObject(with: data) {
+                row["webhookBody"] = normalized
+            }
+            return row
+        }
+
         let boards = try await Investigation.query(on: req.db)
             .filter(\.$user.$id == userID)
             .sort(\.$createdAt, .descending)
@@ -180,12 +225,13 @@ struct AccountController: RouteCollection {
 
         let bundle: [String: Any] = [
             "exportedAt":    Date().timeIntervalSince1970,
-            "formatVersion": 2,
+            "formatVersion": 3,
             "profile":       profile,
             "scans":         scansPayload,
             "scheduled":     scheduledPayload,
             "tags":          tagsPayload,
             "notifications": notificationsPayload,
+            "notificationOutbox": outboxPayload,
             "investigationBoards": boardsPayload,
             "darkWebInvestigations": darkWebPayload,
             "apiKeys":       apiKeysPayload,
@@ -239,7 +285,8 @@ struct AccountController: RouteCollection {
 
         try await req.db.transaction { database in
             // FK cascade summary:
-            //   scheduled_scans, notifications, tags, API keys,
+            //   scheduled_scans, notifications, notification outbox/jobs,
+            //   tags, API keys,
             //   investigations, dark_web_investigations         → CASCADE
             //   scans.user_id                                    → SET NULL
             // For erasure we delete scans before the user, otherwise their

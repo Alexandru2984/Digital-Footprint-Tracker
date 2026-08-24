@@ -36,11 +36,41 @@ struct AuditLogDTO: Content {
     }
 }
 
+struct NotificationDeliveryJobDTO: Content {
+    let id: UUID?
+    let eventID: UUID
+    let channel: String
+    let status: String
+    let attemptCount: Int
+    let maxAttempts: Int
+    let nextAttemptAt: Date
+    let lastFailureCode: String?
+    let createdAt: Date?
+    let updatedAt: Date?
+    let completedAt: Date?
+
+    init(_ job: NotificationDeliveryJob) {
+        id = job.id
+        eventID = job.$event.id
+        channel = job.channelRaw
+        status = job.statusRaw
+        attemptCount = job.attemptCount
+        maxAttempts = job.maxAttempts
+        nextAttemptAt = job.nextAttemptAt
+        lastFailureCode = job.lastFailureCode
+        createdAt = job.createdAt
+        updatedAt = job.updatedAt
+        completedAt = job.completedAt
+    }
+}
+
 struct AdminController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.get("admin", "dashboard", use: dashboard)
         noCache.get("admin", "audit", use: auditLog)
+        noCache.get("admin", "notification-deliveries", use: notificationDeliveries)
+        noCache.post("admin", "notification-deliveries", ":id", "retry", use: retryNotificationDelivery)
     }
 
     @Sendable
@@ -117,5 +147,71 @@ struct AdminController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .paginate(for: req)
         return Page(items: try page.items.map(AuditLogDTO.init), metadata: page.metadata)
+    }
+
+    @Sendable
+    func notificationDeliveries(req: Request) async throws -> [NotificationDeliveryJobDTO] {
+        let user = try await req.requireRecentSessionUser()
+        guard user.isAdmin else { throw Abort(.forbidden, reason: "Admin access required.") }
+
+        let rawStatus = (try? req.query.get(String.self, at: "status"))
+            ?? NotificationDeliveryJobStatus.deadLetter.rawValue
+        guard let status = NotificationDeliveryJobStatus(rawValue: rawStatus) else {
+            throw Abort(.badRequest, reason: "Unknown notification delivery status.")
+        }
+        let requestedLimit = (try? req.query.get(Int.self, at: "limit")) ?? 50
+        guard (1...100).contains(requestedLimit) else {
+            throw Abort(.badRequest, reason: "limit must be between 1 and 100.")
+        }
+
+        let jobs = try await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == status.rawValue)
+            .sort(\.$updatedAt, .descending)
+            .limit(requestedLimit)
+            .all()
+        return jobs.map(NotificationDeliveryJobDTO.init)
+    }
+
+    @Sendable
+    func retryNotificationDelivery(req: Request) async throws -> HTTPStatus {
+        let user = try await req.requireRecentSessionUser()
+        guard user.isAdmin else { throw Abort(.forbidden, reason: "Admin access required.") }
+        guard let id = req.parameters.get("id", as: UUID.self),
+              let job = try await NotificationDeliveryJob.find(id, on: req.db) else {
+            throw Abort(.notFound)
+        }
+        guard job.status == .deadLetter else {
+            throw Abort(.conflict, reason: "Only dead-letter deliveries can be retried.")
+        }
+
+        guard let sql = req.db as? SQLDatabase else {
+            throw Abort(.internalServerError, reason: "Notification delivery database is unavailable.")
+        }
+        let now = Date()
+        let replayedRows = try await sql.raw("""
+            UPDATE notification_delivery_jobs
+            SET status = \(bind: NotificationDeliveryJobStatus.pending.rawValue),
+                attempt_count = 0,
+                next_attempt_at = \(bind: now),
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                last_failure_code = NULL,
+                completed_at = NULL,
+                updated_at = \(bind: now)
+            WHERE id = \(bind: id)
+              AND status = \(bind: NotificationDeliveryJobStatus.deadLetter.rawValue)
+            RETURNING id
+            """).all()
+        guard !replayedRows.isEmpty else {
+            // Another administrator may have replayed this row after our read.
+            // Never overwrite a lease acquired in that interval.
+            throw Abort(.conflict, reason: "Delivery was already replayed.")
+        }
+        await AuditLogger.log(
+            req: req,
+            action: "retry_notification_delivery",
+            target: id.uuidString.lowercased()
+        )
+        return .accepted
     }
 }

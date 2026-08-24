@@ -19,14 +19,19 @@ enum SafeHTTP {
         url: URL,
         body: Data,
         contentType: String = "application/json",
+        additionalHeaders: [String: String] = [:],
         timeout: TimeInterval = 10,
         on app: Application
     ) async throws -> Response {
         do {
+            var headers = additionalHeaders
+            // The content type is owned by the caller's typed argument, not by
+            // the optional metadata map, so it cannot be shadowed accidentally.
+            headers["Content-Type"] = contentType
             let response = try await OutboundHTTP.request(
                 url,
                 method: .POST,
-                headers: ["Content-Type": contentType],
+                headers: headers,
                 body: body,
                 timeout: timeout,
                 bodyMode: .prefix(maxBytes: 1_024),

@@ -27,6 +27,7 @@ enum SensitiveFieldRewrapper {
         case tags
         case auditLogs = "audit_logs"
         case darkWebInvestigations = "dark_web_investigations"
+        case notificationOutbox = "notification_outbox"
         case pluginCache = "plugin_cache"
     }
 
@@ -536,6 +537,17 @@ private extension SensitiveFieldRewrapper {
                 } catch { throw recordFailure(.rewrite, phase, row.id) }
             }
             return progress(rows)
+        case .notificationOutbox:
+            let rows = try await notificationOutboxBatch(
+                after: cursor, limit: limit, lockForUpdate: true, on: database
+            )
+            for row in rows {
+                do {
+                    try row.setPayload(row.payload)
+                    try await row.update(on: database)
+                } catch { throw recordFailure(.rewrite, phase, row.id) }
+            }
+            return progress(rows)
         case .pluginCache:
             // Cache target hashes cannot be recomputed without the original
             // input. Purging is safe: normal scans repopulate current-format
@@ -643,6 +655,18 @@ private extension SensitiveFieldRewrapper {
                     throw recordFailure(.verify, phase, row.id)
                 }
                 try verifyOptional(row.resultCipher, field: .darkWebResult, phase: phase, id: row.id)
+            }
+            return progress(rows)
+        case .notificationOutbox:
+            let rows = try await notificationOutboxBatch(after: cursor, limit: limit, on: database)
+            for row in rows {
+                try verify(
+                    row.payloadCipher,
+                    field: .notificationOutboxPayload,
+                    stage: .verify,
+                    phase: phase,
+                    id: row.id
+                )
             }
             return progress(rows)
         case .pluginCache:
@@ -837,6 +861,22 @@ private extension SensitiveFieldRewrapper {
                 .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
         }
         let query = ScanNotification.query(on: db).sort(\.$id, .ascending).limit(limit)
+        if let cursor { query.filter(\.$id > cursor) }
+        return try await query.all()
+    }
+
+    private static func notificationOutboxBatch(
+        after cursor: UUID?, limit: Int, lockForUpdate: Bool = false, on db: Database
+    ) async throws -> [NotificationOutboxEvent] {
+        if let ids = try await lockedRowIDs(
+            schema: NotificationOutboxEvent.schema, after: cursor, limit: limit,
+            lockForUpdate: lockForUpdate, on: db
+        ) {
+            guard !ids.isEmpty else { return [] }
+            return try await NotificationOutboxEvent.query(on: db)
+                .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
+        }
+        let query = NotificationOutboxEvent.query(on: db).sort(\.$id, .ascending).limit(limit)
         if let cursor { query.filter(\.$id > cursor) }
         return try await query.all()
     }

@@ -96,8 +96,10 @@ series), with its own rollback note and production evidence before the next one.
    `Last-Event-ID`, bounded replay, proxy-safe reconnects and the existing
    constant-cost public liveness/internal readiness split. Production rollout
    evidence remains gated by Phase 0.
-9. **Truthful delivery:** typed notification outcomes, retry/DLQ, channel opt-in,
-   bounce handling and success/failure/provider-latency dashboards.
+9. **Truthful delivery — repository core delivered:** encrypted idempotent
+   outbox, per-channel leases, typed transient/permanent failures, bounded
+   jittered retry, DLQ, audited replay and queue metrics. Production evidence,
+   bounce/complaint ingestion and provider-latency dashboards remain gated.
 10. **Bounded data plane:** asynchronous paged exports/correlation/report jobs,
     completeness manifests, encryption, download expiry and cancellation.
 11. **Security telemetry:** append-only audit writer, signed remote stream,

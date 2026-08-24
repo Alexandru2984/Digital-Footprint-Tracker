@@ -109,13 +109,50 @@ enum ScanPluginRunner {
                 scan.completedAt = Date()
                 try await scan.save(on: db)
                 await ScanProgressTracker.shared.remove(for: scanID)
-                // Fire webhook if user has one set.
-                if let userID = scan.$user.id,
-                   let user = try? await User.find(userID, on: db),
-                   let hookURL = try user.webhookURL {
-                    let allResults = try await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()
-                    let risk = try RiskScorer.compute(results: allResults)
-                    try await fireWebhook(url: hookURL, scanID: scanID, scan: scan, risk: risk, resultCount: allResults.count, app: app)
+                // Persist webhook work before returning. Provider/network
+                // failures are retried by the leased outbox worker instead of
+                // being silently lost at the end of this background task.
+                do {
+                    if let userID = scan.$user.id,
+                       let user = try? await User.find(userID, on: db),
+                       try user.webhookURL != nil {
+                        let allResults = try await App.Result.query(on: db)
+                            .filter(\.$scan.$id == scanID)
+                            .all()
+                        let risk = try RiskScorer.compute(results: allResults)
+                        let input = try scan.input
+                        let webhookPayload: [String: Any] = [
+                            "event": "scan.completed",
+                            "scanID": scanID.uuidString.lowercased(),
+                            "input": input,
+                            "status": scan.status.rawValue,
+                            "riskScore": risk.value,
+                            "riskLevel": risk.level.rawValue,
+                            "resultCount": allResults.count,
+                            "completedAt": scan.completedAt?.timeIntervalSince1970 ?? NSNull()
+                        ]
+                        let webhookData = try JSONSerialization.data(
+                            withJSONObject: webhookPayload,
+                            options: [.sortedKeys]
+                        )
+                        _ = try await NotificationOutbox.enqueueWebhook(
+                            userID: userID,
+                            title: "Scan complete",
+                            message: "Scan completed with \(allResults.count) result(s); risk \(risk.level.rawValue) (\(risk.value)/100).",
+                            webhookBody: String(decoding: webhookData, as: UTF8.self),
+                            scanID: scanID,
+                            idempotencyKey: "scan-complete-webhook:\(scanID.uuidString.lowercased())",
+                            app: app
+                        )
+                    }
+                } catch let failure as FieldCrypto.DecryptionFailure {
+                    await SensitiveFieldFailureReporter.report(
+                        failure,
+                        app: app,
+                        context: "scan_completion_webhook"
+                    )
+                } catch {
+                    app.logger.error("Scan \(scanID): completion webhook enqueue failed.")
                 }
             }
         } catch let failure as FieldCrypto.DecryptionFailure {
@@ -251,41 +288,6 @@ enum ScanPluginRunner {
         try await ResultStreamStore.persist(result, on: db)
     }
 
-    private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, app: Application) async throws {
-        guard let hookURL = URL(string: url) else { return }
-        let destination = redactedDestination(hookURL)
-        guard !SSRFGuard.isInternalURL(hookURL) else {
-            app.logger.warning("Webhook delivery to \(destination) blocked: internal/private target.")
-            return
-        }
-        let payload: [String: Any] = [
-            "event": "scan.completed",
-            "scanID": scanID.uuidString,
-            "input": try scan.input,
-            "status": scan.status.rawValue,
-            "riskScore": risk.value,
-            "riskLevel": risk.level.rawValue,
-            "resultCount": resultCount,
-            "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return }
-        do {
-            // SafeHTTP re-checks DNS resolution and blocks redirects to internal
-            // hosts, on top of the structural guard above.
-            try await SafeHTTP.post(url: hookURL, body: body, on: app)
-        } catch SafeHTTP.SafeHTTPError.blockedInternalHost {
-            app.logger.warning("Webhook delivery to \(destination) blocked: resolved to an internal address.")
-        } catch {
-            app.logger.warning("Webhook delivery to \(destination) failed.")
-        }
-    }
-
-    /// Never include a webhook's path, query, fragment, or user-info in logs:
-    /// those components commonly carry bot tokens and signing secrets.
-    private static func redactedDestination(_ url: URL) -> String {
-        guard let scheme = url.scheme, let host = url.host else { return "invalid-destination" }
-        return "\(scheme.lowercased())://\(host.lowercased())\(url.port.map { ":\($0)" } ?? "")"
-    }
 }
 
 /// Hard storage/cache boundaries for data returned by plugins. Limits are in

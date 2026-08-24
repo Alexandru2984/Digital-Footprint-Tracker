@@ -186,7 +186,7 @@ func runDueScheduledScansOnce(app: Application) async {
                         )
                         try? await notification.save(on: db)
 
-                        if let monitorUser = try? await User.find(userID, on: db) {
+                        if (try? await User.find(userID, on: db)) != nil {
                             let risk = try RiskScorer.compute(results: allResults)
                             var body = "Your monitored target '\(input)' has \(newResults.count) new result(s).\n"
                             if !exposureLine.isEmpty { body += "New exposure: \(exposureLine)\n" }
@@ -194,11 +194,12 @@ func runDueScheduledScansOnce(app: Application) async {
                             let title = exposureLine.isEmpty
                                 ? "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
                                 : "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
-                            await NotificationDispatcher.notify(
-                                user: monitorUser,
+                            _ = try await NotificationOutbox.enqueue(
+                                userID: userID,
                                 title: title,
                                 message: body,
                                 scanID: scanID,
+                                idempotencyKey: "scheduled-diff:\(scanID.uuidString.lowercased())",
                                 app: app
                             )
                             firedDiffAlert = true
@@ -218,11 +219,12 @@ func runDueScheduledScansOnce(app: Application) async {
                    let user = try? await User.find(userID, on: db),
                    user.verboseAlerts {
                     let risk = try RiskScorer.compute(results: allResults)
-                    await NotificationDispatcher.notify(
-                        user: user,
+                    _ = try await NotificationOutbox.enqueue(
+                        userID: userID,
                         title: "Scheduled Scan Complete: \(String(input.prefix(30)))",
                         message: "Scheduled scan for '\(input)' completed with \(allResults.count) result(s). Risk: \(risk.level.rawValue) (\(risk.value)/100).",
                         scanID: scanID,
+                        idempotencyKey: "scheduled-complete:\(scanID.uuidString.lowercased())",
                         app: app
                     )
                 }

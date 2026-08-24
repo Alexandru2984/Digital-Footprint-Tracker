@@ -78,7 +78,9 @@ Assume the old ID is `epoch-a` and the new ID is `epoch-b`:
    the escrow/retention policy; do not destroy the only key for retained old
    backups.
 
-The command rewrites scan and dark-web blind indexes. Plugin-cache target hashes
+The command also rewraps encrypted notification-outbox payloads before their
+delivery rows are retried; unreadable payloads therefore fail verification
+instead of being sent or silently skipped. It rewrites scan and dark-web blind indexes. Plugin-cache target hashes
 cannot be reconstructed without their original input, so the disposable cache
 is purged in bounded batches and repopulates under the active index key.
 

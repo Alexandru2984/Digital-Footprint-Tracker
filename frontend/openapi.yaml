@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.4.0"
+  version: "1.5.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -77,6 +77,26 @@ components:
           type: integer
           format: int64
           description: Unix timestamp
+
+    NotificationDeliveryJob:
+      type: object
+      description: Delivery metadata only; encrypted message and channel credentials are never returned.
+      properties:
+        id: { type: string, format: uuid }
+        eventID: { type: string, format: uuid }
+        channel:
+          type: string
+          enum: [webhook, discord, telegram, slack, email]
+        status:
+          type: string
+          enum: [pending, processing, succeeded, skipped, dead_letter]
+        attemptCount: { type: integer, minimum: 0 }
+        maxAttempts: { type: integer, minimum: 1, maximum: 10 }
+        nextAttemptAt: { type: string, format: date-time }
+        lastFailureCode: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
 
     ScanSummary:
       type: object
@@ -666,6 +686,54 @@ paths:
         '403':
           description: Admin access required
 
+  /admin/notification-deliveries:
+    get:
+      summary: Inspect bounded notification delivery metadata (admin only)
+      description: Requires a recent authenticated admin session. Payloads and credentials are never returned.
+      tags: [Admin]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, processing, succeeded, skipped, dead_letter]
+            default: dead_letter
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Newest matching delivery jobs, bounded by limit
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationDeliveryJob' }
+        '400': { description: Invalid status or limit }
+        '401': { description: Recent session authentication required }
+        '403': { description: Admin access required }
+
+  /admin/notification-deliveries/{id}/retry:
+    post:
+      summary: Replay one dead-letter notification delivery (admin only)
+      description: Resets the attempt count and queues the same stable delivery ID again. The action is audit-logged.
+      tags: [Admin]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Delivery returned to the pending queue }
+        '401': { description: Recent session authentication required }
+        '403': { description: Admin access required }
+        '404': { description: Delivery not found }
+        '409': { description: Delivery is not in dead-letter state }
+
   /report/{id}:
     get:
       summary: Download scan report as PDF
@@ -980,7 +1048,10 @@ paths:
   /auth/notifications/test:
     post:
       summary: Test configured notification delivery
-      description: Returns per-channel delivery outcomes without exposing channel credentials.
+      description: |
+        Returns immediate per-channel delivery outcomes without exposing channel
+        credentials. This explicit diagnostic is synchronous; automatic
+        notifications use the durable retry/DLQ outbox.
       tags: [Auth]
       responses:
         '200': { description: Every attempted channel accepted the notification }
@@ -1006,12 +1077,13 @@ paths:
                 type: object
                 properties:
                   exportedAt:    { type: integer, format: int64 }
-                  formatVersion: { type: integer, example: 2 }
+                  formatVersion: { type: integer, example: 3 }
                   profile:       { type: object }
                   scans:         { type: array,  items: { $ref: '#/components/schemas/Scan' } }
                   scheduled:     { type: array,  items: { type: object } }
                   tags:          { type: array,  items: { type: object } }
                   notifications: { type: array,  items: { type: object } }
+                  notificationOutbox: { type: array, items: { type: object } }
                   investigationBoards: { type: array, items: { type: object } }
                   darkWebInvestigations: { type: array, items: { $ref: '#/components/schemas/DarkWebDetail' } }
                   apiKeys:       { type: array,  items: { type: object } }

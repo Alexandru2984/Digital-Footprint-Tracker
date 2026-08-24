@@ -25,6 +25,7 @@ enum FieldCrypto {
         case darkWebTarget = "dark_web_investigations.target"
         case darkWebResult = "dark_web_investigations.result"
         case notificationMessage = "scan_notifications.message"
+        case notificationOutboxPayload = "notification_outbox_events.payload"
         case auditTarget = "audit_logs.target"
         case auditIP = "audit_logs.ip"
         case tagName = "tags.name"

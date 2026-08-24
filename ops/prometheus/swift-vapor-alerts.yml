@@ -35,3 +35,30 @@ groups:
         annotations:
           summary: Swift Vapor rejected a corrupted encrypted field
           description: Authenticated field decryption failed; the affected read/job path was quarantined and requires operator investigation.
+
+      - alert: SwiftVaporNotificationDeadLetter
+        expr: swift_vapor_notification_jobs_dead_letter > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor has dead-letter notification deliveries
+          description: At least one automatic notification exhausted retry or failed permanently and requires operator review.
+
+      - alert: SwiftVaporNotificationLeaseExpired
+        expr: swift_vapor_notification_expired_leases > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor notification leases are not being recovered
+          description: One or more delivery leases remained expired, indicating that the durable worker is stopped or unhealthy.
+
+      - alert: SwiftVaporNotificationQueueDelayed
+        expr: swift_vapor_notification_oldest_pending_age_seconds > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor notification queue is delayed
+          description: The oldest pending automatic notification has waited longer than five minutes.

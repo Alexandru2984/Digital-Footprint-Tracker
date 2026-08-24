@@ -156,6 +156,27 @@ struct HealthController: RouteCollection {
             .filter(\.$statusRaw == DarkWebInvestigationStatus.pending.rawValue).count()) ?? 0
         let darkWebRunning = (try? await DarkWebInvestigation.query(on: req.db)
             .filter(\.$statusRaw == DarkWebInvestigationStatus.running.rawValue).count()) ?? 0
+        let notificationPending = (try? await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == NotificationDeliveryJobStatus.pending.rawValue).count()) ?? 0
+        let notificationProcessing = (try? await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == NotificationDeliveryJobStatus.processing.rawValue).count()) ?? 0
+        let notificationDeadLetter = (try? await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == NotificationDeliveryJobStatus.deadLetter.rawValue).count()) ?? 0
+        let metricsNow = Date()
+        let notificationExpiredLeases = (try? await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == NotificationDeliveryJobStatus.processing.rawValue)
+            .filter(\.$leaseExpiresAt <= metricsNow)
+            .count()) ?? 0
+        let oldestPending = try? await NotificationDeliveryJob.query(on: req.db)
+            .filter(\.$statusRaw == NotificationDeliveryJobStatus.pending.rawValue)
+            .sort(\.$createdAt, .ascending)
+            .first()
+        let notificationOldestPendingAge: Int
+        if let createdAt = oldestPending?.createdAt {
+            notificationOldestPendingAge = max(0, Int(metricsNow.timeIntervalSince(createdAt)))
+        } else {
+            notificationOldestPendingAge = 0
+        }
 
         let yesterday    = Date().addingTimeInterval(-86400)
         let scansLast24h = (try? await Scan.query(on: req.db).filter(\.$createdAt >= yesterday).count()) ?? 0
@@ -208,6 +229,21 @@ struct HealthController: RouteCollection {
         writeGauge(name: "swift_vapor_dark_web_jobs_running",
                    help: "Dark-web investigations currently leased to a worker.",
                    value: darkWebRunning)
+        writeGauge(name: "swift_vapor_notification_jobs_pending",
+                   help: "Durable notification delivery jobs waiting for an attempt.",
+                   value: notificationPending)
+        writeGauge(name: "swift_vapor_notification_jobs_processing",
+                   help: "Durable notification delivery jobs currently leased.",
+                   value: notificationProcessing)
+        writeGauge(name: "swift_vapor_notification_jobs_dead_letter",
+                   help: "Notification delivery jobs requiring operator review.",
+                   value: notificationDeadLetter)
+        writeGauge(name: "swift_vapor_notification_expired_leases",
+                   help: "Notification processing leases past their recovery deadline.",
+                   value: notificationExpiredLeases)
+        writeGauge(name: "swift_vapor_notification_oldest_pending_age_seconds",
+                   help: "Age of the oldest pending notification job, or zero for an empty queue.",
+                   value: notificationOldestPendingAge)
         writeGauge(name: "swift_vapor_backup_last_success_unixtime",
                    help: "Unix timestamp of the last locally verified encrypted database backup, or zero when unknown.",
                    value: backup?.lastSuccessUnix ?? 0)
@@ -233,6 +269,12 @@ struct HealthController: RouteCollection {
                 guard let count = outcomes[outcome] else { continue }
                 out += "swift_vapor_notification_deliveries_total{channel=\"\(channel.rawValue)\",outcome=\"\(outcome)\"} \(count)\n"
             }
+        }
+        out += "# HELP swift_vapor_notification_job_transitions_total Durable notification job state transitions since process start.\n"
+        out += "# TYPE swift_vapor_notification_job_transitions_total counter\n"
+        for status in ["succeeded", "skipped", "retry_scheduled", "dead_letter"] {
+            let count = snap.notificationJobTransitions[status] ?? 0
+            out += "swift_vapor_notification_job_transitions_total{status=\"\(status)\"} \(count)\n"
         }
         out += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
         out += "# TYPE swift_vapor_dark_web_jobs_total counter\n"

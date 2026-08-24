@@ -20,7 +20,7 @@ graph.
   systemd, backup and atomic-release configuration is prepared in the repository,
   but the live recovery/configuration gaps are rollout blockers—not completed
   controls. See the current
-  [`security audit`](docs/SECURITY_AUDIT_2026-08-12.md),
+  [`security audit`](docs/SECURITY_AUDIT_2026-08-24.md),
   [`rollout runbook`](docs/PRODUCTION_ROLLOUT.md) and
   [`roadmap`](docs/ROADMAP.md).
 - **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
@@ -32,14 +32,16 @@ graph.
   (`GET /account/export`) or permanently delete it with confirmation-gated
   `DELETE /account`.
 - **Prometheus `/metrics`** endpoint (text exposition 0.0.4) — scan counts by
-  status, cache hit/miss ratio, notifications dispatched by channel. Bearer
+  status, cache hit/miss ratio, notification attempts, queue depth and DLQ. Bearer
   token auth via `METRICS_TOKEN` env var so scrapers don't need an admin
   session.
 - **Multi-channel monitoring** for scheduled scans — Discord, Telegram, Slack,
   email, generic webhook — silent by default, with enriched diff messages
-  that list which sources surfaced new findings.
+  that list which sources surfaced new findings. Automatic delivery uses an
+  encrypted PostgreSQL outbox, cross-process leases, bounded retry and an
+  operator-visible dead-letter queue.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite; 161 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 191 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---
@@ -49,7 +51,7 @@ graph.
 | Layer | Technology |
 |---|---|
 | Backend | Swift 6.2 toolchain + Vapor 4 (async/await, `TaskGroup` concurrency) |
-| Database | PostgreSQL (Fluent ORM, 19 migrations) |
+| Database | PostgreSQL (Fluent ORM, versioned migrations) |
 | Frontend | Vanilla JS + Tailwind CSS + D3.js v7 + Leaflet |
 | Reverse proxy | nginx (rate limiting, CSP, HSTS, security headers) |
 | Deployment | systemd (`swift-vapor.service`) on Ubuntu VPS, optional Docker Compose |
@@ -98,6 +100,8 @@ PostgreSQL
   ├── tags / scan_tags
   ├── scheduled_scans
   ├── scan_notifications
+  ├── notification_outbox_events (encrypted, idempotent producer event)
+  ├── notification_delivery_jobs (per-channel lease/retry/DLQ state)
   ├── api_keys        (SHA-256 hashed token)
   ├── shared_reports  (hashed token, expires_at)
   └── audit_logs
@@ -216,6 +220,8 @@ page (cookie auth is persisted across reloads).
 ### User
 - `GET /api/my-scans` — last 50 scans for the authenticated user (input masked)
 - `GET /api/admin/scans` — last 100 scans across all users (admin only)
+- `GET /api/admin/notification-deliveries` — bounded delivery/DLQ metadata (recent-auth admin only)
+- `POST /api/admin/notification-deliveries/:id/retry` — audited DLQ replay
 
 ### Other route groups
 `/api/auth/api-keys`, `/api/scheduled-scans`, `/api/scan/bulk`, `/api/share`, `/api/diff`,
@@ -267,7 +273,7 @@ python3 -m venv .venv
 ```bash
 git clone https://github.com/Alexandru2984/Digital-Footprint-Tracker
 cd Digital-Footprint-Tracker
-cp .env.example .env   # then edit values
+install -m 600 /dev/null .env   # then add the values below
 ```
 
 **.env** — minimal set:
@@ -294,7 +300,16 @@ SMTP_PORT=587
 SMTP_USER=...
 SMTP_PASS=...
 SMTP_FROM=noreply@example.com
+# Optional bounded durable-delivery tuning:
+NOTIFICATION_WORKER_ENABLED=true
+NOTIFICATION_MAX_ATTEMPTS=5
+NOTIFICATION_POLL_SECONDS=2
+NOTIFICATION_LEASE_SECONDS=60
+NOTIFICATION_RETENTION_DAYS=30
 ```
+
+Automatic notification semantics, rollout and recovery are documented in
+[`docs/NOTIFICATION_DELIVERY.md`](docs/NOTIFICATION_DELIVERY.md).
 
 ### 2. Build & run
 
@@ -440,7 +455,11 @@ Available series: `swift_vapor_scans`, `swift_vapor_scans_by_status{status="..."
 `swift_vapor_scans_last_24h`, `swift_vapor_users`, `swift_vapor_results`,
 `swift_vapor_scheduled_scans_active`, `swift_vapor_plugin_cache_rows`,
 `swift_vapor_plugin_cache_hits_total`, `swift_vapor_plugin_cache_misses_total`,
-`swift_vapor_notifications_sent_total{channel="..."}`,
+`swift_vapor_notification_deliveries_total{channel="...",outcome="..."}`,
+`swift_vapor_notification_job_transitions_total{status="..."}`,
+`swift_vapor_notification_jobs_pending`, `swift_vapor_notification_jobs_processing`,
+`swift_vapor_notification_jobs_dead_letter`, `swift_vapor_notification_expired_leases`,
+`swift_vapor_notification_oldest_pending_age_seconds`,
 `swift_vapor_backup_last_success_unixtime`, `swift_vapor_backup_age_seconds`
 and `swift_vapor_backup_fresh`. Starter availability and backup alerts live in
 `ops/prometheus/swift-vapor-alerts.yml`; validate and load them through the

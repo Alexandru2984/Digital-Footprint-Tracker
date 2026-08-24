@@ -61,7 +61,7 @@ If you believe you have found a security issue in this project:
             ▼
         External APIs (HIBP, Shodan, VirusTotal, AbuseIPDB,
         GitHub, Gravatar, Telegram, Cloudflare DoH, web.archive.org,
-        ip-api.com, 481 Sherlock sites, SMTP relay,
+        481 Sherlock sites, SMTP relay,
         user webhook destinations)
 ```
 
@@ -71,9 +71,9 @@ If you believe you have found a security issue in this project:
 |----------------------|---------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
 | Anonymous visitor    | View landing page, `GET /api/stats`, `GET /api/share/:token`; create scans; read/export/identity of a scan they created via its unguessable `scanID` (capability) | Per-IP rate limits at nginx + Vapor, with a stricter hourly cap for anon (15/h vs 200/h authed); no transitive pivot for anon scans; capability read only — no enumeration; share tokens 192-bit, hashed at rest |
 | Registered user      | Create scans, view their own results, export, schedule, tag, configure webhooks, mint API keys    | Charset whitelist + SSRF guard on every input; per-user rate limits; ownership check on every fetch          |
-| Admin user           | View all scans (with PII masked), audit log, metrics                                              | Seeded from `.env` only; `isAdmin` check at every admin endpoint; every privileged action is audit-logged    |
+| Admin user           | View all scans (with PII masked), audit log, metrics and notification DLQ metadata; replay a DLQ row | Seeded from `.env` only; recent session + `isAdmin` at every admin endpoint; privileged replay is audit-logged |
 | Plugin output        | Returns `rawData` strings that the server persists and renders                                    | Byte cap 8 KB; `source`/`type` cap 64 chars; `confidenceScore` clamped `[0.0, 1.0]`; HTML-escaped on render  |
-| Webhook destination  | Receives `scan.completed` JSON or notification payloads                                           | SSRF guard rejects internal hosts; HTTPS-only required for user-supplied URLs; 10 s timeout                  |
+| Webhook destination  | Receives `scan.completed` JSON or notification payloads                                           | SSRF guard rejects internal hosts; HTTPS-only save policy; 10 s timeout; stable delivery ID + bounded retry |
 | External plugin host | Receives outbound HTTP from this server                                                           | URLRequest timeouts (10–15 s); URLSession is system TLS; no client secrets sent except per-plugin API keys   |
 
 What is **explicitly not trusted**: any HTTP header that a client could
@@ -146,7 +146,7 @@ socket peer address.
 ### SSRF (server-side request forgery)
 
 The server initiates outbound HTTP from many places: scan plugins, webhook
-delivery, notification dispatch, ip-api.com proxy, scheduled-scan runner.
+delivery, notification dispatch, and the scheduled-scan runner.
 Every one of them runs through the same guard.
 
 | Threat                                                       | Mitigation                                                                                                                                          | Reference                                                                                                            |
@@ -154,11 +154,11 @@ Every one of them runs through the same guard.
 | Scan target = internal host                                  | `SSRFGuard.isInternalTarget`/`isInternalURL` reject loopback, RFC1918 (10/8, 172.16/12, 192.168/16), link-local 169.254/16 (cloud metadata), 0.0.0.0/8, CGNAT 100.64/10, IPv6 `::1`/fc/fd/fe80 and IPv4-mapped IPv6; URL hosts also catch numeric obfuscation (decimal `2130706433`, hex, short `127.1`) | `Sources/App/Services/SSRFGuard.swift`, applied via `InputValidator`                                                 |
 | **DNS rebinding / host resolves to internal**                | `SafeHTTP` resolves the destination — and every redirect hop — via `getaddrinfo` and refuses if **any** answer is private/loopback/link-local (fail-closed). All user-controlled outbound (webhook, every notification channel, and the WebPosture security-header probe) routes through it; redirects to internal hosts are blocked mid-chain | `Sources/App/Services/SafeHTTP.swift`, `SSRFGuard.resolvesToInternal`                                                |
 | **SSRF bypass via scheduled scans**                          | `InputValidator` applied at create time and re-validated by `ScheduledScanRunner` on every cycle (covers rows inserted before validator existed)    | `ScheduledScanController.create`, `ScheduledScanRunner.runDueScans`                                                  |
-| Webhook URL → internal host                                  | `validateWebhookURL` enforces HTTPS + structural `isInternalURL` + a resolve-time `resolvesToInternal` check at save; delivery goes through `SafeHTTP` (resolution + redirect guard above)                | `AuthController.swift`, `ScanPluginRunner.fireWebhook`, `NotificationDispatcher.sendWebhook`                         |
+| Webhook URL → internal host                                  | `validateWebhookURL` enforces HTTPS + structural `isInternalURL` + a resolve-time `resolvesToInternal` check at save; delivery goes through `SafeHTTP` (resolution + redirect guard above)                | `AuthController.swift`, `NotificationDispatcher.sendWebhook`                         |
 | Sherlock URL template typo → internal                        | `SSRFGuard.isInternalURL` re-applied on the resolved URL (after `{}` substitution) — defense in depth even though templates are project-controlled  | `BulkUsernamePlugin.swift`                                                                                           |
 | Plugin egress to fixed public APIs                           | Routed through `PluginHTTP` (one pooled session, consistent UA, retry/backoff on 429/5xx, per-host throttle). DNS resolved over HTTPS (Cloudflare DoH) rather than a `dig` subprocess | `Sources/App/Services/PluginHTTP.swift`, `Sources/App/Services/DoHResolver.swift`                                   |
 | Attack-surface fetch / IP interpolation                      | `WebPosture` fetches only hosts matching `^[a-z0-9.\-]+$` and only via `SafeHTTP.get` (resolution + redirect guard). `InternetDB`/`AttackSurface` interpolate only IPs that passed `isPublicIPv4` (regex + `!isInternalHostname`) into the **fixed** Shodan/crt.sh hosts' path — destination host is never user-controlled, and the upstream `InputValidator` charset (`@._+-` only) blocks query-string injection | `WebPosturePlugin.swift`, `InternetDBPlugin.swift`, `AttackSurfacePlugin.swift`                                     |
-| `/api/geolocate` as open HTTP proxy                          | Auth required, dedicated rate limit (30/min authed, 5/min anon), 4 KB body cap, JSON-array structural check before forwarding to ip-api.com         | `HealthController.geolocate`                                                                                         |
+| `/api/geolocate` data disclosure / resource abuse           | Auth required, dedicated rate limit (30/min authed, 5/min anon), 4 KB body cap, at most 100 structurally validated entries; lookup is served from a local read-only GeoLite2 database and sends no investigated IPs to a third party | `HealthController.geolocate`, `GeoIP.swift`                                                                          |
 
 The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 `testSSRFGuardBlocksPrivateRanges`, `testSSRFGuardBlocksLinkLocalAndCloudMetadata`,
@@ -176,6 +176,8 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | Scheduled-scan hang                               | Routes through the same `ScanPluginRunner.run` — inherits the 120 s deadline                                                         | `ScheduledScanRunner.swift`                                                                              |
 | SSE connection flood                              | Process-wide locked counter, hard cap 30 concurrent streams                                                                          | `ScanController.streamResults`                                                                           |
 | SSE replay / database amplification               | Indexed per-scan cursor, strict cursor parser, 100-row replay pages, terminal-only risk calculation, 15 s heartbeat                  | `ScanResultEvent`, `ResultStreamStore`, `ScanController.streamResults`                                   |
+| Duplicate/lost notification work                  | Atomic hashed producer key plus unique `(event, channel)` row; PostgreSQL `SKIP LOCKED` lease claims and crash recovery; five bounded attempts by default | `NotificationOutbox`, `NotificationDeliveryWorker`, `CreateNotificationOutbox` |
+| Notification retry storm                          | Permanent failures go directly to DLQ; transient failures use capped exponential backoff with deterministic jitter; each tick handles at most ten jobs | `NotificationRetryPolicy`, `NotificationDeliveryWorker` |
 | `/scan` flood                                     | nginx `limit_req zone=scan_limit rate=10r/s burst=20`; two stacked Vapor `ScanRateLimiter` windows — 3/min anon, 10/min authed **and** an hourly cap 15/h anon, 200/h authed (per real client IP); anon scans also skip the transitive pivot | nginx, `ScanController.boot`, `ScanRateLimiter.swift`                                                    |
 | Candidate fan-out / pivot amplification           | Heavy plugins require verified email and run on at most one candidate; anonymous/unverified scans get light plugins and no pivots; recurring scans also exclude heavy plugins and pivots | `ScanController`, `ScanPluginRunner`, scheduled/watch runners                                             |
 | Bulk-scan request amplification                   | Verified account required; ≤10 unique targets; 2 bulk requests/minute and 20/hour; no transitive pivots                              | `BulkScanController`                                                                                      |
@@ -198,7 +200,7 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | **SMTP credentials visible in `ps`**         | curl invoked with `--netrc-file /tmp/smtp-<uuid>.netrc` (mode `0600`, deleted on `defer`); never `--user user:pass` in argv               | `Sources/App/Services/EmailService.swift`                                       |
 | API keys plaintext at rest                   | SHA-256 hashed; raw token shown once on creation                                                                                          | `HashAPIKeyColumn` migration; `APIKey.swift`                                    |
 | Share-link tokens plaintext at rest          | SHA-256 hashed                                                                                                                           | `HashSharedReportTokens` migration; `SharedReport.swift`                         |
-| Sensitive fields plaintext at rest           | Dual-read v1/v2 AES-256-GCM envelopes cover scan/result/board data, notification credentials, schedules, notifications, audit details, and cache payloads; v2 authenticates field + row UUID as AAD | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
+| Sensitive fields plaintext at rest           | Dual-read v1/v2 AES-256-GCM envelopes cover scan/result/board data, notification credentials, schedules, inbox/outbox payloads, audit details, and cache payloads; v2 authenticates field + row UUID as AAD | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
 | Encryption/index key reuse                   | V2 derives independent encryption and blind-index keys with HKDF-SHA256                                                                  | `TokenEncryption`                                                               |
 | Accidental encryption-key replacement        | Key IDs plus a persistent encrypted marker verify the active/previous bounded keyring before traffic starts                             | `EncryptionKeyVerifier`, `CreateEncryptionMetadata`                             |
 | Interrupted/concurrent key rotation          | UUID-cursor checkpoint is atomic with each row-locked batch; PostgreSQL advisory lock rejects a second runner; active-key-only verify stage gates old-key removal | `SensitiveFieldRewrapper`, `CryptoRewrapCommand`, `docs/ENCRYPTION_KEY_ROTATION.md` |
@@ -214,6 +216,7 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | **Retention policy bypass**                       | Cleanup no longer runs a hard 30-day global delete before per-user policy applies — fixed so 90/365-day users actually keep their data    | same file                                                                  |
 | Audit log unbounded growth                        | Daily prune of `audit_logs` rows older than 90 days                                                                                      | same file                                                                  |
 | Session table unbounded growth                    | Daily prune of `_fluent_sessions` rows older than 30 days (the `.fluent` driver never expires them); `created_at` added by a defensive migration | `ScanCleanupLifecycle.swift`, `AddSessionCreatedAt` migration              |
+| Notification outbox unbounded growth              | Hourly bounded sweep removes only terminal events older than 30 days by default; pending/leased rows are retained; user/scan deletion cascades | `NotificationDeliveryWorker`, `CreateNotificationOutbox` |
 | Cross-user PII in admin views                     | `maskInput()` applied even for admin viewing `/admin/scans` (`***@domain.com`, `use***`)                                                  | `UserController.adminScans`                                                |
 
 ### Infrastructure
@@ -256,8 +259,8 @@ Selected fixes (every one of these is a separate commit, viewable via
   stored XSS via `r.rawData` interpolated into `innerHTML` without
   escaping; now via `escapeHtml`.
 - **`fix(security): harden /api/geolocate`** — was an unauthenticated
-  open HTTP proxy to ip-api.com; now auth + rate limit + body cap +
-  JSON shape check.
+  cleartext third-party proxy; now auth + rate limit + body cap + bounded
+  JSON shape checks and fully offline GeoLite2 lookups.
 - **`fix(security): write SMTP credentials to a private netrc file`** —
   curl creds were visible in `ps`; now mode-0600 `--netrc-file`.
 - **`fix(security): respect per-user retentionDays in cleanup job`** —
@@ -359,9 +362,9 @@ These are documented choices, not oversights:
 - **Audit-log immutability.** `audit_logs` is a regular Postgres table —
   an admin could delete rows. Append-only enforcement would require a
   separate database role or external WORM storage.
-- **HTTPS to ip-api.com.** ip-api's free tier is HTTP-only; the call is
-  server-to-server through a public IP (no PII in the body — just IP
-  addresses already returned by other plugin scans).
+- **Offline GeoIP data freshness.** Geolocation no longer discloses scan IPs
+  to a third party. Operators must periodically refresh the local GeoLite2
+  City/ASN files; stale files reduce result accuracy but do not expand egress.
 - **Cross-DB-dialect-portable hash migrations.** `HashAPIKeyColumn` and
   `HashSharedReportTokens` use PostgreSQL-specific DDL
   (`ADD COLUMN IF NOT EXISTS`, `ALTER COLUMN SET NOT NULL`,
