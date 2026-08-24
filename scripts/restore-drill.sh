@@ -166,7 +166,7 @@ echo "restore-drill: starting isolated PostgreSQL container (network=none, no ho
     --pids-limit 256 \
     --memory 2g \
     --cpus 2 \
-    --tmpfs /var/lib/postgresql/data:rw,nosuid,nodev,noexec,size=2147483648 \
+    --tmpfs /var/lib/postgresql:rw,nosuid,nodev,noexec,size=2147483648 \
     --tmpfs /var/run/postgresql:rw,nosuid,nodev,noexec,size=16777216 \
     --tmpfs /tmp:rw,nosuid,nodev,noexec,size=67108864 \
     --env POSTGRES_DB=restore_drill \
