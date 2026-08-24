@@ -18,10 +18,10 @@
 set -euo pipefail
 umask 077
 
-# NOTE: this must be a path nginx actually loads. nginx.conf includes
-# conf.d/*.conf but NOT snippets/, and no vhost includes the snippet, so the
-# old snippets/ default meant this timer refreshed a file nobody read while the
-# live ranges in conf.d/ silently went stale.
+# NOTE: this must be a path nginx actually loads. The production nginx.conf
+# includes conf.d/*.conf globally; keeping the generated live file there also
+# protects vhosts that do not carry the version-controlled snapshot include.
+# The snapshot under ops/nginx/conf.d is updated in Git alongside this script.
 REALIP_SNIPPET="${CF_REALIP_SNIPPET:-${CF_SNIPPET:-/etc/nginx/conf.d/cloudflare-realip.conf}}"
 ORIGIN_GUARD="${CF_ORIGIN_GUARD:-/etc/nginx/conf.d/cloudflare-origin-guard.conf}"
 CHECK_ONLY=0
@@ -72,7 +72,7 @@ PY
     echo "# Loopback is trusted as well: cloudflared terminates the Cloudflare Tunnel"
     echo "# on this host and connects to nginx from 127.0.0.1. Without these two lines"
     echo "# every tunnelled request logs as 127.0.0.1 and shares a single rate-limit"
-    echo "# key, which would neuter the per-IP limits on nim/prolog and mislead"
+    echo "# key, which would neuter per-client limits on tunnelled services and mislead"
     echo "# fail2ban into banning loopback."
     echo "set_real_ip_from 127.0.0.1;"
     echo "set_real_ip_from ::1;"

@@ -144,6 +144,7 @@ jobs:
             scripts/update-csp-hashes.sh
             scripts/tests/check-backup.test.sh
             scripts/tests/csp-hashes.test.sh
+            scripts/tests/production-boundaries.test.sh
             scripts/tests/release-lib.test.sh
             scripts/tests/restore-drill.test.sh
             ops/libexec/update-swift-csp
@@ -154,6 +155,7 @@ jobs:
           sudo visudo -cf ops/sudoers/swift-vapor-deploy
           scripts/tests/check-backup.test.sh
           scripts/tests/csp-hashes.test.sh
+          scripts/tests/production-boundaries.test.sh
           scripts/tests/release-lib.test.sh
           scripts/tests/restore-drill.test.sh
           python3 -m py_compile worker/voidaccess_worker.py scripts/tests/voidaccess-worker.test.py

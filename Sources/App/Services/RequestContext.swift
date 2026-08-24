@@ -6,10 +6,11 @@ extension Request {
     ///
     /// Trust order, but only when the socket peer is loopback:
     ///   1. `X-Real-IP` — set by *our* nginx to `$remote_addr`, which the
-    ///      `ngx_http_realip_module` (see `snippets/cloudflare-realip.conf`)
+    ///      `ngx_http_realip_module` (see `conf.d/cloudflare-realip.conf`)
     ///      derives from `CF-Connecting-IP` ONLY when the TCP peer is a
-    ///      Cloudflare edge. A client hitting the origin directly cannot forge
-    ///      it — nginx overwrites whatever they send.
+    ///      Cloudflare edge or the local `cloudflared` tunnel. A client hitting
+    ///      the origin directly cannot forge it — nginx overwrites whatever
+    ///      they send.
     ///   2. `CF-Connecting-IP` — also rewritten to the validated `$remote_addr`
     ///      by nginx, kept as a redundant source.
     ///   3. raw socket peer.

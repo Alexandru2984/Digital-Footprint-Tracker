@@ -5,7 +5,6 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m  rate=30r/s;
 server {
     include snippets/block-dotfiles.conf;
     server_name swift.micutu.com;
-    include snippets/cloudflare-realip.conf;
 
     # The public TLS origin is Cloudflare-only. The geo map uses the original
     # TCP peer, not the visitor address restored by cloudflare-realip.conf.
@@ -95,7 +94,10 @@ server {
     }
 
     # Database readiness is an internal deploy signal, never a public endpoint.
-    location = /ready { return 404; }
+    # /api/ready would otherwise be stripped to /ready by the generic /api/
+    # proxy and appear local to Vapor because nginx connects over loopback.
+    location = /ready     { return 404; }
+    location = /api/ready { return 404; }
 
     location /metrics {
         proxy_pass        http://127.0.0.1:8085/metrics;

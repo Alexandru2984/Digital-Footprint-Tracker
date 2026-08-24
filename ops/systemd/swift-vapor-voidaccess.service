@@ -31,6 +31,7 @@ ProtectKernelLogs=true
 ProtectClock=true
 ProtectProc=invisible
 ProcSubset=pid
+InaccessiblePaths=-/run/docker.sock -/run/containerd/containerd.sock -/run/podman/podman.sock
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictSUIDSGID=true
