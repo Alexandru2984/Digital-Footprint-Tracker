@@ -53,6 +53,14 @@ echo "release: validating frontend" >&2
 npm --prefix "$SOURCE/frontend" test >&2
 
 echo "release: building Swift release" >&2
+# swift-deploy's home (/var/lib/swift-deploy) is root-owned by design (see
+# ops/tmpfiles.d/swift-vapor.conf) so a compromised build can't drop a login
+# key into .ssh. SwiftPM still needs somewhere writable for its manifest and
+# module cache, so point it at this build's own ephemeral workspace instead of
+# $HOME/.cache — cleaned up by the existing trap along with everything else.
+export XDG_CACHE_HOME="$WORK/cache"
+export XDG_CONFIG_HOME="$WORK/config"
+mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
 swift build --package-path "$SOURCE" --scratch-path "$SCRATCH" -c release >&2
 BIN_PATH="$(swift build --package-path "$SOURCE" --scratch-path "$SCRATCH" -c release --show-bin-path)"
 
