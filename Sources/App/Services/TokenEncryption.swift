@@ -76,7 +76,7 @@ enum TokenEncryption {
     private static let hkdfSalt = Data("swift-vapor/field-crypto/v2".utf8)
 
     static func isConfigured() -> Bool {
-        guard let value = Environment.get("ENCRYPTION_KEY") else { return false }
+        guard let value = try? RuntimeSecret.value("ENCRYPTION_KEY") else { return false }
         return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -97,9 +97,12 @@ enum TokenEncryption {
     /// active root key; development may intentionally run without encryption.
     static func validateConfiguration(required: Bool) throws {
         _ = try configuredWriteVersion()
-        guard isConfigured() else {
-            let hasPartialKeyring = ["ENCRYPTION_KEY_ID", "ENCRYPTION_PREVIOUS_KEYS"]
-                .contains { !(Environment.get($0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let activeKey = try RuntimeSecret.value("ENCRYPTION_KEY") ?? ""
+        guard !activeKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let previousKeys = try RuntimeSecret.value("ENCRYPTION_PREVIOUS_KEYS") ?? ""
+            let hasPartialKeyring = !(Environment.get("ENCRYPTION_KEY_ID") ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !previousKeys.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if required || hasPartialKeyring { throw Error.keyMissing }
             return
         }
@@ -316,13 +319,15 @@ enum TokenEncryption {
     }
 
     private static func keyring() throws -> Keyring {
-        guard let activeRaw = Environment.get("ENCRYPTION_KEY") else { throw Error.keyMissing }
+        guard let activeRaw = try RuntimeSecret.value("ENCRYPTION_KEY") else {
+            throw Error.keyMissing
+        }
         let activeID = Environment.get("ENCRYPTION_KEY_ID")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? defaultKeyID
         guard isValidKeyID(activeID) else { throw Error.invalidKeyring }
         let active = KeyRecord(id: activeID, root: try parseKey(activeRaw))
 
-        let rawPrevious = Environment.get("ENCRYPTION_PREVIOUS_KEYS")?
+        let rawPrevious = try RuntimeSecret.value("ENCRYPTION_PREVIOUS_KEYS")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let entries = rawPrevious.isEmpty
             ? []

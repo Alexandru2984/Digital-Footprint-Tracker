@@ -68,11 +68,11 @@ struct AuditIntegrityConfiguration: Sendable {
     }
 
     static func fromEnvironment(required: Bool) throws -> AuditIntegrityConfiguration? {
-        let rawKey = Environment.get("AUDIT_SIGNING_KEY")?
+        let rawKey = try RuntimeSecret.value("AUDIT_SIGNING_KEY")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let rawID = Environment.get("AUDIT_SIGNING_KEY_ID")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let rawCommitmentKey = Environment.get("AUDIT_COMMITMENT_KEY")?
+        let rawCommitmentKey = try RuntimeSecret.value("AUDIT_COMMITMENT_KEY")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if rawKey.isEmpty && rawID.isEmpty && rawCommitmentKey.isEmpty {
             if required { throw ConfigurationError.missingKey }
@@ -89,7 +89,7 @@ struct AuditIntegrityConfiguration: Sendable {
             privateKeyHex: rawKey,
             commitmentKeyHex: rawCommitmentKey
         )
-        let encryptionKey = Environment.get("ENCRYPTION_KEY")?
+        let encryptionKey = try RuntimeSecret.value("ENCRYPTION_KEY")?
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if !encryptionKey.isEmpty,
            encryptionKey == rawKey.lowercased() || encryptionKey == rawCommitmentKey.lowercased() {

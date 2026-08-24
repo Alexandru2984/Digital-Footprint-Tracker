@@ -34,7 +34,7 @@ struct PhonePlugin: FootprintPlugin {
         let digits = trimmed.filter { $0.isNumber }
         let e164 = trimmed.hasPrefix("+") ? trimmed : "+\(trimmed)"
 
-        guard let apiKey = Environment.get("ABSTRACT_PHONE_API_KEY"), !apiKey.isEmpty else {
+        guard let apiKey = try RuntimeSecret.value("ABSTRACT_PHONE_API_KEY"), !apiKey.isEmpty else {
             // No API key: return a low-confidence structural result so the UI
             // shows the operator detected a phone number without false precision.
             return [PluginResult(
@@ -42,7 +42,7 @@ struct PhonePlugin: FootprintPlugin {
                 type: "phone_number",
                 confidenceScore: 0.4,
                 rawData: "Input looks like a phone number (\(digits) digits). " +
-                    "Set ABSTRACT_PHONE_API_KEY in .env for carrier/country lookup.",
+                    "Configure the Abstract API credential for carrier/country lookup.",
                 metadata: ["phone": e164]
             )]
         }

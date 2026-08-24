@@ -128,7 +128,8 @@ struct HealthController: RouteCollection {
     /// (scan-status snapshot from the DB) are unsuffixed.
     @Sendable func metrics(req: Request) async throws -> Response {
         // ─── Auth ──────────────────────────────────────────────────────────
-        if let expected = Environment.get("METRICS_TOKEN")?.trimmingCharacters(in: .whitespaces),
+        if let expected = try RuntimeSecret.value("METRICS_TOKEN")?
+            .trimmingCharacters(in: .whitespaces),
            !expected.isEmpty {
             let provided = req.headers.bearerAuthorization?.token ?? ""
             guard MetricsAuth.constantTimeEqual(provided, expected) else {

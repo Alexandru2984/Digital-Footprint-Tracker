@@ -11,7 +11,7 @@ struct AbuseIPDBPlugin: FootprintPlugin {
     private static let ipRegex = try! NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
-        guard let apiKey = Environment.get("ABUSEIPDB_API_KEY"), !apiKey.isEmpty else { return [] }
+        guard let apiKey = try RuntimeSecret.value("ABUSEIPDB_API_KEY"), !apiKey.isEmpty else { return [] }
 
         let isIP = Self.ipRegex.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
         guard isIP else { return [] }

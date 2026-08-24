@@ -31,8 +31,10 @@ private struct EnvironmentSnapshot {
 
 private let encryptionEnvironmentNames = [
     "ENCRYPTION_KEY",
+    "ENCRYPTION_KEY_FILE",
     "ENCRYPTION_KEY_ID",
     "ENCRYPTION_PREVIOUS_KEYS",
+    "ENCRYPTION_PREVIOUS_KEYS_FILE",
     "ENCRYPTION_WRITE_VERSION",
 ]
 
@@ -42,10 +44,12 @@ private func configureEncryptionEnvironment(
     previousKeys: String? = nil,
     writeVersion: String = "1"
 ) {
+    unsetenv("ENCRYPTION_KEY_FILE")
     setenv("ENCRYPTION_KEY", key, 1)
     setenv("ENCRYPTION_WRITE_VERSION", writeVersion, 1)
     if let keyID { setenv("ENCRYPTION_KEY_ID", keyID, 1) }
     else { unsetenv("ENCRYPTION_KEY_ID") }
+    unsetenv("ENCRYPTION_PREVIOUS_KEYS_FILE")
     if let previousKeys { setenv("ENCRYPTION_PREVIOUS_KEYS", previousKeys, 1) }
     else { unsetenv("ENCRYPTION_PREVIOUS_KEYS") }
 }
@@ -169,18 +173,122 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 
 final class AppTests: XCTestCase {
 
+    func testRuntimeSecretAcceptsPrivateFilesAndRejectsUnsafeSources() throws {
+        let name = "RUNTIME_SECRET_TEST_VALUE"
+        let fileName = "\(name)_FILE"
+        let environment = EnvironmentSnapshot([name, fileName])
+        defer { environment.restore() }
+        unsetenv(name)
+        unsetenv(fileName)
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("runtime-secret-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let credential = directory.appendingPathComponent("credential")
+        try Data("file-backed-secret\n".utf8).write(to: credential)
+        XCTAssertEqual(chmod(credential.path, 0o600), 0)
+        setenv(fileName, credential.path, 1)
+
+        XCTAssertEqual(try RuntimeSecret.value(name), "file-backed-secret")
+
+        setenv(name, "inline-secret", 1)
+        XCTAssertThrowsError(try RuntimeSecret.value(name)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .conflictingSources(name))
+        }
+        unsetenv(name)
+
+        XCTAssertEqual(chmod(credential.path, 0o640), 0)
+        XCTAssertThrowsError(try RuntimeSecret.value(name)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .unsafeFile(name))
+        }
+
+        XCTAssertEqual(chmod(credential.path, 0o600), 0)
+        try Data("first\nsecond".utf8).write(to: credential)
+        XCTAssertThrowsError(try RuntimeSecret.value(name)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .invalidValue(name))
+        }
+
+        try Data("123456789".utf8).write(to: credential)
+        XCTAssertThrowsError(try RuntimeSecret.value(name, maximumBytes: 8)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .tooLarge(name))
+        }
+
+        let symlink = directory.appendingPathComponent("credential-link")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: credential)
+        setenv(fileName, symlink.path, 1)
+        XCTAssertThrowsError(try RuntimeSecret.value(name)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .unreadable(name))
+        }
+
+        setenv(fileName, "relative/credential", 1)
+        XCTAssertThrowsError(try RuntimeSecret.value(name)) {
+            XCTAssertEqual($0 as? RuntimeSecret.Error, .invalidPath(name))
+        }
+    }
+
+    func testFileBackedEncryptionAndAuditCredentialsAreConsumed() throws {
+        let names = encryptionEnvironmentNames + [
+            "AUDIT_SIGNING_KEY", "AUDIT_SIGNING_KEY_FILE", "AUDIT_SIGNING_KEY_ID",
+            "AUDIT_COMMITMENT_KEY", "AUDIT_COMMITMENT_KEY_FILE",
+        ]
+        let environment = EnvironmentSnapshot(names)
+        defer { environment.restore() }
+        names.forEach { unsetenv($0) }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("runtime-crypto-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        func installCredential(_ name: String, value: String) throws {
+            let path = directory.appendingPathComponent(name.lowercased())
+            try Data("\(value)\n".utf8).write(to: path)
+            XCTAssertEqual(chmod(path.path, 0o600), 0)
+            setenv("\(name)_FILE", path.path, 1)
+        }
+
+        try installCredential("ENCRYPTION_KEY", value: String(repeating: "51", count: 32))
+        try installCredential("AUDIT_SIGNING_KEY", value: String(repeating: "52", count: 32))
+        try installCredential("AUDIT_COMMITMENT_KEY", value: String(repeating: "53", count: 32))
+        setenv("ENCRYPTION_KEY_ID", "file-primary", 1)
+        setenv("ENCRYPTION_WRITE_VERSION", "2", 1)
+        setenv("AUDIT_SIGNING_KEY_ID", "file-audit", 1)
+
+        try TokenEncryption.validateConfiguration(required: true)
+        let context = TokenEncryption.Context(field: "test.file", recordID: UUID())
+        let ciphertext = try TokenEncryption.encrypt("private-value", context: context)
+        XCTAssertEqual(try TokenEncryption.decryptRequired(ciphertext, context: context), "private-value")
+
+        let audit = try XCTUnwrap(AuditIntegrityConfiguration.fromEnvironment(required: true))
+        XCTAssertEqual(audit.keyID, "file-audit")
+        XCTAssertEqual(audit.publicKeyBytes.count, 32)
+    }
+
     func testAuditSigningConfigurationFailsClosedAndSeparatesKeyIdentity() throws {
         let names = [
-            "AUDIT_SIGNING_KEY", "AUDIT_SIGNING_KEY_ID", "AUDIT_COMMITMENT_KEY",
-            "ENCRYPTION_KEY",
+            "AUDIT_SIGNING_KEY", "AUDIT_SIGNING_KEY_FILE", "AUDIT_SIGNING_KEY_ID",
+            "AUDIT_COMMITMENT_KEY", "AUDIT_COMMITMENT_KEY_FILE",
+            "ENCRYPTION_KEY", "ENCRYPTION_KEY_FILE",
         ]
         let environment = EnvironmentSnapshot(names)
         defer { environment.restore() }
 
         unsetenv("AUDIT_SIGNING_KEY")
+        unsetenv("AUDIT_SIGNING_KEY_FILE")
         unsetenv("AUDIT_SIGNING_KEY_ID")
         unsetenv("AUDIT_COMMITMENT_KEY")
+        unsetenv("AUDIT_COMMITMENT_KEY_FILE")
         unsetenv("ENCRYPTION_KEY")
+        unsetenv("ENCRYPTION_KEY_FILE")
         XCTAssertNil(try AuditIntegrityConfiguration.fromEnvironment(required: false))
         XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
             XCTAssertEqual($0 as? AuditIntegrityConfiguration.ConfigurationError, .missingKey)
@@ -2548,12 +2656,16 @@ final class AppTests: XCTestCase {
     func testCorruptSensitiveFieldReturnsGeneric500AndIncrementsMetric() async throws {
         let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
         let previousMetricsToken = ProcessInfo.processInfo.environment["METRICS_TOKEN"]
+        let previousMetricsTokenFile = ProcessInfo.processInfo.environment["METRICS_TOKEN_FILE"]
         configureEncryptionEnvironment(key: String(repeating: "41", count: 32))
         unsetenv("METRICS_TOKEN")
+        unsetenv("METRICS_TOKEN_FILE")
         defer {
             environment.restore()
             if let previousMetricsToken { setenv("METRICS_TOKEN", previousMetricsToken, 1) }
             else { unsetenv("METRICS_TOKEN") }
+            if let previousMetricsTokenFile { setenv("METRICS_TOKEN_FILE", previousMetricsTokenFile, 1) }
+            else { unsetenv("METRICS_TOKEN_FILE") }
         }
 
         let app = try await makeApp()

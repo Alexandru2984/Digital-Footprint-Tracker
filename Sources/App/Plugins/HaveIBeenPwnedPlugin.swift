@@ -14,7 +14,7 @@ struct HaveIBeenPwnedPlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] }
 
-        guard let apiKey = Environment.get("HIBP_API_KEY"), !apiKey.isEmpty else {
+        guard let apiKey = try RuntimeSecret.value("HIBP_API_KEY"), !apiKey.isEmpty else {
             app.logger.warning("HIBP_API_KEY not set; skipping HaveIBeenPwned check")
             return []
         }

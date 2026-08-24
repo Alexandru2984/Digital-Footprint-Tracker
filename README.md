@@ -340,7 +340,7 @@ ADMIN_PASSWORD=your_strong_password
 HIBP_API_KEY=...
 ABSTRACT_PHONE_API_KEY=...
 SHODAN_API_KEY=...
-VIRUSTOTAL_API_KEY=...
+VIRUS_TOTAL_API_KEY=...
 ABUSEIPDB_API_KEY=...
 # Optional SMTP for email notifications:
 SMTP_HOST=...
@@ -367,6 +367,14 @@ EXPORT_MAX_SOURCE_MIB=10
 EXPORT_MAX_ARTIFACT_MIB=20
 EXPORT_MAX_ATTEMPTS=2
 ```
+
+Every secret consumed by the application also accepts a file-backed form such
+as `DATABASE_PASSWORD_FILE`, `ENCRYPTION_KEY_FILE`, `AUDIT_SIGNING_KEY_FILE`,
+`METRICS_TOKEN_FILE`, `SMTP_PASS_FILE` and `<PLUGIN>_API_KEY_FILE`. Configure
+the inline value or its `_FILE` companion, never both. Credential files must be
+absolute, non-symlink, mode `0600`/`0400` regular files containing one bounded
+UTF-8 value. Production uses systemd encrypted credentials; the flat `.env`
+form is intended for local development only.
 
 Automatic notification semantics, rollout and recovery are documented in
 [`docs/NOTIFICATION_DELIVERY.md`](docs/NOTIFICATION_DELIVERY.md).

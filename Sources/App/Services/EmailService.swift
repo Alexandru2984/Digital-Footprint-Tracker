@@ -21,10 +21,20 @@ struct EmailService {
             app.logger.debug("EmailService: test environment — skipping real delivery to \(EmailAddress.redactedDomain(to))")
             return .skipped
         }
+        let pass: String
+        do {
+            guard let configuredPass = try RuntimeSecret.value("SMTP_PASS") else {
+                app.logger.warning("EmailService: SMTP not configured; skipping one email delivery")
+                return .skipped
+            }
+            pass = configuredPass
+        } catch {
+            app.logger.error("EmailService: SMTP credential configuration is invalid")
+            return .failed
+        }
         guard let host = Environment.get("SMTP_HOST"),
               let portStr = Environment.get("SMTP_PORT"),
               let user = Environment.get("SMTP_USER"),
-              let pass = Environment.get("SMTP_PASS"),
               let from = Environment.get("SMTP_FROM") else {
             app.logger.warning("EmailService: SMTP not configured; skipping one email delivery")
             return .skipped

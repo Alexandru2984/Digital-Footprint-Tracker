@@ -9,7 +9,7 @@ struct ShodanPlugin: FootprintPlugin {
     let description = "Exposed ports and services (requires API key)"
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
-        guard let apiKey = Environment.get("SHODAN_API_KEY"), !apiKey.isEmpty else { return [] }
+        guard let apiKey = try RuntimeSecret.value("SHODAN_API_KEY"), !apiKey.isEmpty else { return [] }
 
         let query = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
         guard let url = URL(string: "https://api.shodan.io/shodan/host/search?key=\(apiKey)&query=\(query)&minify=true") else { return [] }

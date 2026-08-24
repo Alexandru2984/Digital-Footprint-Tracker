@@ -94,39 +94,7 @@ struct DarkWebConfiguration: Sendable {
     }
 
     private static func sharedSecret() throws -> String? {
-        let inline = Environment.get("DARK_WEB_SHARED_SECRET")?.trimmingCharacters(in: .newlines)
-        let file = Environment.get("DARK_WEB_SHARED_SECRET_FILE")?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard inline?.isEmpty != false || file?.isEmpty != false else {
-            throw Abort(.internalServerError,
-                        reason: "Configure only one dark-web shared-secret source.")
-        }
-
-        let secret: String?
-        if let file, !file.isEmpty {
-            guard file.hasPrefix("/"), file != "/" else {
-                throw Abort(.internalServerError,
-                            reason: "DARK_WEB_SHARED_SECRET_FILE must be a specific absolute path.")
-            }
-            let data: Data
-            do {
-                let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: file))
-                defer { try? handle.close() }
-                data = try handle.read(upToCount: 513) ?? Data()
-            } catch {
-                throw Abort(.internalServerError,
-                            reason: "The dark-web shared-secret credential cannot be read.")
-            }
-            guard data.count <= 512, let value = String(data: data, encoding: .utf8) else {
-                throw Abort(.internalServerError,
-                            reason: "The dark-web shared-secret credential is invalid.")
-            }
-            secret = value.trimmingCharacters(in: .newlines)
-        } else {
-            secret = inline
-        }
-
+        let secret = try RuntimeSecret.value("DARK_WEB_SHARED_SECRET", maximumBytes: 512)
         guard let secret, (32...512).contains(secret.utf8.count),
               secret.unicodeScalars.allSatisfy({ (33...126).contains($0.value) }) else {
             return nil

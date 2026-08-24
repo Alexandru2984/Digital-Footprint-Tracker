@@ -17,7 +17,7 @@ struct PastebinPlugin: FootprintPlugin {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmed.contains("@") {
-            return await scanEmail(trimmed, app: app)
+            return try await scanEmail(trimmed, app: app)
         } else {
             return await scanUsername(trimmed, app: app)
         }
@@ -25,13 +25,13 @@ struct PastebinPlugin: FootprintPlugin {
 
     // MARK: - Email branch (HIBP paste API)
 
-    private func scanEmail(_ email: String, app: Application) async -> [PluginResult] {
-        guard let apiKey = Environment.get("HIBP_API_KEY"), !apiKey.isEmpty else {
+    private func scanEmail(_ email: String, app: Application) async throws -> [PluginResult] {
+        guard let apiKey = try RuntimeSecret.value("HIBP_API_KEY"), !apiKey.isEmpty else {
             return [PluginResult(
                 source: "PastebinOSINT",
                 type: "paste_exposure",
                 confidenceScore: 0.3,
-                rawData: "Set HIBP_API_KEY in .env to enable paste site search for email addresses."
+                rawData: "Configure the HIBP API credential to enable paste-site email search."
             )]
         }
 
