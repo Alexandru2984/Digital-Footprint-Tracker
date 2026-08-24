@@ -204,42 +204,96 @@ struct HealthController: RouteCollection {
         let snap = await MetricsRegistry.shared.snapshot()
         let backup = BackupStatus.current()
 
-        // ─── Format (Prometheus text 0.0.4) ────────────────────────────────
-        var out = ""
+        let out = prometheusText(
+            totalScans: totalScans,
+            totalUsers: totalUsers,
+            totalResults: totalResults,
+            completedScans: completedScans,
+            failedScans: failedScans,
+            pendingScans: pendingScans,
+            runningScans: runningScans,
+            scansLast24h: scansLast24h,
+            activeScheduled: activeScheduled,
+            pluginCacheRows: pluginCacheRows,
+            darkWebPending: darkWebPending,
+            darkWebRunning: darkWebRunning,
+            notificationPending: notificationPending,
+            notificationProcessing: notificationProcessing,
+            notificationDeadLetter: notificationDeadLetter,
+            notificationExpiredLeases: notificationExpiredLeases,
+            notificationOldestPendingAge: notificationOldestPendingAge,
+            exportPending: exportPending,
+            exportProcessing: exportProcessing,
+            exportFailed: exportFailed,
+            exportExpiredLeases: exportExpiredLeases,
+            exportOldestPendingAge: exportOldestPendingAge,
+            snapshot: snap,
+            backup: backup
+        )
 
+        return Response(
+            status: .ok,
+            headers: HTTPHeaders([("Content-Type", "text/plain; version=0.0.4; charset=utf-8")]),
+            body: .init(string: out)
+        )
+    }
+}
+
+private extension HealthController {
+    func prometheusText(
+        totalScans: Int,
+        totalUsers: Int,
+        totalResults: Int,
+        completedScans: Int,
+        failedScans: Int,
+        pendingScans: Int,
+        runningScans: Int,
+        scansLast24h: Int,
+        activeScheduled: Int,
+        pluginCacheRows: Int,
+        darkWebPending: Int,
+        darkWebRunning: Int,
+        notificationPending: Int,
+        notificationProcessing: Int,
+        notificationDeadLetter: Int,
+        notificationExpiredLeases: Int,
+        notificationOldestPendingAge: Int,
+        exportPending: Int,
+        exportProcessing: Int,
+        exportFailed: Int,
+        exportExpiredLeases: Int,
+        exportOldestPendingAge: Int,
+        snapshot: MetricsRegistry.Snapshot,
+        backup: BackupStatus.Snapshot?
+    ) -> String {
+        var output = ""
         func writeCounter(name: String, help: String, value: UInt64) {
-            out += "# HELP \(name) \(help)\n"
-            out += "# TYPE \(name) counter\n"
-            out += "\(name) \(value)\n"
+            output += "# HELP \(name) \(help)\n"
+            output += "# TYPE \(name) counter\n"
+            output += "\(name) \(value)\n"
         }
         func writeGauge(name: String, help: String, value: Int) {
-            out += "# HELP \(name) \(help)\n"
-            out += "# TYPE \(name) gauge\n"
-            out += "\(name) \(value)\n"
+            output += "# HELP \(name) \(help)\n"
+            output += "# TYPE \(name) gauge\n"
+            output += "\(name) \(value)\n"
         }
 
         writeGauge(name: "swift_vapor_scans",
-                   help: "Total scans currently in the database.",
-                   value: totalScans)
-        out += "# HELP swift_vapor_scans_by_status Number of scans by lifecycle status.\n"
-        out += "# TYPE swift_vapor_scans_by_status gauge\n"
-        out += "swift_vapor_scans_by_status{status=\"completed\"} \(completedScans)\n"
-        out += "swift_vapor_scans_by_status{status=\"failed\"} \(failedScans)\n"
-        out += "swift_vapor_scans_by_status{status=\"pending\"} \(pendingScans)\n"
-        out += "swift_vapor_scans_by_status{status=\"running\"} \(runningScans)\n"
-
+                   help: "Total scans currently in the database.", value: totalScans)
+        output += "# HELP swift_vapor_scans_by_status Number of scans by lifecycle status.\n"
+        output += "# TYPE swift_vapor_scans_by_status gauge\n"
+        output += "swift_vapor_scans_by_status{status=\"completed\"} \(completedScans)\n"
+        output += "swift_vapor_scans_by_status{status=\"failed\"} \(failedScans)\n"
+        output += "swift_vapor_scans_by_status{status=\"pending\"} \(pendingScans)\n"
+        output += "swift_vapor_scans_by_status{status=\"running\"} \(runningScans)\n"
         writeGauge(name: "swift_vapor_scans_last_24h",
-                   help: "Number of scans created in the last 24 hours.",
-                   value: scansLast24h)
+                   help: "Number of scans created in the last 24 hours.", value: scansLast24h)
         writeGauge(name: "swift_vapor_users",
-                   help: "Total registered users.",
-                   value: totalUsers)
+                   help: "Total registered users.", value: totalUsers)
         writeGauge(name: "swift_vapor_results",
-                   help: "Total scan-result rows across the database.",
-                   value: totalResults)
+                   help: "Total scan-result rows across the database.", value: totalResults)
         writeGauge(name: "swift_vapor_scheduled_scans_active",
-                   help: "Scheduled scans currently active.",
-                   value: activeScheduled)
+                   help: "Scheduled scans currently active.", value: activeScheduled)
         writeGauge(name: "swift_vapor_plugin_cache_rows",
                    help: "Live (non-expired plus expired-but-unswept) rows in plugin_cache.",
                    value: pluginCacheRows)
@@ -265,11 +319,9 @@ struct HealthController: RouteCollection {
                    help: "Age of the oldest pending notification job, or zero for an empty queue.",
                    value: notificationOldestPendingAge)
         writeGauge(name: "swift_vapor_export_jobs_pending",
-                   help: "Asynchronous export jobs waiting for a worker lease.",
-                   value: exportPending)
+                   help: "Asynchronous export jobs waiting for a worker lease.", value: exportPending)
         writeGauge(name: "swift_vapor_export_jobs_processing",
-                   help: "Asynchronous export jobs currently leased.",
-                   value: exportProcessing)
+                   help: "Asynchronous export jobs currently leased.", value: exportProcessing)
         writeGauge(name: "swift_vapor_export_jobs_failed",
                    help: "Failed asynchronous export jobs retained for owner inspection.",
                    value: exportFailed)
@@ -290,70 +342,59 @@ struct HealthController: RouteCollection {
                    value: backup?.isFresh == true ? 1 : 0)
         writeGauge(name: "swift_vapor_audit_integrity_status",
                    help: "Last full audit-ledger verification: one valid, zero invalid, minus one not yet verified.",
-                   value: snap.auditIntegrityStatus)
+                   value: snapshot.auditIntegrityStatus)
         writeGauge(name: "swift_vapor_audit_integrity_last_verified_unixtime",
                    help: "Unix timestamp of the last full audit-ledger verification, or zero when not yet verified.",
-                   value: snap.auditIntegrityLastVerifiedUnix)
+                   value: snapshot.auditIntegrityLastVerifiedUnix)
         writeGauge(name: "swift_vapor_audit_integrity_last_sequence",
                    help: "Audit-ledger sequence covered by the last full verification.",
-                   value: snap.auditIntegrityLastSequence)
-
+                   value: snapshot.auditIntegrityLastSequence)
         writeCounter(name: "swift_vapor_plugin_cache_hits_total",
                      help: "Plugin cache lookups that returned a fresh hit since process start.",
-                     value: snap.pluginCacheHits)
+                     value: snapshot.pluginCacheHits)
         writeCounter(name: "swift_vapor_plugin_cache_misses_total",
                      help: "Plugin cache lookups that fell through to a live plugin run since process start.",
-                     value: snap.pluginCacheMisses)
+                     value: snapshot.pluginCacheMisses)
         writeCounter(name: "swift_vapor_audit_log_write_failures_total",
                      help: "Audit writes rolled back because the display log or signed ledger could not be persisted.",
-                     value: snap.auditLogWriteFailures)
+                     value: snapshot.auditLogWriteFailures)
         writeCounter(name: "swift_vapor_audit_integrity_verification_failures_total",
                      help: "Full audit-ledger verifications that detected an integrity failure.",
-                     value: snap.auditIntegrityVerificationFailures)
+                     value: snapshot.auditIntegrityVerificationFailures)
 
-        out += "# HELP swift_vapor_notification_deliveries_total Notification delivery attempts and terminal outcomes by channel.\n"
-        out += "# TYPE swift_vapor_notification_deliveries_total counter\n"
+        output += "# HELP swift_vapor_notification_deliveries_total Notification delivery attempts and terminal outcomes by channel.\n"
+        output += "# TYPE swift_vapor_notification_deliveries_total counter\n"
         for channel in NotificationChannel.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
-            guard let outcomes = snap.notificationDeliveries[channel] else { continue }
+            guard let outcomes = snapshot.notificationDeliveries[channel] else { continue }
             for outcome in ["attempted", "succeeded", "failed", "skipped"] {
                 guard let count = outcomes[outcome] else { continue }
-                out += "swift_vapor_notification_deliveries_total{channel=\"\(channel.rawValue)\",outcome=\"\(outcome)\"} \(count)\n"
+                output += "swift_vapor_notification_deliveries_total{channel=\"\(channel.rawValue)\",outcome=\"\(outcome)\"} \(count)\n"
             }
         }
-        out += "# HELP swift_vapor_notification_job_transitions_total Durable notification job state transitions since process start.\n"
-        out += "# TYPE swift_vapor_notification_job_transitions_total counter\n"
+        output += "# HELP swift_vapor_notification_job_transitions_total Durable notification job state transitions since process start.\n"
+        output += "# TYPE swift_vapor_notification_job_transitions_total counter\n"
         for status in ["succeeded", "skipped", "retry_scheduled", "dead_letter"] {
-            let count = snap.notificationJobTransitions[status] ?? 0
-            out += "swift_vapor_notification_job_transitions_total{status=\"\(status)\"} \(count)\n"
+            output += "swift_vapor_notification_job_transitions_total{status=\"\(status)\"} \(snapshot.notificationJobTransitions[status] ?? 0)\n"
         }
-        out += "# HELP swift_vapor_export_jobs_total Export jobs reaching a terminal state since process start.\n"
-        out += "# TYPE swift_vapor_export_jobs_total counter\n"
+        output += "# HELP swift_vapor_export_jobs_total Export jobs reaching a terminal state since process start.\n"
+        output += "# TYPE swift_vapor_export_jobs_total counter\n"
         for status in ["completed", "failed", "cancelled"] {
-            let count = snap.exportJobs[status] ?? 0
-            out += "swift_vapor_export_jobs_total{status=\"\(status)\"} \(count)\n"
+            output += "swift_vapor_export_jobs_total{status=\"\(status)\"} \(snapshot.exportJobs[status] ?? 0)\n"
         }
-        out += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
-        out += "# TYPE swift_vapor_dark_web_jobs_total counter\n"
-        for status in snap.darkWebJobs.keys.sorted() {
-            out += "swift_vapor_dark_web_jobs_total{status=\"\(status)\"} \(snap.darkWebJobs[status] ?? 0)\n"
+        output += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
+        output += "# TYPE swift_vapor_dark_web_jobs_total counter\n"
+        for status in snapshot.darkWebJobs.keys.sorted() {
+            output += "swift_vapor_dark_web_jobs_total{status=\"\(status)\"} \(snapshot.darkWebJobs[status] ?? 0)\n"
         }
-        out += "# HELP swift_vapor_sensitive_field_failures_total Encrypted fields rejected because authenticated decryption failed.\n"
-        out += "# TYPE swift_vapor_sensitive_field_failures_total counter\n"
+        output += "# HELP swift_vapor_sensitive_field_failures_total Encrypted fields rejected because authenticated decryption failed.\n"
+        output += "# TYPE swift_vapor_sensitive_field_failures_total counter\n"
         for field in FieldCrypto.StoredField.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
             for reason in FieldCrypto.DecryptionReason.allCases {
-                // Emit the entire fixed label matrix from process start. Besides
-                // keeping cardinality bounded, this gives Prometheus a zero
-                // baseline so `increase(...[5m])` detects the very first failure.
-                let count = snap.sensitiveFieldFailures[field]?[reason] ?? 0
-                out += "swift_vapor_sensitive_field_failures_total{field=\"\(field.rawValue)\",reason=\"\(reason.rawValue)\"} \(count)\n"
+                let count = snapshot.sensitiveFieldFailures[field]?[reason] ?? 0
+                output += "swift_vapor_sensitive_field_failures_total{field=\"\(field.rawValue)\",reason=\"\(reason.rawValue)\"} \(count)\n"
             }
         }
-
-        return Response(
-            status: .ok,
-            headers: HTTPHeaders([("Content-Type", "text/plain; version=0.0.4; charset=utf-8")]),
-            body: .init(string: out)
-        )
+        return output
     }
 }
 

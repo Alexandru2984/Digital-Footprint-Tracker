@@ -30,6 +30,9 @@ enum SensitiveFieldFailureReporter {
             field: failure.field,
             reason: failure.reason
         )
-        app.logger.critical("Sensitive encrypted field quarantined from \(context): field=\(failure.field.rawValue) reason=\(failure.reason.rawValue) record_id=\(failure.recordID?.uuidString ?? "unknown")")
+        let message = "Sensitive encrypted field quarantined from \(context): "
+            + "field=\(failure.field.rawValue) reason=\(failure.reason.rawValue) "
+            + "record_id=\(failure.recordID?.uuidString ?? "unknown")"
+        app.logger.critical("\(message)")
     }
 }

@@ -111,6 +111,13 @@ enum SensitiveFieldRewrapper {
     private struct BatchProgress: Sendable {
         let lastID: UUID?
         let count: Int
+
+        var isEmpty: Bool {
+            switch count {
+            case 0: return true
+            default: return false
+            }
+        }
     }
 
     // Stable, application-specific PostgreSQL session advisory-lock key.
@@ -165,7 +172,7 @@ enum SensitiveFieldRewrapper {
                         limit: batchSize,
                         on: connection
                     )
-                    guard progress.count > 0 else { break }
+                    guard !progress.isEmpty else { break }
                     counts[phase.rawValue, default: 0] += progress.count
                     cursor = progress.lastID
                 }
@@ -263,7 +270,7 @@ enum SensitiveFieldRewrapper {
                     )
                 }
 
-                if progress.count > 0 {
+                if !progress.isEmpty {
                     updated.cursor = progress.lastID
                     switch current.stage {
                     case .rewrite:
@@ -456,27 +463,7 @@ private extension SensitiveFieldRewrapper {
             }
             return progress(rows)
         case .users:
-            let rows = try await userBatch(
-                after: cursor, limit: limit, lockForUpdate: true, on: database
-            )
-            for row in rows {
-                do {
-                    let webhookURL = try row.webhookURL
-                    let discordWebhookURL = try row.discordWebhookURL
-                    let telegramBotToken = try row.telegramBotToken
-                    let telegramChatID = try row.telegramChatID
-                    let slackWebhookURL = try row.slackWebhookURL
-                    let totpSecret = try row.totpSecret
-                    row.setWebhookURL(webhookURL)
-                    row.setDiscordWebhookURL(discordWebhookURL)
-                    row.setTelegramBotToken(telegramBotToken)
-                    row.setTelegramChatID(telegramChatID)
-                    row.setSlackWebhookURL(slackWebhookURL)
-                    row.setTOTPSecret(totpSecret)
-                    try await row.update(on: database)
-                } catch { throw recordFailure(.rewrite, phase, row.id) }
-            }
-            return progress(rows)
+            return try await rewriteUsers(after: cursor, limit: limit, on: database)
         case .scheduledScans:
             let rows = try await scheduledScanBatch(
                 after: cursor, limit: limit, lockForUpdate: true, on: database
@@ -550,29 +537,7 @@ private extension SensitiveFieldRewrapper {
             }
             return progress(rows)
         case .exportJobs:
-            let rows = try await exportJobBatch(
-                after: cursor, limit: limit, lockForUpdate: true, on: database
-            )
-            for row in rows {
-                do {
-                    let artifact = try row.artifactData
-                    let manifest = try row.manifest
-                    switch (artifact, manifest) {
-                    case let (artifact?, manifest?):
-                        try row.setArtifact(artifact, manifest: manifest)
-                        try await row.update(on: database)
-                    case (nil, nil):
-                        break
-                    default:
-                        throw FieldCrypto.DecryptionFailure(
-                            field: .exportArtifact,
-                            recordID: row.id,
-                            reason: .invalidEnvelope
-                        )
-                    }
-                } catch { throw recordFailure(.rewrite, phase, row.id) }
-            }
-            return progress(rows)
+            return try await rewriteExportJobs(after: cursor, limit: limit, on: database)
         case .pluginCache:
             // Cache target hashes cannot be recomputed without the original
             // input. Purging is safe: normal scans repopulate current-format
@@ -586,6 +551,64 @@ private extension SensitiveFieldRewrapper {
             }
             return progress(rows)
         }
+    }
+
+    private static func rewriteUsers(
+        after cursor: UUID?,
+        limit: Int,
+        on database: Database
+    ) async throws -> BatchProgress {
+        let rows = try await userBatch(
+            after: cursor, limit: limit, lockForUpdate: true, on: database
+        )
+        for row in rows {
+            do {
+                let webhookURL = try row.webhookURL
+                let discordWebhookURL = try row.discordWebhookURL
+                let telegramBotToken = try row.telegramBotToken
+                let telegramChatID = try row.telegramChatID
+                let slackWebhookURL = try row.slackWebhookURL
+                let totpSecret = try row.totpSecret
+                row.setWebhookURL(webhookURL)
+                row.setDiscordWebhookURL(discordWebhookURL)
+                row.setTelegramBotToken(telegramBotToken)
+                row.setTelegramChatID(telegramChatID)
+                row.setSlackWebhookURL(slackWebhookURL)
+                row.setTOTPSecret(totpSecret)
+                try await row.update(on: database)
+            } catch { throw recordFailure(.rewrite, .users, row.id) }
+        }
+        return progress(rows)
+    }
+
+    private static func rewriteExportJobs(
+        after cursor: UUID?,
+        limit: Int,
+        on database: Database
+    ) async throws -> BatchProgress {
+        let rows = try await exportJobBatch(
+            after: cursor, limit: limit, lockForUpdate: true, on: database
+        )
+        for row in rows {
+            do {
+                let artifact = try row.artifactData
+                let manifest = try row.manifest
+                switch (artifact, manifest) {
+                case let (artifact?, manifest?):
+                    try row.setArtifact(artifact, manifest: manifest)
+                    try await row.update(on: database)
+                case (nil, nil):
+                    break
+                default:
+                    throw FieldCrypto.DecryptionFailure(
+                        field: .exportArtifact,
+                        recordID: row.id,
+                        reason: .invalidEnvelope
+                    )
+                }
+            } catch { throw recordFailure(.rewrite, .exportJobs, row.id) }
+        }
+        return progress(rows)
     }
 
 }

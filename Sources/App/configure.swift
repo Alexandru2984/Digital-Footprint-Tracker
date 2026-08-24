@@ -116,56 +116,7 @@ public func configure(_ app: Application) async throws {
         database: databaseName
     ), as: .psql)
 
-    // Register migrations
-    app.migrations.add(CreateScan())
-    app.migrations.add(CreateResult())
-    app.migrations.add(AddScanStatus())
-    app.migrations.add(AddResultMetadata())
-    app.migrations.add(CreateScanResultEvents())
-    app.migrations.add(AddInputIndex())
-    app.migrations.add(CreateUser())
-    app.migrations.add(AddUserIDToScans())
-    app.migrations.add(AddWebhookURLToUsers())
-    app.migrations.add(CreateTags())
-    app.migrations.add(CreateScanTags())
-    app.migrations.add(CreateScheduledScans())
-    app.migrations.add(CreateScanNotifications())
-    app.migrations.add(CreateNotificationOutbox())
-    app.migrations.add(CreateExportJobs())
-    app.migrations.add(CreateAPIKeys())
-    app.migrations.add(CreateAuditLogs())
-    app.migrations.add(CreateAuditIntegrityLedger())
-    app.migrations.add(AddRetentionDaysToUsers())
-    app.migrations.add(DefaultUserRetention())
-    app.migrations.add(AddNotificationChannelsToUsers())
-    app.migrations.add(CreateSharedReports())
-    app.migrations.add(HashAPIKeyColumn())
-    app.migrations.add(AddAPIKeyAuthorization())
-    app.migrations.add(HashSharedReportTokens())
-    app.migrations.add(HardenSharedReportLifecycle())
-    app.migrations.add(ExpireLegacySharedReports())
-    app.migrations.add(HardenNotificationLifecycle())
-    app.migrations.add(CreatePluginCache())
-    app.migrations.add(AddVerboseAlertsToUser())
-    app.migrations.add(AddAccountSecurityToUsers())
-    app.migrations.add(AddLastTotpStepToUsers())
-    app.migrations.add(AddInputHashToScans())
-    app.migrations.add(CreateInvestigations())
-    app.migrations.add(AddWatchToInvestigations())
-    app.migrations.add(CreateDarkWebInvestigations())
-    app.migrations.add(EnforceDarkWebActiveJobUniqueness())
-    app.migrations.add(CreateEncryptionMetadata())
-    app.migrations.add(MigrateSensitiveFieldEncryption())
-    app.migrations.add(EncryptTagNames())
-    // Session storage table — required by `.fluent` session driver above.
-    app.migrations.add(SessionRecord.migration)
-    // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
-    // never expires them itself). Must run after SessionRecord.migration.
-    app.migrations.add(AddSessionCreatedAt())
-
-    // Maintenance command registration is available in every environment, but
-    // still requires explicit write-version and active-key-ID confirmation.
-    app.asyncCommands.use(CryptoRewrapCommand(), as: "crypto-rewrap")
+    registerMigrationsAndCommands(on: app)
 
     // Production migrations are a distinct deployment step. Running them as a
     // side effect of every web-process restart makes rollback and concurrency
@@ -245,6 +196,58 @@ public func configure(_ app: Application) async throws {
         app.lifecycle.use(app.exportJobWorker)
         app.lifecycle.use(app.darkWebRunner)
     }
+}
+
+private func registerMigrationsAndCommands(on app: Application) {
+    app.migrations.add(CreateScan())
+    app.migrations.add(CreateResult())
+    app.migrations.add(AddScanStatus())
+    app.migrations.add(AddResultMetadata())
+    app.migrations.add(CreateScanResultEvents())
+    app.migrations.add(AddInputIndex())
+    app.migrations.add(CreateUser())
+    app.migrations.add(AddUserIDToScans())
+    app.migrations.add(AddWebhookURLToUsers())
+    app.migrations.add(CreateTags())
+    app.migrations.add(CreateScanTags())
+    app.migrations.add(CreateScheduledScans())
+    app.migrations.add(CreateScanNotifications())
+    app.migrations.add(CreateNotificationOutbox())
+    app.migrations.add(CreateExportJobs())
+    app.migrations.add(CreateAPIKeys())
+    app.migrations.add(CreateAuditLogs())
+    app.migrations.add(CreateAuditIntegrityLedger())
+    app.migrations.add(AddRetentionDaysToUsers())
+    app.migrations.add(DefaultUserRetention())
+    app.migrations.add(AddNotificationChannelsToUsers())
+    app.migrations.add(CreateSharedReports())
+    app.migrations.add(HashAPIKeyColumn())
+    app.migrations.add(AddAPIKeyAuthorization())
+    app.migrations.add(HashSharedReportTokens())
+    app.migrations.add(HardenSharedReportLifecycle())
+    app.migrations.add(ExpireLegacySharedReports())
+    app.migrations.add(HardenNotificationLifecycle())
+    app.migrations.add(CreatePluginCache())
+    app.migrations.add(AddVerboseAlertsToUser())
+    app.migrations.add(AddAccountSecurityToUsers())
+    app.migrations.add(AddLastTotpStepToUsers())
+    app.migrations.add(AddInputHashToScans())
+    app.migrations.add(CreateInvestigations())
+    app.migrations.add(AddWatchToInvestigations())
+    app.migrations.add(CreateDarkWebInvestigations())
+    app.migrations.add(EnforceDarkWebActiveJobUniqueness())
+    app.migrations.add(CreateEncryptionMetadata())
+    app.migrations.add(MigrateSensitiveFieldEncryption())
+    app.migrations.add(EncryptTagNames())
+    // Session storage table — required by `.fluent` session driver above.
+    app.migrations.add(SessionRecord.migration)
+    // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
+    // never expires them itself). Must run after SessionRecord.migration.
+    app.migrations.add(AddSessionCreatedAt())
+
+    // Maintenance command registration is available in every environment, but
+    // still requires explicit write-version and active-key-ID confirmation.
+    app.asyncCommands.use(CryptoRewrapCommand(), as: "crypto-rewrap")
 }
 
 enum LifecyclePolicy {

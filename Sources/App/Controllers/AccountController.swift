@@ -111,47 +111,7 @@ struct AccountController: RouteCollection {
         // Durable automatic-delivery events also contain the caller's personal
         // data. Export decrypted payloads and non-secret delivery metadata, but
         // never the producer idempotency hash or channel credentials.
-        let outboxEvents = try await NotificationOutboxEvent.query(on: req.db)
-            .filter(\.$user.$id == userID)
-            .sort(\.$createdAt, .descending)
-            .all()
-        let outboxEventIDs = outboxEvents.compactMap(\.id)
-        let outboxJobs: [NotificationDeliveryJob]
-        if outboxEventIDs.isEmpty {
-            outboxJobs = []
-        } else {
-            outboxJobs = try await NotificationDeliveryJob.query(on: req.db)
-                .filter(\.$event.$id ~~ outboxEventIDs)
-                .all()
-        }
-        let jobsByEvent = Dictionary(grouping: outboxJobs, by: { $0.$event.id })
-        let outboxPayload: [[String: Any]] = try outboxEvents.map { event in
-            let payload = try event.payload
-            var row: [String: Any] = [
-                "id": event.id?.uuidString ?? "",
-                "scanID": event.scanID?.uuidString as Any,
-                "title": payload.title,
-                "message": payload.message,
-                "createdAt": event.createdAt.map { $0.timeIntervalSince1970 } as Any,
-                "deliveries": (event.id.flatMap { jobsByEvent[$0] } ?? []).map { job in
-                    [
-                        "id": job.id?.uuidString ?? "",
-                        "channel": job.channelRaw,
-                        "status": job.statusRaw,
-                        "attemptCount": job.attemptCount,
-                        "maxAttempts": job.maxAttempts,
-                        "lastFailureCode": job.lastFailureCode as Any,
-                        "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
-                    ] as [String: Any]
-                },
-            ]
-            if let webhookBody = payload.webhookBody,
-               let data = webhookBody.data(using: .utf8),
-               let normalized = try? JSONSerialization.jsonObject(with: data) {
-                row["webhookBody"] = normalized
-            }
-            return row
-        }
+        let outboxPayload = try await notificationOutboxPayload(userID: userID, on: req.db)
 
         // Job metadata is personal activity history. Artifacts/manifests are
         // excluded because they duplicate scan findings already present in this
@@ -175,52 +135,7 @@ struct AccountController: RouteCollection {
             "expiresAt": job.expiresAt.timeIntervalSince1970,
         ] }
 
-        let boards = try await Investigation.query(on: req.db)
-            .filter(\.$user.$id == userID)
-            .sort(\.$createdAt, .descending)
-            .all()
-        let boardsPayload: [[String: Any]] = try boards.map { board in
-            var row: [String: Any] = [
-                "id": board.id?.uuidString ?? "",
-                "name": try board.name,
-                "watched": board.watched,
-                "watchInterval": board.watchInterval as Any,
-                "nextCheckAt": board.nextCheckAt.map { $0.timeIntervalSince1970 } as Any,
-                "lastCheckedAt": board.lastCheckedAt.map { $0.timeIntervalSince1970 } as Any,
-                "createdAt": board.createdAt.map { $0.timeIntervalSince1970 } as Any,
-                "updatedAt": board.updatedAt.map { $0.timeIntervalSince1970 } as Any,
-            ]
-            if let data = try board.data.data(using: .utf8),
-               let graph = try? JSONSerialization.jsonObject(with: data) {
-                row["data"] = graph
-            }
-            return row
-        }
-
-        let darkWebJobs = try await DarkWebInvestigation.query(on: req.db)
-            .filter(\.$user.$id == userID)
-            .sort(\.$createdAt, .descending)
-            .all()
-        let darkWebPayload: [[String: Any]] = try darkWebJobs.map { job in
-            var row: [String: Any] = [
-                "id": job.id?.uuidString ?? "",
-                "target": try job.target,
-                "targetKind": job.targetKind.rawValue,
-                "status": job.status.rawValue,
-                "resultCount": job.resultCount,
-                "failureCode": job.failureCode as Any,
-                "cancelRequested": job.cancelRequested,
-                "createdAt": job.createdAt.map { $0.timeIntervalSince1970 } as Any,
-                "startedAt": job.startedAt.map { $0.timeIntervalSince1970 } as Any,
-                "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
-                "expiresAt": job.expiresAt.timeIntervalSince1970,
-            ]
-            if let result = try job.resultJSON?.data(using: .utf8),
-               let normalized = try? JSONSerialization.jsonObject(with: result) {
-                row["result"] = normalized
-            }
-            return row
-        }
+        let investigationExport = try await investigationPayloads(userID: userID, on: req.db)
 
         // API keys — metadata only. Never include the hashed key column; an
         // attacker with the hash can still brute-force short keys offline.
@@ -255,8 +170,8 @@ struct AccountController: RouteCollection {
             "notifications": notificationsPayload,
             "notificationOutbox": outboxPayload,
             "exportJobs": exportJobsPayload,
-            "investigationBoards": boardsPayload,
-            "darkWebInvestigations": darkWebPayload,
+            "investigationBoards": investigationExport.boards,
+            "darkWebInvestigations": investigationExport.darkWeb,
             "apiKeys":       apiKeysPayload,
             "auditLog":      auditPayload
         ]
@@ -270,6 +185,105 @@ struct AccountController: RouteCollection {
         headers.add(name: .contentType, value: "application/json; charset=utf-8")
         headers.add(name: .contentDisposition, value: "attachment; filename=\"account-export-\(safeName)-\(stamp).json\"")
         return Response(status: .ok, headers: headers, body: .init(data: jsonData))
+    }
+
+    private func notificationOutboxPayload(
+        userID: UUID,
+        on database: Database
+    ) async throws -> [[String: Any]] {
+        let events = try await NotificationOutboxEvent.query(on: database)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let eventIDs = events.compactMap(\.id)
+        let jobs: [NotificationDeliveryJob]
+        if eventIDs.isEmpty {
+            jobs = []
+        } else {
+            jobs = try await NotificationDeliveryJob.query(on: database)
+                .filter(\.$event.$id ~~ eventIDs)
+                .all()
+        }
+        let jobsByEvent = Dictionary(grouping: jobs, by: { $0.$event.id })
+        return try events.map { event in
+            let payload = try event.payload
+            var row: [String: Any] = [
+                "id": event.id?.uuidString ?? "",
+                "scanID": event.scanID?.uuidString as Any,
+                "title": payload.title,
+                "message": payload.message,
+                "createdAt": event.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "deliveries": (event.id.flatMap { jobsByEvent[$0] } ?? []).map { job in
+                    [
+                        "id": job.id?.uuidString ?? "",
+                        "channel": job.channelRaw,
+                        "status": job.statusRaw,
+                        "attemptCount": job.attemptCount,
+                        "maxAttempts": job.maxAttempts,
+                        "lastFailureCode": job.lastFailureCode as Any,
+                        "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
+                    ] as [String: Any]
+                },
+            ]
+            if let webhookBody = payload.webhookBody,
+               let data = webhookBody.data(using: .utf8),
+               let normalized = try? JSONSerialization.jsonObject(with: data) {
+                row["webhookBody"] = normalized
+            }
+            return row
+        }
+    }
+
+    private func investigationPayloads(
+        userID: UUID,
+        on database: Database
+    ) async throws -> (boards: [[String: Any]], darkWeb: [[String: Any]]) {
+        let boards = try await Investigation.query(on: database)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let boardRows: [[String: Any]] = try boards.map { board in
+            var row: [String: Any] = [
+                "id": board.id?.uuidString ?? "",
+                "name": try board.name,
+                "watched": board.watched,
+                "watchInterval": board.watchInterval as Any,
+                "nextCheckAt": board.nextCheckAt.map { $0.timeIntervalSince1970 } as Any,
+                "lastCheckedAt": board.lastCheckedAt.map { $0.timeIntervalSince1970 } as Any,
+                "createdAt": board.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "updatedAt": board.updatedAt.map { $0.timeIntervalSince1970 } as Any,
+            ]
+            if let data = try board.data.data(using: .utf8),
+               let graph = try? JSONSerialization.jsonObject(with: data) {
+                row["data"] = graph
+            }
+            return row
+        }
+        let jobs = try await DarkWebInvestigation.query(on: database)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let darkWebRows: [[String: Any]] = try jobs.map { job in
+            var row: [String: Any] = [
+                "id": job.id?.uuidString ?? "",
+                "target": try job.target,
+                "targetKind": job.targetKind.rawValue,
+                "status": job.status.rawValue,
+                "resultCount": job.resultCount,
+                "failureCode": job.failureCode as Any,
+                "cancelRequested": job.cancelRequested,
+                "createdAt": job.createdAt.map { $0.timeIntervalSince1970 } as Any,
+                "startedAt": job.startedAt.map { $0.timeIntervalSince1970 } as Any,
+                "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
+                "expiresAt": job.expiresAt.timeIntervalSince1970,
+            ]
+            if let result = try job.resultJSON?.data(using: .utf8),
+               let normalized = try? JSONSerialization.jsonObject(with: result) {
+                row["result"] = normalized
+            }
+            return row
+        }
+        return (boards: boardRows, darkWeb: darkWebRows)
     }
 
     // MARK: - Delete ----------------------------------------------------------

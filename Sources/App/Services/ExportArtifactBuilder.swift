@@ -62,6 +62,12 @@ enum ExportArtifactBuilder {
         let provenance: Provenance
     }
 
+    private struct ArtifactPayload: Sendable {
+        let data: Data
+        let contentType: String
+        let filename: String
+    }
+
     typealias Progress = @Sendable (_ completed: Int, _ total: Int) async throws -> Void
 
     static func build(
@@ -159,105 +165,29 @@ enum ExportArtifactBuilder {
             riskLevel: risk.level.rawValue
         )
         let surface = ExposureDiff.snapshot(from: inputs)
-        let safeName = filenameFragment(input)
-        let data: Data
-        let contentType: String
-        let filename: String
+        let payload = try await makePayload(
+            scanID: scanID,
+            input: input,
+            scan: scan,
+            format: format,
+            findings: findings,
+            risk: risk,
+            profile: profile,
+            surface: surface,
+            sourceComplete: sourceComplete,
+            resultSetHash: resultSetHash,
+            generatedAt: generatedAt,
+            configuration: configuration,
+            app: app
+        )
 
-        switch format {
-        case .json:
-            let document = JSONDocument(
-                scanID: scanID,
-                input: input,
-                status: scan.status.rawValue,
-                riskScore: risk.value,
-                riskLevel: risk.level.rawValue,
-                scannedAt: scan.createdAt?.timeIntervalSince1970,
-                completedAt: scan.completedAt?.timeIntervalSince1970,
-                results: findings,
-                provenance: Provenance(
-                    schemaVersion: 1,
-                    generatedAt: generatedAt.timeIntervalSince1970,
-                    sourceComplete: sourceComplete,
-                    resultCount: findings.count,
-                    resultSetSHA256: resultSetHash
-                )
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            data = try encoder.encode(document)
-            contentType = "application/json; charset=utf-8"
-            filename = "export-\(safeName).json"
-
-        case .graphml:
-            let graph = IdentityGraph.graphml(from: profile, target: input)
-            data = Data(graph.utf8)
-            contentType = "application/graphml+xml; charset=utf-8"
-            filename = "graph-\(safeName).graphml"
-
-        case .markdown:
-            var markdown = ExecutiveReport.markdown(
-                input: input,
-                profile: profile,
-                surface: surface,
-                generatedAt: generatedAt
-            )
-            markdown += "\n\n## Export provenance\n\n"
-            markdown += "- Complete source snapshot: \(sourceComplete ? "yes" : "no")\n"
-            markdown += "- Exported results: \(findings.count)\n"
-            markdown += "- Result-set SHA-256: `\(resultSetHash)`\n"
-            data = Data(markdown.utf8)
-            contentType = "text/markdown; charset=utf-8"
-            filename = "report-\(safeName).md"
-
-        case .html:
-            data = Data(ExecutiveReportHTML.html(
-                input: input,
-                profile: profile,
-                surface: surface,
-                generatedAt: generatedAt
-            ).utf8)
-            contentType = "text/html; charset=utf-8"
-            filename = "report-\(safeName).html"
-
-        case .pdf:
-            let source = JSONDocument(
-                scanID: scanID,
-                input: input,
-                status: scan.status.rawValue,
-                riskScore: risk.value,
-                riskLevel: risk.level.rawValue,
-                scannedAt: scan.createdAt?.timeIntervalSince1970,
-                completedAt: scan.completedAt?.timeIntervalSince1970,
-                results: findings,
-                provenance: Provenance(
-                    schemaVersion: 1,
-                    generatedAt: generatedAt.timeIntervalSince1970,
-                    sourceComplete: sourceComplete,
-                    resultCount: findings.count,
-                    resultSetSHA256: resultSetHash
-                )
-            )
-            let sourceData = try canonicalEncoder.encode(source)
-            guard sourceData.count <= configuration.maxSourceBytes else {
-                throw BuildError.sourceTooLarge
-            }
-            data = try await renderPDF(
-                source: sourceData,
-                maxBytes: configuration.maxArtifactBytes,
-                app: app
-            )
-            contentType = "application/pdf"
-            filename = "report-\(safeName).pdf"
-        }
-
-        guard data.count <= configuration.maxArtifactBytes else {
+        guard payload.data.count <= configuration.maxArtifactBytes else {
             throw BuildError.artifactTooLarge
         }
         try await progress(total, total)
-        let artifactHash = sha256(data)
+        let artifactHash = sha256(payload.data)
         return BuiltArtifact(
-            data: data,
+            data: payload.data,
             manifest: ExportJobManifest(
                 schemaVersion: 1,
                 jobID: jobID,
@@ -270,12 +200,102 @@ enum ExportArtifactBuilder {
                 resultCount: findings.count,
                 resultSetSHA256: resultSetHash,
                 artifactSHA256: artifactHash,
-                artifactBytes: data.count,
-                contentType: contentType,
-                filename: filename,
+                artifactBytes: payload.data.count,
+                contentType: payload.contentType,
+                filename: payload.filename,
                 complete: sourceComplete
             )
         )
+    }
+
+    private static func makePayload(
+        scanID: UUID,
+        input: String,
+        scan: Scan,
+        format: ExportJobFormat,
+        findings: [Finding],
+        risk: RiskScorer.Score,
+        profile: IdentitySynthesizer.IdentityProfile,
+        surface: ExposureDiff.Snapshot,
+        sourceComplete: Bool,
+        resultSetHash: String,
+        generatedAt: Date,
+        configuration: ExportJobConfiguration,
+        app: Application
+    ) async throws -> ArtifactPayload {
+        let safeName = filenameFragment(input)
+        let document = JSONDocument(
+            scanID: scanID,
+            input: input,
+            status: scan.status.rawValue,
+            riskScore: risk.value,
+            riskLevel: risk.level.rawValue,
+            scannedAt: scan.createdAt?.timeIntervalSince1970,
+            completedAt: scan.completedAt?.timeIntervalSince1970,
+            results: findings,
+            provenance: Provenance(
+                schemaVersion: 1,
+                generatedAt: generatedAt.timeIntervalSince1970,
+                sourceComplete: sourceComplete,
+                resultCount: findings.count,
+                resultSetSHA256: resultSetHash
+            )
+        )
+        switch format {
+        case .json:
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            return ArtifactPayload(
+                data: try encoder.encode(document),
+                contentType: "application/json; charset=utf-8",
+                filename: "export-\(safeName).json"
+            )
+        case .graphml:
+            return ArtifactPayload(
+                data: Data(IdentityGraph.graphml(from: profile, target: input).utf8),
+                contentType: "application/graphml+xml; charset=utf-8",
+                filename: "graph-\(safeName).graphml"
+            )
+        case .markdown:
+            var markdown = ExecutiveReport.markdown(
+                input: input, profile: profile, surface: surface, generatedAt: generatedAt
+            )
+            markdown += "\n\n## Export provenance\n\n"
+            markdown += "- Complete source snapshot: \(sourceComplete ? "yes" : "no")\n"
+            markdown += "- Exported results: \(findings.count)\n"
+            markdown += "- Result-set SHA-256: `\(resultSetHash)`\n"
+            return ArtifactPayload(
+                data: Data(markdown.utf8),
+                contentType: "text/markdown; charset=utf-8",
+                filename: "report-\(safeName).md"
+            )
+        case .html:
+            let html = ExecutiveReportHTML.html(
+                input: input, profile: profile, surface: surface, generatedAt: generatedAt
+            )
+            return ArtifactPayload(
+                data: Data(html.utf8),
+                contentType: "text/html; charset=utf-8",
+                filename: "report-\(safeName).html"
+            )
+        case .pdf:
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            let sourceData = try encoder.encode(document)
+            guard sourceData.count <= configuration.maxSourceBytes else {
+                throw BuildError.sourceTooLarge
+            }
+            let data = try await renderPDF(
+                source: sourceData,
+                maxBytes: configuration.maxArtifactBytes,
+                app: app
+            )
+            return ArtifactPayload(
+                data: data,
+                contentType: "application/pdf",
+                filename: "report-\(safeName).pdf"
+            )
+        }
     }
 
     private static func renderPDF(
