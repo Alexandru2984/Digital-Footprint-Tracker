@@ -8,10 +8,16 @@ enum Run {
         try LoggingSystem.bootstrap(from: &env)
 
         let app = try await Application.make(env)
-
-        defer { app.shutdown() }
-
-        try await configure(app)
-        try await app.execute()
+        do {
+            try await configure(app)
+            try await app.execute()
+        } catch {
+            // Async commands still install Vapor's ServeCommand internally.
+            // Synchronous shutdown from this async entrypoint can destroy it
+            // before its async lifecycle hook runs and trigger an assertion.
+            try? await app.asyncShutdown()
+            throw error
+        }
+        try await app.asyncShutdown()
     }
 }

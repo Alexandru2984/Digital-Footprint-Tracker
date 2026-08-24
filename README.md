@@ -245,6 +245,8 @@ writes to `2` only after every web/worker process runs the dual reader. During a
 key change, expose the old root only through the bounded
 `ENCRYPTION_PREVIOUS_KEYS=id=64hex` keyring. Treat that variable exactly like the
 active key; it must not be committed, logged, or retained after verified rewrap.
+The resumable command, verification gates, and v1 rollback sequence are in
+[docs/ENCRYPTION_KEY_ROTATION.md](docs/ENCRYPTION_KEY_ROTATION.md).
 
 ### Option B: Native build
 

@@ -144,6 +144,10 @@ public func configure(_ app: Application) async throws {
     // never expires them itself). Must run after SessionRecord.migration.
     app.migrations.add(AddSessionCreatedAt())
 
+    // Maintenance command registration is available in every environment, but
+    // still requires explicit write-version and active-key-ID confirmation.
+    app.asyncCommands.use(CryptoRewrapCommand(), as: "crypto-rewrap")
+
     // Production migrations are a distinct deployment step. Running them as a
     // side effect of every web-process restart makes rollback and concurrency
     // control impossible. The dedicated migration unit opts in explicitly;
@@ -203,10 +207,16 @@ public func configure(_ app: Application) async throws {
     // Periodic cleanup: delete scans older than 30 days.
     // Runs daily using a detached background task with a sleep loop.
     // The task is tied to app lifetime via a lifecycle handler.
-    app.lifecycle.use(ScanCleanupLifecycle())
-    app.lifecycle.use(ScheduledScanRunner())
-    app.lifecycle.use(InvestigationWatchRunner())
-    app.lifecycle.use(app.darkWebRunner)
+    // Command startup normally boots lifecycle handlers before dispatching the
+    // command. Do not start schedulers/workers in the maintenance process; the
+    // live web/worker fleet remains responsible for normal current-key writes.
+    let isCryptoRewrapProcess = app.environment.arguments.dropFirst().contains("crypto-rewrap")
+    if !isCryptoRewrapProcess {
+        app.lifecycle.use(ScanCleanupLifecycle())
+        app.lifecycle.use(ScheduledScanRunner())
+        app.lifecycle.use(InvestigationWatchRunner())
+        app.lifecycle.use(app.darkWebRunner)
+    }
 }
 
 enum MigrationPolicy {

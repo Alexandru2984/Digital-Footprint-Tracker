@@ -200,6 +200,7 @@ The SSRF guard is tested directly — see `testSSRFGuardBlocksLoopbackIPv4`,
 | Sensitive fields plaintext at rest           | Dual-read v1/v2 AES-256-GCM envelopes cover scan/result/board data, notification credentials, schedules, notifications, audit details, and cache payloads; v2 authenticates field + row UUID as AAD | `TokenEncryption`, `FieldCrypto`, `MigrateSensitiveFieldEncryption`             |
 | Encryption/index key reuse                   | V2 derives independent encryption and blind-index keys with HKDF-SHA256                                                                  | `TokenEncryption`                                                               |
 | Accidental encryption-key replacement        | Key IDs plus a persistent encrypted marker verify the active/previous bounded keyring before traffic starts                             | `EncryptionKeyVerifier`, `CreateEncryptionMetadata`                             |
+| Interrupted/concurrent key rotation          | UUID-cursor checkpoint is atomic with each row-locked batch; PostgreSQL advisory lock rejects a second runner; active-key-only verify stage gates old-key removal | `SensitiveFieldRewrapper`, `CryptoRewrapCommand`, `docs/ENCRYPTION_KEY_ROTATION.md` |
 | Cache target dictionary attacks              | Normalized targets use keyed blind indexes; rotation queries a bounded active/previous candidate set and payload JSON is encrypted       | `PluginCacheStore`                                                              |
 | Secrets in app logs                          | PII masked at INFO: `***@domain.com` for emails, `use***` for usernames                                                                  | `ScanController.scan`                                                           |
 | Secrets in audit log                         | Audit log stores `action` + truncated `target` (200 chars) + IP — never request bodies, never tokens                                      | `Sources/App/Services/AuditLogger.swift`                                        |
@@ -387,6 +388,10 @@ For anyone deploying this stack on their own host:
       reader. Any `ENCRYPTION_PREVIOUS_KEYS` value is supplied through the
       secret channel, contains at most four `id=64hex` entries, and is removed
       only after rewrap verification.
+- [ ] Before key/format rotation, the backup has been restored, the whole fleet
+      uses one explicit writer configuration, and the full command plus a
+      separate `--verify-only` pass from the accepted release are archived.
+      Follow `docs/ENCRYPTION_KEY_ROTATION.md`; never roll an old binary onto v2.
 - [ ] `ALLOWED_ORIGIN` in production matches the exact public origin
 - [ ] nginx CSP `script-src` SHA-256 hashes are regenerated after any
       change to the inline `<script>` block (see deployment notes in

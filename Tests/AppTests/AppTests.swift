@@ -1416,6 +1416,308 @@ final class AppTests: XCTestCase {
         try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
     }
 
+    func testSensitiveFieldRewrapperResumesAndCoversEveryEncryptedModel() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        let keyA = String(repeating: "91", count: 32)
+        let keyB = String(repeating: "92", count: 32)
+        configureEncryptionEnvironment(key: keyA, keyID: "epoch-a", writeVersion: "1")
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let user = User(
+            username: "rewrap-user",
+            email: "rewrap@example.test",
+            passwordHash: "unused",
+            webhookURL: "https://hooks.example.test/primary",
+            discordWebhookURL: "https://discord.example.test/secret",
+            telegramBotToken: "123456:abcdefghijklmnopqrstuvwxyzABCDE",
+            telegramChatID: "123456",
+            slackWebhookURL: "https://slack.example.test/secret",
+            emailVerified: true
+        )
+        user.setTOTPSecret("JBSWY3DPEHPK3PXP")
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+
+        let firstScan = Scan(input: "target-one", userID: userID)
+        try await firstScan.save(on: app.db)
+        let firstScanID = try XCTUnwrap(firstScan.id)
+        let legacyFirstScanHash = try XCTUnwrap(firstScan.inputHash)
+        try await Result(
+            scanID: firstScanID,
+            source: "test",
+            type: "account",
+            confidenceScore: 0.8,
+            rawData: "sensitive result",
+            metadata: #"{"email":"person@example.test"}"#
+        ).save(on: app.db)
+        try await Investigation(
+            userID: userID,
+            name: "Case Alpha",
+            data: #"{"nodes":[],"edges":[]}"#
+        ).save(on: app.db)
+        try await ScheduledScan(
+            userID: userID,
+            input: "scheduled-target",
+            interval: .daily,
+            nextRunAt: Date().addingTimeInterval(3_600)
+        ).save(on: app.db)
+        try await ScanNotification(
+            userID: userID,
+            scanID: firstScanID,
+            message: "new finding",
+            newResultsCount: 1
+        ).save(on: app.db)
+        try await Tag(userID: userID, name: "Sensitive tag", colour: "#123456")
+            .save(on: app.db)
+        try await AuditLog(
+            userID: userID,
+            action: "rewrap_test",
+            target: "person@example.test",
+            ip: "192.0.2.25"
+        ).save(on: app.db)
+        let darkWeb = DarkWebInvestigation(
+            userID: userID,
+            target: "person@example.test",
+            retentionHours: 24
+        )
+        darkWeb.setResultJSON(#"{"matches":["sensitive"]}"#)
+        try await darkWeb.save(on: app.db)
+        try await PluginCacheEntry(
+            pluginName: "TestPlugin",
+            targetHash: FieldCrypto.blindIndex("target-one"),
+            plaintext: #"[{"source":"test","type":"account","confidenceScore":0.8,"rawData":"cached"}]"#,
+            expiresAt: Date().addingTimeInterval(3_600)
+        ).save(on: app.db)
+
+        // Mix legacy v1 and old-key v2 rows in the same table.
+        setenv("ENCRYPTION_WRITE_VERSION", "2", 1)
+        let secondScan = Scan(input: "target-two", userID: userID)
+        try await secondScan.save(on: app.db)
+
+        configureEncryptionEnvironment(
+            key: keyB,
+            keyID: "epoch-b",
+            previousKeys: "epoch-a=\(keyA)",
+            writeVersion: "2"
+        )
+        let partial = try await SensitiveFieldRewrapper.run(
+            on: app.db,
+            confirmedKeyID: "epoch-b",
+            batchSize: 1,
+            maximumBatches: 2
+        )
+        XCTAssertFalse(partial.completed)
+        XCTAssertEqual(partial.stage, .rewrite)
+        XCTAssertEqual(partial.phase, .scans)
+        XCTAssertEqual(partial.rewrittenRows["scans"], 2)
+
+        let completed = try await SensitiveFieldRewrapper.run(
+            on: app.db,
+            confirmedKeyID: "epoch-b",
+            batchSize: 2
+        )
+        XCTAssertTrue(completed.completed)
+        XCTAssertEqual(completed.rewrittenRows["scans"], 2)
+        XCTAssertEqual(completed.rewrittenRows["results"], 1)
+        XCTAssertEqual(completed.rewrittenRows["investigations"], 1)
+        XCTAssertEqual(completed.rewrittenRows["users"], 1)
+        XCTAssertEqual(completed.rewrittenRows["scheduled_scans"], 1)
+        XCTAssertEqual(completed.rewrittenRows["notifications"], 1)
+        XCTAssertEqual(completed.rewrittenRows["tags"], 1)
+        XCTAssertEqual(completed.rewrittenRows["audit_logs"], 1)
+        XCTAssertEqual(completed.rewrittenRows["dark_web_investigations"], 1)
+        XCTAssertEqual(completed.rewrittenRows["plugin_cache"], 1)
+        let remainingCacheRows = try await PluginCacheEntry.query(on: app.db).count()
+        XCTAssertEqual(remainingCacheRows, 0)
+
+        let scans = try await Scan.query(on: app.db).all()
+        XCTAssertEqual(scans.count, 2)
+        XCTAssertTrue(scans.allSatisfy { $0.inputCipher.hasPrefix("enc:v2:epoch-b:") })
+        let storedFirstScan = try XCTUnwrap(scans.first { $0.id == firstScanID })
+        XCTAssertEqual(storedFirstScan.inputHash, FieldCrypto.blindIndex("target-one"))
+
+        let resultRow = try await Result.query(on: app.db).first()
+        let investigationRow = try await Investigation.query(on: app.db).first()
+        let userRow = try await User.find(userID, on: app.db)
+        let scheduleRow = try await ScheduledScan.query(on: app.db).first()
+        let notificationRow = try await ScanNotification.query(on: app.db).first()
+        let tagRow = try await Tag.query(on: app.db).first()
+        let auditRow = try await AuditLog.query(on: app.db).first()
+        let darkWebRow = try await DarkWebInvestigation.query(on: app.db).first()
+        let storedResult = try XCTUnwrap(resultRow)
+        let storedInvestigation = try XCTUnwrap(investigationRow)
+        let storedUser = try XCTUnwrap(userRow)
+        let storedSchedule = try XCTUnwrap(scheduleRow)
+        let storedNotification = try XCTUnwrap(notificationRow)
+        let storedTag = try XCTUnwrap(tagRow)
+        let storedAudit = try XCTUnwrap(auditRow)
+        let storedDarkWeb = try XCTUnwrap(darkWebRow)
+
+        XCTAssertTrue(storedResult.rawDataCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedResult.metadataCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertTrue(storedInvestigation.nameCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedInvestigation.dataCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedUser.webhookURLCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertTrue(storedUser.totpSecretCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertTrue(storedSchedule.inputCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedNotification.messageCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedTag.nameCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedAudit.targetCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedAudit.ipCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedDarkWeb.targetCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertTrue(storedDarkWeb.resultCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+
+        // Verification covers deterministic indexes as well as ciphertext;
+        // an old-key hash would make a valid row undiscoverable after removal.
+        storedFirstScan.inputHash = legacyFirstScanHash
+        try await storedFirstScan.update(on: app.db)
+        do {
+            _ = try await SensitiveFieldRewrapper.verifyOnly(
+                on: app.db,
+                confirmedKeyID: "epoch-b",
+                batchSize: 1
+            )
+            XCTFail("An old-key blind index must fail active-key verification")
+        } catch let failure as SensitiveFieldRewrapper.Failure {
+            XCTAssertEqual(
+                failure,
+                .recordFailure(stage: .verify, phase: .scans, recordID: firstScanID)
+            )
+        }
+        storedFirstScan.inputHash = FieldCrypto.blindIndex("target-one")
+        try await storedFirstScan.update(on: app.db)
+
+        // The old root is now removable: normal access and an independent
+        // active-key-only verification pass must both succeed without it.
+        unsetenv("ENCRYPTION_PREVIOUS_KEYS")
+        XCTAssertEqual(try storedFirstScan.input, "target-one")
+        XCTAssertEqual(try storedResult.rawData, "sensitive result")
+        XCTAssertEqual(try storedUser.totpSecret, "JBSWY3DPEHPK3PXP")
+        XCTAssertEqual(try storedDarkWeb.target, "person@example.test")
+        let verified = try await SensitiveFieldRewrapper.verifyOnly(
+            on: app.db,
+            confirmedKeyID: "epoch-b",
+            batchSize: 1
+        )
+        XCTAssertTrue(verified.completed)
+        XCTAssertEqual(verified.verifiedRows["scans"], 2)
+
+        // Exercise the documented emergency rollback preparation. The current
+        // dual reader rewrites every field/index to v1 before any v1-only binary
+        // is allowed back into the fleet.
+        setenv("ENCRYPTION_WRITE_VERSION", "1", 1)
+        let rolledBack = try await SensitiveFieldRewrapper.run(
+            on: app.db,
+            confirmedKeyID: "epoch-b",
+            batchSize: 5
+        )
+        XCTAssertTrue(rolledBack.completed)
+        let v1Scans = try await Scan.query(on: app.db).all()
+        XCTAssertTrue(v1Scans.allSatisfy { $0.inputCipher.hasPrefix("enc:v1:") })
+        let verifiedV1 = try await SensitiveFieldRewrapper.verifyOnly(
+            on: app.db,
+            confirmedKeyID: "epoch-b",
+            batchSize: 5
+        )
+        XCTAssertTrue(verifiedV1.completed)
+    }
+
+    func testSensitiveFieldRewrapperFailsWithoutAdvancingPastCorruptRow() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        let keyA = String(repeating: "a1", count: 32)
+        let keyB = String(repeating: "a2", count: 32)
+        configureEncryptionEnvironment(key: keyA, keyID: "epoch-a", writeVersion: "1")
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "will-be-corrupted")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        scan.inputCipher = "enc:v1:not-base64"
+        try await scan.update(on: app.db)
+
+        configureEncryptionEnvironment(
+            key: keyB,
+            keyID: "epoch-b",
+            previousKeys: "epoch-a=\(keyA)",
+            writeVersion: "2"
+        )
+        do {
+            _ = try await SensitiveFieldRewrapper.run(
+                on: app.db,
+                confirmedKeyID: "epoch-b",
+                batchSize: 10
+            )
+            XCTFail("A corrupt row must stop rewrap")
+        } catch let failure as SensitiveFieldRewrapper.Failure {
+            XCTAssertEqual(
+                failure,
+                .recordFailure(stage: .rewrite, phase: .scans, recordID: scanID)
+            )
+        }
+
+        let metadata = try await EncryptionMetadata.query(on: app.db)
+            .filter(\.$name == SensitiveFieldRewrapper.checkpointName)
+            .first()
+        let checkpointRow = try XCTUnwrap(metadata)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let checkpoint = try decoder.decode(
+            SensitiveFieldRewrapper.Checkpoint.self,
+            from: Data(checkpointRow.value.utf8)
+        )
+        XCTAssertEqual(checkpoint.stage, .rewrite)
+        XCTAssertEqual(checkpoint.phase, .scans)
+        XCTAssertNil(checkpoint.cursor)
+        XCTAssertTrue(checkpoint.rewrittenRows.isEmpty)
+        let persistedScanRow = try await Scan.find(scanID, on: app.db)
+        let persistedScan = try XCTUnwrap(persistedScanRow)
+        XCTAssertEqual(persistedScan.inputCipher, "enc:v1:not-base64")
+    }
+
+    func testSensitiveFieldRewrapperRequiresExplicitVersionAndKeyConfirmation() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(
+            key: String(repeating: "b1", count: 32),
+            keyID: "epoch-a",
+            writeVersion: "2"
+        )
+
+        let app = try await Application.make(.testing)
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.databases.use(.sqlite(.memory), as: .psql, isDefault: true)
+
+        unsetenv("ENCRYPTION_WRITE_VERSION")
+        do {
+            _ = try await SensitiveFieldRewrapper.run(
+                on: app.db,
+                confirmedKeyID: "epoch-a"
+            )
+            XCTFail("An implicit write version must be rejected")
+        } catch let failure as SensitiveFieldRewrapper.Failure {
+            XCTAssertEqual(failure, .explicitWriteVersionRequired)
+        }
+
+        setenv("ENCRYPTION_WRITE_VERSION", "2", 1)
+        do {
+            _ = try await SensitiveFieldRewrapper.run(
+                on: app.db,
+                confirmedKeyID: "wrong-key-id"
+            )
+            XCTFail("A mismatched confirmation must be rejected")
+        } catch let failure as SensitiveFieldRewrapper.Failure {
+            XCTAssertEqual(
+                failure,
+                .keyIDMismatch(active: "epoch-a", confirmed: "wrong-key-id")
+            )
+        }
+    }
+
     // MARK: - Root route
 
     func testRootRouteResponds() async throws {

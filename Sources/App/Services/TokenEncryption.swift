@@ -144,6 +144,26 @@ enum TokenEncryption {
         return try decryptV1(ciphertext, keys: keyring().all)
     }
 
+    /// Open an envelope only when it was written in the configured target
+    /// format with the active root key. Unlike `isCurrentEnvelope`, this
+    /// authenticates v1 data too (v1 has no embedded key ID), so a completed
+    /// rotation can prove that removing every previous key is safe.
+    static func decryptCurrentRequired(_ ciphertext: String, context: Context) throws -> String {
+        let ring = try keyring()
+        switch try configuredWriteVersion() {
+        case .v1:
+            guard ciphertext.hasPrefix(v1Prefix) else { throw Error.unsupportedVersion }
+            return try decryptV1(ciphertext, keys: [ring.active])
+        case .v2:
+            guard envelopeKeyID(ciphertext) == ring.active.id else { throw Error.unknownKeyID }
+            return try decryptV2(
+                ciphertext,
+                ring: Keyring(active: ring.active, previous: []),
+                context: context
+            )
+        }
+    }
+
     /// `enc:` is a reserved namespace. Treating an unknown version as plaintext
     /// would leak a tampered ciphertext through an API response.
     static func isEncryptedEnvelope(_ value: String) -> Bool {

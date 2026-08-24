@@ -7,9 +7,10 @@ parallel only when their dependencies are satisfied.
 ## Current checkpoint — 2026-08-24
 
 - Repository: the dark-web queue, isolated-worker contract, responsive console,
-  rollout hardening and Cloudflare refresh are committed locally on top of
-  `origin/main`. The current work is not deployed and the complete Swift suite
-  still requires a clean accepted run before release.
+  rollout hardening, Cloudflare refresh, authenticated crypto envelope v2, and
+  resumable key rotation are committed locally on top of `origin/main`. The
+  current work is not deployed; repository test success is not production
+  acceptance evidence.
 - Prepared: immutable commit-named releases, explicit production migrations,
   backend/frontend/CSP rollback, dedicated non-login runtime, verified-backup
   metrics, a guarded isolated restore drill with JSON evidence, and
@@ -84,8 +85,10 @@ series), with its own rollback note and production evidence before the next one.
    run explicit migrations, select immutable release and rehearse rollback.
 5. **Origin closure:** deploy peer map/guard, add Cloudflare AOP/mTLS, probe both
    origin address families and alert if direct access ever succeeds.
-6. **Crypto envelope v2:** HKDF-separated encryption/index keys, AAD binding,
-   key IDs, corruption quarantine and chunked online rotation.
+6. **Crypto envelope v2:** repository implementation delivered: HKDF-separated
+   encryption/index keys, AAD binding, key IDs, corruption quarantine, bounded
+   previous-key reads, row-locked checkpointed rotation, verification and v1
+   rollback. Production rollout/restore evidence remains gated by Phase 0.
 7. **Durable execution:** Postgres/Redis queue, idempotency keys, leases,
    cancellation, retry classes, DLQ and separated worker identities/secrets.
 8. **Streaming correctness:** ordered result cursor, `Last-Event-ID`, bounded
@@ -134,8 +137,10 @@ series), with its own rollback note and production evidence before the next one.
 
 - Split database, SMTP, metrics and provider credentials by worker capability.
 - systemd credentials or Vault/SOPS-backed delivery; no flat personal `.env`.
-- Versioned key-encryption keys and per-record/data-class DEKs.
-- Online key rotation with progress, verification and rollback checkpoints.
+- Versioned key-encryption keys and per-record/data-class DEKs (v2 root-derived
+  field keys are delivered; external KMS/DEK hierarchy remains future work).
+- Online key rotation with progress, verification and rollback checkpoints is
+  delivered in-repository; production exercise and evidence remain open.
 - Key escrow/recovery procedure with two-person access for production.
 - Secret scanning in pre-commit and CI, plus full-history scheduled scan.
 
