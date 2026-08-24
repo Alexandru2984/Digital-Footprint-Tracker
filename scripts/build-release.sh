@@ -100,13 +100,18 @@ FILES_HASH="$(sha256sum "$BUNDLE/SHA256SUMS" | awk '{print $1}')"
 } > "$BUNDLE/RELEASE"
 chmod 0444 "$BUNDLE/RELEASE"
 
-find "$BUNDLE" -type d -exec chmod 0555 {} +
-find "$BUNDLE" -type f ! -path "$BUNDLE/Run" ! -path "$BUNDLE/scripts/generate_report.py" \
+# -mindepth 1 leaves $BUNDLE itself writable for now: renaming a directory
+# into a new parent requires write permission on the directory being moved
+# (the kernel has to update its own ".." entry), so locking it down here would
+# make the mv below fail with EACCES. It gets chmod'd immutable right after.
+find "$BUNDLE" -mindepth 1 -type d -exec chmod 0555 {} +
+find "$BUNDLE" -mindepth 1 -type f ! -path "$BUNDLE/Run" ! -path "$BUNDLE/scripts/generate_report.py" \
     -exec chmod 0444 {} +
 
 # The final rename is same-filesystem and atomic. Validate again at its canonical
 # commit-named path, where the path constraints in verify_release apply.
 mv -- "$BUNDLE" "$RELEASE"
+chmod 0555 "$RELEASE"
 if ! verify_release "$RELEASE" "$RELEASE_ROOT"; then
     echo "release: published bundle failed integrity verification" >&2
     chmod -R u+w -- "$RELEASE" 2>/dev/null || true
