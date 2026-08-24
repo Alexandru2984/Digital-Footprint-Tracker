@@ -474,40 +474,68 @@ new symlink until its release manifest passes `scripts/release-lib.sh` validatio
 `scripts/backup.sh` streams `pg_dump | gzip` directly into authenticated
 AES-256 GPG encryption, then verifies decryption and gzip integrity before the
 partial file becomes a retained backup. No plaintext dump is written to disk.
-It writes to `/home/micu/swift-vapor-backups/` and keeps the last 7 encrypted
-dumps by default (`BACKUP_RETENTION` may be set from 1 to 365).
-The accompanying `swift-vapor-backup.service` + `.timer` units run it daily
-at 02:00 UTC with a 10-minute jitter and `Persistent=true` so a missed run
-catches up on next boot.
+The dedicated `swift-backup` identity writes mode-`0600` artifacts under
+`/var/lib/swift-vapor-backup/artifacts/` and keeps seven generations by default
+(`BACKUP_RETENTION` accepts 1 through 365). `swift-deploy` can list/stat these
+files for the deployment gate through `swift-backup-check`, but cannot read
+their encrypted contents. The hardened timer runs daily at 02:00 UTC with a
+10-minute jitter and catches up after downtime.
 
-Create a random encrypted systemd credential, then install the units once. The
-application service cannot read this backup passphrase:
+First store a portable, 32-character-or-longer passphrase in an owner-controlled
+password manager/offline recovery kit. A host-bound encrypted credential alone
+is not recoverable after loss of the VPS. Stage the saved value in `/run`,
+encrypt it with the exact credential name, remove plaintext immediately, and
+install the dedicated identity, storage, script and units. Before enabling the
+timer, `/etc/swift-vapor/app.env` must contain only the non-secret database
+routing settings from the committed template, and the encrypted
+`database-password` credential from the production rollout must already exist:
 
 ```bash
-openssl rand -base64 48 | sudo systemd-creds encrypt --name=backup-passphrase - /etc/credstore.encrypted/swift-vapor-backup-passphrase
-sudo cp scripts/swift-vapor-backup.service scripts/swift-vapor-backup.timer /etc/systemd/system/
+sudo systemd-sysusers ops/sysusers.d/swift-vapor.conf \
+  ops/sysusers.d/swift-vapor-backup.conf
+sudo systemd-tmpfiles --create ops/tmpfiles.d/swift-vapor.conf \
+  ops/tmpfiles.d/swift-vapor-backup.conf
+sudo install -d -o root -g root -m 0700 /run/swift-vapor-credential-staging \
+  /etc/credstore.encrypted
+sudoedit /run/swift-vapor-credential-staging/backup-passphrase
+sudo chmod 0600 /run/swift-vapor-credential-staging/backup-passphrase
+sudo systemd-creds encrypt --name=backup-passphrase \
+  /run/swift-vapor-credential-staging/backup-passphrase \
+  /etc/credstore.encrypted/swift-vapor-backup-passphrase
+sudo chmod 0600 /etc/credstore.encrypted/swift-vapor-backup-passphrase
+sudo rm -f /run/swift-vapor-credential-staging/backup-passphrase
+sudo install -d -o root -g root -m 0755 /usr/local/libexec/swift-vapor
+sudo install -o root -g root -m 0755 scripts/backup.sh scripts/check-backup.sh \
+  /usr/local/libexec/swift-vapor/
+sudo install -o root -g root -m 0644 ops/systemd/swift-vapor-backup.service \
+  ops/systemd/swift-vapor-backup.timer /etc/systemd/system/
+sudo test -r /etc/swift-vapor/app.env
+sudo test -f /etc/credstore.encrypted/swift-vapor-database-password
 sudo systemctl daemon-reload
 sudo systemctl enable --now swift-vapor-backup.timer
-sudo systemctl list-timers swift-vapor-backup.timer    # confirm next trigger
+sudo systemctl list-timers swift-vapor-backup.timer
 ```
 
-Trigger an on-demand backup and confirm that verification completed:
+Do not duplicate the database password plaintext into `app.env`. Trigger an
+on-demand backup and verify it as the narrowly scoped checker identity:
 
 ```bash
 sudo systemctl start swift-vapor-backup.service
 sudo journalctl -u swift-vapor-backup.service -n 30 --no-pager
-scripts/check-backup.sh --status-file /var/lib/swift-vapor-backup/last-success
+sudo -u swift-deploy /usr/local/libexec/swift-vapor/check-backup.sh \
+  --directory /var/lib/swift-vapor-backup/artifacts \
+  --status-file /var/lib/swift-vapor-backup/status/last-success
 ```
 
-The backup job publishes `/var/lib/swift-vapor-backup/last-success` only after
+The job publishes `/var/lib/swift-vapor-backup/status/last-success` only after
 authenticated decryption and gzip verification succeed. The read-only checker
-also verifies that the newest encrypted dump exists, is private, is non-trivial
-in size and is recent. It is a freshness gate, not a restore test; exercise a
-real restore into an isolated PostgreSQL instance on a schedule.
+also verifies that the newest dump exists, is private, non-trivial and recent.
+This is a freshness gate, not a restore test.
 
 Existing `.sql.gz` files are plaintext and are deliberately not deleted or
 rewritten by the new job. Re-encrypt and verify them during the controlled
-rollout. Keep at least one tested, encrypted copy off the VPS; local rotation
+rollout. Copy a freshly restore-tested encrypted artifact and its recovery
+manifest to an owner-approved immutable off-host destination; local rotation
 alone does not cover disk loss or total host compromise.
 
 ### Prometheus scraping

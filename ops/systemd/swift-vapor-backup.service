@@ -1,0 +1,65 @@
+[Unit]
+Description=Encrypted swift-vapor PostgreSQL backup
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+After=postgresql.service local-fs.target
+Wants=postgresql.service
+ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/backup.sh
+
+[Service]
+Type=oneshot
+User=swift-backup
+Group=swift-backup
+SupplementaryGroups=swift-backup-check
+WorkingDirectory=/usr/local/libexec/swift-vapor
+EnvironmentFile=/etc/swift-vapor/app.env
+LoadCredentialEncrypted=database-password:/etc/credstore.encrypted/swift-vapor-database-password
+LoadCredentialEncrypted=backup-passphrase:/etc/credstore.encrypted/swift-vapor-backup-passphrase
+Environment=DATABASE_PASSWORD_FILE=%d/database-password
+Environment=BACKUP_PASSPHRASE_FILE=%d/backup-passphrase
+Environment=BACKUP_OUTPUT_DIR=/var/lib/swift-vapor-backup/artifacts
+Environment=BACKUP_STATUS_FILE=/var/lib/swift-vapor-backup/status/last-success
+Environment=PG_DUMP_PATH=/usr/bin/pg_dump
+ExecStart=/usr/local/libexec/swift-vapor/backup.sh
+TimeoutStartSec=2h
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+InaccessiblePaths=-/run/docker.sock -/run/containerd/containerd.sock -/run/podman/podman.sock
+ReadWritePaths=/var/lib/swift-vapor-backup/artifacts /var/lib/swift-vapor-backup/status
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=200%
+TasksMax=64
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

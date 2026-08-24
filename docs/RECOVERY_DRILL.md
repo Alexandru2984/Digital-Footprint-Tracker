@@ -29,7 +29,7 @@ never connects to the host PostgreSQL instance.
    for the disposable 2 GiB tmpfs ceiling:
 
    ```bash
-   sudo install -d -o root -g root -m 0700 /var/lib/swift-vapor-backup/restore-drills
+   sudo systemd-tmpfiles --create ops/tmpfiles.d/swift-vapor-backup.conf
    ```
 
 ## Run and verify
@@ -38,9 +38,9 @@ When using a private passphrase file, run:
 
 ```bash
 sudo scripts/restore-drill.sh \
-  --backup /home/micu/swift-vapor-backups/footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg \
+  --backup /var/lib/swift-vapor-backup/artifacts/footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg \
   --passphrase-file /run/swift-vapor-backup-passphrase \
-  --manifest /var/lib/swift-vapor-backup/restore-drills/restore-YYYY-MM-DDTHH-MM-SSZ.json
+  --manifest /var/lib/swift-vapor-recovery/restore-drills/restore-YYYY-MM-DDTHH-MM-SSZ.json
 ```
 
 For the installed encrypted systemd credential, launch the helper from a

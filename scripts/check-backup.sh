@@ -7,8 +7,8 @@
 set -euo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-BACKUP_DIR="${BACKUP_OUTPUT_DIR:-/home/micu/swift-vapor-backups}"
-STATUS_FILE="${BACKUP_STATUS_FILE:-${BACKUP_DIR}/.last-success}"
+BACKUP_DIR="${BACKUP_OUTPUT_DIR:-/var/lib/swift-vapor-backup/artifacts}"
+STATUS_FILE="${BACKUP_STATUS_FILE:-/var/lib/swift-vapor-backup/status/last-success}"
 MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-30}"
 
 usage() {
@@ -26,6 +26,15 @@ done
 
 if [[ "$BACKUP_DIR" != /* || "$BACKUP_DIR" == "/" || ! -d "$BACKUP_DIR" ]]; then
     echo "backup-check: backup directory is missing or unsafe: $BACKUP_DIR" >&2
+    exit 1
+fi
+if [[ -L "$BACKUP_DIR" ]]; then
+    echo "backup-check: backup directory must not be a symlink." >&2
+    exit 1
+fi
+directory_mode="$(stat -c '%a' "$BACKUP_DIR")"
+if (( (8#$directory_mode & 022) != 0 )); then
+    echo "backup-check: backup directory is writable by group or others." >&2
     exit 1
 fi
 if [[ "$STATUS_FILE" != /* || "$STATUS_FILE" == "/" ]]; then
@@ -68,6 +77,16 @@ if [[ ! -f "$STATUS_FILE" || -L "$STATUS_FILE" ]]; then
     echo "backup-check: verified-success status file is missing." >&2
     exit 1
 fi
+status_mode="$(stat -c '%a' "$STATUS_FILE")"
+if (( (8#$status_mode & 022) != 0 )); then
+    echo "backup-check: verified-success status is writable by group or others." >&2
+    exit 1
+fi
+status_size="$(stat -c '%s' "$STATUS_FILE")"
+if (( status_size > 32 )); then
+    echo "backup-check: verified-success status is oversized." >&2
+    exit 1
+fi
 status="$(tr -d '\n' < "$STATUS_FILE")"
 if [[ ! "$status" =~ ^[0-9]{10}$ ]]; then
     echo "backup-check: verified-success status is malformed." >&2
@@ -87,6 +106,15 @@ if (( age > max_age_seconds )); then
 fi
 
 backup_mtime="$(stat -c '%Y' "$latest")"
+backup_age=$(( now - backup_mtime ))
+if (( backup_age < -300 )); then
+    echo "backup-check: newest backup timestamp is implausibly in the future." >&2
+    exit 1
+fi
+if (( backup_age > max_age_seconds )); then
+    echo "backup-check: newest encrypted backup is stale (${backup_age}s > ${max_age_seconds}s)." >&2
+    exit 1
+fi
 if (( status + 5 < backup_mtime )); then
     echo "backup-check: success timestamp predates the newest backup." >&2
     exit 1

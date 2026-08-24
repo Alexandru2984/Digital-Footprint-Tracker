@@ -1,0 +1,12 @@
+[Unit]
+Description=Run encrypted swift-vapor PostgreSQL backup daily
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+Unit=swift-vapor-backup.service
+
+[Install]
+WantedBy=timers.target

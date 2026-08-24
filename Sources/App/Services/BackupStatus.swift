@@ -2,7 +2,7 @@ import Foundation
 import Vapor
 
 enum BackupStatus {
-    static let defaultPath = "/var/lib/swift-vapor-backup/last-success"
+    static let defaultPath = "/var/lib/swift-vapor-backup/status/last-success"
     static let defaultMaxAgeSeconds = 30 * 60 * 60
 
     struct Snapshot {

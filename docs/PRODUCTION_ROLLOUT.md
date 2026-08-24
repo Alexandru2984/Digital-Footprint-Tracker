@@ -10,8 +10,9 @@ version-controlled file with its installed counterpart first.
 
 Proceed only when all are true:
 
-1. `scripts/check-backup.sh --status-file /var/lib/swift-vapor-backup/last-success`
-   passes after a new encrypted backup.
+1. `scripts/check-backup.sh --directory /var/lib/swift-vapor-backup/artifacts --status-file /var/lib/swift-vapor-backup/status/last-success`
+   passes after a new encrypted backup. Install the recovery foundation from
+   README first; this gate cannot be waived for initial rollout.
 2. `scripts/restore-drill.sh` has restored that exact artifact into its
    networkless disposable PostgreSQL instance, and the new mode-`0600` JSON
    manifest from `docs/RECOVERY_DRILL.md` is retained off-host with the backup.
@@ -30,9 +31,11 @@ password and a shell only because `sshd` needs one to execute its forced command
 it must never receive an unrestricted key or interactive sudo:
 
 ```bash
-sudo systemd-sysusers "$PWD/ops/sysusers.d/swift-vapor.conf"
-sudo systemd-tmpfiles --create "$PWD/ops/tmpfiles.d/swift-vapor.conf"
-getent passwd swift-vapor swift-deploy
+sudo systemd-sysusers "$PWD/ops/sysusers.d/swift-vapor.conf" \
+  "$PWD/ops/sysusers.d/swift-vapor-backup.conf"
+sudo systemd-tmpfiles --create "$PWD/ops/tmpfiles.d/swift-vapor.conf" \
+  "$PWD/ops/tmpfiles.d/swift-vapor-backup.conf"
+getent passwd swift-vapor swift-deploy swift-backup
 ```
 
 Clone a clean deployment checkout owned only by `swift-deploy`. Do not reuse the

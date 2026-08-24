@@ -12,6 +12,7 @@ STATUS="$TMP/last-success"
 dd if=/dev/zero of="$BACKUP" bs=256 count=1 status=none
 chmod 600 "$BACKUP"
 date -u +%s > "$STATUS"
+chmod 0644 "$STATUS"
 
 "$ROOT/scripts/check-backup.sh" --directory "$TMP" --status-file "$STATUS" --max-age-hours 1 >/dev/null
 
@@ -21,6 +22,22 @@ if "$ROOT/scripts/check-backup.sh" --directory "$TMP" --status-file "$STATUS" --
     exit 1
 fi
 chmod 0600 "$BACKUP"
+
+chmod 0666 "$STATUS"
+if "$ROOT/scripts/check-backup.sh" --directory "$TMP" --status-file "$STATUS" --max-age-hours 1 >/dev/null 2>&1; then
+    echo "expected writable status mode to fail" >&2
+    exit 1
+fi
+chmod 0644 "$STATUS"
+
+touch --date='2 hours ago' "$BACKUP"
+date -u +%s > "$STATUS"
+chmod 0644 "$STATUS"
+if "$ROOT/scripts/check-backup.sh" --directory "$TMP" --status-file "$STATUS" --max-age-hours 1 >/dev/null 2>&1; then
+    echo "expected a stale encrypted artifact to fail" >&2
+    exit 1
+fi
+touch "$BACKUP"
 
 printf '%s\n' "$(( $(date -u +%s) - 7200 ))" > "$STATUS"
 if "$ROOT/scripts/check-backup.sh" --directory "$TMP" --status-file "$STATUS" --max-age-hours 1 >/dev/null 2>&1; then

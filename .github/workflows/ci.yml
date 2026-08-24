@@ -142,6 +142,7 @@ jobs:
             scripts/run-security-gates.sh
             scripts/update-cloudflare-ips.sh
             scripts/update-csp-hashes.sh
+            scripts/tests/backup.test.sh
             scripts/tests/check-backup.test.sh
             scripts/tests/csp-hashes.test.sh
             scripts/tests/production-boundaries.test.sh
@@ -153,6 +154,7 @@ jobs:
           sh -n worker/voidaccess-entrypoint.sh
           shellcheck "${scripts[@]}" worker/voidaccess-entrypoint.sh
           sudo visudo -cf ops/sudoers/swift-vapor-deploy
+          scripts/tests/backup.test.sh
           scripts/tests/check-backup.test.sh
           scripts/tests/csp-hashes.test.sh
           scripts/tests/production-boundaries.test.sh

@@ -3,6 +3,13 @@ import XCTest
 @testable import App
 
 final class BackupStatusTests: XCTestCase {
+    func testDefaultStatusPathUsesSeparatedBackupState() {
+        XCTAssertEqual(
+            BackupStatus.defaultPath,
+            "/var/lib/swift-vapor-backup/status/last-success"
+        )
+    }
+
     func testBackupStatusRejectsMissingMalformedAndFutureTimestamps() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("backup-status-\(UUID().uuidString)")

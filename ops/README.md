@@ -2,8 +2,9 @@
 
 Version-controlled copies of the production infra config for `swift.micutu.com`.
 These are desired, version-controlled production configs. The authoritative
-live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
-`/usr/local/sbin`; compare before installation and validate each subsystem.
+live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d`,
+`/usr/local/sbin` and `/usr/local/libexec`; compare before installation and
+validate each subsystem.
 
 ## nginx/
 - `swift.micutu.com` — the clearnet vhost. Highlights:
@@ -50,6 +51,10 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
   `/etc/swift-vapor/app.env` is non-secret configuration only.
 - `swift-vapor-migrate.service` — sandboxed oneshot migration gate against the
   candidate `/srv/swift-vapor/next` release.
+- `swift-vapor-backup.service` and `.timer` — the daily encrypted PostgreSQL
+  stream, isolated as `swift-backup` with database and recovery passphrases
+  mounted as separate encrypted credentials. The job has localhost-only network
+  access and no personal-home/container-socket visibility.
 - `swift-vapor.service.d/10-hardening.conf` — sandbox (read-only application
   tree with other home directories hidden, no capabilities/devices, private
   file defaults, one permitted listen port, restricted address families, and
@@ -67,10 +72,15 @@ live files remain under `/etc/nginx`, `/etc/systemd`, `/etc/sudoers.d` and
 - `sysusers.d/swift-vapor.conf` creates the non-login runtime account and the
   separate locked-password `swift-deploy` account used only by a restricted,
   forced SSH key.
+- `sysusers.d/swift-vapor-backup.conf` creates the fully locked backup account
+  and a metadata-only checker group. `swift-deploy` can enumerate and stat
+  private backup generations for its gate but cannot read them.
 - `tmpfiles.d/swift-vapor.conf` creates `/srv/swift-vapor` and its release
   directory for `swift-deploy`; release contents become read-only before their
   manifest is accepted. The deploy home and `.ssh` directory remain root-owned,
   so deployed code cannot add a less-restricted login key.
+- `tmpfiles.d/swift-vapor-backup.conf` separates private encrypted artifacts,
+  public freshness state and root-only restore evidence below `/var/lib`.
 - `sudoers/swift-vapor-deploy` replaces broad passwordless sudo with only the
   migration gate, app restart and the root-owned CSP updater. Validate with
   `visudo -cf` before installation and keep an independent root console open.

@@ -153,7 +153,8 @@ fi
 
 echo "[deploy] enforcing recent verified-backup gate"
 "$REPOSITORY/scripts/check-backup.sh" \
-    --status-file /var/lib/swift-vapor-backup/last-success \
+    --directory /var/lib/swift-vapor-backup/artifacts \
+    --status-file /var/lib/swift-vapor-backup/status/last-success \
     --max-age-hours 30
 
 echo "[deploy] building immutable release $REMOTE"
