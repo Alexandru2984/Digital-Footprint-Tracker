@@ -202,7 +202,13 @@ final class AppTests: XCTestCase {
         }
         unsetenv(name)
 
+        // Group-readable must still be accepted: systemd's LoadCredentialEncrypted=
+        // always delivers root:root 0440 (group bit inherent to that mechanism,
+        // access actually gated by a POSIX ACL). Only world access is unsafe.
         XCTAssertEqual(chmod(credential.path, 0o640), 0)
+        XCTAssertEqual(try RuntimeSecret.value(name), "file-backed-secret")
+
+        XCTAssertEqual(chmod(credential.path, 0o604), 0)
         XCTAssertThrowsError(try RuntimeSecret.value(name)) {
             XCTAssertEqual($0 as? RuntimeSecret.Error, .unsafeFile(name))
         }

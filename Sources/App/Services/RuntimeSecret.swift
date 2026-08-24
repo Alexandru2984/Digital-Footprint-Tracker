@@ -67,8 +67,12 @@ enum RuntimeSecret {
 
         var metadata = stat()
         guard fstat(descriptor, &metadata) == 0 else { throw Error.unreadable(name) }
+        // systemd's LoadCredentialEncrypted= always materializes credentials as
+        // root:root 0440 plus a POSIX ACL scoped to the executing unit's user —
+        // the on-disk group-read bit is inherent to that mechanism, not a leak;
+        // the ACL is what actually gates access. Reject only world access.
         guard metadata.st_mode & S_IFMT == S_IFREG,
-              metadata.st_mode & 0o077 == 0 else {
+              metadata.st_mode & 0o007 == 0 else {
             throw Error.unsafeFile(name)
         }
         guard metadata.st_size <= maximumBytes else { throw Error.tooLarge(name) }
