@@ -84,10 +84,10 @@ validate each subsystem.
 - `sudoers/swift-vapor-deploy` replaces broad passwordless sudo with only the
   migration gate, app restart and the root-owned CSP updater. Validate with
   `visudo -cf` before installation and keep an independent root console open.
-- Install `scripts/deploy.sh`, `scripts/build-release.sh` and
-  `scripts/release-lib.sh` together under root-owned
-  `/usr/local/libexec/swift-vapor/`. The forced SSH command must target that
-  installed copy, never a deploy-writable checkout script.
+- Install `scripts/deploy.sh`, `scripts/build-release.sh`,
+  `scripts/production-preflight.sh` and `scripts/release-lib.sh` together under
+  root-owned `/usr/local/libexec/swift-vapor/`. The forced SSH command must
+  target that installed copy, never a deploy-writable checkout script.
 - `libexec/update-swift-csp` accepts only validated SHA-256 tokens and owns the
   fixed policy (including the dynamic nonce), fixed-path atomic nginx update,
   syntax check, reload and rollback.

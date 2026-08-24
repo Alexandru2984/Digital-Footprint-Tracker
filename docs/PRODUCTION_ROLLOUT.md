@@ -118,6 +118,7 @@ sudo install -d -o root -g root -m 0755 /usr/local/libexec/swift-vapor
 sudo install -o root -g root -m 0755 \
   "$deploy_repo/scripts/deploy.sh" \
   "$deploy_repo/scripts/build-release.sh" \
+  "$deploy_repo/scripts/production-preflight.sh" \
   "$deploy_repo/scripts/release-lib.sh" \
   /usr/local/libexec/swift-vapor/
 sudoedit /var/lib/swift-deploy/.ssh/authorized_keys
@@ -180,6 +181,16 @@ sha256sum "/srv/swift-vapor/releases/$commit/frontend/index.html"
 Compare the two frontend hashes, test login/scan/report/share revocation from a
 real browser, verify Prometheus scraping and watch logs/error rates for at least
 one normal traffic cycle. Only then enable the CI deploy path.
+
+Run the full root acceptance gate after cutover. It must report zero failures;
+unlike `--deployment-gate`, full mode also proves credential/source modes,
+root-owned SSH/orchestrator files, sudoers syntax, nginx syntax and Docker-socket
+inaccessibility. It prints labels only, never secret or environment values:
+
+```bash
+sudo /usr/local/libexec/swift-vapor/production-preflight.sh \
+  --repository /var/lib/swift-deploy/repository
+```
 
 For the clearnet response, fetch two uncached HTML responses and confirm that
 the CSP `nonce-...` values differ. Cloudflare JavaScript Detections must remain

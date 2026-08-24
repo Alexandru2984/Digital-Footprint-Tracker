@@ -19,6 +19,7 @@ STATIC_URL=http://127.0.0.1:8110/index.html
 ONION_HOST=5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_RELEASE="$SCRIPT_DIR/build-release.sh"
+PREFLIGHT="$SCRIPT_DIR/production-preflight.sh"
 # shellcheck source=scripts/release-lib.sh
 source "$SCRIPT_DIR/release-lib.sh"
 
@@ -103,6 +104,10 @@ chmod 0755 "$RELEASE_ROOT"
 exec 9>"$LOCK_FILE"
 chmod 0600 "$LOCK_FILE"
 flock -n 9 || { echo "[deploy] another deployment is running" >&2; exit 1; }
+
+[[ -x "$PREFLIGHT" ]] || { echo "[deploy] root-installed preflight is missing" >&2; exit 1; }
+echo "[deploy] enforcing production acceptance preflight"
+"$PREFLIGHT" --deployment-gate --repository "$REPOSITORY"
 
 if [[ -n "$(git -C "$REPOSITORY" status --porcelain)" ]]; then
     echo "[deploy] repository has local changes; refusing to overwrite operator work" >&2
