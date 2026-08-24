@@ -109,7 +109,7 @@ flock -n 9 || { echo "[deploy] another deployment is running" >&2; exit 1; }
 echo "[deploy] enforcing production acceptance preflight"
 "$PREFLIGHT" --deployment-gate --repository "$REPOSITORY"
 
-if [[ -n "$(git -C "$REPOSITORY" status --porcelain)" ]]; then
+if [[ -n "$(git --no-optional-locks -C "$REPOSITORY" status --porcelain)" ]]; then
     echo "[deploy] repository has local changes; refusing to overwrite operator work" >&2
     exit 1
 fi

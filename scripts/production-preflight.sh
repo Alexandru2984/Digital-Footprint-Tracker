@@ -111,7 +111,11 @@ repository_is_acceptable() {
     specific_absolute_path "$REPOSITORY" || return 1
     [[ -d "$REPOSITORY/.git" && ! -L "$REPOSITORY" ]] || return 1
     [[ "$(stat -c '%U' "$REPOSITORY")" == swift-deploy ]] || return 1
-    [[ -z "$(git -c safe.directory="$REPOSITORY" -C "$REPOSITORY" status --porcelain)" ]] || return 1
+    # --no-optional-locks: a plain `git status` refreshes the index's stat
+    # cache as a side effect, which this repository's owning swift-deploy
+    # account can't undo when an operator runs this check as root (as the
+    # documented full acceptance gate does). Skip that write entirely.
+    [[ -z "$(git -c safe.directory="$REPOSITORY" --no-optional-locks -C "$REPOSITORY" status --porcelain)" ]] || return 1
     [[ "$(git -c safe.directory="$REPOSITORY" -C "$REPOSITORY" branch --show-current)" == main ]] || return 1
     origin="$(git -c safe.directory="$REPOSITORY" -C "$REPOSITORY" remote get-url origin)" || return 1
     [[ "$origin" =~ ^https://github\.com/Alexandru2984/Digital-Footprint-Tracker(\.git)?$ ]] || return 1
