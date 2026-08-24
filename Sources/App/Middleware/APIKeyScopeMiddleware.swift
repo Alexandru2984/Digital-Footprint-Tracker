@@ -50,7 +50,7 @@ struct APIKeyScopeMiddleware: AsyncMiddleware {
         if first == "results" || first == "stream" || first == "my-scans" {
             return .require(.scansRead)
         }
-        if ["stats", "export", "report", "identity", "correlations"].contains(first) {
+        if ["stats", "export", "export-jobs", "report", "identity", "correlations"].contains(first) {
             return .require(.scansRead)
         }
         if first == "scans" {

@@ -153,6 +153,28 @@ struct AccountController: RouteCollection {
             return row
         }
 
+        // Job metadata is personal activity history. Artifacts/manifests are
+        // excluded because they duplicate scan findings already present in this
+        // bundle and can be downloaded separately until their expiry.
+        let exportJobs = try await ExportJob.query(on: req.db)
+            .filter(\.$user.$id == userID)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let exportJobsPayload: [[String: Any]] = exportJobs.map { job in [
+            "id": job.id?.uuidString ?? "",
+            "scanID": job.$scan.id.uuidString,
+            "format": job.formatRaw,
+            "status": job.statusRaw,
+            "progressCompleted": job.progressCompleted,
+            "progressTotal": job.progressTotal,
+            "failureCode": job.failureCode as Any,
+            "cancelRequested": job.cancelRequested,
+            "attemptCount": job.attemptCount,
+            "createdAt": job.createdAt.map { $0.timeIntervalSince1970 } as Any,
+            "completedAt": job.completedAt.map { $0.timeIntervalSince1970 } as Any,
+            "expiresAt": job.expiresAt.timeIntervalSince1970,
+        ] }
+
         let boards = try await Investigation.query(on: req.db)
             .filter(\.$user.$id == userID)
             .sort(\.$createdAt, .descending)
@@ -225,13 +247,14 @@ struct AccountController: RouteCollection {
 
         let bundle: [String: Any] = [
             "exportedAt":    Date().timeIntervalSince1970,
-            "formatVersion": 3,
+            "formatVersion": 4,
             "profile":       profile,
             "scans":         scansPayload,
             "scheduled":     scheduledPayload,
             "tags":          tagsPayload,
             "notifications": notificationsPayload,
             "notificationOutbox": outboxPayload,
+            "exportJobs": exportJobsPayload,
             "investigationBoards": boardsPayload,
             "darkWebInvestigations": darkWebPayload,
             "apiKeys":       apiKeysPayload,
@@ -286,7 +309,7 @@ struct AccountController: RouteCollection {
         try await req.db.transaction { database in
             // FK cascade summary:
             //   scheduled_scans, notifications, notification outbox/jobs,
-            //   tags, API keys,
+            //   export jobs, tags, API keys,
             //   investigations, dark_web_investigations         → CASCADE
             //   scans.user_id                                    → SET NULL
             // For erasure we delete scans before the user, otherwise their

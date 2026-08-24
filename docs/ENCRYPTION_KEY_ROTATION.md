@@ -79,8 +79,9 @@ Assume the old ID is `epoch-a` and the new ID is `epoch-b`:
    backups.
 
 The command also rewraps encrypted notification-outbox payloads before their
-delivery rows are retried; unreadable payloads therefore fail verification
-instead of being sent or silently skipped. It rewrites scan and dark-web blind indexes. Plugin-cache target hashes
+delivery rows are retried and independently rewraps asynchronous export
+artifacts/manifests; unreadable data therefore fails verification instead of
+being sent, downloaded, or silently skipped. It rewrites scan and dark-web blind indexes. Plugin-cache target hashes
 cannot be reconstructed without their original input, so the disposable cache
 is purged in bounded batches and repopulates under the active index key.
 

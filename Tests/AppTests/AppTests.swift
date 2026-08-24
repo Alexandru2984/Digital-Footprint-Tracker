@@ -95,6 +95,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
     app.migrations.add(CreateNotificationOutbox())
+    app.migrations.add(CreateExportJobs())
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(CreateAuditLogs())
@@ -157,6 +158,14 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    func testMaintenanceCommandsNeverStartApplicationWorkers() {
+        XCTAssertFalse(LifecyclePolicy.shouldStartWorkers(arguments: ["Run", "migrate", "--yes"]))
+        XCTAssertFalse(LifecyclePolicy.shouldStartWorkers(
+            arguments: ["Run", "crypto-rewrap", "--confirm-key-id", "primary"]
+        ))
+        XCTAssertTrue(LifecyclePolicy.shouldStartWorkers(arguments: ["Run", "serve"]))
+    }
 
     func testNotificationDeliveryOutcomesAndMetricsDoNotClaimFalseSuccess() async throws {
         let app = try await Application.make(.testing)
@@ -561,6 +570,323 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(configuration.pollSeconds, 3)
         XCTAssertEqual(configuration.leaseSeconds, 90)
         XCTAssertEqual(configuration.retentionDays, 45)
+    }
+
+    func testAsyncExportJobBuildsEncryptedArtifactAndManifest() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(
+            key: String(repeating: "a7", count: 32),
+            keyID: "export-test",
+            writeVersion: "1"
+        )
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "async-export-owner")
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "async-export-owner")
+            .first()
+        let user = try XCTUnwrap(storedUser)
+        let userID = try XCTUnwrap(user.id)
+        let scan = Scan(input: "owner@example.test", status: .completed, userID: userID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        try await Result(
+            scanID: scanID,
+            source: "ExportFixture",
+            type: "account",
+            confidenceScore: 0.9,
+            rawData: "sensitive-export-value",
+            metadata: #"{"platform":"fixture"}"#
+        ).save(on: app.db)
+
+        var jobID: UUID?
+        try await app.test(.POST, "/export-jobs", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try request.content.encode(
+                ExportJobController.CreateBody(scanID: scanID, format: .json),
+                as: .json
+            )
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .accepted)
+            let job = try response.content.decode(ExportJobDTO.self)
+            jobID = job.id
+            XCTAssertEqual(job.status, ExportJobStatus.pending.rawValue)
+            XCTAssertNil(job.downloadURL)
+        })
+        let id = try XCTUnwrap(jobID)
+
+        let processed = try await ExportJobWorker.processNext(
+            app: app,
+            workerID: "export-worker-test"
+        )
+        XCTAssertEqual(processed, id)
+        let storedJob = try await ExportJob.find(id, on: app.db)
+        let job = try XCTUnwrap(storedJob)
+        XCTAssertEqual(job.status, .completed)
+        XCTAssertTrue(job.artifactCipher?.hasPrefix("enc:v1:") == true)
+        XCTAssertTrue(job.manifestCipher?.hasPrefix("enc:v1:") == true)
+        XCTAssertFalse(job.artifactCipher?.contains("sensitive-export-value") == true)
+
+        var artifactHash = ""
+        try await app.test(.GET, "/export-jobs/\(id)/manifest", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let manifest = try response.content.decode(ExportJobManifest.self)
+            XCTAssertEqual(manifest.jobID, id)
+            XCTAssertEqual(manifest.scanID, scanID)
+            XCTAssertEqual(manifest.resultCount, 1)
+            XCTAssertTrue(manifest.complete)
+            XCTAssertEqual(manifest.artifactSHA256.count, 64)
+            artifactHash = manifest.artifactSHA256
+        })
+
+        try await app.test(.GET, "/export-jobs/\(id)/download", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertEqual(response.headers.first(name: "X-Content-SHA256"), artifactHash)
+            XCTAssertTrue(response.headers.first(name: "content-disposition")?.contains("attachment") == true)
+            let document = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(response.body.readableBytesView))
+                    as? [String: Any]
+            )
+            let results = try XCTUnwrap(document["results"] as? [[String: Any]])
+            XCTAssertEqual(results.first?["rawData"] as? String, "sensitive-export-value")
+            let provenance = try XCTUnwrap(document["provenance"] as? [String: Any])
+            XCTAssertEqual(provenance["resultCount"] as? Int, 1)
+        })
+    }
+
+    func testAsyncExportEndpointsAreOwnerScopedAndPendingCancellationIsTerminal() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let ownerCookie = try await registerAndLogin(app, username: "export-owner")
+        let otherCookie = try await registerAndLogin(app, username: "export-other")
+        let storedOwner = try await User.query(on: app.db)
+            .filter(\.$username == "export-owner")
+            .first()
+        let owner = try XCTUnwrap(storedOwner)
+        let ownerID = try XCTUnwrap(owner.id)
+        let scan = Scan(input: "owner-only", status: .completed, userID: ownerID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        try await app.test(.POST, "/export-jobs", beforeRequest: { request in
+            try request.content.encode(
+                ExportJobController.CreateBody(scanID: scanID, format: .json),
+                as: .json
+            )
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .unauthorized)
+        })
+        try await app.test(.POST, "/export-jobs", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: otherCookie)
+            try request.content.encode(
+                ExportJobController.CreateBody(scanID: scanID, format: .json),
+                as: .json
+            )
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .notFound)
+        })
+
+        var jobID: UUID?
+        try await app.test(.POST, "/export-jobs", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: ownerCookie)
+            try request.content.encode(
+                ExportJobController.CreateBody(scanID: scanID, format: .graphml),
+                as: .json
+            )
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .accepted)
+            jobID = try response.content.decode(ExportJobDTO.self).id
+        })
+        let id = try XCTUnwrap(jobID)
+
+        for suffix in ["", "/manifest", "/download"] {
+            try await app.test(.GET, "/export-jobs/\(id)\(suffix)", beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: otherCookie)
+            }, afterResponse: { response in
+                XCTAssertEqual(response.status, .notFound)
+            })
+        }
+        try await app.test(.POST, "/export-jobs/\(id)/cancel", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: otherCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .notFound)
+        })
+        try await app.test(.POST, "/export-jobs/\(id)/cancel", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: ownerCookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .accepted)
+        })
+        let cancelledJob = try await ExportJob.find(id, on: app.db)
+        XCTAssertEqual(cancelledJob?.status, .cancelled)
+        XCTAssertTrue(cancelledJob?.cancelRequested == true)
+        let processed = try await ExportJobWorker.processNext(
+            app: app,
+            workerID: "must-not-claim-cancelled"
+        )
+        XCTAssertNil(processed)
+    }
+
+    func testExportLeaseRecoveryRejectsStaleWorkerCompletion() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let user = User(
+            username: "export-lease",
+            email: "export-lease@example.test",
+            passwordHash: "unused"
+        )
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+        let scan = Scan(input: "lease-target", status: .completed, userID: userID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let job = ExportJob(
+            userID: userID,
+            scanID: scanID,
+            format: .json,
+            maxAttempts: 2,
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        try await job.save(on: app.db)
+        let jobID = try XCTUnwrap(job.id)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let first = try await ExportJobWorker.claimNext(
+            on: app.db,
+            workerID: "worker-a",
+            now: now,
+            leaseSeconds: 60
+        )
+        XCTAssertEqual(first?.id, jobID)
+        let recovered = try await ExportJobWorker.claimNext(
+            on: app.db,
+            workerID: "worker-b",
+            now: now.addingTimeInterval(61),
+            leaseSeconds: 60
+        )
+        XCTAssertEqual(recovered?.id, jobID)
+
+        let staleFinished = try await ExportJobWorker.finishSuccess(
+            jobID: jobID,
+            workerID: "worker-a",
+            artifactCipher: "stale-artifact",
+            manifestCipher: "stale-manifest",
+            resultCount: 0,
+            retentionHours: 24,
+            on: app.db
+        )
+        XCTAssertFalse(staleFinished)
+        let currentFinished = try await ExportJobWorker.finishSuccess(
+            jobID: jobID,
+            workerID: "worker-b",
+            artifactCipher: "current-artifact",
+            manifestCipher: "current-manifest",
+            resultCount: 0,
+            retentionHours: 24,
+            on: app.db
+        )
+        XCTAssertTrue(currentFinished)
+        let finalJob = try await ExportJob.find(jobID, on: app.db)
+        XCTAssertEqual(finalJob?.status, .completed)
+        XCTAssertEqual(finalJob?.attemptCount, 2)
+        XCTAssertEqual(finalJob?.artifactCipher, "current-artifact")
+    }
+
+    func testAsyncExportSourceLimitFailsWithBoundedCode() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        app.exportJobConfiguration = ExportJobConfiguration(
+            enabled: false,
+            pollSeconds: 2,
+            leaseSeconds: 120,
+            retentionHours: 24,
+            maxOutstandingPerUser: 3,
+            maxJobsPerUserPerDay: 20,
+            maxResults: 10,
+            batchSize: 25,
+            maxSourceBytes: 64,
+            maxArtifactBytes: 1_024,
+            maxAttempts: 2
+        )
+        let user = User(
+            username: "export-limit",
+            email: "export-limit@example.test",
+            passwordHash: "unused"
+        )
+        try await user.save(on: app.db)
+        let userID = try XCTUnwrap(user.id)
+        let scan = Scan(input: "limit-target", status: .completed, userID: userID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        try await Result(
+            scanID: scanID,
+            source: "fixture",
+            type: "large",
+            confidenceScore: 0.5,
+            rawData: String(repeating: "x", count: 128)
+        ).save(on: app.db)
+        let job = ExportJob(
+            userID: userID,
+            scanID: scanID,
+            format: .json,
+            maxAttempts: 2,
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        try await job.save(on: app.db)
+        let jobID = try XCTUnwrap(job.id)
+
+        let processed = try await ExportJobWorker.processNext(
+            app: app,
+            workerID: "limit-worker"
+        )
+        XCTAssertEqual(processed, jobID)
+        let failed = try await ExportJob.find(jobID, on: app.db)
+        XCTAssertEqual(failed?.status, .failed)
+        XCTAssertEqual(failed?.failureCode, "source_too_large")
+        XCTAssertNil(failed?.artifactCipher)
+    }
+
+    func testExportJobConfigurationRejectsInvalidPresentValues() throws {
+        let names = [
+            "EXPORT_WORKER_ENABLED", "EXPORT_POLL_SECONDS", "EXPORT_LEASE_SECONDS",
+            "EXPORT_RETENTION_HOURS", "EXPORT_MAX_OUTSTANDING_PER_USER",
+            "EXPORT_MAX_JOBS_PER_USER_PER_DAY", "EXPORT_MAX_RESULTS",
+            "EXPORT_BATCH_SIZE", "EXPORT_MAX_SOURCE_MIB", "EXPORT_MAX_ARTIFACT_MIB",
+            "EXPORT_MAX_ATTEMPTS",
+        ]
+        let environment = EnvironmentSnapshot(names)
+        defer { environment.restore() }
+        setenv("EXPORT_MAX_RESULTS", "0", 1)
+        XCTAssertThrowsError(try ExportJobConfiguration.fromEnvironment())
+
+        setenv("EXPORT_WORKER_ENABLED", "false", 1)
+        setenv("EXPORT_POLL_SECONDS", "3", 1)
+        setenv("EXPORT_LEASE_SECONDS", "180", 1)
+        setenv("EXPORT_RETENTION_HOURS", "48", 1)
+        setenv("EXPORT_MAX_OUTSTANDING_PER_USER", "4", 1)
+        setenv("EXPORT_MAX_JOBS_PER_USER_PER_DAY", "30", 1)
+        setenv("EXPORT_MAX_RESULTS", "12000", 1)
+        setenv("EXPORT_BATCH_SIZE", "300", 1)
+        setenv("EXPORT_MAX_SOURCE_MIB", "8", 1)
+        setenv("EXPORT_MAX_ARTIFACT_MIB", "16", 1)
+        setenv("EXPORT_MAX_ATTEMPTS", "3", 1)
+        let configuration = try ExportJobConfiguration.fromEnvironment()
+        XCTAssertFalse(configuration.enabled)
+        XCTAssertEqual(configuration.leaseSeconds, 180)
+        XCTAssertEqual(configuration.maxResults, 12_000)
+        XCTAssertEqual(configuration.batchSize, 300)
+        XCTAssertEqual(configuration.maxSourceBytes, 8 * 1_024 * 1_024)
+        XCTAssertEqual(configuration.maxArtifactBytes, 16 * 1_024 * 1_024)
+        XCTAssertEqual(configuration.maxAttempts, 3)
     }
 
     func testPublicLivenessIsDatabaseIndependentAndLocalReadinessChecksSQL() async throws {
@@ -1000,6 +1326,26 @@ final class AppTests: XCTestCase {
         )
         XCTAssertTrue(timedOut.timedOut)
         XCTAssertFalse(timedOut.succeeded)
+
+        let cancellationStarted = Date()
+        let cancellable = Task {
+            try await BoundedProcess.run(
+                executable: sleep,
+                arguments: ["10"],
+                environment: ["PATH": "/usr/bin:/bin"],
+                timeout: 20,
+                maxOutputBytes: 64
+            )
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        cancellable.cancel()
+        let cancelled = try await cancellable.value
+        XCTAssertFalse(cancelled.succeeded)
+        XCTAssertLessThan(
+            Date().timeIntervalSince(cancellationStarted),
+            2,
+            "Task cancellation must terminate the child instead of waiting for its deadline."
+        )
     }
 
     func testRateLimiterKeyStoresFailClosedAtCapacity() async throws {
@@ -1245,6 +1591,17 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(Set(key.scopes), ["scans:read", "scans:write"])
         XCTAssertNotNil(key.expiresAt)
 
+        var writeOnlyKey: APIKey.Created?
+        try await app.test(.POST, "/auth/api-keys", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(CreateKeyBody(
+                label: "writer", scopes: ["scans:write"], expiresInDays: 30
+            ), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            writeOnlyKey = try res.content.decode(APIKey.Created.self)
+        })
+
         // Data-plane operation is allowed by scope.
         try await app.test(.POST, "/scan", beforeRequest: { req in
             req.headers.bearerAuthorization = .init(token: key.token)
@@ -1253,6 +1610,15 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(res.status, .ok)
             XCTAssertNil(res.headers.first(name: "Set-Cookie"), "Bearer auth must remain stateless.")
         })
+
+        // Export automation is read-plane only and remains scope constrained.
+        try await app.test(.GET, "/export-jobs", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: key.token)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+        let writer = try XCTUnwrap(writeOnlyKey)
+        try await app.test(.GET, "/export-jobs", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: writer.token)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
 
         // Control-plane and unrelated data-plane operations are deny-by-default.
         try await app.test(.GET, "/auth/api-keys", beforeRequest: { req in
@@ -1814,6 +2180,37 @@ final class AppTests: XCTestCase {
             ),
             idempotencyKeyHash: sha256Hex("rewrap-outbox-event")
         ).save(on: app.db)
+        let exportJob = ExportJob(
+            userID: userID,
+            scanID: firstScanID,
+            format: .json,
+            maxAttempts: 2,
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        let exportJobID = try XCTUnwrap(exportJob.id)
+        exportJob.statusRaw = ExportJobStatus.completed.rawValue
+        exportJob.completedAt = Date()
+        try exportJob.setArtifact(
+            Data("sensitive export artifact".utf8),
+            manifest: ExportJobManifest(
+                schemaVersion: 1,
+                jobID: exportJobID,
+                scanID: firstScanID,
+                format: .json,
+                sourceStatus: ScanStatus.completed.rawValue,
+                sourceCreatedAt: Date(),
+                sourceCompletedAt: Date(),
+                generatedAt: Date(),
+                resultCount: 1,
+                resultSetSHA256: String(repeating: "1", count: 64),
+                artifactSHA256: String(repeating: "2", count: 64),
+                artifactBytes: 25,
+                contentType: "application/json",
+                filename: "export.json",
+                complete: true
+            )
+        )
+        try await exportJob.save(on: app.db)
         try await Tag(userID: userID, name: "Sensitive tag", colour: "#123456")
             .save(on: app.db)
         try await AuditLog(
@@ -1874,6 +2271,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(completed.rewrittenRows["audit_logs"], 1)
         XCTAssertEqual(completed.rewrittenRows["dark_web_investigations"], 1)
         XCTAssertEqual(completed.rewrittenRows["notification_outbox"], 1)
+        XCTAssertEqual(completed.rewrittenRows["export_jobs"], 1)
         XCTAssertEqual(completed.rewrittenRows["plugin_cache"], 1)
         let remainingCacheRows = try await PluginCacheEntry.query(on: app.db).count()
         XCTAssertEqual(remainingCacheRows, 0)
@@ -1893,6 +2291,7 @@ final class AppTests: XCTestCase {
         let auditRow = try await AuditLog.query(on: app.db).first()
         let darkWebRow = try await DarkWebInvestigation.query(on: app.db).first()
         let outboxRow = try await NotificationOutboxEvent.query(on: app.db).first()
+        let exportJobRow = try await ExportJob.query(on: app.db).first()
         let storedResult = try XCTUnwrap(resultRow)
         let storedInvestigation = try XCTUnwrap(investigationRow)
         let storedUser = try XCTUnwrap(userRow)
@@ -1902,6 +2301,7 @@ final class AppTests: XCTestCase {
         let storedAudit = try XCTUnwrap(auditRow)
         let storedDarkWeb = try XCTUnwrap(darkWebRow)
         let storedOutbox = try XCTUnwrap(outboxRow)
+        let storedExportJob = try XCTUnwrap(exportJobRow)
 
         XCTAssertTrue(storedResult.rawDataCipher.hasPrefix("enc:v2:epoch-b:"))
         XCTAssertTrue(storedResult.metadataCipher?.hasPrefix("enc:v2:epoch-b:") == true)
@@ -1918,6 +2318,12 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(storedDarkWeb.resultCipher?.hasPrefix("enc:v2:epoch-b:") == true)
         XCTAssertTrue(storedOutbox.payloadCipher.hasPrefix("enc:v2:epoch-b:"))
         XCTAssertEqual(try storedOutbox.payload.message, "Sensitive outbox payload")
+        XCTAssertTrue(storedExportJob.artifactCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertTrue(storedExportJob.manifestCipher?.hasPrefix("enc:v2:epoch-b:") == true)
+        XCTAssertEqual(
+            String(decoding: try XCTUnwrap(storedExportJob.artifactData), as: UTF8.self),
+            "sensitive export artifact"
+        )
 
         // Verification covers deterministic indexes as well as ciphertext;
         // an old-key hash would make a valid row undiscoverable after removal.
@@ -1946,6 +2352,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(try storedResult.rawData, "sensitive result")
         XCTAssertEqual(try storedUser.totpSecret, "JBSWY3DPEHPK3PXP")
         XCTAssertEqual(try storedDarkWeb.target, "person@example.test")
+        XCTAssertEqual(try storedExportJob.manifest?.jobID, exportJobID)
         let verified = try await SensitiveFieldRewrapper.verifyOnly(
             on: app.db,
             confirmedKeyID: "epoch-b",
@@ -4142,6 +4549,22 @@ final class AppTests: XCTestCase {
         job.completedAt = Date()
         try await job.save(on: app.db)
 
+        let scan = Scan(input: "export-metadata", status: .completed, userID: userID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let exportJob = ExportJob(
+            userID: userID,
+            scanID: scanID,
+            format: .graphml,
+            maxAttempts: 2,
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        exportJob.statusRaw = ExportJobStatus.cancelled.rawValue
+        exportJob.cancelRequested = true
+        exportJob.completedAt = Date()
+        try await exportJob.save(on: app.db)
+
         try await app.test(.GET, "/account/export", beforeRequest: { request in
             request.headers.replaceOrAdd(name: .cookie, value: cookie)
         }, afterResponse: { response in
@@ -4150,12 +4573,17 @@ final class AppTests: XCTestCase {
                 JSONSerialization.jsonObject(with: Data(response.body.readableBytesView))
                     as? [String: Any]
             )
-            XCTAssertEqual(root["formatVersion"] as? Int, 3)
+            XCTAssertEqual(root["formatVersion"] as? Int, 4)
             let notificationOutbox = try XCTUnwrap(
                 root["notificationOutbox"] as? [[String: Any]]
             )
             XCTAssertEqual(notificationOutbox.count, 1)
             XCTAssertEqual(notificationOutbox.first?["title"] as? String, "Verify your email")
+            let exportJobs = try XCTUnwrap(root["exportJobs"] as? [[String: Any]])
+            XCTAssertEqual(exportJobs.count, 1)
+            XCTAssertEqual(exportJobs.first?["scanID"] as? String, scanID.uuidString)
+            XCTAssertEqual(exportJobs.first?["format"] as? String, "graphml")
+            XCTAssertNil(exportJobs.first?["artifact"])
             let boards = try XCTUnwrap(root["investigationBoards"] as? [[String: Any]])
             XCTAssertEqual(boards.count, 1)
             XCTAssertEqual(boards[0]["name"] as? String, "Exposure case")

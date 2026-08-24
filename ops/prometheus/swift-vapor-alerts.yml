@@ -62,3 +62,30 @@ groups:
         annotations:
           summary: Swift Vapor notification queue is delayed
           description: The oldest pending automatic notification has waited longer than five minutes.
+
+      - alert: SwiftVaporExportQueueDelayed
+        expr: swift_vapor_export_oldest_pending_age_seconds > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor export queue is delayed
+          description: The oldest pending asynchronous export has waited longer than five minutes.
+
+      - alert: SwiftVaporExportLeaseExpired
+        expr: swift_vapor_export_expired_leases > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor export leases are not being recovered
+          description: One or more export leases remained expired, indicating that the bounded worker is stopped or unhealthy.
+
+      - alert: SwiftVaporExportFailures
+        expr: increase(swift_vapor_export_jobs_total{status="failed"}[15m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor exports are repeatedly failing
+          description: More than two asynchronous exports failed in fifteen minutes; inspect bounded failure codes and worker health.

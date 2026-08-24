@@ -19,6 +19,7 @@ actor MetricsRegistry {
     /// `attempted` and its terminal `succeeded`/`failed` outcome.
     private(set) var notificationDeliveries: [NotificationChannel: [String: UInt64]] = [:]
     private(set) var notificationJobTransitions: [String: UInt64] = [:]
+    private(set) var exportJobs: [String: UInt64] = [:]
     private(set) var darkWebJobs: [String: UInt64] = [:]
     private(set) var sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]] = [:]
 
@@ -38,6 +39,9 @@ actor MetricsRegistry {
     func incNotificationJobTransition(status: String) {
         notificationJobTransitions[status, default: 0] &+= 1
     }
+    func incExportJob(status: String) {
+        exportJobs[status, default: 0] &+= 1
+    }
     func recordSensitiveFieldFailure(
         field: FieldCrypto.StoredField,
         reason: FieldCrypto.DecryptionReason
@@ -52,6 +56,7 @@ actor MetricsRegistry {
         let pluginCacheMisses: UInt64
         let notificationDeliveries: [NotificationChannel: [String: UInt64]]
         let notificationJobTransitions: [String: UInt64]
+        let exportJobs: [String: UInt64]
         let darkWebJobs: [String: UInt64]
         let sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]]
     }
@@ -62,6 +67,7 @@ actor MetricsRegistry {
             pluginCacheMisses: pluginCacheMisses,
             notificationDeliveries: notificationDeliveries,
             notificationJobTransitions: notificationJobTransitions,
+            exportJobs: exportJobs,
             darkWebJobs: darkWebJobs,
             sensitiveFieldFailures: sensitiveFieldFailures
         )

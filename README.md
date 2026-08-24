@@ -40,8 +40,11 @@ graph.
   that list which sources surfaced new findings. Automatic delivery uses an
   encrypted PostgreSQL outbox, cross-process leases, bounded retry and an
   operator-visible dead-letter queue.
+- **Bounded asynchronous exports** — owner-scoped JSON, GraphML, Markdown, HTML
+  and PDF jobs use paged reads, encrypted artifacts/manifests, cross-process
+  leases, hard quotas, integrity-checked downloads, cancellation and expiry.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite; 191 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 197 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---
@@ -77,10 +80,10 @@ nginx (rate limiting, CSP, HSTS, XSS headers)
   ▼
 Vapor 4
   ├── Middleware: Sessions, APIKey, CSRF, CORS, NoCache
-  ├── Controllers (16)
+  ├── Controllers
   │     ScanController, StatsController, AuthController, UserController,
   │     AdminController, APIKeyController, BulkScanController,
-  │     CorrelationController, DiffController, ExportController,
+  │     CorrelationController, DiffController, ExportController, ExportJobController,
   │     HealthController, NotificationController, ReportController,
   │     ScheduledScanController, ShareController, TagController
   └── Plugin Pipeline — parallel TaskGroup, 120s timeout
@@ -102,6 +105,7 @@ PostgreSQL
   ├── scan_notifications
   ├── notification_outbox_events (encrypted, idempotent producer event)
   ├── notification_delivery_jobs (per-channel lease/retry/DLQ state)
+  ├── export_jobs     (encrypted artifact + manifest, lease/progress/expiry)
   ├── api_keys        (SHA-256 hashed token)
   ├── shared_reports  (hashed token, expires_at)
   └── audit_logs
@@ -153,6 +157,13 @@ PostgreSQL
 - Generate a public link to any scan; token is **stored hashed**, expires after a configurable window
 - PDF generation server-side via `scripts/generate_report.py`
 
+### Asynchronous Exports
+- Owner-scoped JSON, GraphML, Markdown, HTML and PDF jobs with recent-auth or
+  `scans:read` API-key authorization
+- Stable UUID pagination, result/source/artifact ceilings and atomic per-user quotas
+- Encrypted artifact + completeness manifest with result-set/artifact SHA-256
+- Cross-process lease recovery, cooperative subprocess cancellation and 24-hour expiry
+
 ### Real-time Streaming
 - **Durable Server-Sent Events** — each result has a persistent, per-scan monotonic ID
 - Native `Last-Event-ID` resume, duplicate-safe rendering and bounded 100-row replay pages
@@ -185,8 +196,8 @@ PostgreSQL
 - Disabling 2FA requires the password and a fresh TOTP/recovery code, consumes
   the factor once, and rotates the authenticated session.
 - Versioned AES-256-GCM envelopes for scan targets/results, investigation
-  boards, notification credentials, scheduler targets, notifications, audit
-  details, and plugin-cache payloads. V2 derives separate encryption and blind-
+  boards, notification credentials, scheduler targets, notifications, export
+  artifacts/manifests, audit details, and plugin-cache payloads. V2 derives separate encryption and blind-
   index keys with HKDF-SHA256, embeds a key ID, and authenticates the storage
   field plus row UUID as AAD. Readers accept v1 and v2 during staged rotation;
   production refuses to boot without a valid keyring and verifies a persistent
@@ -222,10 +233,15 @@ page (cookie auth is persisted across reloads).
 - `GET /api/admin/scans` — last 100 scans across all users (admin only)
 - `GET /api/admin/notification-deliveries` — bounded delivery/DLQ metadata (recent-auth admin only)
 - `POST /api/admin/notification-deliveries/:id/retry` — audited DLQ replay
+- `POST /api/export-jobs` — queue a bounded owner-scoped export
+- `GET /api/export-jobs/:id` — progress and bounded failure status
+- `GET /api/export-jobs/:id/manifest` — completeness and integrity manifest
+- `GET /api/export-jobs/:id/download` — authenticated, expiring attachment
+- `POST /api/export-jobs/:id/cancel` — cancellation with publish-safe CAS
 
 ### Other route groups
 `/api/auth/api-keys`, `/api/scheduled-scans`, `/api/scan/bulk`, `/api/share`, `/api/diff`,
-`/api/correlate`, `/api/tags`, `/api/notifications`, `/api/export`, `/api/report/:id`, `/api/health`
+`/api/correlate`, `/api/tags`, `/api/notifications`, `/api/export`, `/api/export-jobs`, `/api/report/:id`, `/api/health`
 
 Bulk scans, recurring scans, heavy plugins, and watched-board monitoring require
 a verified account. Bulk requests accept at most 10 unique targets and are capped
@@ -306,10 +322,24 @@ NOTIFICATION_MAX_ATTEMPTS=5
 NOTIFICATION_POLL_SECONDS=2
 NOTIFICATION_LEASE_SECONDS=60
 NOTIFICATION_RETENTION_DAYS=30
+# Optional bounded asynchronous-export tuning:
+EXPORT_WORKER_ENABLED=true
+EXPORT_POLL_SECONDS=2
+EXPORT_LEASE_SECONDS=120
+EXPORT_RETENTION_HOURS=24
+EXPORT_MAX_OUTSTANDING_PER_USER=3
+EXPORT_MAX_JOBS_PER_USER_PER_DAY=20
+EXPORT_MAX_RESULTS=10000
+EXPORT_BATCH_SIZE=250
+EXPORT_MAX_SOURCE_MIB=10
+EXPORT_MAX_ARTIFACT_MIB=20
+EXPORT_MAX_ATTEMPTS=2
 ```
 
 Automatic notification semantics, rollout and recovery are documented in
 [`docs/NOTIFICATION_DELIVERY.md`](docs/NOTIFICATION_DELIVERY.md).
+Asynchronous export bounds, state transitions, rollout and rollback are in
+[`docs/ASYNC_EXPORTS.md`](docs/ASYNC_EXPORTS.md).
 
 ### 2. Build & run
 
@@ -460,6 +490,10 @@ Available series: `swift_vapor_scans`, `swift_vapor_scans_by_status{status="..."
 `swift_vapor_notification_jobs_pending`, `swift_vapor_notification_jobs_processing`,
 `swift_vapor_notification_jobs_dead_letter`, `swift_vapor_notification_expired_leases`,
 `swift_vapor_notification_oldest_pending_age_seconds`,
+`swift_vapor_export_jobs_pending`, `swift_vapor_export_jobs_processing`,
+`swift_vapor_export_jobs_failed`, `swift_vapor_export_expired_leases`,
+`swift_vapor_export_oldest_pending_age_seconds`,
+`swift_vapor_export_jobs_total{status="..."}`,
 `swift_vapor_backup_last_success_unixtime`, `swift_vapor_backup_age_seconds`
 and `swift_vapor_backup_fresh`. Starter availability and backup alerts live in
 `ops/prometheus/swift-vapor-alerts.yml`; validate and load them through the

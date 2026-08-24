@@ -127,57 +127,61 @@ enum BoundedProcess {
         try process.run()
         let state = CaptureState(maxBytes: maxOutputBytes)
 
-        return await withCheckedContinuation { continuation in
-            let work = DispatchGroup()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let work = DispatchGroup()
 
-            work.enter()
-            DispatchQueue.global(qos: .utility).async {
-                defer {
-                    try? outputPipe.fileHandleForReading.close()
+                work.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    defer {
+                        try? outputPipe.fileHandleForReading.close()
+                        work.leave()
+                    }
+                    do {
+                        while let chunk = try outputPipe.fileHandleForReading.read(upToCount: 64 * 1_024),
+                              !chunk.isEmpty {
+                            if state.append(chunk) { stop(process) }
+                        }
+                    } catch {
+                        state.markReadFailed()
+                        stop(process)
+                    }
+                }
+
+                work.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    defer {
+                        try? inputPipe.fileHandleForWriting.close()
+                        work.leave()
+                    }
+                    if !stdin.isEmpty {
+                        try? inputPipe.fileHandleForWriting.write(contentsOf: stdin)
+                    }
+                }
+
+                work.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    process.waitUntilExit()
                     work.leave()
                 }
-                do {
-                    while let chunk = try outputPipe.fileHandleForReading.read(upToCount: 64 * 1_024),
-                          !chunk.isEmpty {
-                        if state.append(chunk) { stop(process) }
-                    }
-                } catch {
-                    state.markReadFailed()
+
+                let timeoutWork = DispatchWorkItem {
+                    guard process.isRunning else { return }
+                    state.markTimedOut()
                     stop(process)
                 }
-            }
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + timeout,
+                    execute: timeoutWork
+                )
 
-            work.enter()
-            DispatchQueue.global(qos: .utility).async {
-                defer {
-                    try? inputPipe.fileHandleForWriting.close()
-                    work.leave()
-                }
-                if !stdin.isEmpty {
-                    try? inputPipe.fileHandleForWriting.write(contentsOf: stdin)
+                work.notify(queue: .global(qos: .utility)) {
+                    timeoutWork.cancel()
+                    continuation.resume(returning: state.snapshot(exitStatus: process.terminationStatus))
                 }
             }
-
-            work.enter()
-            DispatchQueue.global(qos: .utility).async {
-                process.waitUntilExit()
-                work.leave()
-            }
-
-            let timeoutWork = DispatchWorkItem {
-                guard process.isRunning else { return }
-                state.markTimedOut()
-                stop(process)
-            }
-            DispatchQueue.global(qos: .utility).asyncAfter(
-                deadline: .now() + timeout,
-                execute: timeoutWork
-            )
-
-            work.notify(queue: .global(qos: .utility)) {
-                timeoutWork.cancel()
-                continuation.resume(returning: state.snapshot(exitStatus: process.terminationStatus))
-            }
+        } onCancel: {
+            stop(process)
         }
     }
 

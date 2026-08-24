@@ -44,6 +44,9 @@ func routes(_ app: Application) throws {
     let exportController = ExportController()
     try app.register(collection: exportController)
 
+    let exportJobController = ExportJobController()
+    try app.register(collection: exportJobController)
+
     let tagController = TagController()
     try app.register(collection: tagController)
 

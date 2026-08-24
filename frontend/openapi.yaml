@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.5.0"
+  version: "1.6.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -21,6 +21,10 @@ components:
       type: apiKey
       in: cookie
       name: __Host-swift-session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: User API key with the route's required scope.
 
   schemas:
     ScanResult:
@@ -97,6 +101,48 @@ components:
         createdAt: { type: string, format: date-time, nullable: true }
         updatedAt: { type: string, format: date-time, nullable: true }
         completedAt: { type: string, format: date-time, nullable: true }
+
+    ExportJob:
+      type: object
+      description: Owner-scoped asynchronous export metadata. Encrypted artifact bytes are returned only by the download endpoint.
+      required: [scanID, format, status, progressCompleted, progressTotal, cancelRequested, attemptCount, expiresAt]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        scanID: { type: string, format: uuid }
+        format: { type: string, enum: [json, graphml, markdown, html, pdf] }
+        status: { type: string, enum: [pending, processing, completed, failed, cancelled] }
+        progressCompleted: { type: integer, minimum: 0 }
+        progressTotal: { type: integer, minimum: 0 }
+        failureCode: { type: string, nullable: true, description: Stable bounded machine code; never an internal exception. }
+        cancelRequested: { type: boolean }
+        attemptCount: { type: integer, minimum: 0, maximum: 3 }
+        createdAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time }
+        downloadURL: { type: string, nullable: true }
+        manifestURL: { type: string, nullable: true }
+
+    ExportManifest:
+      type: object
+      required: [schemaVersion, jobID, scanID, format, sourceStatus, generatedAt, resultCount, resultSetSHA256, artifactSHA256, artifactBytes, contentType, filename, complete]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        jobID: { type: string, format: uuid }
+        scanID: { type: string, format: uuid }
+        format: { type: string, enum: [json, graphml, markdown, html, pdf] }
+        sourceStatus: { type: string, enum: [completed, failed] }
+        sourceCreatedAt: { type: string, format: date-time, nullable: true }
+        sourceCompletedAt: { type: string, format: date-time, nullable: true }
+        generatedAt: { type: string, format: date-time }
+        resultCount: { type: integer, minimum: 0 }
+        resultSetSHA256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        artifactSHA256: { type: string, pattern: '^[0-9a-f]{64}$' }
+        artifactBytes: { type: integer, minimum: 0 }
+        contentType: { type: string }
+        filename: { type: string }
+        complete: { type: boolean, description: True only when the source scan itself completed successfully. }
 
     ScanSummary:
       type: object
@@ -900,6 +946,133 @@ paths:
         '404':
           description: Scan not found
 
+  /export-jobs:
+    get:
+      summary: List the caller's asynchronous exports
+      description: Returns at most 100 owner-scoped job metadata rows and never returns artifact ciphertext.
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Recent export jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExportJob' }
+        '401': { description: Recent browser authentication or a valid API key is required }
+    post:
+      summary: Queue a bounded asynchronous export
+      description: |
+        Reads results in bounded pages and creates an encrypted artifact plus a
+        separately encrypted completeness manifest. Only owned, terminal scans
+        are accepted. Browser sessions require recent authentication; API keys
+        require `scans:read`.
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scanID, format]
+              properties:
+                scanID: { type: string, format: uuid }
+                format: { type: string, enum: [json, graphml, markdown, html, pdf] }
+      responses:
+        '202':
+          description: Export accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportJob' }
+        '401': { description: Authentication required }
+        '404': { description: Scan not found for this caller }
+        '409': { description: Source scan is still pending }
+        '429': { description: Per-user outstanding or daily job limit reached }
+
+  /export-jobs/{id}:
+    get:
+      summary: Get one owner-scoped export job
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Export job metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportJob' }
+        '404': { description: Job not found for this caller }
+
+  /export-jobs/{id}/manifest:
+    get:
+      summary: Download an export completeness and integrity manifest
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Authenticated manifest for a completed, unexpired artifact
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportManifest' }
+        '404': { description: Job not found for this caller }
+        '409': { description: Artifact is not ready }
+        '410': { description: Artifact expired }
+
+  /export-jobs/{id}/download:
+    get:
+      summary: Download an encrypted-at-rest export artifact
+      description: Integrity is rechecked against the authenticated manifest before bytes are returned as an attachment.
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: JSON, GraphML, Markdown, HTML, or PDF attachment
+          headers:
+            ETag: { schema: { type: string } }
+            X-Content-SHA256: { schema: { type: string, pattern: '^[0-9a-f]{64}$' } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { description: Job not found for this caller }
+        '409': { description: Artifact is not ready }
+        '410': { description: Artifact expired }
+
+  /export-jobs/{id}/cancel:
+    post:
+      summary: Cancel a pending or processing export
+      description: Pending jobs become terminal immediately; active work is cancelled cooperatively and can never publish after the cancellation CAS.
+      tags: [Exports]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Cancellation accepted }
+        '404': { description: Job not found for this caller }
+        '409': { description: Job already terminal or changed concurrently }
+
   /dark-web/status:
     get:
       summary: Dark-web worker availability and caller quotas
@@ -1064,8 +1237,9 @@ paths:
       summary: Export the caller's entire account data (GDPR)
       description: |
         Returns a JSON bundle containing the profile (no secrets), all scans
-        with their results, scheduled scans, tags, notifications, API-key
-        metadata (no hashes), and the caller's own audit log entries.
+        with their results, scheduled scans, tags, notifications, asynchronous
+        export-job metadata (no artifact duplication), API-key metadata (no
+        hashes), and the caller's own audit log entries.
         Streamed with `Content-Disposition: attachment`.
       tags: [Account]
       responses:
@@ -1077,13 +1251,14 @@ paths:
                 type: object
                 properties:
                   exportedAt:    { type: integer, format: int64 }
-                  formatVersion: { type: integer, example: 3 }
+                  formatVersion: { type: integer, example: 4 }
                   profile:       { type: object }
                   scans:         { type: array,  items: { $ref: '#/components/schemas/Scan' } }
                   scheduled:     { type: array,  items: { type: object } }
                   tags:          { type: array,  items: { type: object } }
                   notifications: { type: array,  items: { type: object } }
                   notificationOutbox: { type: array, items: { type: object } }
+                  exportJobs:     { type: array, items: { type: object } }
                   investigationBoards: { type: array, items: { type: object } }
                   darkWebInvestigations: { type: array, items: { $ref: '#/components/schemas/DarkWebDetail' } }
                   apiKeys:       { type: array,  items: { type: object } }

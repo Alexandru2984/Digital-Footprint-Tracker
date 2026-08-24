@@ -177,6 +177,26 @@ struct HealthController: RouteCollection {
         } else {
             notificationOldestPendingAge = 0
         }
+        let exportPending = (try? await ExportJob.query(on: req.db)
+            .filter(\.$statusRaw == ExportJobStatus.pending.rawValue).count()) ?? 0
+        let exportProcessing = (try? await ExportJob.query(on: req.db)
+            .filter(\.$statusRaw == ExportJobStatus.processing.rawValue).count()) ?? 0
+        let exportFailed = (try? await ExportJob.query(on: req.db)
+            .filter(\.$statusRaw == ExportJobStatus.failed.rawValue).count()) ?? 0
+        let exportExpiredLeases = (try? await ExportJob.query(on: req.db)
+            .filter(\.$statusRaw == ExportJobStatus.processing.rawValue)
+            .filter(\.$leaseExpiresAt <= metricsNow)
+            .count()) ?? 0
+        let oldestExport = try? await ExportJob.query(on: req.db)
+            .filter(\.$statusRaw == ExportJobStatus.pending.rawValue)
+            .sort(\.$createdAt, .ascending)
+            .first()
+        let exportOldestPendingAge: Int
+        if let createdAt = oldestExport?.createdAt {
+            exportOldestPendingAge = max(0, Int(metricsNow.timeIntervalSince(createdAt)))
+        } else {
+            exportOldestPendingAge = 0
+        }
 
         let yesterday    = Date().addingTimeInterval(-86400)
         let scansLast24h = (try? await Scan.query(on: req.db).filter(\.$createdAt >= yesterday).count()) ?? 0
@@ -244,6 +264,21 @@ struct HealthController: RouteCollection {
         writeGauge(name: "swift_vapor_notification_oldest_pending_age_seconds",
                    help: "Age of the oldest pending notification job, or zero for an empty queue.",
                    value: notificationOldestPendingAge)
+        writeGauge(name: "swift_vapor_export_jobs_pending",
+                   help: "Asynchronous export jobs waiting for a worker lease.",
+                   value: exportPending)
+        writeGauge(name: "swift_vapor_export_jobs_processing",
+                   help: "Asynchronous export jobs currently leased.",
+                   value: exportProcessing)
+        writeGauge(name: "swift_vapor_export_jobs_failed",
+                   help: "Failed asynchronous export jobs retained for owner inspection.",
+                   value: exportFailed)
+        writeGauge(name: "swift_vapor_export_expired_leases",
+                   help: "Export processing leases past their recovery deadline.",
+                   value: exportExpiredLeases)
+        writeGauge(name: "swift_vapor_export_oldest_pending_age_seconds",
+                   help: "Age of the oldest pending export job, or zero for an empty queue.",
+                   value: exportOldestPendingAge)
         writeGauge(name: "swift_vapor_backup_last_success_unixtime",
                    help: "Unix timestamp of the last locally verified encrypted database backup, or zero when unknown.",
                    value: backup?.lastSuccessUnix ?? 0)
@@ -275,6 +310,12 @@ struct HealthController: RouteCollection {
         for status in ["succeeded", "skipped", "retry_scheduled", "dead_letter"] {
             let count = snap.notificationJobTransitions[status] ?? 0
             out += "swift_vapor_notification_job_transitions_total{status=\"\(status)\"} \(count)\n"
+        }
+        out += "# HELP swift_vapor_export_jobs_total Export jobs reaching a terminal state since process start.\n"
+        out += "# TYPE swift_vapor_export_jobs_total counter\n"
+        for status in ["completed", "failed", "cancelled"] {
+            let count = snap.exportJobs[status] ?? 0
+            out += "swift_vapor_export_jobs_total{status=\"\(status)\"} \(count)\n"
         }
         out += "# HELP swift_vapor_dark_web_jobs_total Dark-web jobs finished by terminal status since process start.\n"
         out += "# TYPE swift_vapor_dark_web_jobs_total counter\n"

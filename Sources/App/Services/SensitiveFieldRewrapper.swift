@@ -28,6 +28,7 @@ enum SensitiveFieldRewrapper {
         case auditLogs = "audit_logs"
         case darkWebInvestigations = "dark_web_investigations"
         case notificationOutbox = "notification_outbox"
+        case exportJobs = "export_jobs"
         case pluginCache = "plugin_cache"
     }
 
@@ -548,6 +549,30 @@ private extension SensitiveFieldRewrapper {
                 } catch { throw recordFailure(.rewrite, phase, row.id) }
             }
             return progress(rows)
+        case .exportJobs:
+            let rows = try await exportJobBatch(
+                after: cursor, limit: limit, lockForUpdate: true, on: database
+            )
+            for row in rows {
+                do {
+                    let artifact = try row.artifactData
+                    let manifest = try row.manifest
+                    switch (artifact, manifest) {
+                    case let (artifact?, manifest?):
+                        try row.setArtifact(artifact, manifest: manifest)
+                        try await row.update(on: database)
+                    case (nil, nil):
+                        break
+                    default:
+                        throw FieldCrypto.DecryptionFailure(
+                            field: .exportArtifact,
+                            recordID: row.id,
+                            reason: .invalidEnvelope
+                        )
+                    }
+                } catch { throw recordFailure(.rewrite, phase, row.id) }
+            }
+            return progress(rows)
         case .pluginCache:
             // Cache target hashes cannot be recomputed without the original
             // input. Purging is safe: normal scans repopulate current-format
@@ -664,6 +689,23 @@ private extension SensitiveFieldRewrapper {
                     row.payloadCipher,
                     field: .notificationOutboxPayload,
                     stage: .verify,
+                    phase: phase,
+                    id: row.id
+                )
+            }
+            return progress(rows)
+        case .exportJobs:
+            let rows = try await exportJobBatch(after: cursor, limit: limit, on: database)
+            for row in rows {
+                try verifyOptional(
+                    row.artifactCipher,
+                    field: .exportArtifact,
+                    phase: phase,
+                    id: row.id
+                )
+                try verifyOptional(
+                    row.manifestCipher,
+                    field: .exportManifest,
                     phase: phase,
                     id: row.id
                 )
@@ -877,6 +919,22 @@ private extension SensitiveFieldRewrapper {
                 .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
         }
         let query = NotificationOutboxEvent.query(on: db).sort(\.$id, .ascending).limit(limit)
+        if let cursor { query.filter(\.$id > cursor) }
+        return try await query.all()
+    }
+
+    private static func exportJobBatch(
+        after cursor: UUID?, limit: Int, lockForUpdate: Bool = false, on db: Database
+    ) async throws -> [ExportJob] {
+        if let ids = try await lockedRowIDs(
+            schema: ExportJob.schema, after: cursor, limit: limit,
+            lockForUpdate: lockForUpdate, on: db
+        ) {
+            guard !ids.isEmpty else { return [] }
+            return try await ExportJob.query(on: db)
+                .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
+        }
+        let query = ExportJob.query(on: db).sort(\.$id, .ascending).limit(limit)
         if let cursor { query.filter(\.$id > cursor) }
         return try await query.all()
     }

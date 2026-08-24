@@ -58,6 +58,17 @@ attempt two. Provider delivery remains honestly at-least-once, and SMTP bounce
 ingestion is not implemented. None of this changes the production BLOCK verdict:
 the live schema/release still predates these repository changes.
 
+The export-amplification finding now has a repository-only bounded core. New
+owner-scoped scan exports and reports are PostgreSQL jobs with row-locked quota
+checks, paged result reads, source/result/artifact ceilings, cross-process leases,
+publish-safe cancellation and fixed failure codes. Artifact bytes and a separate
+completeness/integrity manifest are authenticated and encrypted at rest, expire,
+and are rewrapped during key rotation. Download rechecks byte count and SHA-256;
+all lookups filter by both user and job ID. SQLite integration tests cover IDOR,
+cancellation, limits, encryption and stale-worker CAS. Production migration,
+metrics/paging and runtime smoke evidence remain absent, and correlation is still
+synchronous; the production BLOCK verdict is unchanged.
+
 ## CISO forcing review
 
 ### 1. STRIDE threat model

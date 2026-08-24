@@ -100,8 +100,10 @@ series), with its own rollback note and production evidence before the next one.
    outbox, per-channel leases, typed transient/permanent failures, bounded
    jittered retry, DLQ, audited replay and queue metrics. Production evidence,
    bounce/complaint ingestion and provider-latency dashboards remain gated.
-10. **Bounded data plane:** asynchronous paged exports/correlation/report jobs,
-    completeness manifests, encryption, download expiry and cancellation.
+10. **Bounded data plane — export core delivered:** asynchronous paged scan
+    exports/reports, encrypted artifacts and completeness manifests, per-user
+    quotas, cross-process leases, integrity-checked download expiry and
+    cancellation. Correlation jobs and object-storage scale-out remain open.
 11. **Security telemetry:** append-only audit writer, signed remote stream,
     auth/egress/admin alerts, drift detection and incident runbooks/tabletop.
 12. **Browser quality gate:** extract inline code, strict static CSP, Playwright

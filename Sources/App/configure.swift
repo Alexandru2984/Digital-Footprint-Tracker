@@ -29,6 +29,9 @@ public func configure(_ app: Application) async throws {
     // fails boot instead of silently disabling retries or creating an infinite
     // retention/attempt loop.
     app.notificationDeliveryConfiguration = try NotificationDeliveryConfiguration.fromEnvironment()
+    // Asynchronous exports are bounded at boot so an invalid live setting can
+    // never silently remove per-user quotas or artifact/source ceilings.
+    app.exportJobConfiguration = try ExportJobConfiguration.fromEnvironment()
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment == .production {
@@ -120,6 +123,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateScheduledScans())
     app.migrations.add(CreateScanNotifications())
     app.migrations.add(CreateNotificationOutbox())
+    app.migrations.add(CreateExportJobs())
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(CreateAuditLogs())
     app.migrations.add(AddRetentionDaysToUsers())
@@ -216,13 +220,22 @@ public func configure(_ app: Application) async throws {
     // Command startup normally boots lifecycle handlers before dispatching the
     // command. Do not start schedulers/workers in the maintenance process; the
     // live web/worker fleet remains responsible for normal current-key writes.
-    let isCryptoRewrapProcess = app.environment.arguments.dropFirst().contains("crypto-rewrap")
-    if !isCryptoRewrapProcess {
+    if LifecyclePolicy.shouldStartWorkers(arguments: app.environment.arguments) {
         app.lifecycle.use(ScanCleanupLifecycle())
         app.lifecycle.use(ScheduledScanRunner())
         app.lifecycle.use(InvestigationWatchRunner())
         app.lifecycle.use(app.notificationDeliveryWorker)
+        app.lifecycle.use(app.exportJobWorker)
         app.lifecycle.use(app.darkWebRunner)
+    }
+}
+
+enum LifecyclePolicy {
+    /// Vapor boots lifecycle handlers before dispatching commands. Migration and
+    /// crypto maintenance must never race normal schedulers or leased workers.
+    static func shouldStartWorkers(arguments: [String]) -> Bool {
+        let commands = Set(arguments.dropFirst())
+        return commands.isDisjoint(with: ["migrate", "crypto-rewrap"])
     }
 }
 
