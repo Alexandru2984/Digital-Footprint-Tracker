@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.6.0"
+  version: "1.7.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -101,6 +101,23 @@ components:
         createdAt: { type: string, format: date-time, nullable: true }
         updatedAt: { type: string, format: date-time, nullable: true }
         completedAt: { type: string, format: date-time, nullable: true }
+
+    AuditIntegrityVerification:
+      type: object
+      description: Metadata-only result of a bounded full verification of the signed audit ledger and retained display rows.
+      required: [status, verifiedEvents, legacyUntrackedLogs, lastSequence, headHash, activeSigningKeyID, checkedAt]
+      properties:
+        status: { type: string, enum: [valid, invalid] }
+        failureCode:
+          type: string
+          nullable: true
+          description: Stable bounded failure category; never contains an exception, target, IP address or ciphertext.
+        verifiedEvents: { type: integer, minimum: 0, maximum: 250000 }
+        legacyUntrackedLogs: { type: integer, minimum: 0, maximum: 250000 }
+        lastSequence: { type: integer, format: int64, minimum: 0 }
+        headHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        activeSigningKeyID: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$' }
+        checkedAt: { type: string, format: date-time }
 
     ExportJob:
       type: object
@@ -731,6 +748,25 @@ paths:
           description: Not authenticated
         '403':
           description: Admin access required
+
+  /admin/audit/integrity:
+    get:
+      summary: Verify the signed audit ledger (admin only)
+      description: >
+        Requires a recent authenticated admin session. Verifies sequence,
+        hash linkage, every Ed25519 signature, key anchoring, legal privacy
+        transitions and all retained HMAC display-row commitments. No audit payload,
+        target, IP address, ciphertext or private-key material is returned.
+      tags: [Admin]
+      responses:
+        '200':
+          description: Completed verification; inspect status rather than assuming success from HTTP 200
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditIntegrityVerification' }
+        '401': { description: Recent session authentication required }
+        '403': { description: Admin access required }
+        '503': { description: Signed audit integrity is not configured }
 
   /admin/notification-deliveries:
     get:

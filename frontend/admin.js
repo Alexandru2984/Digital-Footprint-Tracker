@@ -191,6 +191,36 @@
 
     // Audit log
     document.getElementById('load-audit-btn')?.addEventListener('click', loadAuditLog);
+    document.getElementById('verify-audit-btn')?.addEventListener('click', loadAuditIntegrity);
+
+    async function loadAuditIntegrity() {
+        const button = document.getElementById('verify-audit-btn');
+        const status = document.getElementById('audit-integrity-status');
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        status.className = 'mb-4 rounded-lg border border-dark-700 bg-dark-900/60 px-3 py-2 text-[11px] text-slate-400';
+        status.textContent = 'Verifying every signed audit event…';
+        try {
+            const res = await fetch('/api/admin/audit/integrity', { credentials: 'include' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const result = await res.json();
+            const checked = result.checkedAt ? new Date(result.checkedAt).toLocaleString() : 'unknown time';
+            if (result.status === 'valid') {
+                const legacy = Number(result.legacyUntrackedLogs || 0);
+                status.className = 'mb-4 rounded-lg border border-green-700/60 bg-green-950/30 px-3 py-2 text-[11px] text-green-300';
+                status.textContent = `Valid signed ledger · ${Number(result.verifiedEvents || 0).toLocaleString()} events · sequence ${Number(result.lastSequence || 0).toLocaleString()} · key ${String(result.activeSigningKeyID || 'unknown')} · checked ${checked}${legacy ? ` · ${legacy.toLocaleString()} legacy rows are not cryptographically covered` : ''}`;
+            } else {
+                status.className = 'mb-4 rounded-lg border border-red-700/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300';
+                status.textContent = `Integrity failure · ${String(result.failureCode || 'unknown')} · checked ${checked}`;
+            }
+        } catch (error) {
+            status.className = 'mb-4 rounded-lg border border-red-700/60 bg-red-950/30 px-3 py-2 text-[11px] text-red-300';
+            status.textContent = 'Integrity verification unavailable: ' + String(error && error.message || error);
+        } finally {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
+    }
 
     async function loadAuditLog(page = 1) {
         const container = document.getElementById('audit-log-container');
@@ -227,4 +257,6 @@
             container.innerHTML = `<p class="text-[11px] text-red-400">Error: ${msg}</p>`;
         }
     }
+
+    await loadAuditIntegrity();
 })();

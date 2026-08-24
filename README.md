@@ -313,6 +313,12 @@ DATABASE_HOST=localhost
 DATABASE_USERNAME=footprint_user
 DATABASE_PASSWORD=your_password
 DATABASE_NAME=footprint_db
+ENCRYPTION_KEY=64_hex_characters_generated_with_openssl_rand_hex_32
+ENCRYPTION_KEY_ID=primary
+ENCRYPTION_WRITE_VERSION=1
+AUDIT_SIGNING_KEY=another_independent_64_hex_character_key
+AUDIT_SIGNING_KEY_ID=audit-primary
+AUDIT_COMMITMENT_KEY=a_third_independent_stable_64_hex_character_key
 HOLEHE_PATH=/home/micu/swift+vapor/.venv/bin/holehe
 REPORT_PYTHON_PATH=/home/micu/swift+vapor/.venv/bin/python3
 ADMIN_USERNAME=admin
@@ -352,6 +358,11 @@ EXPORT_MAX_ATTEMPTS=2
 
 Automatic notification semantics, rollout and recovery are documented in
 [`docs/NOTIFICATION_DELIVERY.md`](docs/NOTIFICATION_DELIVERY.md).
+Signed-ledger configuration, verification and key rotation are documented in
+[`docs/AUDIT_INTEGRITY.md`](docs/AUDIT_INTEGRITY.md); the independent signing
+and commitment keys are mandatory in production and must not be reused as
+`ENCRYPTION_KEY` or as each other.
+
 Asynchronous export bounds, state transitions, rollout and rollback are in
 [`docs/ASYNC_EXPORTS.md`](docs/ASYNC_EXPORTS.md).
 

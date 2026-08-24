@@ -21,6 +21,14 @@ public func configure(_ app: Application) async throws {
     // because ENCRYPTION_KEY is absent or malformed. Validate before connecting,
     // migrating, seeding, or serving any request.
     try TokenEncryption.validateConfiguration(required: app.environment == .production)
+    // The immutable audit ledger uses an independent Ed25519 signing key. A
+    // live process must never silently fall back to unsigned audit entries.
+    app.auditIntegrityConfiguration = try AuditIntegrityConfiguration.fromEnvironment(
+        required: app.environment == .production
+    )
+    if app.auditIntegrityConfiguration == nil {
+        app.logger.warning("AUDIT_SIGNING_KEY is unset; signed audit integrity is disabled outside production.")
+    }
     // Dark-web collection is disabled unless every trust-boundary setting is
     // explicit and valid. In particular, the worker endpoint can only be a
     // loopback origin; arbitrary URLs would turn this integration into SSRF.
@@ -126,6 +134,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateExportJobs())
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(CreateAuditLogs())
+    app.migrations.add(CreateAuditIntegrityLedger())
     app.migrations.add(AddRetentionDaysToUsers())
     app.migrations.add(DefaultUserRetention())
     app.migrations.add(AddNotificationChannelsToUsers())
@@ -171,6 +180,13 @@ public func configure(_ app: Application) async throws {
         app.logger.notice("Automatic production migrations disabled; expecting the deployment migration gate.")
     }
     try await EncryptionKeyVerifier.verifyOrInitialize(on: app.db)
+    if let auditConfiguration = app.auditIntegrityConfiguration,
+       try await AuditIntegrityLedger.ensureActiveKeyAnchored(
+           on: app.db,
+           configuration: auditConfiguration
+       ) {
+        app.logger.notice("Active audit signing key anchored to the immutable ledger.")
+    }
 
     // Seed admin user from environment variables if not already present.
     let adminUsername = Environment.get("ADMIN_USERNAME") ?? "admin"
@@ -221,6 +237,7 @@ public func configure(_ app: Application) async throws {
     // command. Do not start schedulers/workers in the maintenance process; the
     // live web/worker fleet remains responsible for normal current-key writes.
     if LifecyclePolicy.shouldStartWorkers(arguments: app.environment.arguments) {
+        app.lifecycle.use(AuditIntegrityMonitor())
         app.lifecycle.use(ScanCleanupLifecycle())
         app.lifecycle.use(ScheduledScanRunner())
         app.lifecycle.use(InvestigationWatchRunner())

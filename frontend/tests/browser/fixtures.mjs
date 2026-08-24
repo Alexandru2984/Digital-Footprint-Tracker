@@ -27,6 +27,17 @@ export async function mockAPI(page, options = {}) {
             body = [];
         } else if (pathname === '/api/admin/dashboard') {
             body = { totalScans: 0, totalUsers: 1, totalResults: 0, scansPerDay: [], topPlugins: [] };
+        } else if (pathname === '/api/admin/audit/integrity') {
+            body = {
+                status: 'valid',
+                failureCode: null,
+                verifiedEvents: 12,
+                legacyUntrackedLogs: 0,
+                lastSequence: 12,
+                headHash: 'a'.repeat(64),
+                activeSigningKeyID: 'browser-test',
+                checkedAt: '2026-08-24T00:00:00Z',
+            };
         } else if (pathname === '/api/admin/audit') {
             body = {
                 items: [{

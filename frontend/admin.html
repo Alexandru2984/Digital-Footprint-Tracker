@@ -9,7 +9,7 @@
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/tailwind.css?v=3"
-          integrity="sha384-HJrCMwKsq2JIVghQvTlKpZTFNdnsJYJ5jurE+4ZSyi9NAfhyAPTWBkkL6oFok14s"
+          integrity="sha384-KTUsUQule1GPFADrL7SDDNc6ZKDsrD8yF65HoGxIDv69G7N+hHQb5HSFcTGgfqPv"
           crossorigin="anonymous">
     <style>
         body { background-color: #0f172a; color: #f8fafc; }
@@ -85,11 +85,17 @@
 
             <!-- Audit Log -->
             <div id="audit-tab" class="bg-dark-800 border border-dark-700 rounded-xl p-5 shadow-xl">
-                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex flex-wrap items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                     Audit Log
-                    <button id="load-audit-btn" class="ml-auto text-[10px] px-2 py-0.5 bg-dark-700 border border-dark-600 rounded hover:bg-dark-600">Load</button>
+                    <span class="ml-auto flex items-center gap-2">
+                        <button id="verify-audit-btn" class="min-h-6 text-[10px] px-2 py-1 bg-dark-700 border border-dark-600 rounded hover:bg-dark-600">Verify integrity</button>
+                        <button id="load-audit-btn" class="min-h-6 text-[10px] px-2 py-1 bg-dark-700 border border-dark-600 rounded hover:bg-dark-600">Load entries</button>
+                    </span>
                 </h2>
+                <div id="audit-integrity-status" role="status" aria-live="polite" class="mb-4 rounded-lg border border-dark-700 bg-dark-900/60 px-3 py-2 text-[11px] text-slate-400">
+                    Signed ledger has not been checked in this session.
+                </div>
                 <div id="audit-log-container">
                     <p class="text-[11px] text-slate-500">Click Load to fetch audit entries.</p>
                 </div>

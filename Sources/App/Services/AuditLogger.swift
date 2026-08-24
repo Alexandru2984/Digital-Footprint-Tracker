@@ -15,15 +15,30 @@ struct AuditLogger {
         // not enough to pin the record to one host. The full IP is only used
         // transiently for rate limiting, never persisted.
         let clientIP = IPPrivacy.anonymize(req.clientIP)
+        let storedTarget = String(target.prefix(200))
+        let storedIP = String(clientIP.prefix(45))
         let entry = AuditLog(
             userID: userID,
             action: action,
-            target: String(target.prefix(200)),
-            ip: String(clientIP.prefix(45))
+            target: storedTarget,
+            ip: storedIP
         )
         do {
-            try await entry.save(on: req.db)
+            if let configuration = req.application.auditIntegrityConfiguration {
+                try await AuditIntegrityLedger.persist(
+                    entry,
+                    plaintextTarget: storedTarget,
+                    plaintextIP: storedIP,
+                    on: req.db,
+                    configuration: configuration
+                )
+            } else {
+                // Development may deliberately omit the signing key. Production
+                // configuration rejects that state before migrations or routes.
+                try await entry.save(on: req.db)
+            }
         } catch {
+            await MetricsRegistry.shared.incAuditLogWriteFailure()
             req.logger.error("AuditLogger: failed to persist entry (action=\(action)).")
         }
     }

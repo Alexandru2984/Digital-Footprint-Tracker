@@ -36,6 +36,31 @@ groups:
           summary: Swift Vapor rejected a corrupted encrypted field
           description: Authenticated field decryption failed; the affected read/job path was quarantined and requires operator investigation.
 
+      - alert: SwiftVaporAuditWriteFailure
+        expr: increase(swift_vapor_audit_log_write_failures_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor could not persist a signed audit event
+          description: At least one audit display row and integrity-ledger transaction rolled back; investigate database and signing-key health.
+
+      - alert: SwiftVaporAuditIntegrityInvalid
+        expr: swift_vapor_audit_integrity_status == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Swift Vapor audit integrity verification failed
+          description: The signed audit ledger, its chain head, or a retained audit row no longer matches its authenticated commitment.
+
+      - alert: SwiftVaporAuditIntegrityStale
+        expr: swift_vapor_audit_integrity_last_verified_unixtime == 0 or time() - swift_vapor_audit_integrity_last_verified_unixtime > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor audit integrity has not been verified recently
+          description: No complete audit-ledger verification has succeeded or failed within the last fifteen minutes.
+
       - alert: SwiftVaporNotificationDeadLetter
         expr: swift_vapor_notification_jobs_dead_letter > 0
         for: 10m

@@ -69,6 +69,7 @@ struct AdminController: RouteCollection {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.get("admin", "dashboard", use: dashboard)
         noCache.get("admin", "audit", use: auditLog)
+        noCache.get("admin", "audit", "integrity", use: auditIntegrity)
         noCache.get("admin", "notification-deliveries", use: notificationDeliveries)
         noCache.post("admin", "notification-deliveries", ":id", "retry", use: retryNotificationDelivery)
     }
@@ -147,6 +148,28 @@ struct AdminController: RouteCollection {
             .sort(\.$createdAt, .descending)
             .paginate(for: req)
         return Page(items: try page.items.map(AuditLogDTO.init), metadata: page.metadata)
+    }
+
+    @Sendable
+    func auditIntegrity(req: Request) async throws -> AuditIntegrityVerification {
+        let user = try await req.requireRecentSessionUser()
+        guard user.isAdmin else {
+            throw Abort(.forbidden, reason: "Admin access required.")
+        }
+        guard let configuration = req.application.auditIntegrityConfiguration else {
+            throw Abort(.serviceUnavailable, reason: "Signed audit integrity is not configured.")
+        }
+        let result = try await AuditIntegrityLedger.verify(
+            on: req.db,
+            configuration: configuration
+        )
+        await MetricsRegistry.shared.recordAuditIntegrityVerification(result)
+        if !result.isValid {
+            req.logger.critical(
+                "Audit integrity verification failed (code=\(result.failureCode ?? "unknown"))."
+            )
+        }
+        return result
     }
 
     @Sendable

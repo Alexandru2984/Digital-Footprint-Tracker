@@ -104,8 +104,11 @@ series), with its own rollback note and production evidence before the next one.
     exports/reports, encrypted artifacts and completeness manifests, per-user
     quotas, cross-process leases, integrity-checked download expiry and
     cancellation. Correlation jobs and object-storage scale-out remain open.
-11. **Security telemetry:** append-only audit writer, signed remote stream,
-    auth/egress/admin alerts, drift detection and incident runbooks/tabletop.
+11. **Security telemetry — signed local ledger delivered:** privacy-minimal
+    Ed25519 hash chain, cross-process writer serialization, immutable-event
+    triggers, redaction/retention commitments, full verification, metrics and
+    alerts. Remote signed checkpoints/stream, auth/egress/admin anomaly alerts,
+    drift detection and incident tabletop evidence remain open.
 12. **Browser quality gate — repository core delivered:** pinned offline
     Playwright/axe at 320/375/768/1440, WCAG 2.2 AA, overflow/touch targets,
     keyboard focus, reduced motion, DOM-XSS fixtures and CSP execution checks.

@@ -350,6 +350,15 @@ struct AccountController: RouteCollection {
                     entry.setTarget("[deleted-account]")
                     entry.setIP("[deleted]")
                     try await entry.save(on: database)
+                    if let configuration = req.application.auditIntegrityConfiguration {
+                        try await AuditIntegrityLedger.recordRedaction(
+                            of: entry,
+                            plaintextTarget: "[deleted-account]",
+                            plaintextIP: "[deleted]",
+                            on: database,
+                            configuration: configuration
+                        )
+                    }
                 }
             }
 

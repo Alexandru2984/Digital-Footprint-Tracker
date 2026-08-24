@@ -288,6 +288,15 @@ struct HealthController: RouteCollection {
         writeGauge(name: "swift_vapor_backup_fresh",
                    help: "Whether the last locally verified encrypted database backup is within the configured freshness window.",
                    value: backup?.isFresh == true ? 1 : 0)
+        writeGauge(name: "swift_vapor_audit_integrity_status",
+                   help: "Last full audit-ledger verification: one valid, zero invalid, minus one not yet verified.",
+                   value: snap.auditIntegrityStatus)
+        writeGauge(name: "swift_vapor_audit_integrity_last_verified_unixtime",
+                   help: "Unix timestamp of the last full audit-ledger verification, or zero when not yet verified.",
+                   value: snap.auditIntegrityLastVerifiedUnix)
+        writeGauge(name: "swift_vapor_audit_integrity_last_sequence",
+                   help: "Audit-ledger sequence covered by the last full verification.",
+                   value: snap.auditIntegrityLastSequence)
 
         writeCounter(name: "swift_vapor_plugin_cache_hits_total",
                      help: "Plugin cache lookups that returned a fresh hit since process start.",
@@ -295,6 +304,12 @@ struct HealthController: RouteCollection {
         writeCounter(name: "swift_vapor_plugin_cache_misses_total",
                      help: "Plugin cache lookups that fell through to a live plugin run since process start.",
                      value: snap.pluginCacheMisses)
+        writeCounter(name: "swift_vapor_audit_log_write_failures_total",
+                     help: "Audit writes rolled back because the display log or signed ledger could not be persisted.",
+                     value: snap.auditLogWriteFailures)
+        writeCounter(name: "swift_vapor_audit_integrity_verification_failures_total",
+                     help: "Full audit-ledger verifications that detected an integrity failure.",
+                     value: snap.auditIntegrityVerificationFailures)
 
         out += "# HELP swift_vapor_notification_deliveries_total Notification delivery attempts and terminal outcomes by channel.\n"
         out += "# TYPE swift_vapor_notification_deliveries_total counter\n"

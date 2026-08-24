@@ -3,6 +3,7 @@ import XCTVapor
 import Fluent
 import FluentSQLiteDriver
 import NIOCore
+import SQLKit
 @testable import App
 #if canImport(Glibc)
 import Glibc
@@ -81,6 +82,14 @@ private func makeApp() async throws -> Application {
     // and blocks cross-origin POST/PUT/PATCH/DELETE.
     app.middleware.use(CSRFMiddleware())
 
+    // Stable test-only Ed25519 seed. Production never has a fallback and must
+    // supply its independently generated signing key before startup.
+    app.auditIntegrityConfiguration = try AuditIntegrityConfiguration(
+        keyID: "test-key",
+        privateKeyHex: String(repeating: "42", count: 32),
+        commitmentKeyHex: String(repeating: "44", count: 32)
+    )
+
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
@@ -99,6 +108,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateAPIKeys())
     app.migrations.add(AddAPIKeyAuthorization())
     app.migrations.add(CreateAuditLogs())
+    app.migrations.add(CreateAuditIntegrityLedger())
     app.migrations.add(AddRetentionDaysToUsers())
     app.migrations.add(DefaultUserRetention())
     app.migrations.add(AddNotificationChannelsToUsers())
@@ -158,6 +168,287 @@ private func registerAndLogin(_ app: Application, username: String) async throws
 }
 
 final class AppTests: XCTestCase {
+
+    func testAuditSigningConfigurationFailsClosedAndSeparatesKeyIdentity() throws {
+        let names = [
+            "AUDIT_SIGNING_KEY", "AUDIT_SIGNING_KEY_ID", "AUDIT_COMMITMENT_KEY",
+            "ENCRYPTION_KEY",
+        ]
+        let environment = EnvironmentSnapshot(names)
+        defer { environment.restore() }
+
+        unsetenv("AUDIT_SIGNING_KEY")
+        unsetenv("AUDIT_SIGNING_KEY_ID")
+        unsetenv("AUDIT_COMMITMENT_KEY")
+        unsetenv("ENCRYPTION_KEY")
+        XCTAssertNil(try AuditIntegrityConfiguration.fromEnvironment(required: false))
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual($0 as? AuditIntegrityConfiguration.ConfigurationError, .missingKey)
+        }
+
+        setenv("AUDIT_SIGNING_KEY", String(repeating: "42", count: 32), 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: false)) {
+            XCTAssertEqual($0 as? AuditIntegrityConfiguration.ConfigurationError, .incompleteConfiguration)
+        }
+        setenv("AUDIT_SIGNING_KEY_ID", "audit-test", 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual(
+                $0 as? AuditIntegrityConfiguration.ConfigurationError,
+                .missingCommitmentKey
+            )
+        }
+        setenv("AUDIT_COMMITMENT_KEY", String(repeating: "44", count: 32), 1)
+        setenv("AUDIT_SIGNING_KEY_ID", "spaces are forbidden", 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual($0 as? AuditIntegrityConfiguration.ConfigurationError, .invalidKeyID)
+        }
+        setenv("AUDIT_SIGNING_KEY", "not-hex", 1)
+        setenv("AUDIT_SIGNING_KEY_ID", "audit-test", 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual($0 as? AuditIntegrityConfiguration.ConfigurationError, .invalidKey)
+        }
+
+        setenv("AUDIT_SIGNING_KEY", String(repeating: "43", count: 32), 1)
+        setenv("AUDIT_COMMITMENT_KEY", "not-hex", 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual(
+                $0 as? AuditIntegrityConfiguration.ConfigurationError,
+                .invalidCommitmentKey
+            )
+        }
+        setenv("AUDIT_COMMITMENT_KEY", String(repeating: "44", count: 32), 1)
+        let valid = try XCTUnwrap(AuditIntegrityConfiguration.fromEnvironment(required: true))
+        XCTAssertEqual(valid.keyID, "audit-test")
+        XCTAssertEqual(valid.publicKeyBytes.count, 32)
+
+        setenv("ENCRYPTION_KEY", String(repeating: "43", count: 32), 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual(
+                $0 as? AuditIntegrityConfiguration.ConfigurationError,
+                .reusedKeyMaterial
+            )
+        }
+        setenv("ENCRYPTION_KEY", String(repeating: "44", count: 32), 1)
+        XCTAssertThrowsError(try AuditIntegrityConfiguration.fromEnvironment(required: true)) {
+            XCTAssertEqual(
+                $0 as? AuditIntegrityConfiguration.ConfigurationError,
+                .reusedKeyMaterial
+            )
+        }
+        XCTAssertThrowsError(
+            try AuditIntegrityConfiguration(
+                keyID: "reused",
+                privateKeyHex: String(repeating: "45", count: 32),
+                commitmentKeyHex: String(repeating: "45", count: 32)
+            )
+        ) {
+            XCTAssertEqual(
+                $0 as? AuditIntegrityConfiguration.ConfigurationError,
+                .reusedKeyMaterial
+            )
+        }
+    }
+
+    func testAuditIntegrityLedgerCoversRedactionRetentionRotationAndTamper() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let firstKey = try XCTUnwrap(app.auditIntegrityConfiguration)
+
+        let log = AuditLog(
+            userID: UUID(),
+            action: "integrity_test",
+            target: "person@example.test",
+            ip: "192.0.2.0"
+        )
+        try await AuditIntegrityLedger.persist(
+            log,
+            plaintextTarget: "person@example.test",
+            plaintextIP: "192.0.2.0",
+            on: app.db,
+            configuration: firstKey
+        )
+        var verification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: firstKey
+        )
+        XCTAssertTrue(verification.isValid)
+        XCTAssertEqual(verification.verifiedEvents, 1)
+
+        try await app.db.transaction { transaction in
+            log.userID = nil
+            log.setTarget("[deleted-account]")
+            log.setIP("[deleted]")
+            try await log.update(on: transaction)
+            try await AuditIntegrityLedger.recordRedaction(
+                of: log,
+                plaintextTarget: "[deleted-account]",
+                plaintextIP: "[deleted]",
+                on: transaction,
+                configuration: firstKey
+            )
+        }
+        verification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: firstKey
+        )
+        XCTAssertTrue(verification.isValid)
+        XCTAssertEqual(verification.verifiedEvents, 2)
+
+        let logID = try log.requireID()
+        try await app.db.transaction { transaction in
+            try await AuditIntegrityLedger.recordRetention(
+                auditLogID: logID,
+                on: transaction,
+                configuration: firstKey
+            )
+            try await log.delete(on: transaction)
+        }
+        verification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: firstKey
+        )
+        XCTAssertTrue(verification.isValid)
+        XCTAssertEqual(verification.verifiedEvents, 3)
+
+        let rotatedKey = try AuditIntegrityConfiguration(
+            keyID: "test-key-rotated",
+            privateKeyHex: String(repeating: "43", count: 32),
+            commitmentKeyHex: String(repeating: "44", count: 32)
+        )
+        let didRotate = try await AuditIntegrityLedger.ensureActiveKeyAnchored(
+            on: app.db,
+            configuration: rotatedKey
+        )
+        XCTAssertTrue(didRotate)
+        let didRotateAgain = try await AuditIntegrityLedger.ensureActiveKeyAnchored(
+            on: app.db,
+            configuration: rotatedKey
+        )
+        XCTAssertFalse(didRotateAgain)
+        verification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: rotatedKey
+        )
+        XCTAssertTrue(verification.isValid)
+        XCTAssertEqual(verification.verifiedEvents, 4)
+        let oldKeyView = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: firstKey
+        )
+        XCTAssertFalse(oldKeyView.isValid)
+        XCTAssertEqual(oldKeyView.failureCode, "active_key_not_anchored")
+
+        let wrongCommitmentKey = try AuditIntegrityConfiguration(
+            keyID: "test-key-rotated",
+            privateKeyHex: String(repeating: "43", count: 32),
+            commitmentKeyHex: String(repeating: "45", count: 32)
+        )
+        let wrongCommitmentView = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: wrongCommitmentKey
+        )
+        XCTAssertFalse(wrongCommitmentView.isValid)
+        XCTAssertEqual(wrongCommitmentView.failureCode, "audit_log_payload_mismatch")
+
+        let storedHead = try await AuditIntegrityHead.find(
+            AuditIntegrityHead.singletonID,
+            on: app.db
+        )
+        let head = try XCTUnwrap(storedHead)
+        head.headHash = String(repeating: "f", count: 64)
+        try await head.update(on: app.db)
+        let tampered = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: rotatedKey
+        )
+        XCTAssertFalse(tampered.isValid)
+        XCTAssertEqual(tampered.failureCode, "head_mismatch")
+    }
+
+    func testAuditIntegrityEventsRejectMutationAtDatabaseBoundary() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let configuration = try XCTUnwrap(app.auditIntegrityConfiguration)
+        let log = AuditLog(userID: nil, action: "immutable_test", target: "target", ip: "[system]")
+        try await AuditIntegrityLedger.persist(
+            log,
+            plaintextTarget: "target",
+            plaintextIP: "[system]",
+            on: app.db,
+            configuration: configuration
+        )
+        let initialVerification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: configuration
+        )
+        XCTAssertTrue(
+            initialVerification.isValid,
+            initialVerification.failureCode ?? "unknown audit-integrity failure"
+        )
+        let storedEvent = try await AuditIntegrityEvent.query(on: app.db).first()
+        let event = try XCTUnwrap(storedEvent)
+        let originalPayloadHash = event.payloadHash
+        let eventID = try event.requireID()
+        let sql = try XCTUnwrap(app.db as? SQLDatabase)
+        do {
+            try await sql.raw("""
+                UPDATE audit_integrity_events
+                SET payload_hash = \(bind: String(repeating: "a", count: 64))
+                WHERE id = \(bind: eventID)
+                """).run()
+            XCTFail("append-only trigger accepted an event update")
+        } catch {
+            // The database boundary, not merely the verifier, rejects mutation.
+        }
+        let reloadedEvent = try await AuditIntegrityEvent.find(eventID, on: app.db)
+        XCTAssertEqual(reloadedEvent?.payloadHash, originalPayloadHash)
+        let finalVerification = try await AuditIntegrityLedger.verify(
+            on: app.db,
+            configuration: configuration
+        )
+        XCTAssertTrue(
+            finalVerification.isValid,
+            finalVerification.failureCode ?? "unknown audit-integrity failure"
+        )
+    }
+
+    func testAuditIntegrityEndpointRequiresRecentAdminAndReturnsOnlyMetadata() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "audit-integrity-admin")
+
+        try await app.test(.GET, "/admin/audit/integrity") { response in
+            XCTAssertEqual(response.status, .unauthorized)
+        }
+        try await app.test(.GET, "/admin/audit/integrity", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .forbidden)
+        })
+
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "audit-integrity-admin")
+            .first()
+        let user = try XCTUnwrap(storedUser)
+        user.isAdmin = true
+        try await user.update(on: app.db)
+
+        try await app.test(.GET, "/admin/audit/integrity", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let result = try response.content.decode(AuditIntegrityVerification.self)
+            XCTAssertTrue(
+                result.isValid,
+                result.failureCode ?? "unknown audit-integrity failure"
+            )
+            XCTAssertGreaterThanOrEqual(result.verifiedEvents, 2)
+            XCTAssertEqual(result.activeSigningKeyID, "test-key")
+            let body = response.body.string
+            XCTAssertFalse(body.contains("audit-integrity-admin"))
+            XCTAssertFalse(body.contains("192.0.2"))
+        })
+    }
 
     func testMaintenanceCommandsNeverStartApplicationWorkers() {
         XCTAssertFalse(LifecyclePolicy.shouldStartWorkers(arguments: ["Run", "migrate", "--yes"]))

@@ -28,13 +28,17 @@ final class AuditLog: Model {
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
 
     init() {}
-    init(userID: UUID?, action: String, target: String, ip: String) {
+    init(userID: UUID?, action: String, target: String, ip: String, recordedAt: Date = Date()) {
         let recordID = UUID()
+        let milliseconds = Int64((recordedAt.timeIntervalSince1970 * 1_000).rounded())
         self.id = recordID
         self.userID = userID
         self.action = action
         self.targetCipher = FieldCrypto.encrypt(target, field: .auditTarget, recordID: recordID)
         self.ipCipher = FieldCrypto.encrypt(ip, field: .auditIP, recordID: recordID)
+        // Millisecond normalization survives PostgreSQL/SQLite date codecs
+        // exactly and keeps the signed logical commitment stable on reload.
+        self.createdAt = Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
     }
 
     private var encryptionID: UUID {

@@ -70,6 +70,7 @@ enum APIKeyRoutePolicy {
         Rule(.GET, "/report/:id", .require(.scansRead)),
         Rule(.GET, "/admin/dashboard", .deny),
         Rule(.GET, "/admin/audit", .deny),
+        Rule(.GET, "/admin/audit/integrity", .deny),
         Rule(.GET, "/admin/notification-deliveries", .deny),
         Rule(.POST, "/admin/notification-deliveries/:id/retry", .deny),
 

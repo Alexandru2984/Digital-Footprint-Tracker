@@ -1,8 +1,8 @@
 # Compose v2 — `version:` key is no longer required and triggers a warning.
 #
 # Quick start:
-#   1. cp .env.docker.example .env  &&  edit values (especially the *_PASSWORD
-#      and ENCRYPTION_KEY entries — defaults will refuse to start).
+#   1. cp .env.docker.example .env  &&  edit every required password,
+#      encryption-key and audit-secret entry (empty values refuse to start).
 #   2. docker compose up -d --build
 #   3. visit http://localhost:${APP_PORT:-8085}
 #
@@ -32,6 +32,11 @@ services:
 
       # Required sensitive-field encryption master key. Exactly 64 hex chars.
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      # Independent Ed25519 seed for the tamper-evident audit ledger.
+      AUDIT_SIGNING_KEY: ${AUDIT_SIGNING_KEY:?set AUDIT_SIGNING_KEY in .env}
+      AUDIT_SIGNING_KEY_ID: ${AUDIT_SIGNING_KEY_ID:-audit-primary}
+      # Stable HMAC key prevents offline dictionary attacks against audit PII.
+      AUDIT_COMMITMENT_KEY: ${AUDIT_COMMITMENT_KEY:?set AUDIT_COMMITMENT_KEY in .env}
       SCAN_MAX_CONCURRENT: ${SCAN_MAX_CONCURRENT:-3}
       SCAN_MAX_QUEUED: ${SCAN_MAX_QUEUED:-32}
 

@@ -99,3 +99,13 @@ test('admin audit and notification payloads render as text, never markup', async
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });
+
+test('admin exposes signed audit verification without leaking ledger payloads', async ({ page }) => {
+    await mockAPI(page, { authenticated: true, admin: true });
+    await page.goto('/admin.html', { waitUntil: 'networkidle' });
+    const status = page.locator('#audit-integrity-status');
+    await expect(status).toContainText('Valid signed ledger');
+    await expect(status).toContainText('12 events');
+    await expect(status).toContainText('browser-test');
+    await expect(status).not.toContainText('headHash');
+});

@@ -22,6 +22,11 @@ actor MetricsRegistry {
     private(set) var exportJobs: [String: UInt64] = [:]
     private(set) var darkWebJobs: [String: UInt64] = [:]
     private(set) var sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]] = [:]
+    private(set) var auditLogWriteFailures: UInt64 = 0
+    private(set) var auditIntegrityVerificationFailures: UInt64 = 0
+    private(set) var auditIntegrityStatus: Int = -1
+    private(set) var auditIntegrityLastVerifiedUnix: Int = 0
+    private(set) var auditIntegrityLastSequence: Int = 0
 
     func incPluginCacheHit()   { pluginCacheHits   &+= 1 }
     func incPluginCacheMiss()  { pluginCacheMisses &+= 1 }
@@ -42,6 +47,17 @@ actor MetricsRegistry {
     func incExportJob(status: String) {
         exportJobs[status, default: 0] &+= 1
     }
+    func incAuditLogWriteFailure() {
+        auditLogWriteFailures &+= 1
+    }
+    func recordAuditIntegrityVerification(_ result: AuditIntegrityVerification) {
+        auditIntegrityStatus = result.isValid ? 1 : 0
+        auditIntegrityLastVerifiedUnix = Int(result.checkedAt.timeIntervalSince1970)
+        auditIntegrityLastSequence = result.lastSequence > Int64(Int.max)
+            ? Int.max
+            : Int(result.lastSequence)
+        if !result.isValid { auditIntegrityVerificationFailures &+= 1 }
+    }
     func recordSensitiveFieldFailure(
         field: FieldCrypto.StoredField,
         reason: FieldCrypto.DecryptionReason
@@ -59,6 +75,11 @@ actor MetricsRegistry {
         let exportJobs: [String: UInt64]
         let darkWebJobs: [String: UInt64]
         let sensitiveFieldFailures: [FieldCrypto.StoredField: [FieldCrypto.DecryptionReason: UInt64]]
+        let auditLogWriteFailures: UInt64
+        let auditIntegrityVerificationFailures: UInt64
+        let auditIntegrityStatus: Int
+        let auditIntegrityLastVerifiedUnix: Int
+        let auditIntegrityLastSequence: Int
     }
 
     func snapshot() -> Snapshot {
@@ -69,7 +90,12 @@ actor MetricsRegistry {
             notificationJobTransitions: notificationJobTransitions,
             exportJobs: exportJobs,
             darkWebJobs: darkWebJobs,
-            sensitiveFieldFailures: sensitiveFieldFailures
+            sensitiveFieldFailures: sensitiveFieldFailures,
+            auditLogWriteFailures: auditLogWriteFailures,
+            auditIntegrityVerificationFailures: auditIntegrityVerificationFailures,
+            auditIntegrityStatus: auditIntegrityStatus,
+            auditIntegrityLastVerifiedUnix: auditIntegrityLastVerifiedUnix,
+            auditIntegrityLastSequence: auditIntegrityLastSequence
         )
     }
 }

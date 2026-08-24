@@ -63,9 +63,31 @@ struct ScanCleanupLifecycle: LifecycleHandler {
                 // unusable log list and an oversized backup.
                 let auditCutoff = now.addingTimeInterval(-90 * 86400)
                 do {
-                    try await AuditLog.query(on: db)
-                        .filter(\.$createdAt < auditCutoff)
-                        .delete()
+                    while true {
+                        let removed = try await db.transaction { transaction in
+                            let expired = try await AuditLog.query(on: transaction)
+                                .filter(\.$createdAt < auditCutoff)
+                                .sort(\.$createdAt, .ascending)
+                                .limit(200)
+                                .all()
+                            guard !expired.isEmpty else { return 0 }
+                            if let configuration = app.auditIntegrityConfiguration {
+                                for entry in expired {
+                                    try await AuditIntegrityLedger.recordRetention(
+                                        auditLogID: try entry.requireID(),
+                                        on: transaction,
+                                        configuration: configuration
+                                    )
+                                }
+                            }
+                            let ids = try expired.map { try $0.requireID() }
+                            try await AuditLog.query(on: transaction)
+                                .filter(\.$id ~~ ids)
+                                .delete()
+                            return ids.count
+                        }
+                        if removed == 0 { break }
+                    }
                 } catch {
                     app.logger.error("CleanupJob: audit log cleanup failed: \(error)")
                 }
