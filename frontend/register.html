@@ -16,10 +16,11 @@
     </style>
 </head>
 <body class="font-mono min-h-screen flex items-center justify-center relative overflow-x-hidden py-6 sm:py-10">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <!-- Grid Background -->
     <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
 
-    <div class="relative z-10 w-full max-w-sm px-4">
+    <main id="main-content" tabindex="-1" class="relative z-10 w-full max-w-sm px-4">
         <!-- Logo -->
         <div class="text-center mb-6 sm:mb-8">
             <div class="inline-flex items-center gap-3 mb-3">
@@ -30,7 +31,7 @@
                         <path d="M2 12h20"></path>
                     </svg>
                 </div>
-                <span class="text-xl font-bold text-white">OSINT <span class="text-brand-500">TRACKER</span></span>
+                <h1 class="text-xl font-bold text-white">OSINT <span class="text-brand-500">TRACKER</span></h1>
             </div>
             <p class="text-slate-400 text-sm">Create your account</p>
         </div>
@@ -41,20 +42,20 @@
 
             <form id="register-form" method="POST" class="flex flex-col gap-4">
                 <div>
-                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
+                    <label for="username" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
                     <input type="text" id="username" name="username" required autocomplete="username"
                            minlength="3" maxlength="30" pattern="[a-zA-Z0-9_\-]+"
                            class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
                            placeholder="3–30 chars, letters/numbers/_-">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
+                    <label for="email" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
                     <input type="email" id="email" name="email" required autocomplete="email"
                            class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
                            placeholder="you@example.com">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+                    <label for="password" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="new-password"
                            minlength="8"
                            class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
@@ -67,13 +68,13 @@
             </form>
 
             <p class="text-center text-xs text-slate-500 mt-4">
-                Already have an account? <a href="/login.html" class="text-brand-400 hover:text-brand-300 transition-colors">Login here</a>
+                Already have an account? <a href="/login.html" class="text-brand-400 hover:text-brand-300 underline transition-colors">Login here</a>
             </p>
             <p class="text-center text-xs text-slate-600 mt-2">
                 <a href="/" class="hover:text-slate-400 transition-colors">← Back to scanner</a>
             </p>
         </div>
-    </div>
+    </main>
 
     <script>
         document.getElementById('register-form').addEventListener('submit', async (e) => {

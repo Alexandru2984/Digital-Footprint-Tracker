@@ -106,8 +106,11 @@ series), with its own rollback note and production evidence before the next one.
     cancellation. Correlation jobs and object-storage scale-out remain open.
 11. **Security telemetry:** append-only audit writer, signed remote stream,
     auth/egress/admin alerts, drift detection and incident runbooks/tabletop.
-12. **Browser quality gate:** extract inline code, strict static CSP, Playwright
-    viewports, keyboard/screen-reader checks, reduced motion and WCAG 2.2 AA.
+12. **Browser quality gate — repository core delivered:** pinned offline
+    Playwright/axe at 320/375/768/1440, WCAG 2.2 AA, overflow/touch targets,
+    keyboard focus, reduced motion, DOM-XSS fixtures and CSP execution checks.
+    Inline extraction, Trusted Types, manual screen-reader review and the live
+    Cloudflare/nginx browser acceptance remain open.
 13. **Timeline intelligence pack:** RDAP creation, certificate transparency,
     Wayback first capture, provider join dates, breach recurrence and confidence.
 14. **Case/team model:** workspaces, RBAC, case tasks/evidence, dual approval,
@@ -186,6 +189,13 @@ deploy-time verification remain open.
 - Turnstile only on abuse-sensitive anonymous flows, with privacy fallback.
 - Separate public liveness from internal/database readiness.
 - DNSSEC, CAA review, certificate-expiry and unexpected-certificate alerts.
+
+**Repository browser gate delivered:** deterministic Chromium runs without
+external network access against the production CSP fixture across four
+viewports, enforcing axe WCAG 2.2 AA, focus/keyboard, reduced motion, target
+size, overflow and malicious DOM payload controls. Inline script/style
+extraction, Trusted Types, manual assistive-technology review, CSP reporting and
+live edge evidence remain open.
 
 ## Phase 2 — reliable scan engine
 

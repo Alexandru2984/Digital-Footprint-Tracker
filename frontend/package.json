@@ -5,13 +5,16 @@
   "main": "index.js",
   "scripts": {
     "build:css": "tailwindcss -i ./input.css -o ./tailwind.css --minify",
-    "test": "node ./check.mjs"
+    "test": "node ./check.mjs",
+    "test:browser": "playwright test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1",
     "tailwindcss": "^3.4.19"
   }
 }

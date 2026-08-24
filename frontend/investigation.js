@@ -741,7 +741,9 @@
 
     var now = new Date();
     var html =
-      '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(board.name || 'Investigation') + ' — report</title>' +
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data: blob:; base-uri \'none\'; form-action \'none\'">' +
+      '<meta name="referrer" content="no-referrer"><title>' + escapeHtml(board.name || 'Investigation') + ' — report</title>' +
       '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:960px;margin:24px auto;padding:0 20px;line-height:1.45}' +
       'h1{margin:0 0 2px}.muted{color:#64748b;font-weight:400}.sub{color:#64748b;font-size:13px;margin-bottom:16px}' +
       '.chips{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.chip{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:3px 8px;font-size:12px}' +
@@ -757,9 +759,17 @@
       '<h2>Entities</h2>' + sections +
       '</body></html>';
 
-    var w = window.open('', '_blank');
-    if (!w) { status('Allow pop-ups to open the report.'); return; }
-    w.document.open(); w.document.write(html); w.document.close();
+    var reportBlob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    var reportURL = URL.createObjectURL(reportBlob);
+    var reportLink = document.createElement('a');
+    reportLink.href = reportURL;
+    reportLink.target = '_blank';
+    reportLink.rel = 'noopener noreferrer';
+    reportLink.hidden = true;
+    document.body.appendChild(reportLink);
+    reportLink.click();
+    reportLink.remove();
+    setTimeout(function () { URL.revokeObjectURL(reportURL); }, 60000);
     status('Report opened — Ctrl/Cmd-P to save as PDF.');
   }
 

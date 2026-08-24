@@ -50,6 +50,10 @@ graph.
   local/offline SAST rules with positive controls, dependency-diff policy,
   grouped Dependabot coverage, and validated SPDX + CycloneDX SBOM artifacts.
   See the [`supply-chain runbook`](docs/SUPPLY_CHAIN_SECURITY.md).
+- **Real-browser quality gate** — Chromium + axe-core exercise WCAG 2.2 AA,
+  keyboard/focus, reduced motion, DOM-XSS fixtures, production CSP and overflow
+  at 320, 375, 768 and 1440 px. See the
+  [`browser runbook`](docs/BROWSER_QUALITY.md).
 - **Hermetic test suite** running on every push (`swift test` in CI with
   in-memory SQLite; 199 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
@@ -184,7 +188,8 @@ PostgreSQL
 - **Identity graph** — D3.js v7 force-directed; centre = target, leaves = sources, edge colour = confidence
 - **Filters & sorting** — by type (social_media, breach_data, dns_record, …), confidence, source A–Z
 - **Exports** — CSV, JSON, PDF
-- **Dark / light mode**, keyboard shortcuts, mobile-responsive
+- **Dark / light mode**, keyboard shortcuts, skip navigation, reduced-motion
+  support and mobile-responsive layouts validated at four viewport widths
 - Share link, force-rescan (bypass cache), input-type auto-detection (EMAIL / USERNAME / DOMAIN / PHONE)
 - Scan history in localStorage (last 20 scans)
 

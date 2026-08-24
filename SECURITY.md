@@ -95,11 +95,12 @@ socket peer address.
 | HSTS downgrade                  | `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`                        | nginx                                                  |
 | Clickjacking                    | `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'`                                         | nginx                                                  |
 | MIME sniffing                   | `X-Content-Type-Options: nosniff`                                                                | nginx                                                  |
-| Reflected XSS                   | CSP `default-src 'self'`, `script-src 'self'` plus three pinned inline-script SHA-256 hashes      | nginx                                                  |
-| **Stored XSS** (diff modal)     | All API values interpolated into `innerHTML` pass through `escapeHtml`                            | `frontend/index.html` `mkSection`; `frontend/admin.js` |
+| Reflected XSS                   | CSP `default-src 'self'`, `script-src 'self'` plus four pinned inline-script SHA-256 hashes; Chromium proves an unapproved inline script is blocked | nginx, `frontend/tests/browser/interaction-security.spec.mjs` |
+| **Stored XSS** (diff/admin/notification) | API values interpolated into reviewed HTML templates pass through escaping; malicious real-browser fixtures assert text-only rendering, and first-party `document.write` is forbidden | `frontend/index.html`, `frontend/admin.js`, `frontend/check.mjs` |
 | CSRF                            | `SameSite=Strict` cookies + `CSRFMiddleware`: parses the Origin/Referer and matches the **host exactly** (an earlier `hasPrefix` check let `swift.micutu.com.evil.com` through) on POST/PUT/PATCH/DELETE | `configure.swift`, `Sources/App/Middleware/CSRFMiddleware.swift` |
 | Camera / mic / geolocation      | `Permissions-Policy: camera=(), microphone=(), geolocation=()`                                   | nginx                                                  |
-| Third-party CDN takeover        | All frontend dependencies bundled locally (d3.min.js, leaflet.css/js, tailwind.css). CSP allows only `'self'` and two specific analytics origins | `frontend/`, nginx                       |
+| Third-party CDN takeover        | All executable/style dependencies are bundled locally; CSP script/style sources are first-party (OpenStreetMap is image-only) | `frontend/`, nginx                       |
+| Accessibility regression       | Pinned offline Chromium + axe gate covers WCAG 2.2 AA, focus/keyboard, motion preference, target size and horizontal overflow at 320/375/768/1440 px; manual assistive-technology review remains required | `docs/BROWSER_QUALITY.md`, `scripts/run-browser-tests.sh` |
 
 ### Authentication & sessions
 

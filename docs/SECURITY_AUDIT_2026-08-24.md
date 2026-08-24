@@ -193,8 +193,11 @@ from repository completion.
    local Semgrep positive controls, dependency review and validated
    SPDX/CycloneDX artifacts. Final image/OS scanning, signed release provenance
    and deploy-time verification remain open.
-9. Add Playwright mobile/accessibility/CSP coverage at 320, 375, 768 and 1440
-   pixels before expanding the UI.
+9. **Repository browser gate delivered; live edge evidence pending:** pinned
+   offline Playwright/axe now enforces WCAG 2.2 AA, overflow, touch targets,
+   keyboard focus, reduced motion, DOM-XSS fixtures and the production CSP at
+   320, 375, 768 and 1440 pixels. Complete a manual assistive-technology pass
+   and a real production browser run with Cloudflare JSD before acceptance.
 10. After Phase 0, deliver passkeys/session inventory, cases/workspaces/RBAC,
     timelines, evidence provenance, saved searches, notification inbox, PWA
     shell, bilingual UI and provider-health dashboards in the dependency order

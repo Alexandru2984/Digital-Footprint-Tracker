@@ -1,3 +1,71 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+    :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+        outline: 2px solid #34d399 !important;
+        outline-offset: 3px !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        html:focus-within {
+            scroll-behavior: auto;
+        }
+
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+            transition-duration: 0.01ms !important;
+            transition-delay: 0ms !important;
+        }
+    }
+}
+
+@layer components {
+    .skip-link {
+        position: fixed;
+        top: 0.75rem;
+        left: 0.75rem;
+        z-index: 10000;
+        transform: translateY(-200%);
+        border: 2px solid #34d399;
+        border-radius: 0.5rem;
+        background: #0f172a;
+        color: #f8fafc;
+        padding: 0.65rem 0.9rem;
+        font-size: 0.875rem;
+        font-weight: 700;
+        transition: transform 0.15s ease;
+    }
+
+    .skip-link:focus-visible {
+        transform: translateY(0);
+    }
+}
+
+@layer utilities {
+    /* Tailwind's default slate-400/500 values fall below 4.5:1 on dark-700
+       surfaces. These accessible muted tokens retain the visual hierarchy. */
+    .text-slate-400,
+    .text-slate-500,
+    .text-slate-600 {
+        color: #b6c2d1 !important;
+    }
+
+    .placeholder-slate-500::placeholder,
+    .placeholder-slate-600::placeholder {
+        color: #94a3b8 !important;
+        opacity: 1;
+    }
+
+    /* White small text needs the darker brand surface for WCAG AA. */
+    .bg-brand-600 {
+        background-color: #047857 !important;
+    }
+
+    .hover\:bg-brand-500:hover {
+        background-color: #065f46 !important;
+    }
+}

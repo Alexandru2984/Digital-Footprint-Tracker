@@ -16,10 +16,11 @@
     </style>
 </head>
 <body class="font-mono min-h-screen flex items-center justify-center relative overflow-x-hidden py-6 sm:py-10">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <!-- Grid Background -->
     <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
 
-    <div class="relative z-10 w-full max-w-sm px-4">
+    <main id="main-content" tabindex="-1" class="relative z-10 w-full max-w-sm px-4">
         <!-- Logo -->
         <div class="text-center mb-6 sm:mb-8">
             <div class="inline-flex items-center gap-3 mb-3">
@@ -30,7 +31,7 @@
                         <path d="M2 12h20"></path>
                     </svg>
                 </div>
-                <span class="text-xl font-bold text-white">OSINT <span class="text-brand-500">TRACKER</span></span>
+                <h1 class="text-xl font-bold text-white">OSINT <span class="text-brand-500">TRACKER</span></h1>
             </div>
             <p class="text-slate-400 text-sm">Sign in to your account</p>
         </div>
@@ -41,13 +42,13 @@
 
             <form id="login-form" method="POST" class="flex flex-col gap-4">
                 <div>
-                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
+                    <label for="username" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
                     <input type="text" id="username" name="username" required autocomplete="username"
                            class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
                            placeholder="your_username">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+                    <label for="password" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password"
                            class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
                            placeholder="••••••••">
@@ -61,6 +62,7 @@
             <!-- Second factor (shown when the account has 2FA enabled) -->
             <form id="twofa-form" class="hidden flex-col gap-4">
                 <p class="text-xs text-slate-400">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+                <label for="twofa-code" class="sr-only">Authenticator or recovery code</label>
                 <input type="text" id="twofa-code" inputmode="numeric" autocomplete="one-time-code"
                        class="bg-dark-900 border border-dark-700 text-white text-center tracking-[0.3em] text-lg rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none"
                        placeholder="123456">
@@ -71,13 +73,13 @@
             </form>
 
             <p class="text-center text-xs text-slate-500 mt-4">
-                No account? <a href="/register.html" class="text-brand-400 hover:text-brand-300 transition-colors">Register here</a>
+                No account? <a href="/register.html" class="text-brand-400 hover:text-brand-300 underline transition-colors">Register here</a>
             </p>
             <p class="text-center text-xs text-slate-600 mt-2">
                 <a href="/" class="hover:text-slate-400 transition-colors">← Back to scanner</a>
             </p>
         </div>
-    </div>
+    </main>
 
     <script>
         const errEl = document.getElementById('error-msg');

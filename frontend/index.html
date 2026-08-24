@@ -212,6 +212,7 @@
     <script defer src="/qrcode.js"></script>
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
     <!-- Crawlable / no-JS fallback: real content for search engines and clients without JS. -->
     <noscript>
         <div style="max-width:720px;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;color:#cbd5e1;background:#1e293b;border:1px solid #334155;border-radius:12px;line-height:1.6">
@@ -231,7 +232,7 @@
     <!-- Grid Background Pattern -->
     <div class="absolute inset-0 pointer-events-none opacity-10" style="background-image: linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px); background-size: 30px 30px;"></div>
 
-    <main class="flex-grow container mx-auto px-3 sm:px-4 py-5 sm:py-8 relative z-10 flex flex-col max-w-5xl">
+    <main id="main-content" tabindex="-1" class="flex-grow container mx-auto px-3 sm:px-4 py-5 sm:py-8 relative z-10 flex flex-col max-w-5xl">
         <!-- Header -->
         <header class="mb-6 sm:mb-10 text-left border-b border-dark-700 pb-4 sm:pb-6 flex items-center gap-3 sm:gap-4 relative">
             <div class="p-3 bg-dark-800 rounded-lg border border-dark-700 shadow-[0_0_15px_rgba(16,185,129,0.2)] text-brand-500">
@@ -849,10 +850,10 @@
     </div>
 
     <!-- Keyboard Shortcuts Help Overlay -->
-    <div id="kbd-help-overlay" role="dialog" aria-modal="true" aria-label="Keyboard Shortcuts">
+    <div id="kbd-help-overlay" role="dialog" aria-modal="true" aria-labelledby="kbd-help-title" aria-hidden="true">
         <div class="bg-dark-800 border border-dark-700 rounded-xl p-6 shadow-2xl w-full max-w-sm mx-4">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-base font-bold text-white">⌨ Keyboard Shortcuts</h2>
+                <h2 id="kbd-help-title" class="text-base font-bold text-white">⌨ Keyboard Shortcuts</h2>
                 <button id="kbd-help-close" class="text-slate-500 hover:text-red-400 transition-colors text-lg" aria-label="Close">✕</button>
             </div>
             <table class="w-full text-xs text-slate-300">
@@ -3658,16 +3659,50 @@
         });
 
         // ── Keyboard shortcuts ──────────────────────────────────────────────────
+        let kbdHelpReturnFocus = null;
+        const kbdHelpOverlay = document.getElementById('kbd-help-overlay');
+        const kbdHelpClose = document.getElementById('kbd-help-close');
+        const kbdHelpTrigger = document.getElementById('kbd-help-trigger');
+
+        function openKeyboardHelp() {
+            kbdHelpReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            kbdHelpOverlay.classList.add('active');
+            kbdHelpOverlay.setAttribute('aria-hidden', 'false');
+            kbdHelpClose.focus();
+        }
+
+        function closeKeyboardHelp() {
+            if (!kbdHelpOverlay.classList.contains('active')) return;
+            kbdHelpOverlay.classList.remove('active');
+            kbdHelpOverlay.setAttribute('aria-hidden', 'true');
+            const returnTarget = kbdHelpReturnFocus && document.contains(kbdHelpReturnFocus)
+                ? kbdHelpReturnFocus : kbdHelpTrigger;
+            returnTarget.focus();
+            kbdHelpReturnFocus = null;
+        }
+
+        kbdHelpOverlay.addEventListener('keydown', (event) => {
+            if (event.key !== 'Tab') return;
+            const focusable = [...kbdHelpOverlay.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+                .filter(element => !element.disabled && element.getClientRects().length > 0);
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        });
+
         document.addEventListener('keydown', (e) => {
             const tag = (e.target && e.target.tagName) || '';
             const inInput = ['INPUT','TEXTAREA','SELECT'].includes(tag) || e.target.isContentEditable;
 
             if (e.key === 'Escape') {
                 // Close any open modal
-                ['diff-modal','kbd-help-overlay'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.classList.remove('active');
-                });
+                document.getElementById('diff-modal')?.classList.remove('active');
+                closeKeyboardHelp();
                 return;
             }
             if (inInput) return;
@@ -3677,17 +3712,13 @@
                 if (inp) { inp.focus(); inp.select(); }
             }
             if (e.key === '?') {
-                const ov = document.getElementById('kbd-help-overlay');
-                if (ov) ov.classList.toggle('active');
+                if (kbdHelpOverlay.classList.contains('active')) closeKeyboardHelp();
+                else openKeyboardHelp();
             }
         });
 
-        document.getElementById('kbd-help-close').addEventListener('click', () => {
-            document.getElementById('kbd-help-overlay').classList.remove('active');
-        });
-        document.getElementById('kbd-help-trigger').addEventListener('click', () => {
-            document.getElementById('kbd-help-overlay').classList.add('active');
-        });
+        kbdHelpClose.addEventListener('click', closeKeyboardHelp);
+        kbdHelpTrigger.addEventListener('click', openKeyboardHelp);
 
         // Render history panel on page load.
         renderHistory();

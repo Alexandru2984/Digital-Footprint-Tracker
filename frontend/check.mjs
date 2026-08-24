@@ -76,6 +76,12 @@ const firstPartySource = pages.concat(['admin.js', 'investigation.js', 'dark-web
 if (/localStorage\.(?:getItem|setItem)\(\s*["']authToken["']/i.test(firstPartySource)) {
     fail('Bearer credentials must not be persisted in localStorage');
 }
+if (/document\.write\s*\(/.test(firstPartySource)) {
+    fail('First-party code must not use the document.write HTML parser sink');
+}
+if (!readFileSync(join(frontendDir, 'investigation.js'), 'utf8').includes("default-src \\'none\\'")) {
+    fail('Generated investigation reports require a deny-by-default embedded CSP');
+}
 const darkWebSource = readFileSync(join(frontendDir, 'dark-web.js'), 'utf8');
 if (/\.innerHTML\s*=/.test(darkWebSource)) {
     fail('dark-web.js must render untrusted worker data without innerHTML');
