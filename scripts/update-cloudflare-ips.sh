@@ -138,7 +138,7 @@ fi
 if ! sudo systemctl reload nginx; then
     echo "[cf] nginx reload failed — rolling back both files" >&2
     rollback
-    sudo nginx -t && sudo systemctl reload nginx || true
+    if sudo nginx -t; then sudo systemctl reload nginx || true; fi
     exit 1
 fi
 echo "[cf] real-IP and origin-guard files updated ($(grep -c set_real_ip_from "$REALIP_SNIPPET") ranges)"
