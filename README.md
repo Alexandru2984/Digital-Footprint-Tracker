@@ -46,6 +46,10 @@ graph.
 - **Executable authorization inventory** — every Vapor method/path has an exact
   API-key decision, unknown routes fail closed, and CI exercises a randomized
   37-request cross-tenant mutation/read matrix plus 11 collection leak checks.
+- **Blocking supply-chain gate** — full-history redacted secret scanning,
+  local/offline SAST rules with positive controls, dependency-diff policy,
+  grouped Dependabot coverage, and validated SPDX + CycloneDX SBOM artifacts.
+  See the [`supply-chain runbook`](docs/SUPPLY_CHAIN_SECURITY.md).
 - **Hermetic test suite** running on every push (`swift test` in CI with
   in-memory SQLite; 199 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.

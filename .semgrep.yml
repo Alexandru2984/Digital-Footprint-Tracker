@@ -1,0 +1,199 @@
+rules:
+  - id: python-subprocess-shell-true
+    message: Do not invoke a subprocess through a shell; pass a fixed argv list.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: subprocess.run(..., shell=True, ...)
+      - pattern: subprocess.call(..., shell=True, ...)
+      - pattern: subprocess.check_call(..., shell=True, ...)
+      - pattern: subprocess.check_output(..., shell=True, ...)
+      - pattern: subprocess.Popen(..., shell=True, ...)
+    metadata:
+      category: security
+      cwe: CWE-78
+
+  - id: python-os-command-execution
+    message: Avoid string-based OS command execution; use subprocess with a fixed argv list.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+    metadata:
+      category: security
+      cwe: CWE-78
+
+  - id: python-dynamic-code-execution
+    message: Dynamic Python code execution is forbidden in application and operational code.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+    metadata:
+      category: security
+      cwe: CWE-95
+
+  - id: python-unsafe-deserialization
+    message: Loading attacker-influenced native objects can execute code; use a data-only format.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+      - pattern: dill.load(...)
+      - pattern: dill.loads(...)
+      - pattern: yaml.unsafe_load(...)
+      - patterns:
+          - pattern: yaml.load(...)
+          - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+    metadata:
+      category: security
+      cwe: CWE-502
+
+  - id: python-disabled-tls-verification
+    message: TLS certificate verification must not be disabled.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: requests.get(..., verify=False, ...)
+      - pattern: requests.post(..., verify=False, ...)
+      - pattern: requests.put(..., verify=False, ...)
+      - pattern: requests.patch(..., verify=False, ...)
+      - pattern: requests.delete(..., verify=False, ...)
+      - pattern: requests.request(..., verify=False, ...)
+      - pattern: httpx.Client(..., verify=False, ...)
+      - pattern: httpx.AsyncClient(..., verify=False, ...)
+    metadata:
+      category: security
+      cwe: CWE-295
+
+  - id: python-insecure-temporary-name
+    message: tempfile.mktemp is race-prone; use a securely opened temporary file or directory.
+    severity: ERROR
+    languages: [python]
+    pattern: tempfile.mktemp(...)
+    metadata:
+      category: security
+      cwe: CWE-377
+
+  - id: javascript-dynamic-code-execution
+    message: Dynamic JavaScript evaluation is incompatible with the strict CSP and can enable code injection.
+    severity: ERROR
+    languages: [javascript, typescript]
+    paths:
+      exclude:
+        # This integrity checker deliberately parses trusted, Git-tracked
+        # frontend source. It is not shipped to or reachable by the browser.
+        - /frontend/check.mjs
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+    metadata:
+      category: security
+      cwe: CWE-95
+
+  - id: javascript-shell-command-execution
+    message: Avoid string-based shell execution in JavaScript tooling; use a fixed argv array.
+    severity: ERROR
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          - pattern: $CP.exec(...)
+          - pattern: $CP.execSync(...)
+      - metavariable-regex:
+          metavariable: $CP
+          regex: '^(?:child_process|childProcess|cp)$'
+    metadata:
+      category: security
+      cwe: CWE-78
+
+  - id: javascript-location-to-html-sink
+    mode: taint
+    message: URL-controlled data reaches an HTML parser; use textContent or an audited sanitizer.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern-sources:
+      - pattern-either:
+          - pattern: location.search
+          - pattern: location.hash
+          - pattern: window.location.search
+          - pattern: window.location.hash
+    pattern-sinks:
+      - pattern-either:
+          - pattern: $ELEMENT.innerHTML = $VALUE
+          - pattern: $ELEMENT.outerHTML = $VALUE
+          - pattern: $ELEMENT.insertAdjacentHTML(..., $VALUE)
+          - pattern: document.write($VALUE)
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: escapeHtml(...)
+          - pattern: encodeURIComponent(...)
+    metadata:
+      category: security
+      cwe: CWE-79
+
+  - id: javascript-wildcard-postmessage
+    message: postMessage requires an exact trusted target origin, not '*'.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern: $WINDOW.postMessage($DATA, "*")
+    metadata:
+      category: security
+      cwe: CWE-346
+
+  - id: swift-interpolated-raw-sql
+    message: Bind values in SQLKit raw queries; do not interpolate values into SQL text.
+    severity: ERROR
+    languages: [swift]
+    pattern-regex: '(?s)\.raw\(\s*(?:"""|")[^)]{0,500}\\\((?!(?:bind|ident):)'
+    metadata:
+      category: security
+      cwe: CWE-89
+
+  - id: swift-shell-command-execution
+    message: Do not pass command strings to /bin/sh or /bin/bash; invoke a fixed executable and argv.
+    severity: ERROR
+    languages: [swift]
+    pattern-regex: '(?s)\.executableURL\s*=\s*URL\(fileURLWithPath:\s*"/bin/(?:sh|bash)"\).{0,800}\.arguments\s*=\s*\[\s*"-c"'
+    metadata:
+      category: security
+      cwe: CWE-78
+
+  - id: swift-disabled-server-trust
+    message: Never accept a TLS server trust challenge without normal hostname and chain validation.
+    severity: ERROR
+    languages: [swift]
+    pattern-regex: 'completionHandler\(\s*\.useCredential\s*,\s*URLCredential\(trust:'
+    metadata:
+      category: security
+      cwe: CWE-295
+
+  - id: shell-download-pipe-execute
+    message: Downloading and executing a mutable network response in one pipeline is forbidden.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - "**/*.sh"
+        - Dockerfile
+    pattern-regex: '(?i)(?:curl|wget)[^\n|]{0,500}\|\s*(?:sudo\s+)?(?:sh|bash)\b'
+    metadata:
+      category: security
+      cwe: CWE-494
+
+  - id: shell-world-writable-permissions
+    message: World-writable executable or configuration paths are forbidden.
+    severity: ERROR
+    languages: [generic]
+    paths:
+      include:
+        - "**/*.sh"
+        - Dockerfile
+    pattern-regex: '(?m)^\s*chmod\s+(?:-R\s+)?(?:0?777|a\+rwx)\b'
+    metadata:
+      category: security
+      cwe: CWE-732

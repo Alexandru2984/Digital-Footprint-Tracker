@@ -132,6 +132,16 @@ socket peer address.
 | Cross-tenant regressions across resource types | Randomized owner/attacker integration matrix covers 37 identifier reads/mutations and 11 filtered collections/exports, asserting denial, absence, and unchanged rows/relationships | `AppTests.testCrossTenantResourceAndCollectionIsolationMatrix`, `docs/ROUTE_AUTHORIZATION.md` |
 | Concurrent recovery-code replay               | Recovery-code removal runs transactionally; PostgreSQL locks the user row with `FOR UPDATE` before decrypt/remove/save                      | `TwoFactorController.consumeRecoveryCode`                                        |
 
+### Supply chain
+
+| Threat | Mitigation | Reference |
+|---|---|---|
+| Secret committed now or historically | Pinned Gitleaks scans all reachable commits with complete redaction; an exact-fingerprint baseline covers only 37 reviewed historical fixtures/examples, and a disposable positive control proves detection remains active | `scripts/run-security-gates.sh`, `.gitleaksignore` |
+| Mutable or silent SAST | Pinned Semgrep runs without network against 15 repository-owned rules; positive/negative controls fail CI if unsafe subprocess code is not detected or safe argv code is rejected | `.semgrep.yml`, `scripts/run-security-gates.sh` |
+| Vulnerable dependency introduced | Pull-request dependency review rejects new high/critical advisories; OSV scans the complete checkout and Dependabot covers Swift, Python, npm, Actions and Docker manifests | `.github/workflows/ci.yml`, `.github/dependabot.yml` |
+| Unknown source dependency closure | Pinned, network-isolated Syft emits SPDX 2.3 and CycloneDX JSON and rejects output missing any SwiftPM, npm or Python ecosystem | `scripts/generate-sbom.sh`, `docs/SUPPLY_CHAIN_SECURITY.md` |
+| Compromised release/artifact | Source gates are delivered, but final image/OS-package scanning, long-lived release SBOM attachment, signing, provenance and deploy-time verification remain open production controls | `docs/SUPPLY_CHAIN_SECURITY.md`, `docs/ROADMAP.md` |
+
 ### Input validation
 
 | Threat                                       | Mitigation                                                                                                                                                       | Reference                                                                  |

@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
 
 jobs:
   frontend:
@@ -111,9 +114,11 @@ jobs:
             scripts/build-release.sh
             scripts/check-backup.sh
             scripts/deploy.sh
+            scripts/generate-sbom.sh
             scripts/install-voidaccess.sh
             scripts/release-lib.sh
             scripts/restore-drill.sh
+            scripts/run-security-gates.sh
             scripts/update-cloudflare-ips.sh
             scripts/update-csp-hashes.sh
             scripts/tests/check-backup.test.sh
@@ -139,9 +144,62 @@ jobs:
             ghcr.io/google/osv-scanner@sha256:8108ae94eadea5a02c9bec6e646909d5b790b44bd62d7f5b7f0b1d6d0ffc7734 \
             scan source --recursive /scan
 
+  dependency-review:
+    name: Dependency change policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Reject newly introduced high-severity dependencies
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          vulnerability-check: true
+          license-check: true
+          show-openssf-scorecard: true
+          warn-on-openssf-scorecard-level: 3
+          comment-summary-in-pr: never
+          retry-on-snapshot-warnings: false
+
+  security:
+    name: Secrets, SAST & SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove scanners detect unsafe controls
+        run: scripts/run-security-gates.sh self-test
+
+      - name: Scan history and source with pinned offline rules
+        run: scripts/run-security-gates.sh scan
+
+      - name: Generate and validate source SBOMs
+        run: scripts/generate-sbom.sh "$RUNNER_TEMP/sbom"
+
+      - name: Upload SPDX and CycloneDX SBOMs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: source-sbom-${{ github.sha }}
+          path: ${{ runner.temp }}/sbom/*.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+
   deploy:
     name: Deploy to VPS
-    needs: [frontend, test, lint, operations]
+    needs: [frontend, test, lint, operations, security]
     # Only push events on main trigger a deploy. Pull requests run the
     # test + lint jobs above but never reach this job.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

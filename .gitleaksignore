@@ -1,0 +1,48 @@
+# Reviewed historical test fixtures and example values. Every exception is an
+# exact commit:path:rule:line fingerprint: new findings in the same files remain
+# blocking. See docs/SUPPLY_CHAIN_SECURITY.md for the review and update policy.
+
+# Test-only password/secret fixtures in AppTests.
+07c8ccb5a03c675a07524486cde2e361bc614ef5:Tests/AppTests/AppTests.swift:generic-api-key:2005
+1a628b8261c8814ec50f7d44bff5bd16b09ad960:Tests/AppTests/AppTests.swift:generic-api-key:107
+1a628b8261c8814ec50f7d44bff5bd16b09ad960:Tests/AppTests/AppTests.swift:generic-api-key:119
+1a628b8261c8814ec50f7d44bff5bd16b09ad960:Tests/AppTests/AppTests.swift:generic-api-key:165
+1a628b8261c8814ec50f7d44bff5bd16b09ad960:Tests/AppTests/AppTests.swift:generic-api-key:1733
+1a628b8261c8814ec50f7d44bff5bd16b09ad960:Tests/AppTests/AppTests.swift:generic-api-key:192
+37b90c8ccb30c16d4a54f3c3e5b4c0b5ea38fc65:Tests/AppTests/AppTests.swift:generic-api-key:76
+37b90c8ccb30c16d4a54f3c3e5b4c0b5ea38fc65:Tests/AppTests/AppTests.swift:generic-api-key:83
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:1924
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:193
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:1954
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:2044
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:2295
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:713
+45f960e3d13d3074b13ad375ff364a2925805d09:Tests/AppTests/AppTests.swift:generic-api-key:788
+72a5a6eceeeb0f28d8c5e3912da49c520570c0ff:Tests/AppTests/AppTests.swift:generic-api-key:1492
+72a5a6eceeeb0f28d8c5e3912da49c520570c0ff:Tests/AppTests/AppTests.swift:generic-api-key:1496
+a849f1d751b4fc6fc3ba3a093bbd96eb07183688:Tests/AppTests/AppTests.swift:generic-api-key:375
+a849f1d751b4fc6fc3ba3a093bbd96eb07183688:Tests/AppTests/AppTests.swift:generic-api-key:388
+a849f1d751b4fc6fc3ba3a093bbd96eb07183688:Tests/AppTests/AppTests.swift:generic-api-key:395
+a849f1d751b4fc6fc3ba3a093bbd96eb07183688:Tests/AppTests/AppTests.swift:generic-api-key:430
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1228
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1232
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1258
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1263
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1348
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1355
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:1400
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:250
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:257
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:325
+f2ec7e6b1937c6b5b33d144562c61c336b1fcfbf:Tests/AppTests/AppTests.swift:generic-api-key:332
+
+# Test-only shared-secret fixture for the isolated VoidAccess worker.
+b8b50aed692d3fe75e36c92ca09a624055303a49:scripts/tests/voidaccess-worker.test.py:generic-api-key:56
+
+# Public immutable source commit/SHA-256 values misclassified as API keys.
+1e93638f7033ed378041ba440e903ac94ff9ef29:scripts/install-voidaccess.sh:generic-api-key:11
+1e93638f7033ed378041ba440e903ac94ff9ef29:scripts/install-voidaccess.sh:generic-api-key:12
+
+# Explicit non-production encryption examples, since replaced with inert labels.
+7f360b9204c0170684a75efd929303c7c691073a:.env.docker.example:generic-api-key:45
+f71e02c8032be21b736f7e36297fe2c5a6a07b3a:.env.docker.example:generic-api-key:33

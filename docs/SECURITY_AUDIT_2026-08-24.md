@@ -188,9 +188,11 @@ from repository completion.
    channel policy, retry classes and dead-letter handling.
 7. Move exports, reports and correlation to bounded asynchronous jobs with
    completeness manifests, expiry and cancellation.
-8. **Authorization/IDOR delivered; supply-chain work in progress:** retain the
-   route-classification and cross-tenant gates, then add secret/SAST/SBOM gates
-   and signed release provenance.
+8. **Authorization/IDOR and source supply-chain gates delivered:** retain the
+   route-classification/cross-tenant matrix, full-history redacted Gitleaks,
+   local Semgrep positive controls, dependency review and validated
+   SPDX/CycloneDX artifacts. Final image/OS scanning, signed release provenance
+   and deploy-time verification remain open.
 9. Add Playwright mobile/accessibility/CSP coverage at 320, 375, 768 and 1440
    pixels before expanding the UI.
 10. After Phase 0, deliver passkeys/session inventory, cases/workspaces/RBAC,

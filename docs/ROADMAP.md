@@ -155,6 +155,8 @@ series), with its own rollback note and production evidence before the next one.
   delivered in-repository; production exercise and evidence remain open.
 - Key escrow/recovery procedure with two-person access for production.
 - Secret scanning in pre-commit and CI, plus full-history scheduled scan.
+  **Repository CI delivered:** every push/PR plus weekly/manual full-history
+  Gitleaks scan, exact reviewed fingerprints and scanner positive controls.
 
 ### Supply chain and assurance
 
@@ -167,6 +169,13 @@ series), with its own rollback note and production evidence before the next one.
 - Pin apt repository snapshots or package versions for reproducible images.
 - Branch protection, required reviews/checks and protected production environment.
 - Nightly DAST against a disposable environment; quarterly manual abuse review.
+
+**Repository source gate delivered:** grouped Dependabot coverage spans SwiftPM,
+npm, two Python roots, Actions and Docker; pull-request dependency review blocks
+new high/critical advisories; pinned Gitleaks and 15 local Semgrep rules have
+positive controls; pinned Syft emits validated SPDX/CycloneDX artifacts. Final
+image/OS scanning, durable release attachment, signing, SLSA provenance and
+deploy-time verification remain open.
 
 ### Browser and edge security
 

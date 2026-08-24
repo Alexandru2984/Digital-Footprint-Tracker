@@ -1,0 +1,73 @@
+version: 2
+updates:
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      swift-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:10"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:20"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      runtime-python-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /worker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      worker-python-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:40"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      ci-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:50"
+      timezone: Europe/Bucharest
+    open-pull-requests-limit: 5
+    groups:
+      container-dependencies:
+        patterns: ["*"]
