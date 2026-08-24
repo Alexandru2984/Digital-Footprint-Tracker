@@ -4,13 +4,23 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.7.0"
+  version: "1.8.0"
   contact:
     name: Digital Footprint Tracker
 
 servers:
   - url: https://swift.micutu.com/api
     description: Production
+
+tags:
+  - { name: Scan, description: Scan execution and intelligence views }
+  - { name: Auth, description: Browser-session authentication and account security }
+  - { name: User, description: Owner-scoped user data }
+  - { name: Admin, description: Recent-authentication administrator controls }
+  - { name: Account, description: Account privacy and lifecycle operations }
+  - { name: Exports, description: Bounded asynchronous export jobs }
+  - { name: Dark Web, description: Authorized-use dark-web investigations }
+  - { name: Meta, description: API metadata and health }
 
 security:
   - cookieAuth: []
@@ -81,6 +91,73 @@ components:
           type: integer
           format: int64
           description: Unix timestamp
+
+    TimelineEvent:
+      type: object
+      required: [date, label, category, precision, sources, confidence, evidenceCount, conflicting, conflictDates]
+      properties:
+        date:
+          type: string
+          pattern: '^[0-9]{4}(-[0-9]{2}-[0-9]{2})?$'
+          description: Valid normalized year or Gregorian calendar day.
+        label: { type: string, maxLength: 160 }
+        category:
+          type: string
+          enum: [account, breach, domain, certificate, archive]
+        precision: { type: string, enum: [year, day] }
+        sources:
+          type: array
+          maxItems: 12
+          uniqueItems: true
+          items: { type: string, maxLength: 80 }
+        confidence: { type: number, format: double, minimum: 0, maximum: 1 }
+        evidenceCount: { type: integer, minimum: 1, maximum: 5000 }
+        conflicting:
+          type: boolean
+          description: True when sources report more than one normalized date for the same logical event.
+        conflictDates:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^[0-9]{4}(-[0-9]{2}-[0-9]{2})?$'
+
+    TimelineSummary:
+      type: object
+      required: [eventCount, totalEventCount, truncated, categoryCounts, sourceCount, corroboratedEvents, conflictGroups, breachEventCount, breachRecurrenceCount, breachYears]
+      properties:
+        eventCount: { type: integer, minimum: 0, maximum: 500 }
+        totalEventCount: { type: integer, minimum: 0, maximum: 5000 }
+        truncated: { type: boolean }
+        earliestDate: { type: string, nullable: true }
+        latestDate: { type: string, nullable: true }
+        categoryCounts:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        sourceCount: { type: integer, minimum: 0 }
+        corroboratedEvents: { type: integer, minimum: 0 }
+        conflictGroups: { type: integer, minimum: 0 }
+        breachEventCount: { type: integer, minimum: 0 }
+        breachRecurrenceCount:
+          type: integer
+          minimum: 0
+          description: Number of distinct dated breach exposures after the first.
+        breachYears:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1970, maximum: 2100 }
+
+    TimelineReport:
+      type: object
+      required: [schemaVersion, events, summary]
+      properties:
+        schemaVersion: { type: integer, enum: [1] }
+        events:
+          type: array
+          maxItems: 500
+          items: { $ref: '#/components/schemas/TimelineEvent' }
+        summary: { $ref: '#/components/schemas/TimelineSummary' }
 
     NotificationDeliveryJob:
       type: object
@@ -844,8 +921,9 @@ paths:
       description: >
         Collapses a scan's findings into one identity (likely name, emails, handles,
         confirmed accounts, breaches, exposed data classes, and exposed hosts with
-        their open ports/CVEs) plus an overall risk. Capability access: owned scans
-        are owner-only; anonymous scans are readable by anyone holding the scan ID.
+        their open ports/CVEs) plus an overall risk and evidence-aware timeline events.
+        Capability access: owned scans are owner-only; anonymous scans are readable
+        by anyone holding the scan ID.
       tags: [Scan]
       security: []
       parameters:
@@ -862,6 +940,43 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  timeline:
+                    type: array
+                    maxItems: 500
+                    items: { $ref: '#/components/schemas/TimelineEvent' }
+        '404':
+          description: Scan not found
+
+  /scans/{id}/timeline:
+    get:
+      operationId: getScanTimeline
+      summary: Evidence-aware scan timeline
+      description: >
+        Normalized oldest-first chronology from provider join dates, breach dates,
+        RDAP registration events, certificate transparency and Wayback history.
+        Includes bounded provenance, confidence, recurrence and conflicting-date
+        indicators; raw finding payloads and arbitrary metadata are never returned.
+        Uses the same owner/capability authorization as the identity endpoint.
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bounded timeline report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimelineReport' }
+        '400':
+          description: Invalid scan ID
+        '403':
+          description: Access denied for an owned scan
         '404':
           description: Scan not found
 
@@ -1162,7 +1277,7 @@ paths:
         '401': { description: Not authenticated }
         '403': { description: Verified session or authorization acknowledgement missing }
         '409': { description: Caller already has an active job }
-        '429': { description: Per-minute, daily, or global queue limit reached }
+        '429': { description: "Per-minute, daily, or global queue limit reached" }
         '503': { description: Feature disabled }
 
   /dark-web/investigations/{id}:

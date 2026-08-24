@@ -59,6 +59,9 @@ func routes(_ app: Application) throws {
     let identityController = IdentityController()
     try app.register(collection: identityController)
 
+    let timelineController = TimelineController()
+    try app.register(collection: timelineController)
+
     let diffController = DiffController()
     try app.register(collection: diffController)
 

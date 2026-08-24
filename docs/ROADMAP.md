@@ -114,8 +114,11 @@ series), with its own rollback note and production evidence before the next one.
     keyboard focus, reduced motion, DOM-XSS fixtures and CSP execution checks.
     Inline extraction, Trusted Types, manual screen-reader review and the live
     Cloudflare/nginx browser acceptance remain open.
-13. **Timeline intelligence pack:** RDAP creation, certificate transparency,
-    Wayback first capture, provider join dates, breach recurrence and confidence.
+13. **Timeline intelligence pack — repository core delivered:** normalized RDAP,
+    certificate-transparency, Wayback and provider join dates; bounded provenance,
+    confidence, conflicting-date review and breach recurrence; owner/capability
+    API plus responsive DOM-safe UI. Historical DNS/BGP, cross-scan timeline
+    diffs and full finding provenance remain open.
 14. **Case/team model:** workspaces, RBAC, case tasks/evidence, dual approval,
     property-based tenant isolation and scoped service accounts.
 15. **Evidence provenance:** source/version/time/hash/license/freshness on every
@@ -249,12 +252,15 @@ live edge evidence remain open.
 - Workspaces/cases with members, notes, tasks, status and due dates.
 - Merge/split entities with reversible lineage and conflict review.
 - Alias, relationship and confidence editing with complete audit history.
-- Timeline view across scans, findings, certificates, DNS and account events.
+- Timeline view across findings, certificates and account/domain events.
+  **Repository core delivered:** normalized scan timeline, category filtering,
+  bounded provenance/confidence and conflicting-date indicators.
 - Timeline source adapters for RDAP/WHOIS domain creation, Wayback first capture,
   certificate-transparency first/last seen, GitHub/GitLab/account join dates,
   breach disclosure dates, DNS history and BGP ownership changes.
-- Timeline confidence/provenance, timezone normalization, conflicting-date
-  review, zoom/range filters, density grouping and snapshot-to-snapshot diff.
+- Timeline confidence/provenance, timezone normalization and conflicting-date
+  review. **Repository core delivered;** zoom/range filters, density grouping,
+  historical DNS/BGP and snapshot-to-snapshot diff remain open.
 - Path finder, neighborhood expansion and graph clustering/community detection.
 - Evidence pinning, annotations, attachments and cryptographic evidence hashes.
 - Case snapshots and comparison between two investigation dates.

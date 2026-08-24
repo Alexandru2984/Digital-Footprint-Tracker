@@ -48,11 +48,10 @@ struct HackerNewsPlugin: FootprintPlugin {
 
             var meta: [String: String] = ["platform": "hackernews", "username": id,
                                           "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
-            if let created = user.created {
-                let date = Date(timeIntervalSince1970: TimeInterval(created))
-                let year = Calendar.current.component(.year, from: date)
-                parts.append("Member since: \(year)")
-                meta["since"] = String(year)
+            if let created = user.created,
+               let joinedDate = TimelineIntelligence.isoDay(unixTimestamp: Double(created)) {
+                parts.append("Member since: \(joinedDate)")
+                meta["since"] = joinedDate
             }
 
             let confidence: Double = karma > 100 ? 1.0 : (karma > 0 ? 0.9 : 0.75)

@@ -109,3 +109,56 @@ test('admin exposes signed audit verification without leaking ledger payloads', 
     await expect(status).toContainText('browser-test');
     await expect(status).not.toContainText('headHash');
 });
+
+test('timeline evidence is responsive, filterable and rendered only as text', async ({ page }) => {
+    const fixture = await mockAPI(page);
+    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.evaluate(({ malicious }) => {
+        document.querySelector('#results-panel').classList.remove('hidden');
+        const events = Array.from({ length: 13 }, (_, index) => ({
+            date: `20${String(index + 10).padStart(2, '0')}`,
+            label: `${malicious} event ${index}`,
+            category: index % 2 ? 'account' : 'breach',
+            precision: 'year',
+            sources: [malicious, 'fixture-source'],
+            confidence: 0.85,
+            evidenceCount: 2,
+            conflicting: index === 0,
+            conflictDates: index === 0 ? ['2010', malicious] : [],
+        }));
+        window.renderIdentity(document.querySelector('#identity-panel'), {
+            likelyName: null,
+            emails: [], handles: [], confirmedAccounts: [], breaches: [], phones: [],
+            exposedIPs: [], exposedServices: [], vulnerabilities: [], exposedDataClasses: [],
+            timeline: events,
+            timelineSummary: {
+                totalEventCount: 13,
+                breachRecurrenceCount: 6,
+                conflictGroups: 1,
+            },
+            riskScore: 25,
+            riskLevel: 'Low',
+        });
+    }, fixture);
+
+    const panel = page.locator('#identity-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(fixture.malicious);
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+
+    const filter = page.getByLabel('Filter timeline by category');
+    await filter.selectOption('account');
+    await expect(panel).toContainText('Showing 6 of 6');
+    await filter.selectOption('all');
+    const expand = page.getByRole('button', { name: 'Show all loaded' });
+    await expand.click();
+    await expect(panel).toContainText('Showing 13 of 13');
+
+    const overflow = await page.evaluate(() => {
+        const viewportWidth = document.documentElement.clientWidth;
+        const rect = document.querySelector('#identity-panel').getBoundingClientRect();
+        return rect.left < -1 || rect.right > viewportWidth + 1;
+    });
+    expect(overflow).toBe(false);
+});

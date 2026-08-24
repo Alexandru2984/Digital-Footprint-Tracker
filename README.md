@@ -54,8 +54,13 @@ graph.
   keyboard/focus, reduced motion, DOM-XSS fixtures, production CSP and overflow
   at 320, 375, 768 and 1440 px. See the
   [`browser runbook`](docs/BROWSER_QUALITY.md).
+- **Timeline intelligence** — normalized RDAP, certificate-transparency,
+  Wayback, breach and account-creation events with bounded provenance,
+  confidence, recurrence and conflicting-date review. The responsive UI is
+  category-filterable and DOM-XSS safe; see the
+  [`timeline contract`](docs/TIMELINE_INTELLIGENCE.md).
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite; 199 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 209 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---
@@ -94,7 +99,7 @@ Vapor 4
   ├── Controllers
   │     ScanController, StatsController, AuthController, UserController,
   │     AdminController, APIKeyController, BulkScanController,
-  │     CorrelationController, DiffController, ExportController, ExportJobController,
+  │     CorrelationController, DiffController, TimelineController, ExportController, ExportJobController,
   │     HealthController, NotificationController, ReportController,
   │     ScheduledScanController, ShareController, TagController
   └── Plugin Pipeline — parallel TaskGroup, 120s timeout
@@ -186,6 +191,9 @@ PostgreSQL
 ### Frontend
 - **Stats dashboard** — total scans, last 24 h / 7 d activity, top sources bar chart
 - **Identity graph** — D3.js v7 force-directed; centre = target, leaves = sources, edge colour = confidence
+- **Timeline intelligence** — responsive oldest-first account, breach, RDAP,
+  CT and Wayback chronology with confidence, source provenance, recurrence,
+  conflict indicators, category filtering and bounded expansion
 - **Filters & sorting** — by type (social_media, breach_data, dns_record, …), confidence, source A–Z
 - **Exports** — CSV, JSON, PDF
 - **Dark / light mode**, keyboard shortcuts, skip navigation, reduced-motion
@@ -232,6 +240,10 @@ page (cookie auth is persisted across reloads).
 - `POST /api/scan` — start scan or return cached result. `{ "input": "...", "force": false }`
 - `GET  /api/stream/:id` — resumable SSE stream of `PluginResult` events (`Last-Event-ID` supported)
 - `GET  /api/results/:id` — full scan result
+- `GET  /api/identity/:id` — synthesized identity with rich timeline events
+- `GET  /api/scans/:id/timeline` — bounded chronology, confidence, provenance,
+  breach recurrence and conflicting-date summary
+- `GET  /api/scans/:id/exposure-diff` — owner-scoped attack-surface delta
 - `GET  /api/stats` — aggregate stats
 
 ### Auth

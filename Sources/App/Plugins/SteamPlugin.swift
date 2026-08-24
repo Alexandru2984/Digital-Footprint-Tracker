@@ -45,8 +45,9 @@ struct SteamPlugin: FootprintPlugin {
 
             var parts: [String] = ["Steam profile: https://steamcommunity.com/id/\(username)"]
             parts.append("SteamID64: \(steamID)")
+            let memberSince = extractTag("memberSince", from: xml)
             if let persona = extractTag("steamID", from: xml)           { parts.append("Persona: \(persona)") }
-            if let since = extractTag("memberSince", from: xml)         { parts.append("Member since: \(since)") }
+            if let memberSince                                          { parts.append("Member since: \(memberSince)") }
             if let location = extractTag("location", from: xml)         { parts.append("Location: \(location)") }
             if let summary = extractTag("summary", from: xml) {
                 let cleaned = summary
@@ -64,6 +65,7 @@ struct SteamPlugin: FootprintPlugin {
                 "steamID64": steamID
             ]
             if let location = extractTag("location", from: xml) { meta["location"] = location }
+            if let memberSince { meta["since"] = memberSince }
 
             return [PluginResult(
                 source: name,

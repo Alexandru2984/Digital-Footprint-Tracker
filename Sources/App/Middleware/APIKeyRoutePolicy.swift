@@ -99,6 +99,7 @@ enum APIKeyRoutePolicy {
         Rule(.PATCH, "/scheduled-scans/:id/toggle", .require(.automationWrite)),
         Rule(.GET, "/correlations", .require(.scansRead)),
         Rule(.GET, "/identity/:id", .require(.scansRead)),
+        Rule(.GET, "/scans/:scanID/timeline", .require(.scansRead)),
         Rule(.GET, "/scans/:scanID/diff/:otherId", .require(.scansRead)),
         Rule(.GET, "/scans/:scanID/exposure-diff", .require(.scansRead)),
 

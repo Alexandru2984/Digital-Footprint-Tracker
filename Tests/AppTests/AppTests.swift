@@ -2034,6 +2034,7 @@ final class AppTests: XCTestCase {
             Probe(.GET, "/export/\(ownerScanID)/report", .forbidden),
             Probe(.GET, "/export/\(ownerScanID)/report.html", .forbidden),
             Probe(.GET, "/identity/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/scans/\(ownerScanID)/timeline", .forbidden),
             Probe(.GET, "/scans/\(ownerScanID)/exposure-diff", .notFound),
             Probe(.GET, "/scans/\(ownerScanID)/diff/\(attackerScanID)", .notFound),
             Probe(.GET, "/scans/\(attackerScanID)/diff/\(ownerScanID)", .notFound),
@@ -4182,6 +4183,24 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(WaybackPlugin.formatTimestamp("20100315123456"), "2010-03-15")
     }
 
+    func testRDAPParserRetainsNormalizedTimelineDates() throws {
+        let json = Data(#"""
+        {"events":[
+          {"eventAction":"registration","eventDate":"2001-02-03T04:05:06Z"},
+          {"eventAction":"registration","eventDate":"2002-01-01T00:00:00Z"},
+          {"eventAction":"last changed","eventDate":"2025-06-07T08:09:10Z"},
+          {"eventAction":"expiration","eventDate":"2030-02-03T00:00:00Z"},
+          {"eventAction":"expiration","eventDate":"2031-02-03T00:00:00Z"},
+          {"eventAction":"last changed","eventDate":"2025-02-30T00:00:00Z"}
+        ],"status":["active"]}
+        """#.utf8)
+        let result = try XCTUnwrap(WhoisPlugin.parseResponse(json, domain: "example.test"))
+        XCTAssertEqual(result.metadata?["registrationDate"], "2001-02-03")
+        XCTAssertEqual(result.metadata?["lastChangedDate"], "2025-06-07")
+        XCTAssertEqual(result.metadata?["expirationDate"], "2031-02-03")
+        XCTAssertFalse(result.rawData.contains("2025-02-30"))
+    }
+
     // MARK: - Email intelligence
 
     func testEmailIntelDetectsDisposable() {
@@ -4368,6 +4387,137 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(p.timeline.contains { $0.label.contains("Steam") }, "unparseable 'since' dropped")
     }
 
+    func testTimelineIntelligenceNormalizesDatesStrictlyInUTC() {
+        XCTAssertEqual(TimelineIntelligence.normalizedDate("1985")?.value, "1985")
+        XCTAssertEqual(TimelineIntelligence.normalizedDate("2024-02-29T23:30:00-05:00")?.value, "2024-03-01")
+        XCTAssertEqual(TimelineIntelligence.normalizedDate("2024-01-01T00:30:00+02:00")?.value, "2023-12-31")
+        XCTAssertEqual(TimelineIntelligence.normalizedDate("May 25, 2010")?.value, "2010-05-25")
+        XCTAssertEqual(TimelineIntelligence.isoDay(unixTimestamp: 1_609_459_200), "2021-01-01")
+        XCTAssertNil(TimelineIntelligence.normalizedDate("1969"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate("2023-02-29"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate("2024-13-01"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate("2010-01-01<script>"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate("2010-01-01T<script>"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate("2010-01-01T25:00:00Z"))
+        XCTAssertNil(TimelineIntelligence.normalizedDate(String(repeating: "2", count: 10_000)))
+        XCTAssertNil(TimelineIntelligence.isoDay(unixTimestamp: .infinity))
+    }
+
+    func testTimelineIntelligenceBuildsProvenanceConflictsAndRecurrence() throws {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "account_presence", confidence: 0.8,
+              metadata: ["platform": "github", "username": "alice", "since": "2013-04-01"], rawData: "secret-a"),
+            I(source: "GitHub mirror", type: "account_presence", confidence: 0.7,
+              metadata: ["platform": "github", "username": "alice", "since": "2013-04-01"], rawData: "secret-b"),
+            I(source: "Legacy import", type: "account_presence", confidence: 0.4,
+              metadata: ["platform": "github", "username": "alice", "since": "2014-01-01"], rawData: "secret-c"),
+            I(source: "Steam", type: "account_presence", confidence: 1,
+              metadata: ["platform": "steam", "username": "alice", "since": "May 25, 2010"], rawData: "x"),
+            I(source: "HIBP", type: "data_breach", confidence: 1,
+              metadata: ["breachDates": "LinkedIn|2012-05-05; Dropbox|2012-07-01"], rawData: "breach-secret"),
+            I(source: "RDAP", type: "domain_registration", confidence: 0.95,
+              metadata: ["domain": "example.test", "registrationDate": "2001-02-03",
+                         "expirationDate": "2031-02-03"], rawData: "registrar-secret"),
+            I(source: "Wayback", type: "archive_history", confidence: 0.7,
+              metadata: ["domain": "example.test", "firstSeen": "2005-04-03", "lastSeen": "2026-08-20"], rawData: "archive-secret"),
+            I(source: "crt.sh", type: "subdomain", confidence: 0.9,
+              metadata: ["subdomain": "www.example.test", "certificateNotBefore": "2015-06-07"], rawData: "ct-secret"),
+            I(source: "invalid", type: "account_presence", confidence: 1,
+              metadata: ["platform": "invalid", "since": "2022-02-30"], rawData: "must-not-appear")
+        ]
+
+        let report = TimelineIntelligence.build(from: inputs)
+        XCTAssertEqual(report.schemaVersion, 1)
+        XCTAssertEqual(report.summary.totalEventCount, 10)
+        XCTAssertEqual(report.summary.categoryCounts["account"], 3)
+        XCTAssertEqual(report.summary.categoryCounts["breach"], 2)
+        XCTAssertEqual(report.summary.categoryCounts["domain"], 2)
+        XCTAssertEqual(report.summary.categoryCounts["archive"], 2)
+        XCTAssertEqual(report.summary.categoryCounts["certificate"], 1)
+        XCTAssertEqual(report.summary.breachEventCount, 2)
+        XCTAssertEqual(report.summary.breachRecurrenceCount, 1)
+        XCTAssertEqual(report.summary.breachYears, [2012])
+        XCTAssertEqual(report.summary.conflictGroups, 1)
+        XCTAssertEqual(report.summary.corroboratedEvents, 1)
+        XCTAssertFalse(report.summary.truncated)
+
+        let corroborated = try XCTUnwrap(report.events.first { $0.date == "2013-04-01" })
+        XCTAssertEqual(corroborated.sources, ["GitHub", "GitHub mirror"])
+        XCTAssertEqual(corroborated.evidenceCount, 2)
+        XCTAssertEqual(corroborated.confidence, 0.85, accuracy: 0.0001)
+        XCTAssertTrue(corroborated.conflicting)
+        XCTAssertEqual(corroborated.conflictDates, ["2013-04-01", "2014-01-01"])
+        XCTAssertTrue(report.events.contains { $0.category == "archive" && $0.date == "2005-04-03" })
+        XCTAssertTrue(report.events.contains { $0.category == "certificate" && $0.date == "2015-06-07" })
+
+        let encoded = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
+        for secret in ["secret-a", "secret-b", "secret-c", "breach-secret", "registrar-secret", "archive-secret", "ct-secret"] {
+            XCTAssertFalse(encoded.contains(secret), "Timeline report must never copy raw finding payloads")
+        }
+    }
+
+    func testTimelineIntelligenceCapsLargeReports() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = (0..<3).map { group in
+            let dates = (0..<250).map { item in
+                "Breach-\(group)-\(item)|2020-01-01"
+            }.joined(separator: ";")
+            return I(source: "Source-\(group)", type: "data_breach", confidence: 0.9,
+                     metadata: ["breachDates": dates], rawData: "x")
+        }
+        let report = TimelineIntelligence.build(from: inputs)
+        XCTAssertEqual(report.events.count, TimelineIntelligence.maximumEvents)
+        XCTAssertEqual(report.summary.totalEventCount, 750)
+        XCTAssertTrue(report.summary.truncated)
+        XCTAssertEqual(report.summary.breachRecurrenceCount, 749)
+    }
+
+    func testTimelineEndpointEnforcesOwnershipAndOmitsRawEvidence() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "timeline-owner")
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "timeline-owner").first()
+        let user = try XCTUnwrap(storedUser)
+        let scan = Scan(input: "private-target.example", status: .completed, userID: try user.requireID())
+        try await scan.save(on: app.db)
+        let scanID = try scan.requireID()
+        let metadata = try String(decoding: JSONEncoder().encode([
+            "domain": "private-target.example",
+            "registrationDate": "2011-02-03",
+        ]), as: UTF8.self)
+        try await Result(
+            scanID: scanID,
+            source: "RDAP",
+            type: "domain_registration",
+            confidenceScore: 0.95,
+            rawData: "raw-private-ledger-evidence",
+            metadata: metadata
+        ).save(on: app.db)
+        let fetchedResult = try await Result.query(on: app.db).first()
+        let storedResult = try XCTUnwrap(fetchedResult)
+        storedResult.rawDataCipher = "v2:malformed-ciphertext"
+        try await storedResult.update(on: app.db)
+
+        try await app.test(.GET, "/scans/\(scanID)/timeline", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let report = try response.content.decode(TimelineIntelligence.Report.self)
+            XCTAssertEqual(report.events.first?.date, "2011-02-03")
+            XCTAssertEqual(report.events.first?.category, "domain")
+            XCTAssertFalse(response.body.string.contains("raw-private-ledger-evidence"))
+        })
+        try await app.test(.GET, "/scans/\(scanID)/timeline") { response in
+            XCTAssertEqual(response.status, .forbidden)
+            XCTAssertFalse(response.body.string.contains("private-target.example"))
+        }
+        try await app.test(.GET, "/scans/not-a-uuid/timeline") { response in
+            XCTAssertEqual(response.status, .badRequest)
+        }
+    }
+
     // MARK: - GraphML export
 
     func testIdentityGraphMLExport() {
@@ -4547,6 +4697,20 @@ final class AppTests: XCTestCase {
                        "wildcards stripped, lowercased, deduped, non-hosts dropped, order preserved")
         XCTAssertEqual(CrtShPlugin.parseSubdomains(json, limit: 2).count, 2, "limit honoured")
         XCTAssertEqual(CrtShPlugin.normalizeDomain("https://Example.com/path"), "example.com")
+    }
+
+    func testCrtShRetainsEarliestCertificateDate() {
+        let json = #"""
+        [{"name_value":"*.example.com\nwww.example.com\nwww.example.com/poison","not_before":"2020-01-02T00:00:00Z"},
+         {"name_value":"WWW.example.com","not_before":"2019-03-04T00:00:00Z"},
+         {"name_value":"api.example.com\nattacker.invalid","entry_timestamp":"2021-05-06T10:00:00Z"}]
+        """#.data(using: .utf8)!
+        let evidence = CrtShPlugin.parseEvidence(json, limit: 50, domain: "example.com")
+        XCTAssertEqual(evidence.first { $0.hostname == "www.example.com" }?.firstSeen, "2019-03-04")
+        XCTAssertEqual(evidence.first { $0.hostname == "api.example.com" }?.firstSeen, "2021-05-06")
+        XCTAssertFalse(evidence.contains { $0.hostname == "attacker.invalid" })
+        XCTAssertEqual(evidence.count, 3)
+        XCTAssertTrue(CrtShPlugin.parseEvidence(json, limit: 0).isEmpty)
     }
 
     func testAttackSurfaceHostListAndIPFilter() {
@@ -5364,8 +5528,9 @@ final class AppTests: XCTestCase {
     }
 
     func testRedditEvaluateRejectsBlocksAndMismatches() throws {
-        let real = Data(#"{"kind":"t2","data":{"name":"spez","id":"abc"}}"#.utf8)
-        XCTAssertNotNil(RedditPlugin.evaluate(username: "spez", status: 200, body: real))
+        let real = Data(#"{"kind":"t2","data":{"name":"spez","id":"abc","created_utc":1200000000}}"#.utf8)
+        let parsed = RedditPlugin.evaluate(username: "spez", status: 200, body: real)
+        XCTAssertEqual(parsed?.metadata?["since"], "2008-01-10")
         XCTAssertNotNil(RedditPlugin.evaluate(username: "SPEZ", status: 200, body: real)) // case-insensitive
         // 403 block (datacenter IP) must NOT be reported as "suspended" — the old bug.
         XCTAssertNil(RedditPlugin.evaluate(username: "anyone", status: 403, body: Data()))
@@ -5384,6 +5549,7 @@ final class AppTests: XCTestCase {
         let json = Data(#"""
         {"acct":"alice","display_name":"Alice Example ","url":"https://mastodon.social/@alice",
          "followers_count":42,"statuses_count":7,"locked":true,
+         "created_at":"2018-07-06T12:00:00.000Z",
          "note":"<p>Hi <a href=\"x\">there</a></p>"}
         """#.utf8)
         let acct = try XCTUnwrap(MastodonPlugin.parseAccount(from: json, fallbackUsername: "fallback"))
@@ -5392,6 +5558,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(acct.acct, "alice")
         XCTAssertEqual(acct.bio, "Hi there", "HTML tags stripped from the note")
         XCTAssertEqual(acct.followers, 42)
+        XCTAssertEqual(acct.joinedDate, "2018-07-06")
         XCTAssertTrue(acct.locked)
         // Malformed body → nil (no false positive).
         XCTAssertNil(MastodonPlugin.parseAccount(from: Data("not json".utf8), fallbackUsername: "x"))

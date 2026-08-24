@@ -44,6 +44,7 @@ struct MastodonPlugin: FootprintPlugin {
             if !acct.displayName.isEmpty { parts.append("Display name: \(acct.displayName)") }
             if let f = acct.followers { parts.append("Followers: \(f)") }
             if let s = acct.statuses  { parts.append("Posts: \(s)") }
+            if let joinedDate = acct.joinedDate { parts.append("Joined: \(joinedDate)") }
             if acct.locked { parts.append("🔒 Locked account") }
             if !acct.bio.isEmpty {
                 let truncNote = acct.bio.count > 120 ? String(acct.bio.prefix(120)) + "…" : acct.bio
@@ -54,6 +55,7 @@ struct MastodonPlugin: FootprintPlugin {
             // Feed the display name into identity synthesis — a self-set nickname on
             // Mastodon is still identity signal, weighted and corroborated there.
             if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
+            if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
 
             return [PluginResult(
                 source: "Mastodon",
@@ -76,6 +78,7 @@ struct MastodonPlugin: FootprintPlugin {
         let followers: Int?
         let statuses: Int?
         let locked: Bool
+        let joinedDate: String?
     }
 
     /// Decodes a `/accounts/lookup` JSON body. Pure + internal so the field
@@ -95,7 +98,9 @@ struct MastodonPlugin: FootprintPlugin {
             profileURL: json["url"] as? String ?? "https://mastodon.social/@\(acct)",
             followers: json["followers_count"] as? Int,
             statuses: json["statuses_count"] as? Int,
-            locked: json["locked"] as? Bool ?? false
+            locked: json["locked"] as? Bool ?? false,
+            joinedDate: (json["created_at"] as? String)
+                .flatMap { TimelineIntelligence.normalizedDate($0)?.value }
         )
     }
 }

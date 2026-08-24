@@ -198,10 +198,12 @@ from repository completion.
    keyboard focus, reduced motion, DOM-XSS fixtures and the production CSP at
    320, 375, 768 and 1440 pixels. Complete a manual assistive-technology pass
    and a real production browser run with Cloudflare JSD before acceptance.
-10. After Phase 0, deliver passkeys/session inventory, cases/workspaces/RBAC,
-    timelines, evidence provenance, saved searches, notification inbox, PWA
-    shell, bilingual UI and provider-health dashboards in the dependency order
-    already defined in `ROADMAP.md`.
+10. **Timeline repository core delivered:** retain its strict date validation,
+    bounded output, owner/capability authorization and DOM-XSS coverage. After
+    Phase 0, deliver passkeys/session inventory, cases/workspaces/RBAC, full
+    evidence provenance, historical DNS/BGP and cross-scan timeline diffs,
+    saved searches, notification inbox, PWA shell, bilingual UI and
+    provider-health dashboards in the dependency order in `ROADMAP.md`.
 
 ## Verdict
 

@@ -24,10 +24,19 @@ struct WhoisPlugin: FootprintPlugin {
                 on: app
               ),
               response.status == 200 else { return [] }
-        let data = response.data
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        return Self.parseResponse(response.data, domain: domain).map { [$0] } ?? []
+    }
+
+    /// Pure RDAP response parser. Important event dates are retained as
+    /// structured metadata so timeline consumers do not need to scrape raw text.
+    static func parseResponse(_ data: Data, domain: String) -> PluginResult? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
 
         var info: [String] = []
+        var metadata = ["domain": domain]
+        var registrationDates: [String] = []
+        var expirationDates: [String] = []
+        var changedDates: [String] = []
 
         if let entities = json["entities"] as? [[String: Any]] {
             for entity in entities {
@@ -48,17 +57,26 @@ struct WhoisPlugin: FootprintPlugin {
         if let events = json["events"] as? [[String: Any]] {
             for event in events {
                 if let action = event["eventAction"] as? String,
-                   let date = event["eventDate"] as? String {
-                    let formatted = String(date.prefix(10))
-                    switch action {
-                    case "registration":  info.append("Registered: \(formatted)")
-                    case "expiration":    info.append("Expires: \(formatted)")
-                    case "last changed":  info.append("Updated: \(formatted)")
+                   let date = event["eventDate"] as? String,
+                   let normalized = TimelineIntelligence.normalizedDate(date)?.value {
+                    switch action.lowercased() {
+                    case "registration":
+                        registrationDates.append(normalized)
+                        info.append("Registered: \(normalized)")
+                    case "expiration":
+                        expirationDates.append(normalized)
+                        info.append("Expires: \(normalized)")
+                    case "last changed":
+                        changedDates.append(normalized)
+                        info.append("Updated: \(normalized)")
                     default: break
                     }
                 }
             }
         }
+        metadata["registrationDate"] = registrationDates.min()
+        metadata["expirationDate"] = expirationDates.max()
+        metadata["lastChangedDate"] = changedDates.max()
 
         if let nameservers = json["nameservers"] as? [[String: Any]] {
             let ns = nameservers.compactMap { $0["ldhName"] as? String }.prefix(4)
@@ -69,13 +87,13 @@ struct WhoisPlugin: FootprintPlugin {
             info.append("Status: \(status.prefix(3).joined(separator: ", "))")
         }
 
-        guard !info.isEmpty else { return [] }
-        return [PluginResult(
+        guard !info.isEmpty else { return nil }
+        return PluginResult(
             source: "RDAP/WHOIS",
             type: "domain_registration",
             confidenceScore: 0.95,
             rawData: info.joined(separator: " | "),
-            metadata: ["domain": domain]
-        )]
+            metadata: metadata
+        )
     }
 }

@@ -39,6 +39,7 @@ struct GitLabPlugin: FootprintPlugin {
 
             guard let users = try? JSONDecoder().decode([GitLabUser].self, from: data),
                   let user = users.first else { return [] }
+            let joinedDate = user.created_at.flatMap { TimelineIntelligence.normalizedDate($0)?.value }
 
             var parts: [String] = ["GitLab profile: \(user.web_url ?? "https://gitlab.com/\(username)")"]
             if let n = user.name, !n.isEmpty                    { parts.append("Name: \(n)") }
@@ -47,7 +48,7 @@ struct GitLabPlugin: FootprintPlugin {
             if let org = user.organization, !org.isEmpty        { parts.append("Org: \(org)") }
             if let web = user.website_url, !web.isEmpty         { parts.append("Website: \(web)") }
             if let followers = user.followers                   { parts.append("Followers: \(followers)") }
-            if let year = user.created_at?.prefix(4)           { parts.append("Joined: \(year)") }
+            if let joinedDate                                  { parts.append("Joined: \(joinedDate)") }
 
             var meta: [String: String] = [
                 "platform": "gitlab",
@@ -58,7 +59,7 @@ struct GitLabPlugin: FootprintPlugin {
             if let loc = user.location, !loc.isEmpty     { meta["location"] = loc }
             if let org = user.organization, !org.isEmpty { meta["company"] = org }
             if let web = user.website_url, !web.isEmpty  { meta["blog"] = web }
-            if let created = user.created_at?.prefix(4)  { meta["since"] = String(created) }
+            if let joinedDate                            { meta["since"] = joinedDate }
 
             return [PluginResult(
                 source: name,

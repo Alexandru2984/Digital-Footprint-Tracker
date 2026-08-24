@@ -1332,9 +1332,21 @@
         function loadIdentity(scanID) {
             const panel = document.getElementById('identity-panel');
             if (!panel || !scanID) return;
-            fetch('/api/identity/' + encodeURIComponent(scanID), { credentials: 'include' })
+            const encodedID = encodeURIComponent(scanID);
+            const identityRequest = fetch('/api/identity/' + encodedID, { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null);
+            const timelineRequest = fetch('/api/scans/' + encodedID + '/timeline', { credentials: 'include' })
                 .then(r => r.ok ? r.json() : null)
-                .then(p => { if (p) renderIdentity(panel, p); else panel.classList.add('hidden'); })
+                .catch(() => null);
+            Promise.all([identityRequest, timelineRequest])
+                .then(([p, timeline]) => {
+                    if (!p) { panel.classList.add('hidden'); return; }
+                    if (timeline && Array.isArray(timeline.events)) {
+                        p.timeline = timeline.events;
+                        p.timelineSummary = timeline.summary || null;
+                    }
+                    renderIdentity(panel, p);
+                })
                 .catch(() => panel.classList.add('hidden'));
         }
 
@@ -1423,31 +1435,120 @@
 
             panel.appendChild(grid);
 
-            // Exposure timeline — chronological footprint (account creations + breaches),
-            // spanning the full width below the two-column grid.
-            const tl = (p.timeline || []).slice(0, 24);
-            if (tl.length) {
+            // Evidence-aware chronology. Values are always inserted through
+            // textContent: provider-controlled labels/sources never become HTML.
+            const timelineEvents = Array.isArray(p.timeline) ? p.timeline.slice(-100) : [];
+            if (timelineEvents.length) {
                 const sec = document.createElement('div');
                 sec.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid #1f2937;';
+                const timelineHead = document.createElement('div');
+                timelineHead.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;';
+                const headingWrap = document.createElement('div');
                 const lbl = document.createElement('div');
-                lbl.style.cssText = 'color:#64748b;font-size:12px;margin-bottom:6px;';
-                lbl.textContent = '🕓 Exposure timeline';
-                sec.appendChild(lbl);
-                const list = document.createElement('div');
-                list.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
-                tl.forEach(ev => {
-                    const isBreach = ev.category === 'breach';
-                    const line = document.createElement('div');
-                    line.style.cssText = 'display:flex;gap:8px;align-items:baseline;font-size:12px;';
-                    const d = document.createElement('span');
-                    d.style.cssText = 'color:#94a3b8;font-variant-numeric:tabular-nums;flex-shrink:0;min-width:78px;';
-                    d.textContent = String(ev.date || '');
-                    const t = document.createElement('span');
-                    t.style.cssText = 'color:' + (isBreach ? '#fca5a5' : '#cbd5e1') + ';word-break:break-word;';
-                    t.textContent = (isBreach ? '⚠ ' : '• ') + String(ev.label || '').slice(0, 80);
-                    line.appendChild(d); line.appendChild(t); list.appendChild(line);
+                lbl.style.cssText = 'color:#cbd5e1;font-size:13px;font-weight:700;';
+                lbl.textContent = '🕓 Timeline intelligence';
+                headingWrap.appendChild(lbl);
+                const summary = p.timelineSummary || {};
+                const summaryText = document.createElement('div');
+                summaryText.style.cssText = 'color:#64748b;font-size:11px;margin-top:2px;';
+                const total = Number.isFinite(Number(summary.totalEventCount))
+                    ? Number(summary.totalEventCount) : timelineEvents.length;
+                const conflicts = Math.max(0, Number(summary.conflictGroups) || 0);
+                const recurrence = Math.max(0, Number(summary.breachRecurrenceCount) || 0);
+                summaryText.textContent = total + ' events · ' + recurrence + ' recurring breach' +
+                    (recurrence === 1 ? '' : 'es') + (conflicts ? ' · ' + conflicts + ' date conflict' + (conflicts === 1 ? '' : 's') : '');
+                headingWrap.appendChild(summaryText);
+                timelineHead.appendChild(headingWrap);
+
+                const filter = document.createElement('select');
+                filter.setAttribute('aria-label', 'Filter timeline by category');
+                filter.style.cssText = 'min-height:32px;max-width:100%;background:#0f172a;border:1px solid #374151;border-radius:6px;color:#cbd5e1;font-size:11px;padding:4px 28px 4px 8px;';
+                const categories = ['all', ...new Set(timelineEvents.map(ev => String(ev.category || '')).filter(Boolean))];
+                categories.forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category;
+                    option.textContent = category === 'all' ? 'All evidence' : category.charAt(0).toUpperCase() + category.slice(1);
+                    filter.appendChild(option);
                 });
+                timelineHead.appendChild(filter);
+                sec.appendChild(timelineHead);
+
+                const list = document.createElement('div');
+                list.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
                 sec.appendChild(list);
+                const footer = document.createElement('div');
+                footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;';
+                const shown = document.createElement('span');
+                shown.style.cssText = 'color:#64748b;font-size:11px;';
+                const toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.style.cssText = 'min-height:32px;padding:4px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#cbd5e1;font-size:11px;';
+                let expanded = false;
+
+                const categoryStyles = {
+                    account: ['👤', '#a5b4fc'], breach: ['⚠', '#fca5a5'],
+                    domain: ['🌐', '#67e8f9'], certificate: ['🔐', '#c4b5fd'],
+                    archive: ['🗄', '#fcd34d']
+                };
+                function renderTimelineRows() {
+                    list.replaceChildren();
+                    const category = filter.value;
+                    const filtered = timelineEvents.filter(ev => category === 'all' || ev.category === category);
+                    const visible = expanded ? filtered : filtered.slice(-12);
+                    visible.forEach(ev => {
+                        const style = categoryStyles[ev.category] || ['•', '#cbd5e1'];
+                    const line = document.createElement('div');
+                        line.style.cssText = 'display:grid;grid-template-columns:minmax(72px,90px) minmax(0,1fr);gap:8px;align-items:start;padding:7px 8px;border:1px solid #1f2937;border-radius:8px;background:#0f172a80;font-size:12px;';
+                    const d = document.createElement('span');
+                        d.style.cssText = 'color:#94a3b8;font-variant-numeric:tabular-nums;word-break:break-word;';
+                        d.textContent = String(ev.date || '').slice(0, 10);
+                        const body = document.createElement('div');
+                        body.style.cssText = 'min-width:0;';
+                        const titleLine = document.createElement('div');
+                        titleLine.style.cssText = 'display:flex;align-items:flex-start;gap:5px;flex-wrap:wrap;color:' + style[1] + ';word-break:break-word;';
+                        const titleText = document.createElement('span');
+                        titleText.style.cssText = 'min-width:0;';
+                        titleText.textContent = style[0] + ' ' + String(ev.label || '').slice(0, 160);
+                        titleLine.appendChild(titleText);
+                        const confidence = Math.max(0, Math.min(100, Math.round((Number(ev.confidence) || 0) * 100)));
+                        const confidenceBadge = document.createElement('span');
+                        confidenceBadge.style.cssText = 'flex-shrink:0;border:1px solid #475569;border-radius:999px;padding:0 5px;color:#94a3b8;font-size:10px;';
+                        confidenceBadge.textContent = confidence + '%';
+                        titleLine.appendChild(confidenceBadge);
+                        if (ev.conflicting) {
+                            const conflictBadge = document.createElement('span');
+                            conflictBadge.style.cssText = 'flex-shrink:0;border:1px solid #f59e0b66;border-radius:999px;padding:0 5px;color:#fcd34d;font-size:10px;';
+                            conflictBadge.textContent = 'conflict';
+                            titleLine.appendChild(conflictBadge);
+                        }
+                        body.appendChild(titleLine);
+                        const sources = Array.isArray(ev.sources) ? ev.sources.slice(0, 4).map(source => String(source).slice(0, 80)) : [];
+                        if (sources.length) {
+                            const provenance = document.createElement('div');
+                            provenance.style.cssText = 'color:#64748b;font-size:10px;margin-top:2px;word-break:break-word;';
+                            provenance.textContent = 'Sources: ' + sources.join(', ') +
+                                (Number(ev.evidenceCount) > 1 ? ' · ' + Number(ev.evidenceCount) + ' observations' : '');
+                            body.appendChild(provenance);
+                        }
+                        if (ev.conflicting && Array.isArray(ev.conflictDates)) {
+                            const conflictDetail = document.createElement('div');
+                            conflictDetail.style.cssText = 'color:#d97706;font-size:10px;margin-top:2px;word-break:break-word;';
+                            conflictDetail.textContent = 'Reported dates: ' + ev.conflictDates.slice(0, 8).map(String).join(', ');
+                            body.appendChild(conflictDetail);
+                        }
+                        line.appendChild(d); line.appendChild(body); list.appendChild(line);
+                    });
+                    shown.textContent = 'Showing ' + visible.length + ' of ' + filtered.length +
+                        (timelineEvents.length < total ? ' recent events (' + total + ' total)' : '');
+                    toggle.classList.toggle('hidden', filtered.length <= 12);
+                    toggle.textContent = expanded ? 'Show recent 12' : 'Show all loaded';
+                }
+                filter.addEventListener('change', () => { expanded = false; renderTimelineRows(); });
+                toggle.addEventListener('click', () => { expanded = !expanded; renderTimelineRows(); });
+                footer.appendChild(shown);
+                footer.appendChild(toggle);
+                sec.appendChild(footer);
+                renderTimelineRows();
                 panel.appendChild(sec);
             }
 

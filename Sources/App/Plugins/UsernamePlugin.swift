@@ -44,6 +44,7 @@ struct UsernamePlugin: FootprintPlugin {
                 let type: String?
             }
             let user = try? JSONDecoder().decode(GitHubUser.self, from: data)
+            let joinedDate = user?.created_at.flatMap { TimelineIntelligence.normalizedDate($0)?.value }
 
             var parts: [String] = [
                 "GitHub profile: https://github.com/\(cleanedUsername)"
@@ -56,7 +57,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let tw = user?.twitter_username, !tw.isEmpty { parts.append("Twitter: @\(tw)") }
             parts.append("Repos: \(user?.public_repos ?? 0)")
             parts.append("Followers: \(user?.followers ?? 0)")
-            if let created = user?.created_at?.prefix(4) { parts.append("Joined: \(created)") }
+            if let joinedDate { parts.append("Joined: \(joinedDate)") }
 
             // Structured entities for correlation / export.
             var meta: [String: String] = [
@@ -69,7 +70,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
             if let tw = user?.twitter_username, !tw.isEmpty { meta["twitter"] = tw }
-            if let created = user?.created_at?.prefix(4) { meta["since"] = String(created) }
+            if let joinedDate { meta["since"] = joinedDate }
 
             var results = [PluginResult(
                 source: name,

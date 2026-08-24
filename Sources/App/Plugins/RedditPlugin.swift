@@ -44,14 +44,18 @@ struct RedditPlugin: FootprintPlugin {
         else { return nil }
 
         let profile = "https://www.reddit.com/user/\(name)"
-        let meta = ["platform": "reddit", "username": name, "profileURL": profile]
+        var meta = ["platform": "reddit", "username": name, "profileURL": profile]
+        let joinedDate = (data["created_utc"] as? NSNumber)
+            .flatMap { TimelineIntelligence.isoDay(unixTimestamp: $0.doubleValue) }
+        if let joinedDate { meta["since"] = joinedDate }
+        let joinedText = joinedDate.map { " Joined: \($0)." } ?? ""
         if (data["is_suspended"] as? Bool) == true {
             return PluginResult(
                 source: "Reddit", type: "account_presence", confidenceScore: 0.85,
-                rawData: "Reddit account exists (suspended). Profile: \(profile)", metadata: meta)
+                rawData: "Reddit account exists (suspended). Profile: \(profile).\(joinedText)", metadata: meta)
         }
         return PluginResult(
             source: "Reddit", type: "account_presence", confidenceScore: 1.0,
-            rawData: "Reddit account found. Profile: \(profile)", metadata: meta)
+            rawData: "Reddit account found. Profile: \(profile).\(joinedText)", metadata: meta)
     }
 }
