@@ -33,7 +33,11 @@ read_private_scalar() {
     validate_path "$label file" "$path"
     [[ -f "$path" && ! -L "$path" ]] || die "$label file is missing or unsafe."
     mode="$(stat -c '%a' "$path")"
-    (( (8#$mode & 077) == 0 )) || die "$label file must not be accessible by group or others."
+    # systemd's LoadCredentialEncrypted= always materializes credentials as
+    # root:root 0440 plus a POSIX ACL scoped to the executing unit's user —
+    # the on-disk group-read bit is inherent to that mechanism, not a leak;
+    # the ACL is what actually gates access. Reject only world access.
+    (( (8#$mode & 007) == 0 )) || die "$label file must not be accessible by others."
     size="$(stat -c '%s' "$path")"
     (( size > 0 && size <= 16384 )) || die "$label file has an invalid size."
     cmp -s -- "$path" <(tr -d '\000' < "$path") || die "$label file contains an invalid value."
