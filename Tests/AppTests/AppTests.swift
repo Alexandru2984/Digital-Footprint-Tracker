@@ -1567,6 +1567,304 @@ final class AppTests: XCTestCase {
 
     // MARK: - API key least privilege
 
+    func testEveryRegisteredRouteHasAnExplicitAPIKeyPolicy() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let registered = Set(app.routes.all.map(\.description))
+        let reviewedList = APIKeyRoutePolicy.reviewedRouteFingerprints
+        let reviewed = Set(reviewedList)
+
+        XCTAssertEqual(
+            reviewedList.count,
+            reviewed.count,
+            "The API-key route policy must not contain duplicate method/path rules."
+        )
+        XCTAssertEqual(
+            reviewed,
+            registered,
+            "Update APIKeyRoutePolicy whenever the live Vapor route inventory changes."
+        )
+        for rule in APIKeyRoutePolicy.rules {
+            XCTAssertNotEqual(
+                APIKeyRoutePolicy.decision(method: rule.method, pathComponents: rule.path),
+                .unclassified,
+                "Reviewed route unexpectedly became unclassified: \(rule.fingerprint)"
+            )
+        }
+        XCTAssertEqual(
+            APIKeyRoutePolicy.decision(method: .POST, pathComponents: ["future-endpoint"]),
+            .unclassified,
+            "Unknown routes must fail closed instead of inheriting a broad prefix policy."
+        )
+    }
+
+    func testCrossTenantResourceAndCollectionIsolationMatrix() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        _ = try await registerAndLogin(app, username: "matrix-owner")
+        let attackerCookie = try await registerAndLogin(app, username: "matrix-attacker")
+        let ownerLookup = try await User.query(on: app.db)
+            .filter(\.$username == "matrix-owner").first()
+        let attackerLookup = try await User.query(on: app.db)
+            .filter(\.$username == "matrix-attacker").first()
+        let owner = try XCTUnwrap(ownerLookup)
+        let attacker = try XCTUnwrap(attackerLookup)
+        let ownerID = try owner.requireID()
+        let attackerID = try attacker.requireID()
+        owner.emailVerified = true
+        attacker.emailVerified = true
+        try await owner.save(on: app.db)
+        try await attacker.save(on: app.db)
+
+        let ownerScan = Scan(
+            input: "tenant-owner-secret.example",
+            status: .completed,
+            userID: ownerID
+        )
+        ownerScan.completedAt = Date()
+        try await ownerScan.save(on: app.db)
+        let ownerScanID = try ownerScan.requireID()
+        let attackerScan = Scan(
+            input: "tenant-attacker.example",
+            status: .completed,
+            userID: attackerID
+        )
+        attackerScan.completedAt = Date()
+        try await attackerScan.save(on: app.db)
+        let attackerScanID = try attackerScan.requireID()
+
+        let ownerTag = Tag(
+            userID: ownerID,
+            name: "owner-private-tag",
+            colour: "#123456"
+        )
+        let attackerTag = Tag(
+            userID: attackerID,
+            name: "attacker-tag",
+            colour: "#654321"
+        )
+        try await ownerTag.save(on: app.db)
+        try await attackerTag.save(on: app.db)
+        let ownerTagID = try ownerTag.requireID()
+        let attackerTagID = try attackerTag.requireID()
+        try await ScanTag(scanID: ownerScanID, tagID: ownerTagID).save(on: app.db)
+
+        let scheduled = ScheduledScan(
+            userID: ownerID,
+            input: "owner-schedule.example",
+            interval: .daily,
+            nextRunAt: Date().addingTimeInterval(86_400)
+        )
+        try await scheduled.save(on: app.db)
+        let scheduledID = try scheduled.requireID()
+
+        let notification = ScanNotification(
+            userID: ownerID,
+            scanID: ownerScanID,
+            message: "owner notification",
+            newResultsCount: 1
+        )
+        try await notification.save(on: app.db)
+        let notificationID = try notification.requireID()
+
+        let apiKey = APIKey(
+            userID: ownerID,
+            keyHash: sha256Hex("owner-matrix-key"),
+            label: "owner-private-key",
+            scopes: [.scansRead],
+            expiresAt: Date().addingTimeInterval(86_400)
+        )
+        try await apiKey.save(on: app.db)
+        let apiKeyID = try apiKey.requireID()
+
+        let investigation = Investigation(
+            userID: ownerID,
+            name: "owner-private-board",
+            data: #"{"nodes":[],"edges":[]}"#
+        )
+        try await investigation.save(on: app.db)
+        let investigationID = try investigation.requireID()
+
+        let darkWebJob = DarkWebInvestigation(
+            userID: ownerID,
+            target: "owner-dark-target",
+            retentionHours: 24
+        )
+        darkWebJob.status = .completed
+        darkWebJob.completedAt = Date()
+        try await darkWebJob.save(on: app.db)
+        let darkWebJobID = try darkWebJob.requireID()
+
+        let exportJob = ExportJob(
+            userID: ownerID,
+            scanID: ownerScanID,
+            format: .json,
+            maxAttempts: 2,
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        try await exportJob.save(on: app.db)
+        let exportJobID = try exportJob.requireID()
+
+        let share = SharedReport(
+            scanID: ownerScanID,
+            tokenHash: sha256Hex("owner-share-token"),
+            expiresAt: Date().addingTimeInterval(3_600)
+        )
+        try await share.save(on: app.db)
+        let shareID = try share.requireID()
+
+        struct Probe {
+            let method: HTTPMethod
+            let path: String
+            let expectedStatus: HTTPStatus
+            let body: String?
+
+            init(
+                _ method: HTTPMethod,
+                _ path: String,
+                _ expectedStatus: HTTPStatus,
+                body: String? = nil
+            ) {
+                self.method = method
+                self.path = path
+                self.expectedStatus = expectedStatus
+                self.body = body
+            }
+        }
+
+        let probes = [
+            Probe(.GET, "/results/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/stream/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/report/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/export/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/export/\(ownerScanID)/graph", .forbidden),
+            Probe(.GET, "/export/\(ownerScanID)/report", .forbidden),
+            Probe(.GET, "/export/\(ownerScanID)/report.html", .forbidden),
+            Probe(.GET, "/identity/\(ownerScanID)", .forbidden),
+            Probe(.GET, "/scans/\(ownerScanID)/exposure-diff", .notFound),
+            Probe(.GET, "/scans/\(ownerScanID)/diff/\(attackerScanID)", .notFound),
+            Probe(.GET, "/scans/\(attackerScanID)/diff/\(ownerScanID)", .notFound),
+            Probe(.GET, "/scans/\(ownerScanID)/tags", .notFound),
+            Probe(.POST, "/scans/\(ownerScanID)/tags/\(attackerTagID)", .notFound),
+            Probe(.POST, "/scans/\(attackerScanID)/tags/\(ownerTagID)", .notFound),
+            Probe(.DELETE, "/scans/\(ownerScanID)/tags/\(attackerTagID)", .notFound),
+            Probe(.DELETE, "/scans/\(attackerScanID)/tags/\(ownerTagID)", .notFound),
+            Probe(.GET, "/tags/\(ownerTagID)/scans", .notFound),
+            Probe(.DELETE, "/tags/\(ownerTagID)", .notFound),
+            Probe(
+                .POST,
+                "/scans/\(ownerScanID)/share",
+                .forbidden,
+                body: #"{"expiresIn":3600}"#
+            ),
+            Probe(.GET, "/scans/\(ownerScanID)/shares", .forbidden),
+            Probe(.DELETE, "/shares/\(shareID)", .notFound),
+            Probe(
+                .POST,
+                "/export-jobs",
+                .notFound,
+                body: "{\"scanID\":\"\(ownerScanID)\",\"format\":\"json\"}"
+            ),
+            Probe(.GET, "/export-jobs/\(exportJobID)", .notFound),
+            Probe(.GET, "/export-jobs/\(exportJobID)/manifest", .notFound),
+            Probe(.GET, "/export-jobs/\(exportJobID)/download", .notFound),
+            Probe(.POST, "/export-jobs/\(exportJobID)/cancel", .notFound),
+            Probe(.DELETE, "/scheduled-scans/\(scheduledID)", .notFound),
+            Probe(.PATCH, "/scheduled-scans/\(scheduledID)/toggle", .notFound),
+            Probe(.POST, "/notifications/\(notificationID)/read", .forbidden),
+            Probe(.DELETE, "/auth/api-keys/\(apiKeyID)", .forbidden),
+            Probe(.GET, "/investigations/\(investigationID)", .notFound),
+            Probe(
+                .PUT,
+                "/investigations/\(investigationID)",
+                .notFound,
+                body: #"{"name":"hijacked"}"#
+            ),
+            Probe(
+                .PUT,
+                "/investigations/\(investigationID)/watch",
+                .notFound,
+                body: #"{"watched":true,"interval":"daily"}"#
+            ),
+            Probe(.DELETE, "/investigations/\(investigationID)", .notFound),
+            Probe(.GET, "/dark-web/investigations/\(darkWebJobID)", .notFound),
+            Probe(.POST, "/dark-web/investigations/\(darkWebJobID)/cancel", .notFound),
+            Probe(.DELETE, "/dark-web/investigations/\(darkWebJobID)", .notFound),
+        ]
+
+        for probe in probes {
+            try await app.test(probe.method, probe.path, beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: attackerCookie)
+                if let body = probe.body {
+                    request.headers.contentType = .json
+                    request.body.writeString(body)
+                }
+            }, afterResponse: { response in
+                XCTAssertEqual(
+                    response.status,
+                    probe.expectedStatus,
+                    "Cross-tenant probe unexpectedly changed behavior: \(probe.method.rawValue) \(probe.path)"
+                )
+                XCTAssertFalse(
+                    (200..<300).contains(Int(response.status.code)),
+                    "Cross-tenant probe must never succeed: \(probe.method.rawValue) \(probe.path)"
+                )
+            })
+        }
+
+        let collectionPaths = [
+            "/my-scans", "/tags", "/scheduled-scans", "/notifications",
+            "/auth/api-keys", "/investigations", "/investigations/index",
+            "/dark-web/investigations", "/export-jobs", "/correlations",
+            "/account/export",
+        ]
+        let forbiddenFragments = [
+            "tenant-owner-secret.example", ownerScanID.uuidString,
+            ownerTagID.uuidString, scheduledID.uuidString, notificationID.uuidString,
+            apiKeyID.uuidString, investigationID.uuidString, darkWebJobID.uuidString,
+            exportJobID.uuidString, shareID.uuidString,
+        ].flatMap { [$0, $0.lowercased()] }
+
+        for path in collectionPaths {
+            try await app.test(.GET, path, beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: attackerCookie)
+            }, afterResponse: { response in
+                XCTAssertEqual(response.status, .ok, "Collection probe failed: GET \(path)")
+                let body = response.body.string
+                for fragment in forbiddenFragments {
+                    XCTAssertFalse(
+                        body.contains(fragment),
+                        "Cross-tenant collection leaked an owner fragment: GET \(path)"
+                    )
+                }
+            })
+        }
+
+        let storedScan = try await Scan.find(ownerScanID, on: app.db)
+        let storedTag = try await Tag.find(ownerTagID, on: app.db)
+        let storedScheduledScan = try await ScheduledScan.find(scheduledID, on: app.db)
+        let storedNotification = try await ScanNotification.find(notificationID, on: app.db)
+        let storedAPIKey = try await APIKey.find(apiKeyID, on: app.db)
+        let storedInvestigation = try await Investigation.find(investigationID, on: app.db)
+        let storedDarkWebJob = try await DarkWebInvestigation.find(darkWebJobID, on: app.db)
+        let storedExportJob = try await ExportJob.find(exportJobID, on: app.db)
+        let storedShare = try await SharedReport.find(shareID, on: app.db)
+        let scanTagCount = try await ScanTag.query(on: app.db).count()
+        XCTAssertNotNil(storedScan)
+        XCTAssertNotNil(storedTag)
+        XCTAssertNotNil(storedScheduledScan)
+        XCTAssertEqual(storedNotification?.isRead, false)
+        XCTAssertNotNil(storedAPIKey)
+        XCTAssertEqual(try storedInvestigation?.name, "owner-private-board")
+        XCTAssertFalse(storedInvestigation?.watched == true)
+        XCTAssertNotNil(storedDarkWebJob)
+        XCTAssertEqual(storedExportJob?.status, .pending)
+        XCTAssertNotNil(storedShare)
+        XCTAssertEqual(scanTagCount, 1)
+    }
+
     func testAPIKeyScopesExpiryAndControlPlaneIsolation() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

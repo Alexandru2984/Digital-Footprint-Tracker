@@ -43,8 +43,11 @@ graph.
 - **Bounded asynchronous exports** — owner-scoped JSON, GraphML, Markdown, HTML
   and PDF jobs use paged reads, encrypted artifacts/manifests, cross-process
   leases, hard quotas, integrity-checked downloads, cancellation and expiry.
+- **Executable authorization inventory** — every Vapor method/path has an exact
+  API-key decision, unknown routes fail closed, and CI exercises a randomized
+  37-request cross-tenant mutation/read matrix plus 11 collection leak checks.
 - **Hermetic test suite** running on every push (`swift test` in CI with
-  in-memory SQLite; 197 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
+  in-memory SQLite; 199 tests at the August 2026 audit), SwiftLint enforced, OpenAPI 3 spec
   rendered as a hosted Swagger UI.
 
 ---
@@ -139,6 +142,8 @@ PostgreSQL
   `automation:write`, `investigations:read`, `investigations:write`
 - Keys expire after 1–365 days (90 by default); account/admin/auth controls are
   always browser-session-only, regardless of scope
+- The exact method/path policy is checked against Vapor's live route registry;
+  see [`docs/ROUTE_AUTHORIZATION.md`](docs/ROUTE_AUTHORIZATION.md)
 - Issue / revoke endpoints under `/api/auth/api-keys`
 
 > Security migration note: API keys created before scoped expiry support have

@@ -134,7 +134,12 @@ series), with its own rollback note and production evidence before the next one.
 ### Authorization and tenancy
 
 - Central declarative route-policy table; CI fails on unclassified routes.
+  **Delivered in repository:** exact method/path rules are compared to Vapor's
+  live registry and unknown runtime paths fail closed.
 - Property-based cross-tenant IDOR tests for every model and HTTP method.
+  **Core owner-scoped surface delivered:** randomized instances cover 37
+  identifier probes, five HTTP methods, 11 collection/export paths, and
+  post-request database invariants; future tenant models must extend the gate.
 - Organization/workspace model with owner/admin/analyst/viewer roles.
 - Resource-level sharing ACLs, expiry, revocation and audit trail.
 - Service accounts with narrowly scoped keys and per-key quotas/IP policy.

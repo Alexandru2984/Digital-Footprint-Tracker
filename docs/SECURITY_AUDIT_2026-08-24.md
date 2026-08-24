@@ -69,6 +69,12 @@ cancellation, limits, encryption and stale-worker CAS. Production migration,
 metrics/paging and runtime smoke evidence remain absent, and correlation is still
 synchronous; the production BLOCK verdict is unchanged.
 
+API-key authorization is now an exact method/path inventory checked against the
+live Vapor route registry. Unknown routes fail closed at runtime and any route
+drift fails tests. A randomized owner/attacker matrix exercises 37 direct-object
+reads or mutations across five HTTP methods, 11 filtered collections/account
+exports, and verifies that protected rows and relationships remain unchanged.
+
 ## CISO forcing review
 
 ### 1. STRIDE threat model
@@ -182,8 +188,9 @@ from repository completion.
    channel policy, retry classes and dead-letter handling.
 7. Move exports, reports and correlation to bounded asynchronous jobs with
    completeness manifests, expiry and cancellation.
-8. Add CI route-authorization classification, cross-tenant IDOR properties,
-   secret/SAST/SBOM gates and signed release provenance.
+8. **Authorization/IDOR delivered; supply-chain work in progress:** retain the
+   route-classification and cross-tenant gates, then add secret/SAST/SBOM gates
+   and signed release provenance.
 9. Add Playwright mobile/accessibility/CSP coverage at 320, 375, 768 and 1440
    pixels before expanding the UI.
 10. After Phase 0, deliver passkeys/session inventory, cases/workspaces/RBAC,
