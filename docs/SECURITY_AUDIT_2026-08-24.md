@@ -1,5 +1,9 @@
 # Production security revalidation — 2026-08-24
 
+> Repository remediation and later live revalidation are recorded in
+> `SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md`; the production BLOCK verdict remains
+> in force.
+
 ## Executive verdict
 
 **BLOCK production rollout and dark-web enablement.** The public Cloudflare path

@@ -24,7 +24,7 @@ parallel only when their dependencies are satisfied.
   are absent; backend/schema/configs lag the local commits; no AOP/mTLS or
   matching Swift IPv6 TLS vhost exists; and the isolated worker is not staged.
 - CISO verdict: **BLOCK** until the acceptance gate in
-  `SECURITY_AUDIT_2026-08-24.md` is evidenced.
+  `SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md` is evidenced.
 
 ## North-star architecture
 

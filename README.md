@@ -21,6 +21,7 @@ graph.
   but the live recovery/configuration gaps are rollout blockers—not completed
   controls. See the current
   [`security audit`](docs/SECURITY_AUDIT_2026-08-24.md),
+  [`live delta`](docs/SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md),
   [`rollout runbook`](docs/PRODUCTION_ROLLOUT.md) and
   [`roadmap`](docs/ROADMAP.md).
 - **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
