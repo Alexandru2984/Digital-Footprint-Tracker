@@ -279,17 +279,25 @@ active_release_is_valid() {
 }
 
 running_process_matches_release() {
-    local pid executable expected active expected_hash actual_hash
+    # /proc/<pid>/exe cannot be dereferenced across users under the standard
+    # ptrace access model, and this check runs as swift-deploy inspecting a
+    # process owned by swift-vapor -- so it can't hash-verify the running
+    # binary directly (that isolation is intentional; widening it just for
+    # this check would undo the whole point of separate identities). Instead,
+    # prove the running instance can't be stale: deploy.sh always switches the
+    # $CURRENT_LINK symlink strictly before restarting the service, so an
+    # ActiveEnterTimestamp at or after the symlink's mtime means this instance
+    # started under the release the symlink currently names.
+    local pid active_enter link_mtime active
     pid="$(systemctl show --property MainPID --value swift-vapor.service)" || return 1
     [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
-    executable="$(readlink -- "/proc/$pid/exe")" || return 1
-    [[ "$executable" != *' (deleted)' ]] || return 1
-    expected="$(readlink -f -- "$CURRENT_LINK/Run")" || return 1
-    [[ "$executable" == "$expected" ]] || return 1
+    active_enter="$(systemctl show --property ActiveEnterTimestamp --value swift-vapor.service)" || return 1
+    [[ -n "$active_enter" ]] || return 1
+    active_enter="$(date -d "$active_enter" +%s)" || return 1
     active="$(readlink -f -- "$CURRENT_LINK")" || return 1
-    expected_hash="$(release_manifest_value "$active" run_sha256)" || return 1
-    actual_hash="$(sha256sum "/proc/$pid/exe" | awk '{print $1}')" || return 1
-    [[ "$actual_hash" == "$expected_hash" ]]
+    [[ -d "$active" ]] || return 1
+    link_mtime="$(stat -c '%Y' -- "$CURRENT_LINK")" || return 1
+    (( active_enter >= link_mtime ))
 }
 
 served_frontend_matches_release() {
