@@ -601,6 +601,10 @@ final class AppTests: XCTestCase {
     }
 
     func testCorruptNotificationCredentialFailsOnlyItsChannel() async throws {
+        let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
+        defer { environment.restore() }
+        configureEncryptionEnvironment(key: String(repeating: "46", count: 32))
+
         let app = try await Application.make(.testing)
         addTeardownBlock { try await app.asyncShutdown() }
         let metrics = MetricsRegistry()
