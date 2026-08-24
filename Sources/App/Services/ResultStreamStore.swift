@@ -1,4 +1,5 @@
 import Fluent
+import Foundation
 
 /// Persists a result and verifies that the database trigger created its durable
 /// SSE cursor in the same transaction.
