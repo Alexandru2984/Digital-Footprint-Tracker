@@ -85,6 +85,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
     app.migrations.add(AddResultMetadata())
+    app.migrations.add(CreateScanResultEvents())
     app.migrations.add(AddInputIndex())
     app.migrations.add(CreateUser())
     app.migrations.add(AddUserIDToScans())
@@ -1947,6 +1948,210 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(body.scanID, id)
             XCTAssertEqual(body.input, "lookuptest")
         }
+    }
+
+    // MARK: - Durable SSE replay
+
+    func testResultStreamStoreAssignsPerScanSequenceAndRollsBackOrphans() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let firstScan = Scan(input: "stream-one", userID: nil)
+        let secondScan = Scan(input: "stream-two", userID: nil)
+        try await firstScan.save(on: app.db)
+        try await secondScan.save(on: app.db)
+        let firstScanID = try firstScan.requireID()
+        let secondScanID = try secondScan.requireID()
+
+        for index in 1...3 {
+            try await ResultStreamStore.persist(Result(
+                scanID: firstScanID,
+                source: "source-\(index)",
+                type: "account",
+                confidenceScore: 0.8,
+                rawData: "finding-\(index)"
+            ), on: app.db)
+        }
+        // Simulate an insert from the previous release, which knows nothing
+        // about ResultStreamStore. The database trigger must still cover it.
+        try await App.Result(
+            scanID: secondScanID,
+            source: "other-source",
+            type: "account",
+            confidenceScore: 0.7,
+            rawData: "other-finding"
+        ).save(on: app.db)
+
+        let firstEvents = try await ScanResultEvent.query(on: app.db)
+            .filter(\.$scan.$id == firstScanID)
+            .sort(\.$streamSequence, .ascending)
+            .all()
+        let secondEvents = try await ScanResultEvent.query(on: app.db)
+            .filter(\.$scan.$id == secondScanID)
+            .all()
+        XCTAssertEqual(firstEvents.map(\.streamSequence), [1, 2, 3])
+        XCTAssertEqual(secondEvents.map(\.streamSequence), [1])
+
+        let orphan = Result(
+            scanID: UUID(),
+            source: "orphan",
+            type: "account",
+            confidenceScore: 1,
+            rawData: "must roll back"
+        )
+        let orphanID = try orphan.requireID()
+        do {
+            try await ResultStreamStore.persist(orphan, on: app.db)
+            XCTFail("An event cannot be persisted without its parent scan")
+        } catch {
+            let persistedOrphan = try await App.Result.find(orphanID, on: app.db)
+            XCTAssertNil(persistedOrphan)
+        }
+    }
+
+    func testResultStreamMigrationBackfillsHistoricalRowsPerScan() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Recreate just this additive migration after seeding rows in the shape
+        // of a pre-upgrade database.
+        try await CreateScanResultEvents().revert(on: app.db)
+        let firstScan = Scan(input: "legacy-one", userID: nil)
+        let secondScan = Scan(input: "legacy-two", userID: nil)
+        try await firstScan.save(on: app.db)
+        try await secondScan.save(on: app.db)
+        let firstScanID = try firstScan.requireID()
+        let secondScanID = try secondScan.requireID()
+
+        try await App.Result(
+            scanID: firstScanID,
+            source: "legacy-a",
+            type: "account",
+            confidenceScore: 0.5,
+            rawData: "a"
+        ).save(on: app.db)
+        try await App.Result(
+            scanID: secondScanID,
+            source: "legacy-b",
+            type: "account",
+            confidenceScore: 0.5,
+            rawData: "b"
+        ).save(on: app.db)
+        try await App.Result(
+            scanID: firstScanID,
+            source: "legacy-c",
+            type: "account",
+            confidenceScore: 0.5,
+            rawData: "c"
+        ).save(on: app.db)
+
+        try await CreateScanResultEvents().prepare(on: app.db)
+
+        let firstSequences = try await ScanResultEvent.query(on: app.db)
+            .filter(\.$scan.$id == firstScanID)
+            .sort(\.$streamSequence, .ascending)
+            .all()
+        let secondSequences = try await ScanResultEvent.query(on: app.db)
+            .filter(\.$scan.$id == secondScanID)
+            .all()
+        XCTAssertEqual(firstSequences.map(\.streamSequence), [1, 2])
+        XCTAssertEqual(secondSequences.map(\.streamSequence), [1])
+    }
+
+    func testSSEReplaysOnlyEventsAfterLastEventIDAndTerminates() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let scan = Scan(input: "resume-stream", userID: nil)
+        try await scan.save(on: app.db)
+        let scanID = try scan.requireID()
+        for index in 1...3 {
+            try await ResultStreamStore.persist(Result(
+                scanID: scanID,
+                source: "resume-\(index)",
+                type: "account",
+                confidenceScore: 0.75,
+                rawData: "payload-\(index)",
+                metadata: #"{"platform":"test"}"#
+            ), on: app.db)
+        }
+        scan.status = .completed
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+
+        try await app.test(.GET, "/stream/\(scanID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Last-Event-ID", value: "1")
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertEqual(response.headers.first(name: .contentType), "text/event-stream")
+            XCTAssertEqual(response.headers.first(name: "X-Accel-Buffering"), "no")
+            let body = response.body.string
+            XCTAssertTrue(body.contains("retry: 2000\n\n"), body)
+            XCTAssertFalse(body.contains("id: 1\nevent: result"), body)
+            XCTAssertTrue(body.contains("id: 2\nevent: result"), body)
+            XCTAssertTrue(body.contains("id: 3\nevent: result"), body)
+            XCTAssertTrue(body.contains("\"source\":\"resume-2\""), body)
+            XCTAssertTrue(body.contains("\"metadata\":{\"platform\":\"test\"}"), body)
+            XCTAssertTrue(body.contains("event: done"), body)
+            XCTAssertTrue(body.contains("\"count\":3"), body)
+        })
+    }
+
+    func testSSERejectsMalformedAndOutOfRangeCursors() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let scan = Scan(input: "cursor-validation", userID: nil)
+        try await scan.save(on: app.db)
+        let scanID = try scan.requireID()
+        try await ResultStreamStore.persist(Result(
+            scanID: scanID,
+            source: "only",
+            type: "account",
+            confidenceScore: 1,
+            rawData: "only"
+        ), on: app.db)
+        scan.status = .completed
+        try await scan.save(on: app.db)
+
+        try await app.test(.GET, "/stream/\(scanID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Last-Event-ID", value: "+1")
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .badRequest)
+        })
+        try await app.test(.GET, "/stream/\(scanID)?cursor=2", afterResponse: { response in
+            XCTAssertEqual(response.status, .badRequest)
+        })
+    }
+
+    func testSSEEnforcesOwnershipBeforeCursorValidation() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        let cookie = try await registerAndLogin(app, username: "sse-owner")
+        let owner = try await User.query(on: app.db)
+            .filter(\.$username == "sse-owner")
+            .first()
+        let ownerID = try XCTUnwrap(owner?.id)
+        let scan = Scan(input: "owned-stream", status: .completed, userID: ownerID)
+        scan.completedAt = Date()
+        try await scan.save(on: app.db)
+        let scanID = try scan.requireID()
+
+        // Authorization runs before cursor parsing, so a non-owner cannot use
+        // malformed cursors as an oracle for an owned scan's stream state.
+        try await app.test(.GET, "/stream/\(scanID)", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: "Last-Event-ID", value: "+1")
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .forbidden)
+        })
+
+        try await app.test(.GET, "/stream/\(scanID)", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            XCTAssertTrue(response.body.string.contains("event: done"))
+        })
     }
 
     // MARK: - Rate limiter

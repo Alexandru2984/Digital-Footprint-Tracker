@@ -895,6 +895,7 @@
         // Symbol token — each new scan/load gets a fresh token; stale poll callbacks check
         // this and abort if they no longer own the UI.
         let activeScanToken = null;
+        let activeEventSource = null;
         // When true, only results with confidenceScore >= 0.7 are shown.
         let confidenceFilterActive = false;
         // When non-null, only results of this type are shown.
@@ -1092,6 +1093,10 @@
         }
 
         function resetResultsView() {
+            if (activeEventSource) {
+                activeEventSource.close();
+                activeEventSource = null;
+            }
             lastScanData = null;
             activeTypeFilter = null;
             activeSortMode = 'default';
@@ -1472,9 +1477,11 @@
             if (activeResultsTab === 'surface') renderAttackSurface(data);
         }
 
-        // Per-session SSE streaming: streams results as they arrive from the server.
-        // Falls back automatically to polling if EventSource is unavailable or errors.
+        // Per-session SSE streaming. The server assigns a durable per-scan event
+        // ID; native EventSource reconnects with Last-Event-ID and the Set below
+        // makes rendering idempotent if a proxy replays the final frame.
         function startStreaming(scanID) {
+            if (activeEventSource) activeEventSource.close();
             const token = Symbol();
             activeScanToken = token;
 
@@ -1498,12 +1505,25 @@
             }
 
             let receivedResults = 0;
+            const seenEventIDs = new Set();
+            let reconnectFallbackTimer = null;
             const evSource = new EventSource('/api/stream/' + encodeURIComponent(scanID));
+            activeEventSource = evSource;
+
+            evSource.onopen = () => {
+                if (token !== activeScanToken) { evSource.close(); return; }
+                if (reconnectFallbackTimer) {
+                    clearTimeout(reconnectFallbackTimer);
+                    reconnectFallbackTimer = null;
+                }
+            };
 
             evSource.addEventListener('result', (e) => {
                 if (token !== activeScanToken) { evSource.close(); return; }
+                if (e.lastEventId && seenEventIDs.has(e.lastEventId)) return;
                 try {
                     const result = JSON.parse(e.data);
+                    if (e.lastEventId) seenEventIDs.add(e.lastEventId);
                     // Apply live confidence + type filter during streaming.
                     const passConf = !confidenceFilterActive || result.confidenceScore >= 0.7;
                     const passType = !activeTypeFilter || result.type === activeTypeFilter;
@@ -1515,6 +1535,7 @@
             });
 
             evSource.addEventListener('progress', (e) => {
+                if (token !== activeScanToken) { evSource.close(); return; }
                 try {
                     const p = JSON.parse(e.data);
                     const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
@@ -1526,8 +1547,24 @@
                 } catch (_) {}
             });
 
+            // A named server error is terminal for this stream. Transport
+            // failures use EventSource's reserved `error` event below.
+            evSource.addEventListener('stream-error', (e) => {
+                evSource.close();
+                if (activeEventSource === evSource) activeEventSource = null;
+                if (reconnectFallbackTimer) {
+                    clearTimeout(reconnectFallbackTimer);
+                    reconnectFallbackTimer = null;
+                }
+                if (token !== activeScanToken) return;
+                setScanningState(false);
+                logStatus('Live results are temporarily unavailable. Refresh and retry.', 'text-red-500');
+            });
+
             evSource.addEventListener('done', (e) => {
                 evSource.close();
+                if (activeEventSource === evSource) activeEventSource = null;
+                if (reconnectFallbackTimer) clearTimeout(reconnectFallbackTimer);
                 if (token !== activeScanToken) return;
                 try {
                     const info = JSON.parse(e.data);
@@ -1574,16 +1611,30 @@
             });
 
             evSource.onerror = () => {
-                evSource.close();
-                if (token !== activeScanToken) return;
-                logStatus('Streaming unavailable — switching to polling.');
-                startPolling(scanID);
+                if (token !== activeScanToken) { evSource.close(); return; }
+                if (reconnectFallbackTimer) return;
+                logStatus('Stream interrupted — reconnecting from the last result…', 'text-yellow-500');
+                // EventSource retries automatically (the server advertises 2s).
+                // Fall back only if it could not reopen within a bounded window.
+                reconnectFallbackTimer = setTimeout(() => {
+                    reconnectFallbackTimer = null;
+                    if (token !== activeScanToken) { evSource.close(); return; }
+                    if (evSource.readyState === EventSource.OPEN) return;
+                    evSource.close();
+                    if (activeEventSource === evSource) activeEventSource = null;
+                    logStatus('Streaming unavailable — switching to polling.');
+                    startPolling(scanID);
+                }, 7000);
             };
         }
 
         // Per-session polling: each call returns a unique token; callbacks discard themselves
         // if the token no longer matches (i.e. a newer scan has taken over the UI).
         function startPolling(scanID) {
+            if (activeEventSource) {
+                activeEventSource.close();
+                activeEventSource = null;
+            }
             const token = Symbol();
             activeScanToken = token;
             let count = 0;

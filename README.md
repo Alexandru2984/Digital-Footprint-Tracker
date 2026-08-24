@@ -150,9 +150,10 @@ PostgreSQL
 - PDF generation server-side via `scripts/generate_report.py`
 
 ### Real-time Streaming
-- **Server-Sent Events** — results appear live as each plugin finishes
-- Automatic fallback to 3-second polling if SSE unavailable
-- SSE connection limit (30 concurrent) via `NIOAtomic` counter
+- **Durable Server-Sent Events** — each result has a persistent, per-scan monotonic ID
+- Native `Last-Event-ID` resume, duplicate-safe rendering and bounded 100-row replay pages
+- Proxy-safe reconnect boundaries plus automatic fallback to 3-second polling if SSE stays unavailable
+- SSE connection limit (30 concurrent per process) via a locked counter
 
 ### Frontend
 - **Stats dashboard** — total scans, last 24 h / 7 d activity, top sources bar chart
@@ -200,7 +201,7 @@ page (cookie auth is persisted across reloads).
 
 ### Core
 - `POST /api/scan` — start scan or return cached result. `{ "input": "...", "force": false }`
-- `GET  /api/stream/:id` — SSE stream of `PluginResult` events
+- `GET  /api/stream/:id` — resumable SSE stream of `PluginResult` events (`Last-Event-ID` supported)
 - `GET  /api/results/:id` — full scan result
 - `GET  /api/stats` — aggregate stats
 

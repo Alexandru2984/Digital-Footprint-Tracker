@@ -91,8 +91,11 @@ series), with its own rollback note and production evidence before the next one.
    rollback. Production rollout/restore evidence remains gated by Phase 0.
 7. **Durable execution:** Postgres/Redis queue, idempotency keys, leases,
    cancellation, retry classes, DLQ and separated worker identities/secrets.
-8. **Streaming correctness:** ordered result cursor, `Last-Event-ID`, bounded
-   batches and a constant-cost public liveness/internal readiness split.
+8. **Streaming correctness — repository delivered:** durable per-scan cursor,
+   zero-gap database allocation across concurrent/old-release writers,
+   `Last-Event-ID`, bounded replay, proxy-safe reconnects and the existing
+   constant-cost public liveness/internal readiness split. Production rollout
+   evidence remains gated by Phase 0.
 9. **Truthful delivery:** typed notification outcomes, retry/DLQ, channel opt-in,
    bounce handling and success/failure/provider-latency dashboards.
 10. **Bounded data plane:** asynchronous paged exports/correlation/report jobs,

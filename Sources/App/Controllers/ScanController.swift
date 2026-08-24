@@ -26,10 +26,51 @@ struct ScanResponse: Content {
     let scannedAt: Double?    // Unix timestamp of scan creation
 }
 
-/// Global counter of active SSE connections. Prevents a burst of open streams
+/// Process-wide counter of active SSE connections. Prevents a burst of open streams
 /// from exhausting the PostgreSQL connection pool (default max: 100 connections).
 private let activeSSEConnections = NIOLockedValueBox<Int>(0)
 private let maxSSEConnections = 30
+
+private struct SSEProgressPayload: Encodable {
+    let done: Int
+    let total: Int
+    let lastPlugin: String
+}
+
+private struct SSEDonePayload: Encodable {
+    let status: String
+    let count: Int
+    let riskScore: Int
+    let riskLevel: String
+}
+
+private struct SSEErrorPayload: Encodable {
+    let code: String
+}
+
+private func sseFrame<T: Encodable>(event: String, payload: T, id: Int64? = nil) throws -> ByteBuffer {
+    let encoded = try JSONEncoder().encode(payload)
+    let json = String(decoding: encoded, as: UTF8.self)
+    let idLine = id.map { "id: \($0)\n" } ?? ""
+    return ByteBuffer(string: "\(idLine)event: \(event)\ndata: \(json)\n\n")
+}
+
+/// Accept only canonical non-negative decimal cursors. Besides bounding parser
+/// work, rejecting signs/whitespace avoids multiple textual representations of
+/// the same stream position in logs and intermediaries.
+private func requestedSSECursor(_ req: Request) throws -> Int64 {
+    let queryCursor: String? = try? req.query.get(String.self, at: "cursor")
+    guard let raw = req.headers.first(name: "Last-Event-ID") ?? queryCursor else {
+        return 0
+    }
+    let bytes = Array(raw.utf8)
+    guard (1...19).contains(bytes.count),
+          bytes.allSatisfy({ (48...57).contains($0) }),
+          let cursor = Int64(raw), cursor >= 0 else {
+        throw Abort(.badRequest, reason: "Invalid SSE cursor.")
+    }
+    return cursor
+}
 
 struct ScanController: RouteCollection {
     static let defaultPlugins: [any FootprintPlugin] = [
@@ -250,11 +291,9 @@ struct ScanController: RouteCollection {
         )
     }
 
-    // SSE stream: pushes each plugin result to the client as it is saved to the DB.
-    // Polls the database every second for up to 90 seconds (safely under Cloudflare's
-    // 100-second origin-read timeout). Sends "event: done" when the scan reaches a
-    // terminal state or the deadline expires; the client should then fall back to
-    // a final GET /results/:id for export/history metadata.
+    // SSE stream: replays durable, per-scan result events after Last-Event-ID and
+    // then tails new events. The 90-second response window remains below the
+    // proxy origin timeout; EventSource reconnects with its last acknowledged ID.
     @Sendable
     func streamResults(req: Request) async throws -> Response {
         guard let idString = req.parameters.get("id"), let scanID = UUID(uuidString: idString) else {
@@ -267,6 +306,15 @@ struct ScanController: RouteCollection {
         // holding the unguessable scanID (capability access).
         try await scan.authorizeRead(req)
 
+        let initialCursor = try requestedSSECursor(req)
+        guard try await ResultStreamStore.contains(
+            scanID: scanID,
+            cursor: initialCursor,
+            on: req.db
+        ) else {
+            throw Abort(.badRequest, reason: "SSE cursor is outside this scan's retained history.")
+        }
+
         // Enforce a global cap on concurrent SSE connections to protect the DB pool.
         let current = activeSSEConnections.withLockedValue { $0 += 1; return $0 }
         guard current <= maxSSEConnections else {
@@ -276,77 +324,118 @@ struct ScanController: RouteCollection {
 
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/event-stream")
-        headers.add(name: "Cache-Control", value: "no-cache")
+        headers.add(name: "Cache-Control", value: "no-store, no-cache, must-revalidate")
         // Tell nginx (and Cloudflare) not to buffer the SSE stream.
         headers.add(name: "X-Accel-Buffering", value: "no")
 
         let db = req.db
         let logger = req.logger
         let application = req.application
-        let encoder = JSONEncoder()
 
         let body = Response.Body(managedAsyncStream: { writer in
             defer { activeSSEConnections.withLockedValue { $0 -= 1 } }
-            var lastCount = 0
+            var cursor = initialCursor
+            var lastProgress: (done: Int, total: Int, lastPlugin: String)?
+            var heartbeatTick = 0
+            let deadline = Date().addingTimeInterval(90)
 
-            for _ in 0..<90 {
-                guard let scan = try? await Scan.find(scanID, on: db) else { break }
+            // Browser reconnect delay. EventSource retains the last `id:` value
+            // and sends it back as Last-Event-ID on the next connection.
+            try await writer.writeBuffer(ByteBuffer(string: "retry: 2000\n\n"))
 
-                let results = (try? await Result.query(on: db)
-                    .filter(\Result.$scan.$id == scanID)
-                    .all()) ?? []
+            do {
+                while Date() < deadline {
+                    guard let currentScan = try await Scan.find(scanID, on: db) else {
+                        try await writer.writeBuffer(try sseFrame(
+                            event: "stream-error",
+                            payload: SSEErrorPayload(code: "scan_unavailable")
+                        ))
+                        return
+                    }
 
-
-                do {
-                    // Stream any results added since the last poll.
-                    for result in results.dropFirst(lastCount) {
-                        let pr = PluginResult(
+                    let events = try await ResultStreamStore.replay(
+                        scanID: scanID,
+                        after: cursor,
+                        on: db
+                    )
+                    for streamEvent in events {
+                        let result = streamEvent.result
+                        let payload = PluginResult(
                             source: result.source,
                             type: result.type,
                             confidenceScore: result.confidenceScore,
-                            rawData: try result.rawData
+                            rawData: try result.rawData,
+                            metadata: try result.metadataObject
                         )
-                        if let data = try? encoder.encode(pr),
-                           let json = String(data: data, encoding: .utf8) {
-                            try await writer.writeBuffer(ByteBuffer(string: "event: result\ndata: \(json)\n\n"))
-                        }
+                        try await writer.writeBuffer(try sseFrame(
+                            event: "result",
+                            payload: payload,
+                            id: streamEvent.streamSequence
+                        ))
+                        cursor = streamEvent.streamSequence
                     }
-                    lastCount = results.count
 
-                    if scan.status == .completed || scan.status == .failed {
-                        let risk = try RiskScorer.compute(results: results)
-                        let payload = "{\"status\":\"\(scan.status.rawValue)\",\"count\":\(results.count),\"riskScore\":\(risk.value),\"riskLevel\":\"\(risk.level.rawValue)\"}"
-                        try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: \(payload)\n\n"))
+                    // Drain a full replay page immediately. Only wait once the
+                    // stream has caught up, keeping large reconnects fast while
+                    // bounding every individual database query.
+                    if events.count == ResultStreamStore.replayLimit {
+                        continue
+                    }
+
+                    if currentScan.status == .completed || currentScan.status == .failed {
+                        let allResults = try await Result.query(on: db)
+                            .filter(\.$scan.$id == scanID)
+                            .all()
+                        let risk = try RiskScorer.compute(results: allResults)
+                        try await writer.writeBuffer(try sseFrame(
+                            event: "done",
+                            payload: SSEDonePayload(
+                                status: currentScan.status.rawValue,
+                                count: allResults.count,
+                                riskScore: risk.value,
+                                riskLevel: risk.level.rawValue
+                            )
+                        ))
                         return
                     }
-                } catch let failure as FieldCrypto.DecryptionFailure {
-                    await SensitiveFieldFailureReporter.report(
-                        failure,
-                        app: application,
-                        context: "scan_stream"
-                    )
-                    try await writer.writeBuffer(ByteBuffer(
-                        string: "event: error\ndata: {\"code\":\"stored_data_unavailable\"}\n\n"
-                    ))
-                    return
+
+                    if let progress = await ScanProgressTracker.shared.get(for: scanID),
+                       lastProgress?.done != progress.done
+                            || lastProgress?.total != progress.total
+                            || lastProgress?.lastPlugin != progress.lastName {
+                        let payload = SSEProgressPayload(
+                            done: progress.done,
+                            total: progress.total,
+                            lastPlugin: progress.lastName
+                        )
+                        try await writer.writeBuffer(try sseFrame(event: "progress", payload: payload))
+                        lastProgress = (progress.done, progress.total, progress.lastName)
+                    }
+
+                    heartbeatTick += 1
+                    if heartbeatTick >= 15 {
+                        try await writer.writeBuffer(ByteBuffer(string: ": heartbeat\n\n"))
+                        heartbeatTick = 0
+                    }
+                    try await Task.sleep(for: .seconds(1))
                 }
 
-                // Emit progress event
-                if let prog = await ScanProgressTracker.shared.get(for: scanID) {
-                    let escaped = prog.lastName.replacingOccurrences(of: "\\", with: "\\\\")
-                                               .replacingOccurrences(of: "\"", with: "\\\"")
-                    let progressPayload = "{\"done\":\(prog.done),\"total\":\(prog.total),\"lastPlugin\":\"\(escaped)\"}"
-                    try await writer.writeBuffer(ByteBuffer(string: "event: progress\ndata: \(progressPayload)\n\n"))
-                }
-
-                // Keepalive comment — resets Cloudflare's 100-second origin timeout.
-                try await writer.writeBuffer(ByteBuffer(string: ": ka\n\n"))
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+                // End this HTTP response before the proxy timeout without
+                // claiming the scan itself timed out. EventSource reconnects
+                // and resumes from the last durable result ID.
+                logger.debug("SSE stream for scan \(scanID) reached its reconnect boundary.")
+                try await writer.writeBuffer(ByteBuffer(string: ": reconnect\n\n"))
+            } catch let failure as FieldCrypto.DecryptionFailure {
+                await SensitiveFieldFailureReporter.report(
+                    failure,
+                    app: application,
+                    context: "scan_stream"
+                )
+                try await writer.writeBuffer(try sseFrame(
+                    event: "stream-error",
+                    payload: SSEErrorPayload(code: "stored_data_unavailable")
+                ))
             }
-
-            // Deadline exceeded.
-            logger.warning("SSE stream for scan \(scanID) exceeded 90-second deadline.")
-            try await writer.writeBuffer(ByteBuffer(string: "event: done\ndata: {\"status\":\"timeout\",\"count\":0}\n\n"))
         })
 
         return Response(status: .ok, headers: headers, body: body)

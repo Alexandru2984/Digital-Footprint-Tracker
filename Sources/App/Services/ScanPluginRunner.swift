@@ -248,7 +248,7 @@ enum ScanPluginRunner {
             rawData: cappedRawData,
             metadata: metadataJSON
         )
-        try await result.save(on: db)
+        try await ResultStreamStore.persist(result, on: db)
     }
 
     private static func fireWebhook(url: String, scanID: UUID, scan: Scan, risk: RiskScorer.Score, resultCount: Int, app: Application) async throws {

@@ -34,6 +34,18 @@ application impact; no target, identity, result or credential value was read.
 The same Unix account and VPS also host unrelated applications, so a host-level
 incident has a larger, presently unquantified blast radius.
 
+## Repository remediation follow-up
+
+The earlier cursor-SSE finding is remediated in the repository, not in the
+running production release. Result writes now create a per-scan monotonic event
+inside the same database transaction, including writes from the prior release
+during a zero-downtime migration. Streams use strict `Last-Event-ID` validation,
+indexed 100-row replay pages, 15-second heartbeats, terminal-only full-result
+risk calculation and duplicate-safe browser rendering. SQLite endpoint tests
+and an isolated PostgreSQL 16 run with 20 concurrent writers passed without
+missing, duplicate or gapped sequences. This does not change the production
+BLOCK verdict or any Phase 0 gate above.
+
 ## CISO forcing review
 
 ### 1. STRIDE threat model
@@ -141,8 +153,8 @@ from repository completion.
    quarantine signals and security metrics.
 4. Introduce crypto envelope v2 with HKDF-separated keys, table/field/row AAD,
    key IDs and resumable rotation.
-5. Convert result streaming to an indexed monotonic cursor with bounded batches
-   and `Last-Event-ID` resume.
+5. **Delivered in repository; production pending:** convert result streaming to
+   an indexed monotonic cursor with bounded batches and `Last-Event-ID` resume.
 6. Make notification outcomes truthful: attempted/succeeded/failed metrics,
    channel policy, retry classes and dead-letter handling.
 7. Move exports, reports and correlation to bounded asynchronous jobs with
