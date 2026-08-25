@@ -4192,6 +4192,116 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(RedditPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
     }
 
+    // MARK: - ScanPluginRunner: per-plugin timeout and within-scan dedup
+
+    private struct SlowTestPlugin: FootprintPlugin {
+        let name: String
+        let delaySeconds: Double
+        let result: PluginResult
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            try await Task.sleep(for: .seconds(delaySeconds))
+            return [result]
+        }
+    }
+
+    private struct FixedResultTestPlugin: FootprintPlugin {
+        let name: String
+        let results: [PluginResult]
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            results
+        }
+    }
+
+    func testResultDedupStoreMarksFirstOccurrenceOnlyAsNew() async {
+        let dedup = ScanPluginRunner.ResultDedupStore()
+        let firstSeen = await dedup.markSeen(source: "A", type: "t", rawData: "x")
+        XCTAssertTrue(firstSeen)
+        let secondSeen = await dedup.markSeen(source: "A", type: "t", rawData: "x")
+        XCTAssertFalse(secondSeen)
+        let differentType = await dedup.markSeen(source: "A", type: "other", rawData: "x")
+        XCTAssertTrue(differentType, "a different type is a different finding, not a duplicate")
+    }
+
+    func testRunRoundCutsOffASlowPluginWithoutBlockingOthers() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "timeout-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        let slow = SlowTestPlugin(name: "Slow", delaySeconds: 5,
+            result: PluginResult(source: "Slow", type: "account_presence", confidenceScore: 1.0, rawData: "slow hit"))
+        let fast = FixedResultTestPlugin(name: "Fast",
+            results: [PluginResult(source: "Fast", type: "account_presence", confidenceScore: 1.0, rawData: "fast hit")])
+
+        let start = Date()
+        let round = await ScanPluginRunner.runRound(
+            plugins: [slow, fast],
+            candidates: [TargetDeriver.Candidate(value: "timeout-target", origin: .primary)],
+            scanID: scanID, deadline: 20, perPluginTimeout: 1, expectedUnits: 2,
+            reportProgress: false, app: app, db: app.db, useCache: false,
+            dedup: ScanPluginRunner.ResultDedupStore()
+        )
+
+        XCTAssertLessThan(Date().timeIntervalSince(start), 4,
+            "should return shortly after the 1s per-plugin timeout, not wait for the 5s-slow plugin or the 20s round deadline")
+        XCTAssertEqual(round.success, 1)
+        XCTAssertEqual(round.failure, 1, "the timed-out plugin should count as a failure")
+        XCTAssertTrue(round.collected.contains { $0.source == "Fast" })
+        XCTAssertFalse(round.collected.contains { $0.source == "Slow" })
+    }
+
+    func testRunRoundDeduplicatesIdenticalFindingsWithinAScan() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "dedup-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        let plugin = FixedResultTestPlugin(name: "Dup",
+            results: [PluginResult(source: "Dup", type: "account_presence", confidenceScore: 0.9, rawData: "same finding")])
+        let candidates = [
+            TargetDeriver.Candidate(value: "dedup-target", origin: .primary),
+            TargetDeriver.Candidate(value: "dedup-target-variant", origin: .variant)
+        ]
+
+        let round = await ScanPluginRunner.runRound(
+            plugins: [plugin], candidates: candidates, scanID: scanID,
+            deadline: 20, perPluginTimeout: 10, expectedUnits: 1, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+
+        XCTAssertEqual(round.collected.count, 1, "the second candidate's identical finding should be deduplicated")
+        let stored = try await App.Result.query(on: app.db).filter(\.$scan.$id == scanID).all()
+        XCTAssertEqual(stored.count, 1, "only one Result row should be persisted")
+    }
+
+    func testRunRoundStillHonorsRoundWideDeadlineAsOuterSafetyNet() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "round-deadline-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        // perPluginTimeout intentionally longer than the round deadline: the round
+        // sentinel should still fire timedOut, independent of per-plugin timeouts.
+        // group.cancelAll() on the outer round group propagates cancellation into
+        // the plugin's task and its own inner group (structured concurrency), and
+        // Task.sleep responds to cancellation by throwing immediately rather than
+        // waiting out its duration — so this returns quickly even though the fake
+        // plugin asked for a 5s delay. That's a property of Task.sleep specifically,
+        // not a guarantee for arbitrary async work, which is exactly why the
+        // per-plugin timeout race exists as a backstop.
+        let round = await ScanPluginRunner.runRound(
+            plugins: [SlowTestPlugin(name: "Slow", delaySeconds: 5,
+                result: PluginResult(source: "Slow", type: "t", confidenceScore: 1.0, rawData: "x"))],
+            candidates: [TargetDeriver.Candidate(value: "round-deadline-target", origin: .primary)],
+            scanID: scanID, deadline: 1, perPluginTimeout: 30, expectedUnits: 1, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        XCTAssertTrue(round.timedOut)
+    }
+
     // MARK: - Target derivation (email → username pivot)
 
     func testTargetDeriverUsernamePassesThrough() {

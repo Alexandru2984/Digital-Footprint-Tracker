@@ -48,14 +48,18 @@ enum ScanPluginRunner {
             return
         }
 
+        // Deduplicates identical findings across round 1 and every pivot round of
+        // this scan — see ResultDedupStore.
+        let dedup = ResultDedupStore()
+
         // Round 1: full plugin set on the input and its derived candidates
         // (e.g. an email yields its local-part as a username so username-gated
         // plugins are reached). See TargetDeriver.
         let candidates = TargetDeriver.candidates(for: input)
         let round1 = await runRound(
             plugins: plugins, candidates: candidates, scanID: scanID,
-            deadline: 120, expectedUnits: plugins.count, reportProgress: true,
-            app: app, db: db, useCache: useCache
+            deadline: 120, perPluginTimeout: 100, expectedUnits: plugins.count, reportProgress: true,
+            app: app, db: db, useCache: useCache, dedup: dedup
         )
 
         // Transitive pivot rounds: re-scan identifiers discovered in the previous
@@ -75,8 +79,8 @@ enum ScanPluginRunner {
             let pivotCandidates = pivots.map { TargetDeriver.Candidate(value: $0, origin: .pivoted) }
             let round = await runRound(
                 plugins: lightPlugins, candidates: pivotCandidates, scanID: scanID,
-                deadline: 45, expectedUnits: lightPlugins.count, reportProgress: false,
-                app: app, db: db, useCache: useCache
+                deadline: 45, perPluginTimeout: 30, expectedUnits: lightPlugins.count, reportProgress: false,
+                app: app, db: db, useCache: useCache, dedup: dedup
             )
             pivotSuccess += round.success
             frontier = round.collected
@@ -166,25 +170,134 @@ enum ScanPluginRunner {
         }
     }
 
-    /// Runs `plugins` over `candidates` concurrently under a `deadline`, persists
-    /// each result (with its candidate origin), and returns the raw results
-    /// (for pivot mining) plus success/failure/timeout aggregates.
-    private static func runRound(
+    /// Outcome of one plugin's (or the round-wide sentinel's) work inside a
+    /// round's `TaskGroup`. Type-scoped (not local to `runRound`) so
+    /// `runPlugin` can share it and tests can construct/inspect it via
+    /// `runRound`'s return value.
+    enum Outcome: Sendable {
+        case done(name: String, succeeded: Bool, results: [PluginResult])
+        case timeout
+    }
+
+    /// Deduplicates findings within one `run()` invocation — round 1 and every
+    /// pivot round share a single instance (threaded through by `run()`), so a
+    /// pivot round rediscovering a fact already found in round 1 (or an earlier
+    /// pivot round) is a no-op rather than a second `Result` row. Actor-isolated
+    /// because `runRound`'s plugin tasks execute concurrently.
+    ///
+    /// Keyed on the plugin's raw `(source, type, rawData)` — checked in
+    /// `persist` *before* `origin.note` prefixing is applied, so the same
+    /// underlying finding surfaced via a `.primary` candidate (no prefix) and a
+    /// `.variant`/`.pivoted` candidate (prefixed) is still recognized as one
+    /// finding. Rounds run strictly sequentially in `run()`, so round 1's
+    /// higher-confidence `.primary`-origin candidates always populate this
+    /// before any pivot round runs — "first occurrence wins" therefore already
+    /// favors the higher-confidence origin.
+    actor ResultDedupStore {
+        private struct Key: Hashable {
+            let source: String
+            let type: String
+            let rawData: String
+        }
+        private var seen: Set<Key> = []
+
+        /// Returns true the first time this triple is seen, false on every
+        /// subsequent occurrence — the caller should skip persisting on false.
+        func markSeen(source: String, type: String, rawData: String) -> Bool {
+            seen.insert(Key(source: source, type: type, rawData: rawData)).inserted
+        }
+    }
+
+    /// Runs one plugin's work for a round (looping its candidates sequentially,
+    /// cache-checking/scanning/persisting each) racing it against `timeout`. If
+    /// the plugin doesn't finish in time, returns `.done(succeeded: false, results: [])`
+    /// immediately without waiting for it — whatever it already persisted for
+    /// earlier candidates stays in the DB (see `persist`), but it is abandoned
+    /// for this round's `collected`/pivot-mining pool. Swift cannot forcibly
+    /// preempt a running `async` function, so the abandoned task keeps running
+    /// cooperatively in the background until its own next cancellation
+    /// checkpoint — same character as the round-wide deadline this backstops,
+    /// not a new risk class.
+    static func runPlugin(
+        _ plugin: any FootprintPlugin,
+        name pName: String,
+        cacheTTL pTTL: TimeInterval,
+        candidates pCandidates: [TargetDeriver.Candidate],
+        scanID: UUID,
+        app: Application,
+        db: Database,
+        useCache: Bool,
+        dedup: ResultDedupStore,
+        timeout: Double
+    ) async -> Outcome {
+        await withTaskGroup(of: Outcome?.self) { inner in
+            inner.addTask {
+                do {
+                    var produced: [PluginResult] = []
+                    for candidate in pCandidates {
+                        guard !Task.isCancelled else { break }
+                        let cInput = candidate.value
+                        let raw: [PluginResult]
+                        if useCache, let cached = await PluginCacheStore.lookup(
+                            pluginName: pName,
+                            input: cInput,
+                            on: db,
+                            logger: app.logger
+                        ) {
+                            raw = PluginResultLimits.sanitize(cached)
+                        } else {
+                            let fresh = try await plugin.scan(input: cInput, on: app)
+                            let bounded = PluginResultLimits.sanitize(fresh)
+                            if useCache {
+                                await PluginCacheStore.store(pluginName: pName, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
+                            }
+                            raw = bounded
+                        }
+                        for pr in raw where try await persist(pr, origin: candidate.origin, scanID: scanID, dedup: dedup, on: db) {
+                            produced.append(pr)
+                        }
+                    }
+                    return .done(name: pName, succeeded: true, results: produced)
+                } catch {
+                    app.logger.error("Plugin \(pName) failed: \(error)")
+                    return .done(name: pName, succeeded: false, results: [])
+                }
+            }
+            inner.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return nil
+            }
+            guard let firstElement = await inner.next() else {
+                return .done(name: pName, succeeded: false, results: [])
+            }
+            inner.cancelAll()
+            if let outcome = firstElement {
+                return outcome
+            }
+            app.logger.warning("Plugin \(pName) exceeded its \(Int(timeout))s per-plugin timeout; moving on without waiting for it")
+            return .done(name: pName, succeeded: false, results: [])
+        }
+    }
+
+    /// Runs `plugins` over `candidates` concurrently under a round-wide
+    /// `deadline` (outer safety net) and a `perPluginTimeout` (so one hung
+    /// plugin can't consume the whole round's budget while others are ready to
+    /// move on — see `runPlugin`), persists each result (with its candidate
+    /// origin, deduplicated via `dedup`), and returns the raw results (for
+    /// pivot mining) plus success/failure/timeout aggregates.
+    static func runRound(
         plugins: [any FootprintPlugin],
         candidates: [TargetDeriver.Candidate],
         scanID: UUID,
         deadline: Double,
+        perPluginTimeout: Double,
         expectedUnits: Int,
         reportProgress: Bool,
         app: Application,
         db: Database,
-        useCache: Bool
+        useCache: Bool,
+        dedup: ResultDedupStore
     ) async -> (collected: [PluginResult], success: Int, failure: Int, timedOut: Bool) {
-
-        enum Outcome {
-            case done(name: String, succeeded: Bool, results: [PluginResult])
-            case timeout
-        }
 
         var collected: [PluginResult] = []
         var success = 0
@@ -205,36 +318,11 @@ enum ScanPluginRunner {
                 let pCandidates = plugin.heavy ? candidates.filter { $0.origin.heavyEligible } : candidates
                 group.addTask {
                     guard !Task.isCancelled else { return .done(name: pName, succeeded: false, results: []) }
-                    do {
-                        var produced: [PluginResult] = []
-                        for candidate in pCandidates {
-                            let cInput = candidate.value
-                            let raw: [PluginResult]
-                            if useCache, let cached = await PluginCacheStore.lookup(
-                                pluginName: pName,
-                                input: cInput,
-                                on: db,
-                                logger: app.logger
-                            ) {
-                                raw = PluginResultLimits.sanitize(cached)
-                            } else {
-                                let fresh = try await plugin.scan(input: cInput, on: app)
-                                let bounded = PluginResultLimits.sanitize(fresh)
-                                if useCache {
-                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
-                                }
-                                raw = bounded
-                            }
-                            for pr in raw {
-                                try await persist(pr, origin: candidate.origin, scanID: scanID, on: db)
-                                produced.append(pr)
-                            }
-                        }
-                        return .done(name: pName, succeeded: true, results: produced)
-                    } catch {
-                        app.logger.error("Plugin \(pName) failed: \(error)")
-                        return .done(name: pName, succeeded: false, results: [])
-                    }
+                    return await Self.runPlugin(
+                        plugin, name: pName, cacheTTL: pTTL, candidates: pCandidates,
+                        scanID: scanID, app: app, db: db, useCache: useCache,
+                        dedup: dedup, timeout: perPluginTimeout
+                    )
                 }
             }
 
@@ -260,12 +348,19 @@ enum ScanPluginRunner {
         return (collected, success, failure, timedOut)
     }
 
-    /// Persists one plugin result. Derived findings (a username inferred from an
-    /// email local-part, or a username variant) get a confidence discount and a
-    /// provenance note/marker: the account exists, but its link to the original
-    /// target is an inference, not a proven fact — the strength of which depends
-    /// on the candidate's `origin`.
-    private static func persist(_ pr: PluginResult, origin: TargetDeriver.Origin, scanID: UUID, on db: Database) async throws {
+    /// Persists one plugin result, unless `dedup` has already seen an identical
+    /// `(source, type, rawData)` triple earlier in this scan — returns `false`
+    /// in that case and stores nothing. Derived findings (a username inferred
+    /// from an email local-part, or a username variant) get a confidence
+    /// discount and a provenance note/marker: the account exists, but its link
+    /// to the original target is an inference, not a proven fact — the strength
+    /// of which depends on the candidate's `origin`.
+    @discardableResult
+    private static func persist(_ pr: PluginResult, origin: TargetDeriver.Origin, scanID: UUID, dedup: ResultDedupStore, on db: Database) async throws -> Bool {
+        guard await dedup.markSeen(source: pr.source, type: pr.type, rawData: pr.rawData) else {
+            return false
+        }
+
         let rawBase = origin.note.map { "\($0) \(pr.rawData)" } ?? pr.rawData
         let cappedRawData = PluginResultLimits.truncateUTF8(
             rawBase, maxBytes: PluginResultLimits.maxRawDataBytes,
@@ -286,6 +381,7 @@ enum ScanPluginRunner {
             metadata: metadataJSON
         )
         try await ResultStreamStore.persist(result, on: db)
+        return true
     }
 
 }
