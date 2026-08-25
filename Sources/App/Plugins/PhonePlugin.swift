@@ -18,17 +18,18 @@ struct PhonePlugin: FootprintPlugin {
     let cacheTTL: TimeInterval = 86_400 // carrier/region data is very stable
 
     // Matches E.164 (+…) or raw digit strings, 7–15 digits total.
-    private static let phoneRegex = try! NSRegularExpression(
+    private static let phoneRegex = try? NSRegularExpression(
         pattern: #"^\+?[0-9]{7,15}$"#
     )
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard PhonePlugin.phoneRegex.firstMatch(
-            in: trimmed,
-            range: NSRange(trimmed.startIndex..., in: trimmed)
-        ) != nil else { return [] }
+        guard let phoneRegex = PhonePlugin.phoneRegex,
+              phoneRegex.firstMatch(
+                in: trimmed,
+                range: NSRange(trimmed.startIndex..., in: trimmed)
+              ) != nil else { return [] }
 
         // Normalise: strip non-digit characters for display.
         let digits = trimmed.filter { $0.isNumber }
@@ -50,43 +51,39 @@ struct PhonePlugin: FootprintPlugin {
         guard let url = URL(string: "https://phonevalidation.abstractapi.com/v1/?api_key=\(apiKey)&phone=\(e164)") else {
             return []
         }
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                headers: ["Accept": "application/json"],
-                timeout: 10,
-                bodyMode: .complete(maxBytes: 256 * 1_024),
-                on: app
-            ), response.status == 200 else { return [] }
-            let data = response.data
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        guard let response = await PluginHTTP.request(
+            url,
+            headers: ["Accept": "application/json"],
+            timeout: 10,
+            bodyMode: .complete(maxBytes: 256 * 1_024),
+            on: app
+        ), response.status == 200 else { return [] }
+        let data = response.data
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
-            let valid   = json["valid"]   as? Bool   ?? false
-            let country = (json["country"] as? [String: Any])?["name"] as? String ?? "Unknown"
-            let carrier = json["carrier"] as? String ?? "Unknown"
-            let type    = json["type"]    as? String ?? "Unknown"
-            let format  = json["format"]  as? [String: Any]
-            let intl    = format?["international"] as? String ?? e164
+        let valid   = json["valid"]   as? Bool   ?? false
+        let country = (json["country"] as? [String: Any])?["name"] as? String ?? "Unknown"
+        let carrier = json["carrier"] as? String ?? "Unknown"
+        let type    = json["type"]    as? String ?? "Unknown"
+        let format  = json["format"]  as? [String: Any]
+        let intl    = format?["international"] as? String ?? e164
 
-            guard valid else {
-                return [PluginResult(
-                    source: "PhoneOSINT",
-                    type: "phone_number",
-                    confidenceScore: 0.3,
-                    rawData: "Phone number \(intl) appears invalid or unassigned.",
-                    metadata: ["phone": intl]
-                )]
-            }
-
+        guard valid else {
             return [PluginResult(
                 source: "PhoneOSINT",
                 type: "phone_number",
-                confidenceScore: 0.95,
-                rawData: "Phone \(intl) — Country: \(country), Carrier: \(carrier), Type: \(type)",
-                metadata: ["phone": intl, "country": country, "carrier": carrier]
+                confidenceScore: 0.3,
+                rawData: "Phone number \(intl) appears invalid or unassigned.",
+                metadata: ["phone": intl]
             )]
-        } catch {
-            return []
         }
+
+        return [PluginResult(
+            source: "PhoneOSINT",
+            type: "phone_number",
+            confidenceScore: 0.95,
+            rawData: "Phone \(intl) — Country: \(country), Carrier: \(carrier), Type: \(type)",
+            metadata: ["phone": intl, "country": country, "carrier": carrier]
+        )]
     }
 }

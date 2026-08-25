@@ -17,53 +17,49 @@ struct NpmPlugin: FootprintPlugin {
         let encoded = username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username
         guard let url = URL(string: "https://registry.npmjs.org/-/v1/search?text=maintainer:\(encoded)&size=5") else { return [] }
 
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                headers: ["Accept": "application/json"],
-                timeout: 10,
-                bodyMode: .complete(maxBytes: 1 * 1_024 * 1_024),
-                on: app
-            ), response.status == 200 else { return [] }
-            let data = response.data
+        guard let response = await PluginHTTP.request(
+            url,
+            headers: ["Accept": "application/json"],
+            timeout: 10,
+            bodyMode: .complete(maxBytes: 1 * 1_024 * 1_024),
+            on: app
+        ), response.status == 200 else { return [] }
+        let data = response.data
 
-            struct NpmObject: Decodable {
-                struct Package: Decodable {
-                    let name: String?
-                    let description: String?
-                    let version: String?
-                    let links: Links?
-                    struct Links: Decodable {
-                        let npm: String?
-                    }
+        struct NpmObject: Decodable {
+            struct Package: Decodable {
+                let name: String?
+                let description: String?
+                let version: String?
+                let links: Links?
+                struct Links: Decodable {
+                    let npm: String?
                 }
-                let package: Package
             }
-            struct NpmSearch: Decodable {
-                let objects: [NpmObject]
-                let total: Int
-            }
-
-            guard let result = try? JSONDecoder().decode(NpmSearch.self, from: data),
-                  result.total > 0 else { return [] }
-
-            let packageList = result.objects.compactMap { obj -> String? in
-                guard let name = obj.package.name else { return nil }
-                if let desc = obj.package.description, !desc.isEmpty {
-                    return "\(name) — \(desc.prefix(80))"
-                }
-                return name
-            }.joined(separator: "; ")
-
-            return [PluginResult(
-                source: name,
-                type: "developer_identity",
-                confidenceScore: 0.9,
-                rawData: "npm maintainer: \(username) | \(result.total) package(s) found | Top: \(packageList)",
-                metadata: ["platform": "npm", "username": username]
-            )]
-        } catch {
-            return []
+            let package: Package
         }
+        struct NpmSearch: Decodable {
+            let objects: [NpmObject]
+            let total: Int
+        }
+
+        guard let result = try? JSONDecoder().decode(NpmSearch.self, from: data),
+              result.total > 0 else { return [] }
+
+        let packageList = result.objects.compactMap { obj -> String? in
+            guard let name = obj.package.name else { return nil }
+            if let desc = obj.package.description, !desc.isEmpty {
+                return "\(name) — \(desc.prefix(80))"
+            }
+            return name
+        }.joined(separator: "; ")
+
+        return [PluginResult(
+            source: name,
+            type: "developer_identity",
+            confidenceScore: 0.9,
+            rawData: "npm maintainer: \(username) | \(result.total) package(s) found | Top: \(packageList)",
+            metadata: ["platform": "npm", "username": username]
+        )]
     }
 }

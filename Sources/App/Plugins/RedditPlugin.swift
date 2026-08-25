@@ -17,18 +17,14 @@ struct RedditPlugin: FootprintPlugin {
         let username = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: "https://www.reddit.com/user/\(username)/about.json") else { return [] }
 
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                headers: ["Accept": "application/json"],
-                timeout: 10,
-                bodyMode: .complete(maxBytes: 128 * 1_024),
-                on: app
-            ) else { return [] }
-            return Self.evaluate(username: username, status: response.status, body: response.data).map { [$0] } ?? []
-        } catch {
-            return []
-        }
+        guard let response = await PluginHTTP.request(
+            url,
+            headers: ["Accept": "application/json"],
+            timeout: 10,
+            bodyMode: .complete(maxBytes: 128 * 1_024),
+            on: app
+        ) else { return [] }
+        return Self.evaluate(username: username, status: response.status, body: response.data).map { [$0] } ?? []
     }
 
     /// Pure detection: a hit only when the body is a genuine Reddit `t2` account

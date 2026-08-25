@@ -30,43 +30,39 @@ struct MastodonPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://mastodon.social/api/v1/accounts/lookup?acct=\(username)") else { return [] }
 
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                headers: ["Accept": "application/json"],
-                timeout: 12,
-                bodyMode: .complete(maxBytes: 512 * 1_024),
-                on: app
-            ), response.status == 200 else { return [] }
-            guard let acct = Self.parseAccount(from: response.data, fallbackUsername: username) else { return [] }
+        guard let response = await PluginHTTP.request(
+            url,
+            headers: ["Accept": "application/json"],
+            timeout: 12,
+            bodyMode: .complete(maxBytes: 512 * 1_024),
+            on: app
+        ), response.status == 200 else { return [] }
+        guard let acct = Self.parseAccount(from: response.data, fallbackUsername: username) else { return [] }
 
-            var parts = ["Mastodon account found: \(acct.profileURL)"]
-            if !acct.displayName.isEmpty { parts.append("Display name: \(acct.displayName)") }
-            if let f = acct.followers { parts.append("Followers: \(f)") }
-            if let s = acct.statuses  { parts.append("Posts: \(s)") }
-            if let joinedDate = acct.joinedDate { parts.append("Joined: \(joinedDate)") }
-            if acct.locked { parts.append("🔒 Locked account") }
-            if !acct.bio.isEmpty {
-                let truncNote = acct.bio.count > 120 ? String(acct.bio.prefix(120)) + "…" : acct.bio
-                parts.append("Bio: \(truncNote)")
-            }
-
-            var meta: [String: String] = ["platform": "mastodon", "username": acct.acct, "profileURL": acct.profileURL]
-            // Feed the display name into identity synthesis — a self-set nickname on
-            // Mastodon is still identity signal, weighted and corroborated there.
-            if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
-            if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
-
-            return [PluginResult(
-                source: "Mastodon",
-                type: "social_media",
-                confidenceScore: 1.0,
-                rawData: parts.joined(separator: " | "),
-                metadata: meta
-            )]
-        } catch {
-            return []
+        var parts = ["Mastodon account found: \(acct.profileURL)"]
+        if !acct.displayName.isEmpty { parts.append("Display name: \(acct.displayName)") }
+        if let f = acct.followers { parts.append("Followers: \(f)") }
+        if let s = acct.statuses  { parts.append("Posts: \(s)") }
+        if let joinedDate = acct.joinedDate { parts.append("Joined: \(joinedDate)") }
+        if acct.locked { parts.append("🔒 Locked account") }
+        if !acct.bio.isEmpty {
+            let truncNote = acct.bio.count > 120 ? String(acct.bio.prefix(120)) + "…" : acct.bio
+            parts.append("Bio: \(truncNote)")
         }
+
+        var meta: [String: String] = ["platform": "mastodon", "username": acct.acct, "profileURL": acct.profileURL]
+        // Feed the display name into identity synthesis — a self-set nickname on
+        // Mastodon is still identity signal, weighted and corroborated there.
+        if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
+        if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
+
+        return [PluginResult(
+            source: "Mastodon",
+            type: "social_media",
+            confidenceScore: 1.0,
+            rawData: parts.joined(separator: " | "),
+            metadata: meta
+        )]
     }
 
     /// Parsed subset of a Mastodon account-lookup response.

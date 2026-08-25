@@ -18,53 +18,49 @@ struct HackerNewsPlugin: FootprintPlugin {
         guard let url = URL(string: "https://hacker-news.firebaseio.com/v0/user/\(username).json") else {
             return []
         }
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                timeout: 10,
-                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
-                on: app
-            ), response.status == 200 else { return [] }
-            let data = response.data
+        guard let response = await PluginHTTP.request(
+            url,
+            timeout: 10,
+            bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
+            on: app
+        ), response.status == 200 else { return [] }
+        let data = response.data
 
-            // API returns `null` (JSON null) for non-existent users.
-            if data == Data("null".utf8) { return [] }
+        // API returns `null` (JSON null) for non-existent users.
+        if data == Data("null".utf8) { return [] }
 
-            struct HNUser: Decodable {
-                let id: String?
-                let karma: Int?
-                let created: Int?
-                let submitted: [Int]?
-            }
-
-            guard let user = try? JSONDecoder().decode(HNUser.self, from: data),
-                  let id = user.id else { return [] }
-
-            let karma = user.karma ?? 0
-            let submissions = user.submitted?.count ?? 0
-            var parts = ["HackerNews account found: news.ycombinator.com/user?id=\(id)",
-                         "Karma: \(karma)",
-                         "Submissions: \(submissions)"]
-
-            var meta: [String: String] = ["platform": "hackernews", "username": id,
-                                          "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
-            if let created = user.created,
-               let joinedDate = TimelineIntelligence.isoDay(unixTimestamp: Double(created)) {
-                parts.append("Member since: \(joinedDate)")
-                meta["since"] = joinedDate
-            }
-
-            let confidence: Double = karma > 100 ? 1.0 : (karma > 0 ? 0.9 : 0.75)
-
-            return [PluginResult(
-                source: name,
-                type: "account_presence",
-                confidenceScore: confidence,
-                rawData: parts.joined(separator: " | "),
-                metadata: meta
-            )]
-        } catch {
-            return []
+        struct HNUser: Decodable {
+            let id: String?
+            let karma: Int?
+            let created: Int?
+            let submitted: [Int]?
         }
+
+        guard let user = try? JSONDecoder().decode(HNUser.self, from: data),
+              let id = user.id else { return [] }
+
+        let karma = user.karma ?? 0
+        let submissions = user.submitted?.count ?? 0
+        var parts = ["HackerNews account found: news.ycombinator.com/user?id=\(id)",
+                     "Karma: \(karma)",
+                     "Submissions: \(submissions)"]
+
+        var meta: [String: String] = ["platform": "hackernews", "username": id,
+                                      "profileURL": "https://news.ycombinator.com/user?id=\(id)"]
+        if let created = user.created,
+           let joinedDate = TimelineIntelligence.isoDay(unixTimestamp: Double(created)) {
+            parts.append("Member since: \(joinedDate)")
+            meta["since"] = joinedDate
+        }
+
+        let confidence: Double = karma > 100 ? 1.0 : (karma > 0 ? 0.9 : 0.75)
+
+        return [PluginResult(
+            source: name,
+            type: "account_presence",
+            confidenceScore: confidence,
+            rawData: parts.joined(separator: " | "),
+            metadata: meta
+        )]
     }
 }

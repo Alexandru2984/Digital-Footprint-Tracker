@@ -40,43 +40,39 @@ struct PastebinPlugin: FootprintPlugin {
             return []
         }
 
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                headers: ["hibp-api-key": apiKey, "Accept": "application/json"],
-                timeout: 12,
-                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
-                on: app
-            ) else { return [] }
-            let data = response.data
+        guard let response = await PluginHTTP.request(
+            url,
+            headers: ["hibp-api-key": apiKey, "Accept": "application/json"],
+            timeout: 12,
+            bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024),
+            on: app
+        ) else { return [] }
+        let data = response.data
 
-            switch response.status {
-            case 200:
-                guard let pastes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                    return []
-                }
-                let count = pastes.count
-                let sources = pastes.compactMap { $0["Source"] as? String }
-                let uniqueSources = Array(Set(sources)).sorted().prefix(5).joined(separator: ", ")
-                let oldest = pastes.compactMap { $0["Date"] as? String }.sorted().first ?? "unknown date"
-
-                return [PluginResult(
-                    source: "PastebinOSINT",
-                    type: "paste_exposure",
-                    confidenceScore: 0.95,
-                    rawData: "\(email) found in \(count) paste(s). Sources: \(uniqueSources.isEmpty ? "various" : uniqueSources). Earliest: \(oldest)",
-                    metadata: ["email": email, "pasteCount": String(count)]
-                )]
-            case 404:
-                // 404 means "not found in pastes" — not an error.
-                return []
-            case 429:
-                app.logger.warning("PastebinPlugin: HIBP rate-limited (429)")
-                return []
-            default:
+        switch response.status {
+        case 200:
+            guard let pastes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
                 return []
             }
-        } catch {
+            let count = pastes.count
+            let sources = pastes.compactMap { $0["Source"] as? String }
+            let uniqueSources = Array(Set(sources)).sorted().prefix(5).joined(separator: ", ")
+            let oldest = pastes.compactMap { $0["Date"] as? String }.sorted().first ?? "unknown date"
+
+            return [PluginResult(
+                source: "PastebinOSINT",
+                type: "paste_exposure",
+                confidenceScore: 0.95,
+                rawData: "\(email) found in \(count) paste(s). Sources: \(uniqueSources.isEmpty ? "various" : uniqueSources). Earliest: \(oldest)",
+                metadata: ["email": email, "pasteCount": String(count)]
+            )]
+        case 404:
+            // 404 means "not found in pastes" — not an error.
+            return []
+        case 429:
+            app.logger.warning("PastebinPlugin: HIBP rate-limited (429)")
+            return []
+        default:
             return []
         }
     }
@@ -91,29 +87,25 @@ struct PastebinPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://pastebin.com/u/\(username)") else { return [] }
 
-        do {
-            guard let response = await PluginHTTP.request(
-                url,
-                timeout: 10,
-                bodyMode: .prefix(maxBytes: 4_096),
-                on: app
-            ), response.status == 200 else { return [] }
+        guard let response = await PluginHTTP.request(
+            url,
+            timeout: 10,
+            bodyMode: .prefix(maxBytes: 4_096),
+            on: app
+        ), response.status == 200 else { return [] }
 
-            // Confirm the page actually refers to the user (not a 404 soft-redirect).
-            let body = String(data: response.data, encoding: .utf8) ?? ""
-            guard body.lowercased().contains("pastebin.com/u/\(username.lowercased())") ||
-                  body.lowercased().contains("\(username.lowercased())'s pastes")
-            else { return [] }
+        // Confirm the page actually refers to the user (not a 404 soft-redirect).
+        let body = String(data: response.data, encoding: .utf8) ?? ""
+        guard body.lowercased().contains("pastebin.com/u/\(username.lowercased())") ||
+              body.lowercased().contains("\(username.lowercased())'s pastes")
+        else { return [] }
 
-            return [PluginResult(
-                source: "PastebinOSINT",
-                type: "paste_exposure",
-                confidenceScore: 0.85,
-                rawData: "Pastebin public profile found for \"\(username)\": https://pastebin.com/u/\(username)",
-                metadata: ["platform": "pastebin", "username": username, "profileURL": "https://pastebin.com/u/\(username)"]
-            )]
-        } catch {
-            return []
-        }
+        return [PluginResult(
+            source: "PastebinOSINT",
+            type: "paste_exposure",
+            confidenceScore: 0.85,
+            rawData: "Pastebin public profile found for \"\(username)\": https://pastebin.com/u/\(username)",
+            metadata: ["platform": "pastebin", "username": username, "profileURL": "https://pastebin.com/u/\(username)"]
+        )]
     }
 }
