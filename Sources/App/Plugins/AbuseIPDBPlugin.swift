@@ -8,12 +8,12 @@ struct AbuseIPDBPlugin: FootprintPlugin {
     let name = "AbuseIPDB"
     let description = "IP abuse reputation score (requires API key)"
 
-    private static let ipRegex = try! NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
+    private static let ipRegex = try? NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard let apiKey = try RuntimeSecret.value("ABUSEIPDB_API_KEY"), !apiKey.isEmpty else { return [] }
 
-        let isIP = Self.ipRegex.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
+        let isIP = Self.ipRegex?.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
         guard isIP else { return [] }
 
         let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input

@@ -50,7 +50,7 @@ struct SherlockData: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: DynamicKey.self)
         var tempSites = [String: SherlockSite]()
-        var s: String? = nil
+        var s: String?
         for key in container.allKeys {
             if key.stringValue == "$schema" {
                 s = try? container.decode(String.self, forKey: key)

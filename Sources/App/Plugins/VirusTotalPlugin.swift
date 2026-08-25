@@ -8,12 +8,12 @@ struct VirusTotalPlugin: FootprintPlugin {
     let name = "VirusTotal"
     let description = "Malware/reputation check for domains and IPs (requires API key)"
 
-    private static let ipRegex = try! NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
+    private static let ipRegex = try? NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard let apiKey = try RuntimeSecret.value("VIRUS_TOTAL_API_KEY"), !apiKey.isEmpty else { return [] }
 
-        let isIP = Self.ipRegex.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
+        let isIP = Self.ipRegex?.firstMatch(in: input, range: NSRange(input.startIndex..., in: input)) != nil
         if isIP {
             return await scanIP(input, apiKey: apiKey, app: app)
         }

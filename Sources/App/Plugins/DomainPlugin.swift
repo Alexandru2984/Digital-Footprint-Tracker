@@ -15,17 +15,18 @@ struct DomainPlugin: FootprintPlugin {
 
     // Basic domain/IP regex. Intentionally loose — input has already been
     // sanitised by ScanController's character whitelist.
-    private static let domainRegex = try! NSRegularExpression(
+    private static let domainRegex = try? NSRegularExpression(
         pattern: #"^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$|^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#
     )
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }
         let target = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard DomainPlugin.domainRegex.firstMatch(
-            in: target,
-            range: NSRange(target.startIndex..., in: target)
-        ) != nil else { return [] }
+        guard let domainRegex = DomainPlugin.domainRegex,
+              domainRegex.firstMatch(
+                in: target,
+                range: NSRange(target.startIndex..., in: target)
+              ) != nil else { return [] }
 
         var results: [PluginResult] = []
 
