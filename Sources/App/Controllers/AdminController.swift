@@ -66,7 +66,9 @@ struct NotificationDeliveryJobDTO: Content {
 
 struct AdminController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        let noCache = routes.grouped(NoCacheMiddleware())
+        // AdminMiddleware is the structural guarantee; the per-handler checks
+        // below remain as an independent one. See AdminMiddleware.
+        let noCache = routes.grouped(NoCacheMiddleware()).grouped(AdminMiddleware())
         noCache.get("admin", "dashboard", use: dashboard)
         noCache.get("admin", "audit", use: auditLog)
         noCache.get("admin", "audit", "integrity", use: auditIntegrity)

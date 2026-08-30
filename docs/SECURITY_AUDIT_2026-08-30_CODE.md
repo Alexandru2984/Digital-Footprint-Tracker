@@ -86,13 +86,31 @@ Backtracking is polynomial rather than exponential, and input is capped at
 `maxRawDataBytes` (8 KB), so this is bounded. Recorded so a future change to
 either the pattern or the cap is made with it in mind.
 
-### F6 — Informational: admin authorization is per-handler
+### F6 — Informational: admin authorization was per-handler — fixed
 
-All five `AdminController` handlers check `isAdmin` immediately after resolving
-the user, and `APIKeyRoutePolicy` denies API keys on every admin route while
-failing closed on unclassified ones. Session-authenticated admin access still
-rests on each handler remembering the check; a route-group middleware would make
-that structural rather than conventional.
+Every admin handler checked `isAdmin` immediately after resolving the user, and
+all of them did it correctly, so there was no vulnerability. The weakness was
+that it was only a convention. The admin surface spans **two** controllers —
+`AdminController` and `UserController`'s `/admin/scans` — so "every admin
+handler remembers the guard" was a property nobody enforced, and a seventh route
+added elsewhere would have depended on its author noticing the pattern.
+
+`APIKeyRoutePolicy` already denies API keys on admin routes and fails closed on
+unclassified ones, but that governs API-key authentication only; session-
+authenticated access had no structural gate.
+
+**Fixed.** `AdminMiddleware` now guards both registrations. The per-handler
+checks are deliberately kept alongside it rather than replaced: the middleware
+covers a handler that forgets its own check, and the handler check covers a route
+registered outside the group. Neither is redundant, because each fails in the
+case the other cannot see.
+
+The guarantee is verified structurally: a test enumerates Vapor's **live route
+registry** for every path beginning with `admin` and asserts each refuses an
+unauthenticated caller, so a new admin route is covered the day it is registered
+rather than the day someone remembers to add it to a list. Checked against a
+positive control — an unguarded `/admin/leaky-probe` makes the test fail with
+that exact route named.
 
 ## Verified clean
 

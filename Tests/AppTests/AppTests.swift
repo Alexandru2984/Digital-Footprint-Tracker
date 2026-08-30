@@ -4302,6 +4302,36 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    // MARK: - Admin surface coverage (security)
+
+    func testEveryAdminRouteRefusesAnUnauthenticatedCaller() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Enumerated from Vapor's live registry rather than a hand-kept list, so
+        // a seventh admin route added in any controller is covered the day it is
+        // registered. The admin surface already spans two controllers, which is
+        // how a per-handler convention loses track of one.
+        let adminRoutes = app.routes.all.filter { $0.path.first?.description == "admin" }
+        XCTAssertGreaterThanOrEqual(adminRoutes.count, 6,
+            "the known admin surface is six routes; if this drops, routing changed")
+
+        for route in adminRoutes {
+            // Substitute any :parameter with a well-formed value so the request
+            // reaches the gate rather than failing on routing.
+            let path = "/" + route.path.map { component -> String in
+                component.description.hasPrefix(":") ? UUID().uuidString : component.description
+            }.joined(separator: "/")
+
+            try await app.test(route.method, path) { response in
+                XCTAssertTrue(
+                    [.unauthorized, .forbidden].contains(response.status),
+                    "\(route.method) \(path) answered \(response.status) to an unauthenticated caller; every admin route must refuse one"
+                )
+            }
+        }
+    }
+
     // MARK: - Pivot input validation (security)
 
     func testAPivotCandidateCannotBecomeACommandLineFlag() {

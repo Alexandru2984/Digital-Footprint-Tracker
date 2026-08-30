@@ -23,7 +23,9 @@ struct UserController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
         noCache.get("my-scans", use: myScans)
-        noCache.get("admin", "scans", use: adminScans)
+        // This route lives here rather than in AdminController, which is exactly
+        // why the admin gate is a middleware and not just a habit.
+        noCache.grouped(AdminMiddleware()).get("admin", "scans", use: adminScans)
     }
 
     @Sendable
