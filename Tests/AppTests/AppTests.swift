@@ -4302,6 +4302,72 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    // MARK: - Risk scoring coverage
+
+    /// Collects every `type: "…"` literal in the shipping plugins, straight from
+    /// source. Hard-coding the list here would defeat the purpose: it would drift
+    /// alongside the scorer and agree with it while both were wrong.
+    private func emittedResultTypes(file: StaticString = #filePath) throws -> Set<String> {
+        let testFile = URL(fileURLWithPath: String(describing: file))
+        let pluginDirectory = testFile
+            .deletingLastPathComponent()   // AppTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // repository root
+            .appendingPathComponent("Sources/App/Plugins")
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: pluginDirectory.path)
+            .filter { $0.hasSuffix(".swift") && $0 != "PluginProtocol.swift" }
+        XCTAssertFalse(names.isEmpty, "no plugin sources found at \(pluginDirectory.path)")
+
+        let pattern = try NSRegularExpression(pattern: #"type:\s*"([a-z0-9_]+)""#)
+        var types: Set<String> = []
+        for name in names {
+            let source = try String(contentsOf: pluginDirectory.appendingPathComponent(name), encoding: .utf8)
+            let range = NSRange(source.startIndex..., in: source)
+            for match in pattern.matches(in: source, range: range) {
+                if let captured = Range(match.range(at: 1), in: source) {
+                    types.insert(String(source[captured]))
+                }
+            }
+        }
+        return types
+    }
+
+    func testEveryEmittedResultTypeIsExplicitlyScored() throws {
+        let emitted = try emittedResultTypes()
+        XCTAssertGreaterThan(emitted.count, 30, "the extraction should find the whole plugin corpus")
+
+        let unclassified = emitted.subtracting(RiskScorer.explicitCategories.keys).sorted()
+        XCTAssertTrue(unclassified.isEmpty, """
+            These result types fall through to the substring heuristic, so their risk weight             is whatever their spelling happens to attract rather than a decision anyone made:             \(unclassified.joined(separator: ", ")). Add each to RiskScorer.explicitCategories.
+            """)
+    }
+
+    func testInformationalSignalsCarryNoRisk() {
+        // The scorer's whole reason for existing is that a clean or merely
+        // descriptive finding must not read as exposure.
+        for type in ["breach_check", "email_auth_ok", "disposable_email", "email_intel", "security_txt"] {
+            let score = RiskScorer.compute(raw: [(confidence: 1.0, type: type)])
+            XCTAssertEqual(score.value, 0, "\(type) is informational and must score zero")
+            XCTAssertEqual(score.level, .low)
+        }
+    }
+
+    func testAWeaknessOutweighsAMerelyDescriptiveFinding() {
+        let weakness = RiskScorer.compute(raw: [(confidence: 0.85, type: "insecure_transport")])
+        let descriptive = RiskScorer.compute(raw: [(confidence: 0.85, type: "tech_stack")])
+        XCTAssertGreaterThan(weakness.value, descriptive.value,
+            "a host served over plain HTTP is a real weakness; a technology fingerprint is not")
+    }
+
+    func testABreachStillDominatesAPileOfPublicProfiles() {
+        let breach = RiskScorer.compute(raw: [(confidence: 1.0, type: "data_breach")])
+        let manyProfiles = RiskScorer.compute(
+            raw: Array(repeating: (confidence: 1.0, type: "account_presence"), count: 25))
+        XCTAssertGreaterThan(breach.value, manyProfiles.value,
+            "category saturation must keep one confirmed leak ahead of any number of public profiles")
+    }
+
     // MARK: - Upstream host circuit breaker
     func testCircuitBreakerStaysClosedBelowTheFailureThreshold() async {
         let breaker = HostCircuitBreaker.shared
