@@ -59,6 +59,20 @@ validate each subsystem.
   is down. Identical alerts are throttled (default one hour) so a flapping unit
   cannot mailbomb the operator; every attempt is journalled regardless.
   Routing lives in `/etc/swift-vapor/alerts.env` (non-secret).
+- `config-manifest.sh` (installed to `libexec`) — records and verifies the
+  checksum, mode and owner of the host configuration this service depends on:
+  the systemd units and drop-ins, the two swift nginx vhosts, the CSP snippet,
+  `/etc/swift-vapor/*.env` and the installed helpers. `--accept` records a
+  baseline, `--verify` reports drift, and the health probe runs `--verify` every
+  15 minutes so an out-of-band edit surfaces instead of accumulating silently.
+  A new file appearing in a pinned directory counts as drift too — an extra
+  systemd drop-in is as much a change as an edited one. Because the manifest
+  covers `libexec` itself, updating any helper requires a deliberate
+  `--accept`; that is the point, since a tampered probe is precisely what this
+  should catch. `/etc/nginx/conf.d/cloudflare-*.conf` and TLS certificates are
+  deliberately excluded: a reviewed script and certbot legitimately rewrite
+  them, and pinning either would turn routine maintenance into a standing false
+  alarm.
 - `swift-vapor-healthcheck.service` and `.timer` — a 15-minute probe for the
   failures systemd cannot see by itself. `Restart=always` means the application
   unit reaches `failed` only on a hard crash-loop (5 starts in 10s), so the

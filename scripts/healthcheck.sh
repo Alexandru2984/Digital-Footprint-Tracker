@@ -23,6 +23,7 @@ CERT_MIN_DAYS="${HEALTHCHECK_CERT_MIN_DAYS:-21}"
 DISK_PATH="${HEALTHCHECK_DISK_PATH:-/srv}"
 DISK_MIN_FREE_PERCENT="${HEALTHCHECK_DISK_MIN_FREE_PERCENT:-15}"
 BACKUP_CHECK="${HEALTHCHECK_BACKUP_CHECK:-/usr/local/libexec/swift-vapor/check-backup.sh}"
+CONFIG_MANIFEST_CHECK="${HEALTHCHECK_CONFIG_MANIFEST:-/usr/local/libexec/swift-vapor/config-manifest.sh}"
 # Restarts between two probe runs. One is a deploy; several is flapping that
 # `Restart=always` would otherwise absorb in silence.
 MAX_RESTARTS_PER_INTERVAL="${HEALTHCHECK_MAX_RESTARTS:-3}"
@@ -100,6 +101,17 @@ if used_percent="$(df --output=pcent "$DISK_PATH" 2>/dev/null | tail -1 | tr -dc
     fi
 else
     note "could not read disk usage for $DISK_PATH."
+fi
+
+# ── 7. Host configuration drift ─────────────────────────────────────────────
+# Catches an out-of-band edit to a unit, vhost, CSP snippet, environment file or
+# installed helper. Not an availability problem — the service keeps running —
+# but a change nobody recorded is how a live config silently stops matching the
+# repository it is supposed to mirror.
+if [[ -x "$CONFIG_MANIFEST_CHECK" ]]; then
+    if ! drift_output="$("$CONFIG_MANIFEST_CHECK" --verify 2>&1)"; then
+        note "host configuration drift: ${drift_output:0:400}"
+    fi
 fi
 
 # ── Report ──────────────────────────────────────────────────────────────────

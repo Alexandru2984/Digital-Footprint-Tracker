@@ -58,8 +58,13 @@ These are decisions, not gaps. They override the exit criteria they contradict.
   2026-08-30) upstream provider circuit breakers.
 - **Origin closure.** Cloudflare AOP/mTLS is not configured, and the origin
   guard is evidenced on IPv4 only while nginx also listens on `[::]:443`.
-- **Configuration provenance.** No recorded checksum manifest binds the binary,
-  frontend and `/etc` to the accepted commit.
+- **Configuration provenance.** Host configuration is now pinned: a checksum,
+  mode and owner manifest covers the units, vhosts, CSP snippet, environment
+  files and installed helpers, recorded against the deployed release SHA and
+  verified every 15 minutes by the health probe. The release binary and frontend
+  are covered separately by the immutable commit-named release tree. Still open:
+  the Cloudflare-generated nginx includes are excluded by design, and no manifest
+  is archived off-host.
 - **Isolated worker.** The VoidAccess dark-web worker is prepared and documented
   but not installed (`DARK_WEB_ENABLED=false`). The `After=` reference to its
   unit in `swift-vapor.service` is intentional forward ordering, not rot.
@@ -114,7 +119,7 @@ Status as of 2026-08-30, verified against the running box.
 | Cloudflare-only origin | **Partly met** | IPv4 enforced; AOP/mTLS absent and IPv6 origin unevidenced |
 | Native runtime | **Met** | Swift 6.2 release built and served from the immutable tree |
 | Monitoring/paging | **Met for paging, open for metrics** | `OnFailure=` plus a 15-minute probe, delivery verified end to end; nothing scrapes `/metrics` |
-| Configuration provenance | **Open** | No checksum manifest binding binary, frontend and `/etc` to the accepted commit |
+| Configuration provenance | **Met** | Host config manifest (checksum/mode/owner) pinned against the deployed SHA and verified every 15 minutes |
 
 Phase 0 is closed apart from the rows marked open or partly met above. The
 remaining work is tracked in "Remaining open" under the current checkpoint.
