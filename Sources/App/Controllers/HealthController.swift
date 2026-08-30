@@ -202,7 +202,10 @@ struct HealthController: RouteCollection {
         let yesterday    = Date().addingTimeInterval(-86400)
         let scansLast24h = (try? await Scan.query(on: req.db).filter(\.$createdAt >= yesterday).count()) ?? 0
 
-        let snap = await MetricsRegistry.shared.snapshot()
+        let snap = await MetricsRegistry.shared.snapshot(
+            hostCircuitTripsTotal: await HostCircuitBreaker.shared.tripsTotal,
+            hostCircuitsOpen: await HostCircuitBreaker.shared.openCircuitCount()
+        )
         let backup = BackupStatus.current()
 
         let out = prometheusText(
@@ -353,6 +356,12 @@ private extension HealthController {
         writeCounter(name: "swift_vapor_plugin_cache_hits_total",
                      help: "Plugin cache lookups that returned a fresh hit since process start.",
                      value: snapshot.pluginCacheHits)
+        writeCounter(name: "swift_vapor_plugin_host_circuit_trips_total",
+                     help: "Times an upstream host's circuit opened after repeated failures since process start.",
+                     value: snapshot.hostCircuitTripsTotal)
+        writeGauge(name: "swift_vapor_plugin_host_circuits_open",
+                   help: "Upstream hosts currently being skipped because their circuit is open.",
+                   value: snapshot.hostCircuitsOpen)
         writeCounter(name: "swift_vapor_plugin_cache_misses_total",
                      help: "Plugin cache lookups that fell through to a live plugin run since process start.",
                      value: snapshot.pluginCacheMisses)

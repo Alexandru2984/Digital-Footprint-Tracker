@@ -80,9 +80,17 @@ actor MetricsRegistry {
         let auditIntegrityStatus: Int
         let auditIntegrityLastVerifiedUnix: Int
         let auditIntegrityLastSequence: Int
+        /// Sourced from HostCircuitBreaker rather than counted here: the
+        /// breaker already owns this state, and duplicating it would let the
+        /// two drift.
+        let hostCircuitTripsTotal: UInt64
+        let hostCircuitsOpen: Int
     }
 
-    func snapshot() -> Snapshot {
+    func snapshot(
+        hostCircuitTripsTotal: UInt64 = 0,
+        hostCircuitsOpen: Int = 0
+    ) -> Snapshot {
         Snapshot(
             pluginCacheHits:   pluginCacheHits,
             pluginCacheMisses: pluginCacheMisses,
@@ -95,7 +103,9 @@ actor MetricsRegistry {
             auditIntegrityVerificationFailures: auditIntegrityVerificationFailures,
             auditIntegrityStatus: auditIntegrityStatus,
             auditIntegrityLastVerifiedUnix: auditIntegrityLastVerifiedUnix,
-            auditIntegrityLastSequence: auditIntegrityLastSequence
+            auditIntegrityLastSequence: auditIntegrityLastSequence,
+            hostCircuitTripsTotal: hostCircuitTripsTotal,
+            hostCircuitsOpen: hostCircuitsOpen
         )
     }
 }

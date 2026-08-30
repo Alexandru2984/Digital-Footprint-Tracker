@@ -4302,6 +4302,82 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    // MARK: - Upstream host circuit breaker
+    func testCircuitBreakerStaysClosedBelowTheFailureThreshold() async {
+        let breaker = HostCircuitBreaker.shared
+        await breaker.reset()
+
+        // Two failures is one short of the threshold: `request` already retries
+        // twice internally, so a single flaky exchange must not trip anything.
+        await breaker.recordFailure("flaky.example")
+        await breaker.recordFailure("flaky.example")
+
+        let allowed = await breaker.allows("flaky.example")
+        XCTAssertTrue(allowed, "a host below the failure threshold must keep being tried")
+        let open = await breaker.openCircuitCount()
+        XCTAssertEqual(open, 0)
+        await breaker.reset()
+    }
+
+    func testCircuitBreakerOpensAfterRepeatedFailuresAndCountsTheTrip() async {
+        let breaker = HostCircuitBreaker.shared
+        await breaker.reset()
+
+        for _ in 0..<3 { await breaker.recordFailure("dead.example") }
+
+        let allowed = await breaker.allows("dead.example")
+        XCTAssertFalse(allowed, "the host should be skipped once its circuit opens")
+        let open = await breaker.openCircuitCount()
+        XCTAssertEqual(open, 1)
+        let trips = await breaker.tripsTotal
+        XCTAssertEqual(trips, 1, "the trip must be counted for /metrics")
+
+        // Other hosts are unaffected — the breaker is per host, not global.
+        let otherAllowed = await breaker.allows("healthy.example")
+        XCTAssertTrue(otherAllowed)
+        await breaker.reset()
+    }
+
+    func testCircuitBreakerSuccessClearsAHostBackToHealthy() async {
+        let breaker = HostCircuitBreaker.shared
+        await breaker.reset()
+
+        await breaker.recordFailure("recovering.example")
+        await breaker.recordFailure("recovering.example")
+        await breaker.recordSuccess("recovering.example")
+        // The counter reset, so the next two failures must not reach the
+        // threshold either.
+        await breaker.recordFailure("recovering.example")
+        await breaker.recordFailure("recovering.example")
+
+        let allowed = await breaker.allows("recovering.example")
+        XCTAssertTrue(allowed, "a success must clear the consecutive-failure count, not merely pause it")
+        await breaker.reset()
+    }
+
+    func testOpenCircuitSkipsTheRequestImmediatelyInsteadOfRetrying() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let breaker = HostCircuitBreaker.shared
+        await breaker.reset()
+        addTeardownBlock { await HostCircuitBreaker.shared.reset() }
+
+        // 203.0.113.0/24 is TEST-NET-3: reserved, routable nowhere, so a real
+        // attempt burns the full retry ladder. With the circuit open the call
+        // must return at once instead.
+        let url = try XCTUnwrap(URL(string: "https://dead-upstream.example/probe"))
+        for _ in 0..<3 { await breaker.recordFailure("dead-upstream.example") }
+
+        let start = Date()
+        let response = await PluginHTTP.request(url, timeout: 5, on: app)
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertNil(response, "an open circuit yields no response, exactly like an unreachable host")
+        XCTAssertLessThan(elapsed, 1.0,
+            "the open circuit must short-circuit before any network work; the retry ladder would take far longer")
+        await breaker.reset()
+    }
+
     // MARK: - Input-shape gating
 
     /// Declares `.email` only, and records every input it is actually asked to
