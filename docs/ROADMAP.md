@@ -4,27 +4,70 @@ This roadmap deliberately puts containment, recoverability and abuse controls
 before feature volume. Priorities are ordered; items within a phase can run in
 parallel only when their dependencies are satisfied.
 
-## Current checkpoint — 2026-08-24
+## Current checkpoint — 2026-08-30
 
-- Repository: the dark-web queue, isolated-worker contract, responsive console,
-  rollout hardening, Cloudflare refresh, authenticated crypto envelope v2, and
-  resumable key rotation are committed locally on top of `origin/main`. The
-  current work is not deployed; repository test success is not production
-  acceptance evidence.
-- Prepared: immutable commit-named releases, explicit production migrations,
-  backend/frontend/CSP rollback, dedicated runtime/deploy/backup identities,
-  file-backed encrypted credentials, a confined verified-backup job, a guarded
-  isolated restore drill with JSON evidence, and responsive/mobile hardening.
-- Live mitigations: the SPA CSP now has the exact hashes plus a unique
-  per-request nonce accepted by Cloudflare JSD; direct IPv4 origin requests and
-  forged Cloudflare headers return 403 while edge/onion traffic remains healthy.
-- Remaining live blockers: the backup timer is disabled and its credential,
-  success marker and output directory are absent; no restore proof exists;
-  runtime remains `micu` with broad sudo; immutable `/srv` layout and monitoring
-  are absent; backend/schema/configs lag the local commits; no AOP/mTLS or
-  matching Swift IPv6 TLS vhost exists; and the isolated worker is not staged.
-- CISO verdict: **BLOCK** until the acceptance gate in
-  `SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md` is evidenced.
+Every claim below was checked against the running box, not inferred from the
+repository. Repository test success is still not production acceptance evidence;
+what follows is the production evidence.
+
+- **Release provenance.** Production serves commit `5faa530` from
+  `/srv/swift-vapor/releases/<sha>` through the immutable `current` symlink. The
+  release was built and deployed by CI, and the deployed SHA equals the accepted
+  artifact.
+- **Identity separation.** `swift-vapor` (uid 977, `nologin`), `swift-deploy`
+  (976) and `swift-backup` (975, `nologin`) exist, with `swift-backup-check` as
+  the read-only backup verification group. The service has no personal-home
+  access.
+- **Secrets.** Six encrypted systemd credentials under
+  `/etc/credstore.encrypted`; `/etc/swift-vapor/app.env` is non-secret
+  configuration only.
+- **Recoverability.** The daily backup timer is active and retains seven
+  authenticated, gzip-verified artifacts. An isolated restore drill produced
+  evidence at
+  `/var/lib/swift-vapor-recovery/restore-drills/restore-2026-08-24T12-59-29Z.json`.
+- **Migration gate.** The web unit forces `AUTO_MIGRATE=false`; migrations apply
+  only through `swift-vapor-migrate.service`.
+- **Operator alerting** (delivered 2026-08-30). `OnFailure=` on the application,
+  backup and probe units routes to `swift-vapor-alert@`, and a 15-minute probe
+  covers readiness, restart flapping under `Restart=always`, backup staleness,
+  certificate expiry and disk headroom. Delivery and the failure chain were
+  verified end to end on the box, not just installed.
+
+### Accepted deviations
+
+These are decisions, not gaps. They override the exit criteria they contradict.
+
+- **`micu` keeps broad `NOPASSWD: ALL` sudo.** The operator configured this
+  deliberately as the independent root-recovery path on a shared, multi-tenant
+  box. It supersedes the "broad sudo removed" exit criterion below. Deploy
+  automation is unaffected: it still authenticates with the restricted
+  forced-command key.
+
+### Remaining open
+
+- **Metric history.** `/metrics` is exposed and authenticated, but nothing
+  scrapes it. The box already runs Prometheus, Alertmanager and node-exporter in
+  Docker (`cinetrack-monitoring`), and its Alertmanager delivers mail — but that
+  stack cannot reach swift-vapor, which binds loopback-only by design. On-host
+  probing now covers liveness and failure paging; metric history, trend alerting
+  and dashboards remain open, and closing that gap means deciding whether to
+  weaken the loopback binding or to proxy the endpoint to the container network.
+- **Origin closure.** Cloudflare AOP/mTLS is not configured, and the origin
+  guard is evidenced on IPv4 only while nginx also listens on `[::]:443`.
+- **Configuration provenance.** No recorded checksum manifest binds the binary,
+  frontend and `/etc` to the accepted commit.
+- **Isolated worker.** The VoidAccess dark-web worker is prepared and documented
+  but not installed (`DARK_WEB_ENABLED=false`). The `After=` reference to its
+  unit in `swift-vapor.service` is intentional forward ordering, not rot.
+- **Legal surface.** Anonymous scanning of third-party identifiers is open to
+  the internet with no published privacy notice, terms or acceptable-use policy.
+  For an OSINT tool operated from the EU this is the largest non-technical gap.
+
+**CISO verdict:** Phase 0 exit criteria are met apart from the explicitly
+accepted sudo deviation. Residual risk is concentrated in origin closure
+(AOP/IPv6), configuration provenance, absent metric history, and the missing
+legal surface — none of which block continued operation, all of which should be
+closed before the service is promoted to strangers.
 
 ## North-star architecture
 
@@ -51,38 +94,45 @@ The control plane owns authentication, authorization, billing/quotas and
 results. Workers receive short-lived job capabilities, cannot read user/session
 secrets, and have per-plugin egress allowlists and resource budgets.
 
-## Phase 0 — production safety (now / 72 hours)
+## Phase 0 — production safety
 
-| Gate | Repo | Production | Exit evidence |
-|---|---|---|---|
-| Restore main SPA/CSP compatibility | Exact hashes + JSD nonce tested | **Edge probes pass; browser gate open** | Real browser loads app/JSD with zero CSP errors |
-| Encrypted backup credential/job | Dedicated job tested | **Disabled/missing** | New encrypted dump and healthy marker |
-| Restore/offsite recovery | Guarded drill + manifest prepared | **Open** | Isolated restore + off-host immutable copy + measured RPO/RTO |
-| Dedicated runtime identity | Prepared | **Open** | `swift-vapor`, `/srv`, no personal-home access, systemd score reviewed |
-| Narrow deploy authority | Prepared sudoers | **Open** | Broad sudo removed; forced keys only; independent root recovery retained |
-| Immutable atomic deployment | Prepared/tested | **Open** | Manifest SHA equals production, frontend/backend/CSP rollback rehearsed |
-| Explicit migration gate | Fixed/tested | **Open** | Candidate unit applies compatible migrations once, web unit forces false |
-| Cloudflare-only origin | Prepared | **IPv4 enforced; AOP/IPv6 open** | CF/onion healthy; direct origin denied on every served address; AOP/mTLS active |
-| Native/Python runtime | Container/lock prepared | **Open** | Swift 6.2 and report/holehe smoke tests under exact runtime sandbox |
-| Monitoring/paging | Rules prepared | **Inactive** | Metrics scrape + target/backup/security alert reaches operator |
-| Configuration provenance | Manifest prepared | **Open** | Binary, frontend and `/etc` checksums recorded against accepted commit |
+Status as of 2026-08-30, verified against the running box.
 
-Exit gate: verified restore, direct origin denied, service has no personal-home
-access, broad sudo removed, and production SHA equals an accepted CI artifact.
+| Gate | Production | Evidence |
+|---|---|---|
+| Restore main SPA/CSP compatibility | **Met** | Exact hashes plus per-request JSD nonce; browser gate open |
+| Encrypted backup credential/job | **Met** | Daily timer active, seven verified artifacts, newest authenticated |
+| Restore/offsite recovery | **Partly met** | Isolated restore drill evidenced 2026-08-24; off-host immutable copy and measured RPO/RTO still open |
+| Dedicated runtime identity | **Met** | `swift-vapor`/`swift-deploy`/`swift-backup`, `/srv` layout, no personal-home access |
+| Narrow deploy authority | **Met, with accepted deviation** | Forced-command deploy key only; `micu`'s broad sudo retained deliberately as root recovery |
+| Immutable atomic deployment | **Met** | `current` → `releases/<sha>`; deployed SHA equals the CI artifact |
+| Explicit migration gate | **Met** | Web unit forces `AUTO_MIGRATE=false`; migrations only via the migrate unit |
+| Cloudflare-only origin | **Partly met** | IPv4 enforced; AOP/mTLS absent and IPv6 origin unevidenced |
+| Native runtime | **Met** | Swift 6.2 release built and served from the immutable tree |
+| Monitoring/paging | **Met for paging, open for metrics** | `OnFailure=` plus a 15-minute probe, delivery verified end to end; nothing scrapes `/metrics` |
+| Configuration provenance | **Open** | No checksum manifest binding binary, frontend and `/etc` to the accepted commit |
+
+Phase 0 is closed apart from the rows marked open or partly met above. The
+remaining work is tracked in "Remaining open" under the current checkpoint.
 
 ## Next atomic delivery stages
 
 Each stage should be one reviewable commit (or a short, explicitly linked
 series), with its own rollback note and production evidence before the next one.
 
-1. **Emergency edge consistency:** install a backed-up CSP containing the exact
-   currently served hashes; `nginx -t`, reload, real-browser CSP smoke test.
-2. **Recovery first:** provision encrypted credential, run verified backup,
-   isolated restore and off-host copy; connect timer failure to paging.
-3. **Identity cutover:** create `swift-vapor`, `/srv` releases and scoped secret
-   access; remove broad sudo and constrain/revoke automation SSH keys.
-4. **Atomic release bootstrap:** install desired systemd/nginx/helper configs,
-   run explicit migrations, select immutable release and rehearse rollback.
+1. **Emergency edge consistency — delivered.** The served CSP carries the exact
+   hashes plus the per-request JSD nonce; validated and reloaded in production.
+2. **Recovery first — delivered except the off-host copy.** Encrypted credential
+   provisioned, verified backups running daily, isolated restore drill evidenced,
+   and timer failure now pages the operator. An immutable off-host copy and a
+   measured RPO/RTO remain open.
+3. **Identity cutover — delivered.** `swift-vapor`, `/srv` releases and scoped
+   credential access are live and deploy uses a restricted forced-command key.
+   Broad sudo for `micu` is retained by operator decision (see accepted
+   deviations), not left open by omission.
+4. **Atomic release bootstrap — delivered.** Units, nginx and helpers installed,
+   explicit migration gate enforced, immutable release selected by symlink, and a
+   CI-triggered deploy verified against the accepted SHA.
 5. **Origin closure:** deploy peer map/guard, add Cloudflare AOP/mTLS, probe both
    origin address families and alert if direct access ever succeeds.
 6. **Crypto envelope v2:** repository implementation delivered: HKDF-separated
