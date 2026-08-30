@@ -10,6 +10,8 @@ struct CrtShPlugin: FootprintPlugin {
 
     let name = "CertificateTransparency"
     let description = "Certificate Transparency subdomain enumeration (crt.sh)"
+    /// Certificate transparency is indexed by domain name, not by IP.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
 
     private struct CrtEntry: Decodable {

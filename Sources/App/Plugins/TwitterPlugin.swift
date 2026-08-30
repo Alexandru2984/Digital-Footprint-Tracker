@@ -11,6 +11,8 @@ import Foundation
 struct TwitterPlugin: FootprintPlugin {
     let name = "TwitterOSINT"
     let description = "Twitter/X profile search"
+    /// Twitter/X handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         // Skip emails and phone numbers.

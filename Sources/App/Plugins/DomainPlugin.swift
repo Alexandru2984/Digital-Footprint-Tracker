@@ -11,6 +11,8 @@ import Foundation
 struct DomainPlugin: FootprintPlugin {
     let name = "DomainOSINT"
     let description = "DNS records, WHOIS, SSL info"
+    /// DNS + WHOIS for a hostname, reverse DNS + geo for a bare IP.
+    let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 14_400 // 4 h
 
     // Basic domain/IP regex. Intentionally loose — input has already been

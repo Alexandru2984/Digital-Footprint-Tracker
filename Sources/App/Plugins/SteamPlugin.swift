@@ -6,6 +6,8 @@ import Foundation
 struct SteamPlugin: FootprintPlugin {
     let name = "SteamAccountCheck"
     let description = "Steam profile search (vanity URL)"
+    /// Steam vanity URLs only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

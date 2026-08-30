@@ -8,6 +8,8 @@ import FoundationNetworking
 struct HaveIBeenPwnedPlugin: FootprintPlugin {
     let name = "HaveIBeenPwned"
     let description = "Email breach database check (HIBP)"
+    /// HIBP's breach API is queried by email address.
+    let accepts: Set<TargetShape> = [.email]
     // Breach corpora move slowly; cache a full day to spare the paid API quota.
     let cacheTTL: TimeInterval = 86_400
 

@@ -8,6 +8,8 @@ import Foundation
 struct EmailIntelPlugin: FootprintPlugin {
     let name = "EmailIntel"
     let description = "Email deliverability, mailbox provider, disposable detection"
+    /// Disposable/MX intelligence about an email's domain half.
+    let accepts: Set<TargetShape> = [.email]
     let cacheTTL: TimeInterval = 86_400 // MX + disposable status are very stable
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {

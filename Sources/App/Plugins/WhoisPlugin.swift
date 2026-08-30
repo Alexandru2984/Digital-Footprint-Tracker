@@ -4,6 +4,8 @@ import Vapor
 struct WhoisPlugin: FootprintPlugin {
     let name = "WHOIS"
     let description = "RDAP / WHOIS domain registration info"
+    /// WHOIS answers for registrations and for RIR IP allocations alike.
+    let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 14_400 // 4 h
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {

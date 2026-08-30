@@ -12,6 +12,8 @@ import Foundation
 struct KeybasePlugin: FootprintPlugin {
     let name = "KeybaseOSINT"
     let description = "Keybase identity lookup (cross-platform proofs)"
+    /// Keybase handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

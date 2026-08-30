@@ -15,6 +15,8 @@ import Foundation
 struct TelegramPlugin: FootprintPlugin {
     let name = "TelegramOSINT"
     let description = "Telegram username / channel search"
+    /// Telegram handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

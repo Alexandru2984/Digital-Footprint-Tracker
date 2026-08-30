@@ -58,7 +58,7 @@ enum ScanPluginRunner {
         let candidates = TargetDeriver.candidates(for: input)
         let round1 = await runRound(
             plugins: plugins, candidates: candidates, scanID: scanID,
-            deadline: 120, perPluginTimeout: 100, expectedUnits: plugins.count, reportProgress: true,
+            deadline: 120, perPluginTimeout: 100, reportProgress: true,
             app: app, db: db, useCache: useCache, dedup: dedup
         )
 
@@ -79,7 +79,7 @@ enum ScanPluginRunner {
             let pivotCandidates = pivots.map { TargetDeriver.Candidate(value: $0, origin: .pivoted) }
             let round = await runRound(
                 plugins: lightPlugins, candidates: pivotCandidates, scanID: scanID,
-                deadline: 45, perPluginTimeout: 30, expectedUnits: lightPlugins.count, reportProgress: false,
+                deadline: 45, perPluginTimeout: 30, reportProgress: false,
                 app: app, db: db, useCache: useCache, dedup: dedup
             )
             pivotSuccess += round.success
@@ -90,6 +90,10 @@ enum ScanPluginRunner {
 
         let successCount = round1.success + pivotSuccess
         let timedOut = round1.timedOut
+        // Shape gating means a round can legitimately run nothing at all (an
+        // input no plugin can act on). That is an empty result, not a failure —
+        // unless the deadline is what stopped us before anything finished.
+        let ranNothing = round1.success + round1.failure == 0 && !timedOut
 
         do {
             if let scan = try await Scan.find(scanID, on: db) {
@@ -99,7 +103,7 @@ enum ScanPluginRunner {
                 // succeeded: every plugin errored, or the deadline hit before any
                 // finished. This stops a single slow plugin from burying real,
                 // already-saved findings under a "failed" badge.
-                if successCount > 0 {
+                if successCount > 0 || ranNothing {
                     if timedOut {
                         app.logger.warning("Scan \(scanID) hit the 120-second deadline; completing with \(successCount) partial result set(s)")
                     }
@@ -168,6 +172,38 @@ enum ScanPluginRunner {
         } catch {
             app.logger.error("Failed to mark scan \(scanID) as finished: \(error)")
         }
+    }
+
+    /// The candidates `plugin` will actually be run against: those whose shape
+    /// it declares it can act on (`FootprintPlugin.accepts`), and — for heavy
+    /// plugins — only the origins that bound their fan-out.
+    ///
+    /// Filtering here rather than inside each plugin's `scan` is what makes the
+    /// saving real: a skipped pair costs no cache lookup, no `scan` call, and no
+    /// empty cache row written back for a plugin that would have returned `[]`
+    /// on its first line.
+    static func applicableCandidates(
+        for plugin: any FootprintPlugin,
+        from candidates: [TargetDeriver.Candidate]
+    ) -> [TargetDeriver.Candidate] {
+        let accepts = plugin.accepts
+        return candidates.filter { candidate in
+            guard !plugin.heavy || candidate.origin.heavyEligible else { return false }
+            return !accepts.isDisjoint(with: TargetShape.shapes(of: candidate.value))
+        }
+    }
+
+    /// The subset of `plugins` that has at least one candidate to run against
+    /// for `input`. Call sites use this to size `ScanProgressTracker` so the
+    /// progress bar counts only work that will really happen, instead of
+    /// jumping most of the way instantly as the structurally irrelevant
+    /// plugins no-op.
+    static func applicablePlugins(
+        _ plugins: [any FootprintPlugin],
+        for input: String
+    ) -> [any FootprintPlugin] {
+        let candidates = TargetDeriver.candidates(for: input)
+        return plugins.filter { !applicableCandidates(for: $0, from: candidates).isEmpty }
     }
 
     /// Outcome of one plugin's (or the round-wide sentinel's) work inside a
@@ -285,13 +321,16 @@ enum ScanPluginRunner {
     /// move on — see `runPlugin`), persists each result (with its candidate
     /// origin, deduplicated via `dedup`), and returns the raw results (for
     /// pivot mining) plus success/failure/timeout aggregates.
+    ///
+    /// Plugins with no applicable candidate never get a task — they are absent
+    /// from the aggregates entirely rather than counted as trivial successes,
+    /// so `success + failure` is the number of plugins that genuinely ran.
     static func runRound(
         plugins: [any FootprintPlugin],
         candidates: [TargetDeriver.Candidate],
         scanID: UUID,
         deadline: Double,
         perPluginTimeout: Double,
-        expectedUnits: Int,
         reportProgress: Bool,
         app: Application,
         db: Database,
@@ -304,18 +343,25 @@ enum ScanPluginRunner {
         var failure = 0
         var timedOut = false
 
+        // Resolve the work up front so `expectedUnits` is derived from the tasks
+        // actually spawned — it drives the early `cancelAll()` below, and a stale
+        // count would leave the round waiting on the deadline sentinel.
+        let work = plugins.compactMap { plugin -> (plugin: any FootprintPlugin, candidates: [TargetDeriver.Candidate])? in
+            let applicable = applicableCandidates(for: plugin, from: candidates)
+            return applicable.isEmpty ? nil : (plugin, applicable)
+        }
+        let expectedUnits = work.count
+        guard expectedUnits > 0 else { return ([], 0, 0, false) }
+
         await withTaskGroup(of: Outcome.self) { group in
             group.addTask {
                 try? await Task.sleep(for: .seconds(deadline))
                 return .timeout
             }
 
-            for plugin in plugins {
+            for (plugin, pCandidates) in work {
                 let pName = plugin.name
                 let pTTL = plugin.cacheTTL
-                // Heavy plugins (the 480-site sweep) skip non-heavy-eligible
-                // candidates so fan-out can't trigger several expensive runs.
-                let pCandidates = plugin.heavy ? candidates.filter { $0.origin.heavyEligible } : candidates
                 group.addTask {
                     guard !Task.isCancelled else { return .done(name: pName, succeeded: false, results: []) }
                     return await Self.runPlugin(

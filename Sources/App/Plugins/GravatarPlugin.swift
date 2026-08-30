@@ -13,6 +13,8 @@ import FoundationNetworking
 struct GravatarPlugin: FootprintPlugin {
     let name = "GravatarCheck"
     let description = "Gravatar profile + verified linked accounts by email"
+    /// Gravatar is keyed on an email hash.
+    let accepts: Set<TargetShape> = [.email]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] }

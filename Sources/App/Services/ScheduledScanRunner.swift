@@ -127,7 +127,8 @@ private func finishScheduledScan(
     // Hand plugin execution off to the shared runner: same deadline, registry,
     // persistence and terminal status behavior as interactive scans.
     let plugins = ScanController.backgroundPlugins
-    await ScanProgressTracker.shared.start(scanID: scanID, total: plugins.count)
+    let runnableCount = ScanPluginRunner.applicablePlugins(plugins, for: input).count
+    await ScanProgressTracker.shared.start(scanID: scanID, total: runnableCount)
     // Monitor mode deliberately bypasses cache so upstream changes remain visible.
     await ScanPluginRunner.run(
         scanID: scanID,

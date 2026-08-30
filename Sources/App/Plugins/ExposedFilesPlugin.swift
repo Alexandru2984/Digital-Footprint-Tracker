@@ -63,6 +63,8 @@ enum ExposedFiles {
 struct ExposedFilesPlugin: FootprintPlugin {
     let name = "ExposedFiles"
     let description = "Content-verified sensitive-file exposure (.env, .git, DB dumps, backups)"
+    /// Probes well-known paths on a hostname.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
     let heavy = true                    // ~11 fetches per host
 

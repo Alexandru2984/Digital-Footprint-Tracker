@@ -6,6 +6,8 @@ import Foundation
 struct HackerNewsPlugin: FootprintPlugin {
     let name = "HackerNews"
     let description = "Hacker News profile lookup"
+    /// Hacker News handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

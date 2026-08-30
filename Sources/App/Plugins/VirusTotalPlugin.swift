@@ -7,6 +7,8 @@ import FoundationNetworking
 struct VirusTotalPlugin: FootprintPlugin {
     let name = "VirusTotal"
     let description = "Malware/reputation check for domains and IPs (requires API key)"
+    /// Separate domain and IP report endpoints.
+    let accepts: Set<TargetShape> = [.domain, .ipv4]
 
     private static let ipRegex = try? NSRegularExpression(pattern: #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#)
 

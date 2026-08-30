@@ -8,6 +8,8 @@ import FoundationNetworking
 struct UsernamePlugin: FootprintPlugin {
     let name = "GitHubAccountCheck"
     let description = "GitHub profile lookup"
+    /// GitHub handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

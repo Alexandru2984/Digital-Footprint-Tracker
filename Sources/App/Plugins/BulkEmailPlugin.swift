@@ -4,6 +4,8 @@ import Foundation
 struct BulkEmailPlugin: FootprintPlugin {
     let name = "BulkEmailOSINT"
     let description = "Email-to-account correlation (Holehe)"
+    /// holehe enumerates account registrations for an email.
+    let accepts: Set<TargetShape> = [.email]
     let cacheTTL: TimeInterval = 86_400 // 24 h
     
     func scan(input: String, on app: Application) async throws -> [PluginResult] {

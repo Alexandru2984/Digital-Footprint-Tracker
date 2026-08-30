@@ -18,6 +18,8 @@ import FoundationNetworking
 struct TyposquatPlugin: FootprintPlugin {
     let name = "Typosquat"
     let description = "Lookalike / typosquatting domains that resolve (dnstwist-style)"
+    /// Generates look-alike spellings of a domain name.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h — domain registration changes slowly
     let heavy = true
 

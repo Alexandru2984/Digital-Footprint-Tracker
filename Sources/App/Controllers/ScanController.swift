@@ -251,7 +251,10 @@ struct ScanController: RouteCollection {
 
         let app = req.application
 
-        await ScanProgressTracker.shared.start(scanID: scanID, total: activePlugins.count)
+        // Count only the plugins that can act on this input's shape, so the bar
+        // tracks real work instead of jumping as the irrelevant ones no-op.
+        let runnablePlugins = ScanPluginRunner.applicablePlugins(activePlugins, for: input)
+        await ScanProgressTracker.shared.start(scanID: scanID, total: runnablePlugins.count)
 
         // Run plugins in the background so the HTTP request returns immediately.
         // Transitive pivot is the expensive multiplier, so it's account-only:

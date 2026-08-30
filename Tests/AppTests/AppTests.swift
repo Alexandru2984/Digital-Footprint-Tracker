@@ -4238,7 +4238,7 @@ final class AppTests: XCTestCase {
         let round = await ScanPluginRunner.runRound(
             plugins: [slow, fast],
             candidates: [TargetDeriver.Candidate(value: "timeout-target", origin: .primary)],
-            scanID: scanID, deadline: 20, perPluginTimeout: 1, expectedUnits: 2,
+            scanID: scanID, deadline: 20, perPluginTimeout: 1,
             reportProgress: false, app: app, db: app.db, useCache: false,
             dedup: ScanPluginRunner.ResultDedupStore()
         )
@@ -4267,7 +4267,7 @@ final class AppTests: XCTestCase {
 
         let round = await ScanPluginRunner.runRound(
             plugins: [plugin], candidates: candidates, scanID: scanID,
-            deadline: 20, perPluginTimeout: 10, expectedUnits: 1, reportProgress: false,
+            deadline: 20, perPluginTimeout: 10, reportProgress: false,
             app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
         )
 
@@ -4296,10 +4296,99 @@ final class AppTests: XCTestCase {
             plugins: [SlowTestPlugin(name: "Slow", delaySeconds: 5,
                 result: PluginResult(source: "Slow", type: "t", confidenceScore: 1.0, rawData: "x"))],
             candidates: [TargetDeriver.Candidate(value: "round-deadline-target", origin: .primary)],
-            scanID: scanID, deadline: 1, perPluginTimeout: 30, expectedUnits: 1, reportProgress: false,
+            scanID: scanID, deadline: 1, perPluginTimeout: 30, reportProgress: false,
             app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
         )
         XCTAssertTrue(round.timedOut)
+    }
+
+    // MARK: - Input-shape gating
+
+    /// Declares `.email` only, and records every input it is actually asked to
+    /// scan so a test can prove the runner never reached it.
+    private actor ScanRecorder {
+        private(set) var inputs: [String] = []
+        func record(_ input: String) { inputs.append(input) }
+    }
+
+    private struct EmailOnlyTestPlugin: FootprintPlugin {
+        let name = "EmailOnly"
+        let accepts: Set<TargetShape> = [.email]
+        let recorder: ScanRecorder
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            await recorder.record(input)
+            return [PluginResult(source: name, type: "t", confidenceScore: 1.0, rawData: "hit")]
+        }
+    }
+
+    func testTargetShapeClassifiesRepresentativeInputs() {
+        XCTAssertEqual(TargetShape.shapes(of: "alice@example.com"), [.email])
+        XCTAssertEqual(TargetShape.shapes(of: "example.com"), [.domain])
+        XCTAssertEqual(TargetShape.shapes(of: "sub.example.co.uk"), [.domain])
+        XCTAssertEqual(TargetShape.shapes(of: "203.0.113.7"), [.ipv4])
+        XCTAssertEqual(TargetShape.shapes(of: "alice"), [.username])
+        XCTAssertEqual(TargetShape.shapes(of: "alice_doe-2"), [.username])
+        XCTAssertEqual(TargetShape.shapes(of: "+40712345678"), [.phone],
+                       "a leading + rules out every username regex in the plugin set")
+        XCTAssertEqual(TargetShape.shapes(of: "0712345678"), [.phone, .username],
+                       "a bare digit run is also a legal handle on most platforms")
+        XCTAssertEqual(TargetShape.shapes(of: "1.2.3"), TargetShape.all,
+                       "an uncategorizable input must fall back to every plugin, never to none")
+    }
+
+    func testEveryShippingPluginDeclaresTheInputShapesItAccepts() {
+        for plugin in ScanController.defaultPlugins {
+            XCTAssertFalse(plugin.accepts.isEmpty, "\(plugin.name) accepts nothing and can never run")
+            XCTAssertNotEqual(plugin.accepts, TargetShape.all,
+                              "\(plugin.name) never narrowed its input shapes — it still pays a cache round-trip on every candidate")
+        }
+    }
+
+    func testApplicablePluginsSkipsStructurallyIrrelevantPlugins() {
+        let all = ScanController.defaultPlugins
+
+        let forDomain = ScanPluginRunner.applicablePlugins(all, for: "example.com").map(\.name)
+        XCTAssertTrue(forDomain.contains("DomainOSINT"))
+        XCTAssertFalse(forDomain.contains("GravatarCheck"), "an email plugin cannot act on a domain")
+        XCTAssertFalse(forDomain.contains("BulkOSINT"),
+                       "the 480-site username sweep must not fire at a domain name")
+
+        let forEmail = ScanPluginRunner.applicablePlugins(all, for: "alice@example.com").map(\.name)
+        XCTAssertTrue(forEmail.contains("GravatarCheck"))
+        XCTAssertTrue(forEmail.contains("GitHubAccountCheck"),
+                      "the email local-part is derived as a username candidate, so handle plugins still apply")
+        XCTAssertFalse(forEmail.contains("Shodan"), "host search cannot act on an email or a handle")
+
+        let forIP = ScanPluginRunner.applicablePlugins(all, for: "203.0.113.7").map(\.name)
+        XCTAssertTrue(forIP.contains("AbuseIPDB"))
+        XCTAssertFalse(forIP.contains("CertificateTransparency"), "certificate transparency is indexed by name, not by IP")
+
+        XCTAssertLessThan(forDomain.count, all.count)
+        XCTAssertLessThan(forEmail.count, all.count)
+        XCTAssertLessThan(forIP.count, all.count)
+    }
+
+    func testRunRoundNeverInvokesAPluginThatCannotActOnTheCandidates() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "shape-gate-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        let recorder = ScanRecorder()
+        let round = await ScanPluginRunner.runRound(
+            plugins: [EmailOnlyTestPlugin(recorder: recorder)],
+            candidates: [TargetDeriver.Candidate(value: "shape-gate-target", origin: .primary)],
+            scanID: scanID, deadline: 20, perPluginTimeout: 10, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+
+        let scanned = await recorder.inputs
+        XCTAssertTrue(scanned.isEmpty, "an email-only plugin must never be handed a username candidate")
+        XCTAssertTrue(round.collected.isEmpty)
+        XCTAssertEqual(round.success, 0, "a skipped plugin is absent from the aggregates, not a trivial success")
+        XCTAssertEqual(round.failure, 0)
+        XCTAssertFalse(round.timedOut, "an empty round must return at once, not wait out the deadline sentinel")
     }
 
     // MARK: - Target derivation (email → username pivot)

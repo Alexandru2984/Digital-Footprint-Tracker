@@ -137,6 +137,8 @@ enum EmailAuth {
 struct MailSecurityPlugin: FootprintPlugin {
     let name = "MailSecurity"
     let description = "Email spoofability grade — SPF/DMARC/DKIM/MTA-STS/DNSSEC/CAA"
+    /// Grades a domain's mail posture, and strips an email's local-part to reach it.
+    let accepts: Set<TargetShape> = [.email, .domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {

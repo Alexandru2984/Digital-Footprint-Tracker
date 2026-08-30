@@ -16,6 +16,8 @@ import FoundationNetworking
 struct InternetDBPlugin: FootprintPlugin {
     let name = "InternetDB"
     let description = "Open ports, CVEs & exposed services per IP (free, no key)"
+    /// Resolves a host, then looks up each IP.
+    let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 21_600 // 6 h
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#

@@ -8,6 +8,8 @@ import Foundation
 struct WaybackPlugin: FootprintPlugin {
     let name = "Wayback"
     let description = "Internet Archive history (first/last seen, snapshot count)"
+    /// The archive is indexed by hostname.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 86_400 // archive history barely moves day-to-day
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {

@@ -13,6 +13,8 @@ import Foundation
 struct MastodonPlugin: FootprintPlugin {
     let name = "MastodonOSINT"
     let description = "Mastodon account search (mastodon.social)"
+    /// Mastodon handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@"),

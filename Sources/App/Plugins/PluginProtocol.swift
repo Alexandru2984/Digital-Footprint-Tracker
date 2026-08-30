@@ -19,6 +19,16 @@ protocol FootprintPlugin: Sendable {
     /// every speculative variant — see `TargetDeriver.Origin.heavyEligible`.
     var heavy: Bool { get }
 
+    /// The input shapes this plugin can act on. `ScanPluginRunner` skips a
+    /// (plugin, candidate) pair outright when the candidate's shape isn't in
+    /// here — no cache lookup, no `scan` call, no empty cache row written back.
+    ///
+    /// Declare the shapes the plugin *might* handle, not the exact ones: this
+    /// is a coarse pre-filter and the plugin's own guard stays the authority.
+    /// The default admits everything, which is exactly the behaviour before this
+    /// existed; a test asserts every shipping plugin narrows it.
+    var accepts: Set<TargetShape> { get }
+
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
@@ -27,6 +37,7 @@ extension FootprintPlugin {
     var description: String { "OSINT plugin" }
     var cacheTTL: TimeInterval { 3600 } // 1 hour
     var heavy: Bool { false }
+    var accepts: Set<TargetShape> { TargetShape.all }
 }
 
 struct PluginResult: Sendable, Codable {

@@ -6,6 +6,8 @@ import Foundation
 struct PyPIPlugin: FootprintPlugin {
     let name = "PyPIPackages"
     let description = "PyPI package author lookup"
+    /// PyPI maintainer handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

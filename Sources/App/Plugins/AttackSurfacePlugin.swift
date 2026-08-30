@@ -17,6 +17,8 @@ import FoundationNetworking
 struct AttackSurfacePlugin: FootprintPlugin {
     let name = "AttackSurface"
     let description = "Whole-footprint exposure: subdomains → IPs → open ports & CVEs"
+    /// Subdomain enumeration needs a registrable name.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
     let heavy = true
 

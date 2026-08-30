@@ -11,6 +11,8 @@ import Foundation
 struct RedditPlugin: FootprintPlugin {
     let name = "Reddit"
     let description = "Reddit account lookup"
+    /// Reddit handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }

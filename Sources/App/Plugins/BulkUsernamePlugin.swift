@@ -68,6 +68,8 @@ struct SherlockData: Decodable {
 struct BulkUsernamePlugin: FootprintPlugin {
     let name = "BulkOSINT"
     let description = "Username presence across 480+ platforms (Sherlock)"
+    /// 480 handle probes — never worth firing at a domain or an IP.
+    let accepts: Set<TargetShape> = [.username]
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 

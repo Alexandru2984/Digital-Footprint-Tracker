@@ -7,11 +7,20 @@ import FoundationNetworking
 struct ShodanPlugin: FootprintPlugin {
     let name = "Shodan"
     let description = "Exposed ports and services (requires API key)"
+    /// Host search. Previously ungated: it spent API quota on emails and handles.
+    let accepts: Set<TargetShape> = [.domain, .ipv4]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        // Host targets only. Shodan indexes internet-facing infrastructure, so a
+        // handle or an email address can only ever return noise — and every such
+        // query still costs a call from a metered plan. This guard was missing:
+        // the plugin queried whatever it was handed.
+        let target = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.contains("@"), target.contains(".") else { return [] }
+
         guard let apiKey = try RuntimeSecret.value("SHODAN_API_KEY"), !apiKey.isEmpty else { return [] }
 
-        let query = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
+        let query = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
         guard let url = URL(string: "https://api.shodan.io/shodan/host/search?key=\(apiKey)&query=\(query)&minify=true") else { return [] }
 
         guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200,

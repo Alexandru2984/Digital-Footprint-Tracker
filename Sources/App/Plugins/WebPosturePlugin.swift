@@ -79,6 +79,8 @@ enum WebPosture {
 struct WebPosturePlugin: FootprintPlugin {
     let name = "WebPosture"
     let description = "TLS/HTTP security-header grade & server fingerprint"
+    /// TLS/header posture of a live host.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#

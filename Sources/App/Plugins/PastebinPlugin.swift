@@ -12,6 +12,8 @@ import Foundation
 struct PastebinPlugin: FootprintPlugin {
     let name = "PastebinOSINT"
     let description = "Pastebin / paste-site content search"
+    /// Separate email (HIBP pastes) and username (paste-site search) branches.
+    let accepts: Set<TargetShape> = [.email, .username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)

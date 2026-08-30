@@ -77,6 +77,8 @@ enum SiteMeta {
 struct SiteMetaPlugin: FootprintPlugin {
     let name = "SiteMeta"
     let description = "Declared-file recon — security.txt contact + robots.txt sensitive paths"
+    /// Fetches a hostname's homepage metadata.
+    let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
 
     private static let ipv4Pattern = #"^\d{1,3}(\.\d{1,3}){3}$"#

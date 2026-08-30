@@ -6,6 +6,8 @@ import Foundation
 struct NpmPlugin: FootprintPlugin {
     let name = "NpmPackages"
     let description = "npm package author lookup"
+    /// npm maintainer handles only.
+    let accepts: Set<TargetShape> = [.username]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }
