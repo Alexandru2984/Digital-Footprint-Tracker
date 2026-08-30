@@ -129,42 +129,20 @@ jobs:
       - name: Validate deployment scripts and privilege policy
         run: |
           set -euo pipefail
-          scripts=(
-            scripts/backup.sh
-            scripts/build-release.sh
-            scripts/check-backup.sh
-            scripts/deploy.sh
-            scripts/generate-sbom.sh
-            scripts/install-voidaccess.sh
-            scripts/production-preflight.sh
-            scripts/release-lib.sh
-            scripts/restore-drill.sh
-            scripts/run-browser-tests.sh
-            scripts/run-security-gates.sh
-            scripts/update-cloudflare-ips.sh
-            scripts/update-csp-hashes.sh
-            scripts/tests/backup.test.sh
-            scripts/tests/check-backup.test.sh
-            scripts/tests/csp-hashes.test.sh
-            scripts/tests/production-boundaries.test.sh
-            scripts/tests/production-preflight.test.sh
-            scripts/tests/release-lib.test.sh
-            scripts/tests/restore-drill.test.sh
-            ops/libexec/update-swift-csp
-          )
-          bash -n "${scripts[@]}"
-          sh -n worker/voidaccess-entrypoint.sh
-          shellcheck "${scripts[@]}" worker/voidaccess-entrypoint.sh
+          # Both lists below used to be bash arrays pasted into this file, and
+          # both had drifted: three root-run scripts added later — one of them
+          # handling the alert relay's API key — were never linted. Discovery
+          # now lives in the repository and covers a script the day it lands.
+          scripts/lint-scripts.sh check
+          scripts/lint-scripts.sh self-test
           sudo visudo -cf ops/sudoers/swift-vapor-deploy
-          scripts/tests/backup.test.sh
-          scripts/tests/check-backup.test.sh
-          scripts/tests/csp-hashes.test.sh
-          scripts/tests/production-boundaries.test.sh
-          scripts/tests/production-preflight.test.sh
-          scripts/tests/release-lib.test.sh
-          scripts/tests/restore-drill.test.sh
-          python3 -m py_compile worker/voidaccess_worker.py scripts/tests/voidaccess-worker.test.py
-          python3 scripts/tests/voidaccess-worker.test.py
+          for suite in scripts/tests/*.test.sh scripts/tests/*.test.py; do
+            printf '\n=== %s ===\n' "$suite"
+            case "$suite" in
+              *.py) python3 "$suite" ;;
+              *)    "$suite" ;;
+            esac
+          done
 
       - name: Audit locked dependencies with pinned OSV-Scanner
         run: |
