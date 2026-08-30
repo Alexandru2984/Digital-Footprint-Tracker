@@ -51,6 +51,24 @@ validate each subsystem.
   `/etc/swift-vapor/app.env` is non-secret configuration only.
 - `swift-vapor-migrate.service` — sandboxed oneshot migration gate against the
   candidate `/srv/swift-vapor/next` release.
+- `swift-vapor-alert@.service` — templated operator pager, instantiated by
+  `OnFailure=swift-vapor-alert@%n.service` on the watched units. Sends mail over
+  the Resend HTTP API using the *existing* `swift-vapor-smtp-pass` encrypted
+  credential, so alerting introduces no second secret and no MTA. It depends on
+  nothing the application owns, because it runs precisely when the application
+  is down. Identical alerts are throttled (default one hour) so a flapping unit
+  cannot mailbomb the operator; every attempt is journalled regardless.
+  Routing lives in `/etc/swift-vapor/alerts.env` (non-secret).
+- `swift-vapor-healthcheck.service` and `.timer` — a 15-minute probe for the
+  failures systemd cannot see by itself. `Restart=always` means the application
+  unit reaches `failed` only on a hard crash-loop (5 starts in 10s), so the
+  quiet degradations are checked here instead: readiness including the database,
+  restart flapping that never trips the start limit, backup freshness (via the
+  existing read-only `check-backup.sh` gate), certificate expiry and disk
+  headroom. It reports and never repairs; a non-zero exit fires the same alert
+  handler. It carries `SupplementaryGroups=swift-backup-check` because its empty
+  `CapabilityBoundingSet` leaves uid 0 unable to read the 0750 backup artifact
+  directory it does not own.
 - `swift-vapor-backup.service` and `.timer` — the daily encrypted PostgreSQL
   stream, isolated as `swift-backup` with database and recovery passphrases
   mounted as separate encrypted credentials. The job has localhost-only network

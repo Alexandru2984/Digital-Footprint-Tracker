@@ -1,0 +1,52 @@
+[Unit]
+Description=Send an operator alert for %i
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+# Instantiated by OnFailure= on the watched units, where %n passes the failing
+# unit's own name in. It must stay reachable when the application is down, so it
+# depends on nothing but the network and its own helper.
+ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/alert-notify.sh
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/swift-vapor/alerts.env
+# The Resend API key is the same encrypted credential the application already
+# uses as its SMTP password — no second secret to provision or rotate.
+LoadCredentialEncrypted=smtp-pass:/etc/credstore.encrypted/swift-vapor-smtp-pass
+Environment=ALERT_API_KEY_FILE=%d/smtp-pass
+Environment=ALERT_STATE_DIR=/var/lib/swift-vapor-alerts
+ExecStart=/usr/local/libexec/swift-vapor/alert-notify.sh --unit %i
+TimeoutStartSec=120
+
+# Runs as root because it reads the journal of an arbitrary watched unit, but it
+# is otherwise confined: no capabilities, no write access beyond its own throttle
+# state, and no visibility into home directories or container sockets.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+InaccessiblePaths=-/run/docker.sock -/run/containerd/containerd.sock -/run/podman/podman.sock
+ReadWritePaths=/var/lib/swift-vapor-alerts
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+
+Nice=5
+MemoryMax=128M
+TasksMax=32
+LimitNOFILE=256

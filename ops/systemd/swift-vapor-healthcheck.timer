@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the swift-vapor health probe every 15 minutes
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
+# Deliberately not Persistent=: a probe missed while the box was off says
+# nothing about the box now, and catching up on boot would only alert about
+# the past.
+Unit=swift-vapor-healthcheck.service
+
+[Install]
+WantedBy=timers.target

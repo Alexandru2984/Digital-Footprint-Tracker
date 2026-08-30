@@ -1,0 +1,52 @@
+[Unit]
+Description=swift-vapor production health probe
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+After=network-online.target
+ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/healthcheck.sh
+# A failing probe is what pages the operator: the checks systemd cannot see on
+# its own (database reachability, silent backup failure, certificate expiry,
+# disk headroom, restart flapping under Restart=always) all land here.
+OnFailure=swift-vapor-alert@%n.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/swift-vapor/healthcheck.env
+ExecStart=/usr/local/libexec/swift-vapor/healthcheck.sh
+TimeoutStartSec=120
+
+# Root: it reads the certificate under /etc/letsencrypt (0700 root), which uid 0
+# owns outright. The backup artifact directory is 0750 swift-backup:
+# swift-backup-check and root does NOT own it, so with an empty
+# CapabilityBoundingSet (no CAP_DAC_OVERRIDE) plain uid 0 cannot read it — hence
+# the supplementary group rather than handing the probe a capability back.
+SupplementaryGroups=swift-backup-check
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+InaccessiblePaths=-/run/docker.sock -/run/containerd/containerd.sock -/run/podman/podman.sock
+ReadWritePaths=/var/lib/swift-vapor-alerts
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+
+Nice=10
+MemoryMax=128M
+TasksMax=32
+LimitNOFILE=256
