@@ -50,14 +50,19 @@ enum PivotExtractor {
             for (key, rawValue) in meta where pivotKeys.contains(key.lowercased()) {
                 var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 if value.hasPrefix("@") { value.removeFirst() }
-                guard value.count >= 3, value.count <= 254,
+                // A pivot value is a scan target that no user typed: it comes
+                // from a third party's page, API response or commit metadata, so
+                // it is attacker-controlled in exactly the way `/scan` input is.
+                // It therefore goes through the same validator, which enforces
+                // the character whitelist, the length cap and the SSRF gate —
+                // and, critically, the leading-hyphen rule that exists so a
+                // target can never be read as a flag by an argv-based tool.
+                // `isScannable` alone permitted `-x@evil.test`, which reached
+                // holehe's argv as an option.
+                guard value.count >= 3,
                       isScannable(value),
-                      // The same gate the front door applies. Transport-level
-                      // SSRF protection would already refuse to fetch a private
-                      // address, but a domain whose A record points inside would
-                      // still cost a whole pivot round to discover that, and put
-                      // internal addressing into the results on the way.
-                      !SSRFGuard.isInternalTarget(value),
+                      let validated = try? InputValidator.validateScanInput(value),
+                      validated == value,
                       seen.insert(value).inserted
                 else { continue }
                 // Emails are a far stronger identity anchor than a bare handle on

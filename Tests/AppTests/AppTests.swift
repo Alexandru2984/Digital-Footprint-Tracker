@@ -4302,6 +4302,83 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    // MARK: - Pivot input validation (security)
+
+    func testAPivotCandidateCannotBecomeACommandLineFlag() {
+        // Anyone can set an arbitrary git author address and push it to a public
+        // repository; UsernamePlugin harvests exactly that from a target's public
+        // events, at 0.9 confidence — above the pivot threshold. Without the
+        // front-door validator the value reached holehe's argv as an option.
+        let harvested = PluginResult(
+            source: "GitHub:commits", type: "email", confidenceScore: 0.9,
+            rawData: "Email exposed in public commits: -oProxyCommand@evil.test",
+            metadata: ["email": "-oProxyCommand@evil.test", "platform": "github"])
+
+        let pivots = PivotExtractor.candidates(from: [harvested], alreadyScanned: [])
+
+        XCTAssertTrue(pivots.isEmpty,
+            "a value starting with a hyphen must never become a scan target — it reaches argv-based tools")
+    }
+
+    func testAPivotCandidateObeysTheFrontDoorCharacterWhitelist() {
+        // `%` passes isScannable but not InputValidator, and these values are
+        // substituted into upstream URL paths.
+        let sneaky = PluginResult(
+            source: "GitHub:commits", type: "email", confidenceScore: 0.9,
+            rawData: "x", metadata: ["email": "a%2f..%2fb@evil.test"])
+
+        XCTAssertTrue(PivotExtractor.candidates(from: [sneaky], alreadyScanned: []).isEmpty,
+            "percent-encoding must not reach a plugin's URL construction through the pivot path")
+    }
+
+    func testOrdinaryPivotCandidatesStillSurviveValidation() {
+        // The tightening must not silence the pivot entirely.
+        let email = PluginResult(source: "GitHub:commits", type: "email", confidenceScore: 0.9,
+                                 rawData: "x", metadata: ["email": "alice@example.test"])
+        let address = PluginResult(source: "DomainDNS", type: "dns_a_record", confidenceScore: 1.0,
+                                   rawData: "x", metadata: ["ip": "93.184.216.34"])
+
+        let pivots = PivotExtractor.candidates(from: [email, address], alreadyScanned: [])
+
+        XCTAssertTrue(pivots.contains("alice@example.test"))
+        XCTAssertTrue(pivots.contains("93.184.216.34"))
+    }
+
+    // MARK: - Export encoding (security)
+
+    func testGraphMLDropsCharactersXMLCannotRepresent() {
+        // A page title or WHOIS record from an attacker-controlled host can carry
+        // raw control bytes. Escaping cannot rescue them: XML 1.0 forbids them
+        // outright, so leaving them in yields a document no parser will open.
+        let profile = IdentitySynthesizer.IdentityProfile(
+            likelyName: nil,
+            names: [],
+            locations: [],
+            organizations: [],
+            emails: ["a\u{1}b@example.test"],
+            phones: [],
+            handles: [],
+            confirmedAccounts: [],
+            breaches: [],
+            exposedDataClasses: [],
+            exposedIPs: [],
+            exposedServices: [],
+            vulnerabilities: [],
+            timeline: [],
+            riskScore: 0,
+            riskLevel: "Low",
+            resultCount: 1
+        )
+
+        let xml = IdentityGraph.graphml(from: profile, target: "example.test")
+
+        let illegal = xml.unicodeScalars.contains { scalar in
+            scalar.value < 0x20 && scalar != "\t" && scalar != "\n" && scalar != "\r"
+        }
+        XCTAssertFalse(illegal, "the document must contain no character XML 1.0 forbids")
+        XCTAssertTrue(xml.contains("ab@example.test"), "the surrounding text must survive intact")
+    }
+
     // MARK: - Pivot key coverage
 
     /// Every metadata key a shipping plugin writes, straight from source —

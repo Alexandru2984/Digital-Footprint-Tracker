@@ -120,7 +120,17 @@ enum IdentityGraph {
     }
 
     private static func esc(_ s: String) -> String {
-        var out = s.replacingOccurrences(of: "&", with: "&amp;")
+        // Control characters outside tab/LF/CR are forbidden by XML 1.0 even in
+        // escaped form, so a document containing one is rejected outright by
+        // every conforming parser. Findings carry text lifted from third-party
+        // pages — a page title, a WHOIS record — and nothing upstream strips
+        // them, so an attacker-controlled site could otherwise make a victim's
+        // export unopenable. Dropped before escaping, since escaping cannot
+        // rescue them.
+        let printable = String(s.unicodeScalars.filter { scalar in
+            scalar == "\t" || scalar == "\n" || scalar == "\r" || scalar.value >= 0x20
+        })
+        var out = printable.replacingOccurrences(of: "&", with: "&amp;")
         out = out.replacingOccurrences(of: "<", with: "&lt;")
         out = out.replacingOccurrences(of: ">", with: "&gt;")
         out = out.replacingOccurrences(of: "\"", with: "&quot;")
