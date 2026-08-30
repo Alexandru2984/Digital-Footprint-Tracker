@@ -73,6 +73,13 @@ collect() {
                 *.bak-*|*.dpkg-*|*.ucf-*|*~) continue ;;
             esac
             [[ -f "$path" ]] || continue
+            # The record is tab-separated; a path carrying a tab or newline
+            # would parse into a different entry than the file it came from.
+            # Refuse loudly rather than write a manifest that lies.
+            if [[ "$path" == *$'\t'* || "$path" == *$'\n'* ]]; then
+                echo "config-manifest: refusing a path containing a tab or newline." >&2
+                exit 1
+            fi
             printf '%s\t%s\t%s\t%s\n' \
                 "$path" \
                 "$(sha256sum "$path" | cut -d' ' -f1)" \

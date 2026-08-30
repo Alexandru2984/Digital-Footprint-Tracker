@@ -58,7 +58,16 @@ fail() { echo "alert-notify: $*" >&2; exit 1; }
 [[ -n "$EMAIL_TO" ]]   || fail "ALERT_EMAIL_TO is not configured."
 [[ -n "$EMAIL_FROM" ]] || fail "ALERT_EMAIL_FROM is not configured."
 [[ -n "$API_KEY_FILE" && -f "$API_KEY_FILE" ]] || fail "ALERT_API_KEY_FILE is missing: ${API_KEY_FILE:-unset}"
-if [[ ! "$MIN_INTERVAL" =~ ^[0-9]+$ ]]; then fail "ALERT_MIN_INTERVAL_SECONDS must be an integer."; fi
+# Bash arithmetic evaluates its operands as expressions, so an unvalidated
+# value reaching `(( ... > MAX ))` is code execution, not just a wrong number.
+# These come from a root-owned unit file today; validating them keeps that from
+# being the only thing standing between a config typo and a shell.
+require_integer() {
+    [[ "$2" =~ ^[0-9]+$ ]] || fail "$1 must be a non-negative integer."
+}
+require_integer ALERT_MIN_INTERVAL_SECONDS "$MIN_INTERVAL"
+require_integer ALERT_LOG_LINES "$LOG_LINES"
+require_integer ALERT_MAX_BODY_BYTES "$MAX_BODY_BYTES"
 
 # A unit name reaches this from a systemd specifier; keep it to the characters
 # systemd actually uses so it can never become an argument to something else.
@@ -123,8 +132,12 @@ fi
 
 # ── Send ────────────────────────────────────────────────────────────────────
 # python3 builds the JSON so the subject and an arbitrary log tail can never
-# break out of the string they belong in.
-payload="$(SUBJECT="$SUBJECT" EMAIL_TO="$EMAIL_TO" EMAIL_FROM="$EMAIL_FROM" BODY_PATH="$body_file" python3 - <<'PY'
+# break out of the string they belong in. It goes to a file rather than to
+# `--data "$payload"`: curl's argv is world-readable through /proc for the whole
+# request, and the body carries the failed unit's journal tail.
+payload_file="$(mktemp)"
+trap 'rm -f "$body_file" "$payload_file"' EXIT
+SUBJECT="$SUBJECT" EMAIL_TO="$EMAIL_TO" EMAIL_FROM="$EMAIL_FROM" BODY_PATH="$body_file" python3 - > "$payload_file" <<'PY'
 import json, os
 with open(os.environ["BODY_PATH"], "r", errors="replace") as handle:
     body = handle.read()
@@ -135,11 +148,10 @@ print(json.dumps({
     "text": body,
 }))
 PY
-)"
 
 # The key goes in via a header file so it never appears in argv or the journal.
 header_file="$(mktemp)"
-trap 'rm -f "$body_file" "$header_file"' EXIT
+trap 'rm -f "$body_file" "$payload_file" "$header_file"' EXIT
 printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' < "$API_KEY_FILE")" > "$header_file"
 chmod 0600 "$header_file"
 
@@ -147,7 +159,7 @@ if curl --silent --show-error --fail \
         --max-time 20 --retry 2 --retry-delay 3 \
         --header @"$header_file" \
         --header 'Content-Type: application/json' \
-        --data "$payload" \
+        --data-binary @"$payload_file" \
         --output /dev/null \
         "$API_URL"; then
     echo "alert-notify: delivered to $EMAIL_TO"

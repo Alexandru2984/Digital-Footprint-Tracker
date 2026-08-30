@@ -32,8 +32,12 @@ elif [[ $# -ne 0 ]]; then
     exit 2
 fi
 
-V4="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4)" || { echo "[cf] failed to fetch ips-v4" >&2; exit 1; }
-V6="$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v6)" || { echo "[cf] failed to fetch ips-v6" >&2; exit 1; }
+# --proto '=https' so a proxy or resolver cannot talk this into plaintext: the
+# answer becomes an nginx trust list, and a forged one turns off spoof
+# protection for CF-Connecting-IP entirely.
+CURL_OPTIONS=(--fail --silent --show-error --max-time 15 --proto '=https' --proto-redir '=https')
+V4="$(curl "${CURL_OPTIONS[@]}" https://www.cloudflare.com/ips-v4)" || { echo "[cf] failed to fetch ips-v4" >&2; exit 1; }
+V6="$(curl "${CURL_OPTIONS[@]}" https://www.cloudflare.com/ips-v6)" || { echo "[cf] failed to fetch ips-v6" >&2; exit 1; }
 CIDRS="$(mktemp)"
 REALIP_TMP="$(mktemp)"
 GUARD_TMP="$(mktemp)"

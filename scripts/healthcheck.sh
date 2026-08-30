@@ -32,6 +32,17 @@ STATE_DIR="${HEALTHCHECK_STATE_DIR:-/var/lib/swift-vapor-alerts}"
 problems=()
 note() { problems+=("$1"); }
 
+# Every threshold below lands in a `(( ... ))`, where bash evaluates its operand
+# as an arithmetic *expression* — an unvalidated value there is code execution,
+# not merely a wrong comparison. They come from a root-owned unit file today;
+# this keeps that from being the only thing that makes it safe.
+for setting in CERT_MIN_DAYS DISK_MIN_FREE_PERCENT MAX_RESTARTS_PER_INTERVAL; do
+    if [[ ! "${!setting}" =~ ^[0-9]+$ ]]; then
+        echo "healthcheck: $setting must be a non-negative integer." >&2
+        exit 2
+    fi
+done
+
 # ── 1. The unit is running ──────────────────────────────────────────────────
 if ! systemctl is-active --quiet "$SERVICE"; then
     note "$SERVICE is not active (state: $(systemctl is-active "$SERVICE" 2>&1 || true))."
@@ -108,9 +119,16 @@ fi
 # installed helper. Not an availability problem — the service keeps running —
 # but a change nobody recorded is how a live config silently stops matching the
 # repository it is supposed to mirror.
-if [[ -x "$CONFIG_MANIFEST_CHECK" ]]; then
-    if ! drift_output="$("$CONFIG_MANIFEST_CHECK" --verify 2>&1)"; then
-        note "host configuration drift: ${drift_output:0:400}"
+# Set HEALTHCHECK_CONFIG_MANIFEST= (empty) to opt out deliberately. A missing
+# helper at a configured path is reported rather than skipped: a drift check
+# that quietly stops running is indistinguishable from one that finds nothing.
+if [[ -n "$CONFIG_MANIFEST_CHECK" ]]; then
+    if [[ -x "$CONFIG_MANIFEST_CHECK" ]]; then
+        if ! drift_output="$("$CONFIG_MANIFEST_CHECK" --verify 2>&1)"; then
+            note "host configuration drift: ${drift_output:0:400}"
+        fi
+    else
+        note "configuration drift gate is missing or not executable at $CONFIG_MANIFEST_CHECK."
     fi
 fi
 
