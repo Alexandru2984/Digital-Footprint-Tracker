@@ -1015,7 +1015,16 @@
             if (!lastScanData) return;
             const results = lastScanData.results || [];
             const header = ['source', 'type', 'confidenceScore', 'rawData'];
-            const escape = v => '"' + String(v).replace(/"/g, '""') + '"';
+            // Findings carry text lifted from third-party pages — a title, a
+            // WHOIS record, a paste excerpt. RFC 4180 quoting makes that parse
+            // correctly but does nothing about formula injection: a spreadsheet
+            // evaluates a cell whose value begins with =, +, - or @ (and the
+            // whitespace variants), and the surrounding quotes are stripped
+            // before it looks. Prefixing an apostrophe is what marks the cell as
+            // literal text in Excel, LibreOffice and Sheets alike; it costs one
+            // visible character in the rare cell that needed it.
+            const neutralise = v => /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
+            const escape = v => '"' + neutralise(String(v ?? '')).replace(/"/g, '""') + '"';
             const rows = [header.join(',')].concat(
                 results.map(r => [r.source, r.type, r.confidenceScore, r.rawData].map(escape).join(','))
             );
@@ -1023,7 +1032,10 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'footprint-' + (lastScanData.input || lastScanData.scanID) + '.csv';
+            // Same allowlist discipline the server applies to Content-Disposition.
+            const safeName = String(lastScanData.input || lastScanData.scanID || 'scan')
+                .replace(/@/g, '_at_').replace(/[^A-Za-z0-9_-]/g, '');
+            a.download = 'footprint-' + safeName + '.csv';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -3662,7 +3674,13 @@
             valid.forEach(d => {
                 window.L.marker([d.lat, d.lon])
                     .addTo(leafletMapInstance)
-                    .bindPopup(`<b>${d.query}</b><br>${d.city || ''} ${d.regionName || ''}, ${d.country || ''}<br>ISP: ${d.isp || ''}`);
+                    // bindPopup takes an HTML string. These values come from the
+                    // offline GeoIP database rather than from a scanned page, so
+                    // this is not reachable today — but it is the one place in
+                    // this file where third-party text meets an HTML sink
+                    // unescaped, and createResultCard sets the standard three
+                    // thousand lines above: never innerHTML for API values.
+                    .bindPopup(`<b>${escapeHtml(d.query)}</b><br>${escapeHtml(d.city || '')} ${escapeHtml(d.regionName || '')}, ${escapeHtml(d.country || '')}<br>ISP: ${escapeHtml(d.isp || '')}`);
             });
             if (valid.length) {
                 const bounds = window.L.latLngBounds(valid.map(d => [d.lat, d.lon]));
