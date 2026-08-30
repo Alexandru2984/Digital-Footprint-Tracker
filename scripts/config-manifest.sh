@@ -154,11 +154,21 @@ for path in sorted(set(accepted) | set(live)):
         after = have["mode"] + " " + have["owner"]
         problems.append("permissions: " + path + " (" + before + " -> " + after + ")")
 
+# The release SHA is metadata, not a pinned entry: a deploy legitimately moves
+# the symlink without touching any host configuration, so a mismatch here is
+# worth saying out loud but is never drift.
+release_note = ""
+if accepted_release != live_release:
+    release_note = (
+        f" Baseline was accepted against release {accepted_release}; "
+        f"the deployed release is now {live_release}."
+    )
+
 if not problems:
-    print(f"config-manifest: {len(live)} pinned file(s) match the baseline (release {accepted_release}).")
+    print(f"config-manifest: {len(live)} pinned file(s) match the baseline.{release_note}")
     sys.exit(0)
 
-print(f"config-manifest: {len(problems)} configuration drift(s) against the baseline:", file=sys.stderr)
+print(f"config-manifest: {len(problems)} configuration drift(s) against the baseline.{release_note}", file=sys.stderr)
 for problem in problems:
     print(f"  - {problem}", file=sys.stderr)
 print("Review the change, then either revert it or re-run --accept to adopt it.", file=sys.stderr)
