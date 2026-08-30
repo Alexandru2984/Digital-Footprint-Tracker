@@ -4302,6 +4302,80 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    // MARK: - Pivot key coverage
+
+    /// Every metadata key a shipping plugin writes, straight from source —
+    /// covering both dictionary literals and `meta["key"] = …` assignment.
+    private func emittedMetadataKeys(file: StaticString = #filePath) throws -> Set<String> {
+        let pluginDirectory = URL(fileURLWithPath: String(describing: file))
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/App/Plugins")
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: pluginDirectory.path)
+            .filter { $0.hasSuffix(".swift") }
+        let subscriptPattern = try NSRegularExpression(
+            pattern: #"\b(?:meta|metadata)\[\s*"([A-Za-z][A-Za-z0-9_]*)"\s*\]\s*="#)
+        let literalPattern = try NSRegularExpression(
+            pattern: #"(?:metadata:|\[String\s*:\s*String\]\s*=)\s*\[([^\]]*)\]"#,
+            options: [.dotMatchesLineSeparators])
+        let keyPattern = try NSRegularExpression(pattern: #""([A-Za-z][A-Za-z0-9_]*)"\s*:"#)
+
+        var keys: Set<String> = []
+        for name in names {
+            let source = try String(contentsOf: pluginDirectory.appendingPathComponent(name), encoding: .utf8)
+            let full = NSRange(source.startIndex..., in: source)
+            for match in subscriptPattern.matches(in: source, range: full) {
+                if let r = Range(match.range(at: 1), in: source) { keys.insert(String(source[r])) }
+            }
+            for block in literalPattern.matches(in: source, range: full) {
+                guard let blockRange = Range(block.range(at: 1), in: source) else { continue }
+                let body = String(source[blockRange])
+                for match in keyPattern.matches(in: body, range: NSRange(body.startIndex..., in: body)) {
+                    if let r = Range(match.range(at: 1), in: body) { keys.insert(String(body[r])) }
+                }
+            }
+        }
+        return keys
+    }
+
+    func testEveryPivotKeyIsActuallyEmittedBySomePlugin() throws {
+        let emitted = try emittedMetadataKeys()
+        XCTAssertGreaterThan(emitted.count, 30, "the extraction should find the whole plugin corpus")
+
+        let dead = PivotExtractor.pivotKeysForTesting.subtracting(emitted).sorted()
+        XCTAssertTrue(dead.isEmpty, """
+            These pivot keys match no metadata any plugin emits, so the chain they             promise can never fire: \(dead.joined(separator: ", ")).
+            """)
+    }
+
+    func testADomainsResolvedAddressBecomesAPivotTarget() {
+        let dnsFinding = PluginResult(
+            source: "DomainDNS", type: "dns_a_record", confidenceScore: 1.0,
+            rawData: "A records for example.com: 93.184.216.34",
+            metadata: ["domain": "example.com", "ip": "93.184.216.34"])
+
+        let pivots = PivotExtractor.candidates(
+            from: [dnsFinding], alreadyScanned: ["example.com"])
+
+        XCTAssertEqual(pivots, ["93.184.216.34"],
+            "the address a scanned domain resolves to must reach the IP reputation plugins")
+    }
+
+    func testAnInternalAddressIsNeverPivotedOn() {
+        let findings = ["127.0.0.1", "10.1.2.3", "192.168.0.5", "169.254.169.254"].map {
+            PluginResult(source: "DomainDNS", type: "dns_a_record", confidenceScore: 1.0,
+                         rawData: "A records for internal.example: \($0)",
+                         metadata: ["domain": "internal.example", "ip": $0])
+        }
+
+        let pivots = PivotExtractor.candidates(from: findings, alreadyScanned: ["internal.example"])
+
+        XCTAssertTrue(pivots.isEmpty,
+            "a domain resolving inward must not seed a scan of private space — including the cloud metadata address")
+    }
+
     // MARK: - Risk scoring coverage
 
     /// Collects every `type: "…"` literal in the shipping plugins, straight from
@@ -5309,7 +5383,7 @@ final class AppTests: XCTestCase {
             // A weak (false-positive-prone) match must not seed a round-2 scan of
             // an unrelated identity.
             PluginResult(source: "SherlockSite", type: "account_presence", confidenceScore: 0.7,
-                         rawData: "x", metadata: ["github": "unrelated_user"]),
+                         rawData: "x", metadata: ["platform": "GitHub", "username": "unrelated_user"]),
             // A strong finding still pivots.
             PluginResult(source: "Keybase", type: "identity_proof", confidenceScore: 0.98,
                          rawData: "x", metadata: ["twitter": "confirmed_handle"]),
@@ -5324,7 +5398,7 @@ final class AppTests: XCTestCase {
         // hard identity link — must survive the cap.
         var results = (0..<6).map {
             PluginResult(source: "s", type: "account_presence", confidenceScore: 0.85,
-                         rawData: "x", metadata: ["github": "handle\($0)"])
+                         rawData: "x", metadata: ["platform": "GitHub", "username": "handle\($0)"])
         }
         results.append(PluginResult(source: "s", type: "email", confidenceScore: 0.9,
                                     rawData: "x", metadata: ["email": "anchor@example.test"]))

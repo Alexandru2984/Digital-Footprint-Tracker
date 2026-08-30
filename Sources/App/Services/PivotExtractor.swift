@@ -1,17 +1,32 @@
 import Foundation
 
 /// Mines first-round findings for *new* identifiers to scan in a second round —
-/// the transitive-enrichment pivot. A GitHub username yields a commit email; a
-/// Gravatar profile yields a linked Twitter handle; those become fresh scan
+/// the transitive-enrichment pivot. A GitHub profile yields an address harvested
+/// from public commit metadata; a Gravatar profile yields a linked Twitter
+/// handle; a domain yields the address it resolves to. Those become fresh scan
 /// targets. Bounded to one extra round and a small candidate cap so the chain
 /// can't explode.
 enum PivotExtractor {
 
     /// Structured-metadata keys whose values are themselves scannable identities.
+    ///
+    /// Every key here must actually be emitted by a plugin — a test walks the
+    /// plugin sources and fails otherwise. Seven platform-named keys (`github`,
+    /// `reddit`, `hackernews`, `mastodon`, `gitlab`, `steam`, `telegram`) used
+    /// to sit in this set and matched nothing at all: plugins record a platform
+    /// hit as `platform` + `username`, so that intent is already served by
+    /// `username`, and the extra keys only made the pivot look wider than it was.
+    ///
+    /// `ip` closes a real gap in the other direction. A scan of a domain resolves
+    /// its A records, but the address itself was never scanned, so the IP
+    /// reputation plugins — AbuseIPDB, VirusTotal, Shodan — never saw where the
+    /// domain actually points.
     private static let pivotKeys: Set<String> = [
-        "email", "username", "twitter", "github", "reddit",
-        "hackernews", "mastodon", "gitlab", "steam", "telegram"
+        "email", "username", "twitter", "ip"
     ]
+
+    /// Read-only view for the coverage test above; the set itself stays private.
+    static var pivotKeysForTesting: Set<String> { pivotKeys }
 
     /// Hard cap on second-round seeds.
     static let maxPivots = 5
@@ -37,6 +52,12 @@ enum PivotExtractor {
                 if value.hasPrefix("@") { value.removeFirst() }
                 guard value.count >= 3, value.count <= 254,
                       isScannable(value),
+                      // The same gate the front door applies. Transport-level
+                      // SSRF protection would already refuse to fetch a private
+                      // address, but a domain whose A record points inside would
+                      // still cost a whole pivot round to discover that, and put
+                      // internal addressing into the results on the way.
+                      !SSRFGuard.isInternalTarget(value),
                       seen.insert(value).inserted
                 else { continue }
                 // Emails are a far stronger identity anchor than a bare handle on
