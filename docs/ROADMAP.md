@@ -50,8 +50,12 @@ These are decisions, not gaps. They override the exit criteria they contradict.
   Docker (`cinetrack-monitoring`), and its Alertmanager delivers mail — but that
   stack cannot reach swift-vapor, which binds loopback-only by design. On-host
   probing now covers liveness and failure paging; metric history, trend alerting
-  and dashboards remain open, and closing that gap means deciding whether to
-  weaken the loopback binding or to proxy the endpoint to the container network.
+  and dashboards remain open. Closing that gap needs two things: a decision on
+  whether to weaken the loopback binding or proxy the endpoint to the container
+  network, and a `METRICS_TOKEN` credential — none is provisioned, so `/metrics`
+  currently falls back to admin-session authentication, which no scraper can
+  satisfy. Prepared rules already cover availability, backups and (since
+  2026-08-30) upstream provider circuit breakers.
 - **Origin closure.** Cloudflare AOP/mTLS is not configured, and the origin
   guard is evidenced on IPv4 only while nginx also listens on `[::]:443`.
 - **Configuration provenance.** No recorded checksum manifest binds the binary,

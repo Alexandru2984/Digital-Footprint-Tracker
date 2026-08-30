@@ -114,3 +114,36 @@ groups:
         annotations:
           summary: Swift Vapor exports are repeatedly failing
           description: More than two asynchronous exports failed in fifteen minutes; inspect bounded failure codes and worker health.
+
+  - name: swift-vapor-upstream-health
+    rules:
+      # Provider degradation is a warning, never a page: an OSINT source being
+      # down is not an outage of this service, and the scan engine already
+      # degrades gracefully by skipping the host. It is worth seeing on a
+      # dashboard because a source that stays open is one whose findings have
+      # silently stopped arriving.
+      - alert: SwiftVaporUpstreamCircuitsOpen
+        expr: swift_vapor_plugin_host_circuits_open > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor is skipping one or more OSINT providers
+          description: >-
+            At least one upstream host has had its circuit open for fifteen
+            minutes after repeated failures. Scans still complete, but that
+            source contributes nothing. Check the application log for the host
+            name, which is deliberately not a metric label.
+
+      - alert: SwiftVaporUpstreamCircuitsFlapping
+        expr: increase(swift_vapor_plugin_host_circuit_trips_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Swift Vapor upstream circuits are tripping repeatedly
+          description: >-
+            More than ten circuit trips in an hour suggests a provider is
+            rate-limiting us rather than failing outright, or that egress from
+            the host is degraded.
+
