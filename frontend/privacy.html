@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Notice — OSINT Footprint Tracker</title>
+    <meta name="description" content="How Digital Footprint Tracker handles personal data, for account holders and for people whose identifiers are scanned.">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="color-scheme" content="dark light">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/tailwind.css?v=3">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .prose h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.125rem; font-weight: 700; color: #fff; }
+        .prose h3 { margin-top: 1.25rem; margin-bottom: 0.5rem; font-weight: 700; color: #e2e8f0; }
+        .prose p, .prose li { color: #cbd5e1; line-height: 1.7; }
+        .prose p { margin-bottom: 0.75rem; }
+        .prose ul { margin: 0 0 0.75rem 1.25rem; list-style: disc; }
+        .prose li { margin-bottom: 0.35rem; }
+        .prose code { color: #34d399; font-size: 0.875em; }
+        .prose a { color: #34d399; text-decoration: underline; }
+    </style>
+</head>
+<body class="font-mono min-h-screen">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <main id="main-content" tabindex="-1" class="max-w-3xl mx-auto px-4 py-10 sm:py-14">
+        <nav class="mb-8 text-sm"><a href="/" class="text-brand-500 hover:underline">&larr; Back to the scanner</a></nav>
+
+        <h1 class="text-2xl sm:text-3xl font-bold text-white mb-2">Privacy Notice</h1>
+        <p class="text-slate-400 text-sm mb-8">Last updated: 30 August 2026</p>
+
+        <div class="prose text-sm">
+            <p>This notice explains what personal data this service handles and why. It
+            covers <strong class="text-white">two different groups of people</strong>, because an OSINT tool
+            necessarily processes information about people who never signed up for it:</p>
+            <ul>
+                <li><strong class="text-white">Account holders and visitors</strong> — people who use the scanner.</li>
+                <li><strong class="text-white">Scan subjects</strong> — people whose email address, username, domain,
+                    IP address or phone number is submitted as a scan target by someone else.</li>
+            </ul>
+
+            <h2>1. Who is responsible</h2>
+            <p>The controller for this service is <code>[[OPERATOR LEGAL NAME]]</code>,
+            <code>[[POSTAL ADDRESS]]</code>. Privacy enquiries and data-subject requests:
+            <code>[[PRIVACY CONTACT EMAIL]]</code>.</p>
+
+            <h2>2. What the service does</h2>
+            <p>You submit one identifier. The service queries public sources and third-party
+            APIs for traces of that identifier, then stores the findings so you can review,
+            export and monitor them. It does not attempt to access private accounts, bypass
+            authentication, or retrieve anything that is not already publicly reachable.</p>
+
+            <h2>3. Data about account holders and visitors</h2>
+            <ul>
+                <li><strong class="text-white">Account data:</strong> username, email address, a hashed password
+                    (never the password itself), and — if you enable it — two-factor
+                    authentication secrets and notification destinations (webhook, Discord,
+                    Slack or Telegram).</li>
+                <li><strong class="text-white">Usage data:</strong> your scans, their results, saved investigations,
+                    tags and exports.</li>
+                <li><strong class="text-white">Technical logs:</strong> an audit trail of security-relevant actions.
+                    IP addresses are truncated to a network prefix (/24 for IPv4, /48 for
+                    IPv6) before being recorded, and the truncated value is stored
+                    encrypted. Application logs record a coarse target kind such as
+                    &ldquo;email&rdquo; or &ldquo;non_email&rdquo;, never the target itself.</li>
+            </ul>
+            <p>Scanning is available without an account. Anonymous scans are not linked to an
+            identity, and are deleted automatically after 30 days.</p>
+
+            <h2>4. Data about scan subjects</h2>
+            <p>When someone scans an identifier, this service stores that identifier and the
+            findings returned for it. If the identifier belongs to a person, that is personal
+            data about them, processed without their involvement.</p>
+            <p>Safeguards applied to it:</p>
+            <ul>
+                <li>Scan inputs, results, result metadata and exports are encrypted at rest
+                    with AES-256-GCM using per-field key separation.</li>
+                <li>Findings are visible only to the account that ran the scan (or, for an
+                    anonymous scan, to whoever holds the scan link) — never publicly listed
+                    or indexed.</li>
+                <li>Retention is bounded by default (see section 7).</li>
+                <li>The service records only what the queried sources already publish; it
+                    adds no inference about health, beliefs, sexuality, or any other special
+                    category of data.</li>
+            </ul>
+            <p><strong class="text-white">If you are the subject of a scan</strong> and want to know whether your
+            data is held here, or want it erased, write to the privacy contact in section 1.
+            See section 8 for what we can and cannot do.</p>
+
+            <h2>5. Legal basis</h2>
+            <ul>
+                <li><strong class="text-white">Account data and delivering the service:</strong> performance of a
+                    contract (GDPR Art. 6(1)(b)).</li>
+                <li><strong class="text-white">Scan subject data:</strong> legitimate interests (Art. 6(1)(f)) in
+                    letting people assess exposure of identifiers they own or are authorised
+                    to assess, and in security research. This basis is only valid where the
+                    person running the scan has a lawful reason to do so — which is why the
+                    <a href="/acceptable-use.html">Acceptable Use Policy</a> makes that their
+                    responsibility and a condition of using the service.</li>
+                <li><strong class="text-white">Security logging and abuse prevention:</strong> legitimate interests
+                    (Art. 6(1)(f)).</li>
+            </ul>
+
+            <h2>6. Who the data is shared with</h2>
+            <p>To answer a scan, the submitted identifier is sent to the public sources
+            relevant to its type. These are independent controllers with their own privacy
+            policies. Depending on the identifier, they may include:</p>
+            <ul>
+                <li><strong class="text-white">Breach and reputation:</strong> Have I Been Pwned, VirusTotal,
+                    AbuseIPDB, Shodan / InternetDB.</li>
+                <li><strong class="text-white">Account presence:</strong> GitHub, GitLab, Reddit, Keybase, Mastodon,
+                    Telegram, Steam, npm, PyPI, Hacker News, Gravatar, X/Twitter, Pastebin,
+                    and the public platform list used by the bulk username sweep.</li>
+                <li><strong class="text-white">Infrastructure:</strong> crt.sh, RDAP/WHOIS, the Wayback Machine,
+                    HackerTarget passive DNS, and public DNS-over-HTTPS resolvers.</li>
+                <li><strong class="text-white">Phone validation:</strong> AbstractAPI (only for phone-shaped input,
+                    and only if the operator has configured a key).</li>
+            </ul>
+            <p>Several of these are outside the EU/EEA, so a scan may involve an international
+            transfer. Sending an identifier to them is inherent to what a scan is.</p>
+            <p>Separately, the service uses <strong class="text-white">Resend</strong> to send transactional and
+            alert email, and <strong class="text-white">Cloudflare</strong> as a CDN and protective proxy in front of
+            the site. IP geolocation is resolved locally from an offline database, so scanned
+            IP addresses are not sent to a geolocation provider.</p>
+            <p>Data is not sold, and not used for advertising or profiling.</p>
+
+            <h2>7. How long it is kept</h2>
+            <ul>
+                <li><strong class="text-white">Anonymous scans:</strong> deleted automatically 30 days after
+                    creation.</li>
+                <li><strong class="text-white">Account scans:</strong> deleted automatically according to the
+                    retention period set on your account — 30 days by default. You may
+                    shorten it, or set &ldquo;never&rdquo;, in which case your scans persist until you
+                    delete them or your account.</li>
+                <li><strong class="text-white">Account data:</strong> kept while the account exists.</li>
+                <li><strong class="text-white">Audit records:</strong> retained for security accountability in a
+                    tamper-evident, append-only ledger. Because that ledger is
+                    integrity-chained, entries are redacted rather than removed.</li>
+                <li><strong class="text-white">Backups:</strong> encrypted daily snapshots are retained on a rolling
+                    basis, so deleted data may persist in a backup for a short period before
+                    ageing out.</li>
+            </ul>
+
+            <h2>8. Your rights</h2>
+            <p>Under the GDPR you may request access, rectification, erasure, restriction,
+            portability, and object to processing based on legitimate interests.</p>
+            <ul>
+                <li><strong class="text-white">If you have an account:</strong> you can export your data and delete
+                    your account yourself from account settings. Deleting the account removes
+                    your scans, results and saved investigations.</li>
+                <li><strong class="text-white">If you are a scan subject:</strong> write to the privacy contact.
+                    Please include the identifier concerned. Note the limits honestly: this
+                    service holds a copy of findings, it is not the source. Erasing a record
+                    here does not remove anything from GitHub, Have I Been Pwned, the Wayback
+                    Machine or any other original source — those requests have to go to them.</li>
+            </ul>
+            <p>You also have the right to complain to a supervisory authority. In Romania that
+            is the <a href="https://www.dataprotection.ro/" rel="noopener noreferrer">National
+            Supervisory Authority for Personal Data Processing (ANSPDCP)</a>.</p>
+
+            <h2>9. Security</h2>
+            <p>Sensitive fields are encrypted at rest with AES-256-GCM under separated,
+            versioned keys. Traffic is served over TLS. The application runs as a dedicated
+            unprivileged system identity from an immutable, commit-pinned release, with its
+            secrets supplied as encrypted systemd credentials rather than environment
+            variables. Backups are encrypted and their restorability is rehearsed. Security
+            events are written to a signed, append-only ledger.</p>
+            <p>No system is immune. If you find a vulnerability, see
+            <a href="/.well-known/security.txt">security.txt</a>.</p>
+
+            <h2>10. Changes</h2>
+            <p>Material changes to this notice will be reflected in the date at the top of the
+            page.</p>
+        </div>
+
+        <footer class="mt-12 pt-6 border-t border-dark-700 text-xs text-slate-500">
+            <a href="/terms.html" class="text-brand-500 hover:underline">Terms of Service</a>
+            &middot;
+            <a href="/acceptable-use.html" class="text-brand-500 hover:underline">Acceptable Use</a>
+            &middot;
+            <a href="/.well-known/security.txt" class="text-brand-500 hover:underline">Security</a>
+        </footer>
+    </main>
+</body>
+</html>

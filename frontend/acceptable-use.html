@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceptable Use — OSINT Footprint Tracker</title>
+    <meta name="description" content="What you may and may not scan with Digital Footprint Tracker, and how to report abuse.">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="color-scheme" content="dark light">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/tailwind.css?v=3">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .prose h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.125rem; font-weight: 700; color: #fff; }
+        .prose p, .prose li { color: #cbd5e1; line-height: 1.7; }
+        .prose p { margin-bottom: 0.75rem; }
+        .prose ul { margin: 0 0 0.75rem 1.25rem; list-style: disc; }
+        .prose li { margin-bottom: 0.35rem; }
+        .prose code { color: #34d399; font-size: 0.875em; }
+        .prose a { color: #34d399; text-decoration: underline; }
+    </style>
+</head>
+<body class="font-mono min-h-screen">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <main id="main-content" tabindex="-1" class="max-w-3xl mx-auto px-4 py-10 sm:py-14">
+        <nav class="mb-8 text-sm"><a href="/" class="text-brand-500 hover:underline">&larr; Back to the scanner</a></nav>
+
+        <h1 class="text-2xl sm:text-3xl font-bold text-white mb-2">Acceptable Use Policy</h1>
+        <p class="text-slate-400 text-sm mb-8">Last updated: 30 August 2026</p>
+
+        <div class="prose text-sm">
+            <p>This tool aggregates public traces of an identifier. That is useful for
+            understanding your own exposure, and it is equally useful for stalking someone.
+            The difference is not in the tool — it is in who you point it at and why. This
+            policy is the line, and accepting it is a condition of using the service.</p>
+
+            <h2>1. The rule</h2>
+            <p><strong class="text-white">Scan only identifiers you own, or that you are lawfully authorised
+            to assess.</strong> If you cannot explain, to a regulator, why you had a lawful basis
+            to look up a particular person, do not run the scan.</p>
+
+            <h2>2. Permitted</h2>
+            <ul>
+                <li>Your own email addresses, usernames, phone numbers, domains and IP
+                    addresses.</li>
+                <li>Identifiers belonging to an organisation you work for or act for, where
+                    you are authorised to assess its exposure.</li>
+                <li>Domains and infrastructure you administer, or are engaged to test under a
+                    written authorisation.</li>
+                <li>Security research and incident response conducted within the law and, for
+                    personal data, on a valid legal basis.</li>
+            </ul>
+
+            <h2>3. Prohibited</h2>
+            <p>You must not use this service to:</p>
+            <ul>
+                <li>Stalk, harass, intimidate, threaten or surveil any person.</li>
+                <li>Compile or publish a dossier on a private individual (&ldquo;doxxing&rdquo;), or
+                    expose someone's identity, location, employer or associations against
+                    their interests.</li>
+                <li>Target a person you have no lawful basis to investigate — including
+                    ex-partners, family members, neighbours, colleagues, journalists,
+                    activists, or anyone who has asked to be left alone.</li>
+                <li>Support discrimination, or make decisions about employment, credit,
+                    housing, insurance or immigration on the basis of findings here.</li>
+                <li>Enable credential stuffing, account takeover, phishing, social
+                    engineering, or any attempt to access an account or system.</li>
+                <li>Circumvent rate limits, quotas or authentication — including by scripting
+                    the anonymous endpoint or spreading load across accounts or addresses.</li>
+                <li>Bulk-enumerate identifiers to build a mailing, marketing or resale list.</li>
+                <li>Resell, sublicense or redistribute results as a commercial data product.</li>
+                <li>Breach the terms of any upstream source the service queries, or the law of
+                    any jurisdiction that applies to you or to your target.</li>
+            </ul>
+
+            <h2>4. Results are evidence of a trace, not of a person</h2>
+            <p>A finding means an identifier matched something a public source published. It
+            does not prove that a particular human being controls that account, and the
+            service says so explicitly: derived and inferred findings carry a reduced
+            confidence score and a provenance marker. Treat confidence scores as a starting
+            point for verification, never as a conclusion — and never act against a person on
+            an unverified match.</p>
+            <p>Upstream sources can be stale, wrong, or deliberately poisoned. The service
+            reports what they said, at the time they said it.</p>
+
+            <h2>5. Third-party terms</h2>
+            <p>Findings come from independent providers, each with its own terms and
+            licensing. Where a provider restricts redistribution or commercial use, those
+            restrictions travel with the data you receive here.</p>
+
+            <h2>6. Enforcement</h2>
+            <p>The service applies rate limits to every caller, and reserves heavy,
+            high-fan-out scanning for verified accounts. Where a violation of this policy is
+            identified, the operator may throttle or suspend the account, delete the
+            offending scans, and, where legally required, preserve records and notify the
+            relevant authority.</p>
+
+            <h2>7. Reporting abuse</h2>
+            <p>To report misuse of this service, or to ask that data about you be removed,
+            write to <code>[[ABUSE CONTACT EMAIL]]</code>. Include the identifier or scan
+            concerned. Reports are acknowledged within
+            <code>[[RESPONSE TARGET, e.g. 5 working days]]</code>.</p>
+            <p>Security vulnerabilities go to the contact in
+            <a href="/.well-known/security.txt">security.txt</a> instead.</p>
+        </div>
+
+        <footer class="mt-12 pt-6 border-t border-dark-700 text-xs text-slate-500">
+            <a href="/privacy.html" class="text-brand-500 hover:underline">Privacy Notice</a>
+            &middot;
+            <a href="/terms.html" class="text-brand-500 hover:underline">Terms of Service</a>
+            &middot;
+            <a href="/.well-known/security.txt" class="text-brand-500 hover:underline">Security</a>
+        </footer>
+    </main>
+</body>
+</html>
