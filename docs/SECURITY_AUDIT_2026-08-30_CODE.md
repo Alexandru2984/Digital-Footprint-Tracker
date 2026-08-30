@@ -5,10 +5,15 @@ subprocess, and the browser frontend. Earlier audits in this directory assessed
 production posture and rollout; this one reads the code. Every finding below was
 traced to a concrete path, not inferred from a pattern match.
 
-The first pass covered Swift and Python only and was published as complete. It
-was not: the frontend renders findings — text lifted from third-party pages —
-into the DOM and into a client-generated file, which is where this class of bug
-actually lives. F7 and F8 come from closing that gap.
+This audit was published as complete twice before it was. The first pass covered
+Swift and Python only; the frontend renders findings — text lifted from
+third-party pages — into the DOM and into a client-generated file, which is
+where this class of bug actually lives, and F7 and F8 came from closing that
+gap. The second pass still omitted the shell: two dozen scripts, several of
+which run as root, hold credentials, or rewrite the web server's configuration.
+F9 to F14 come from closing that one. Both omissions are recorded rather than quietly
+patched, because "audited" is a claim about coverage and a reader cannot check
+coverage they were not told about.
 
 ## Findings
 
@@ -157,6 +162,129 @@ thousand lines earlier, in a template of empty placeholders filled by
 **Fixed.** The five interpolations are escaped, which also removes any need to
 reason about the hygiene of a vendor data file.
 
+### F9 — Medium: the gate did not cover the scripts most worth gating
+
+`.github/workflows/ci.yml` ran `bash -n`, `shellcheck` and the shell test suite
+against a bash array pasted into the workflow. Three scripts added after that
+array was last edited were absent from it: `alert-notify.sh`, `healthcheck.sh`
+and `config-manifest.sh`. All three run as root; the first reads the alert
+relay's API key and builds an HTTP request from a failed unit's journal. Nothing
+reported the gap — an unlisted script simply was not checked, and the job still
+passed green.
+
+The test list had the same shape and the same defect in waiting: a new
+`scripts/tests/*.test.sh` would not have run.
+
+This is the fifth instance of one pattern in this codebase — a hand-maintained
+list drifting from the reality it describes (see also the risk-scorer type
+table, the pivot-key set, the plugin TTL map and the admin route surface).
+
+**Fixed** (`a2e17ad`). `scripts/lint-scripts.sh` derives its own inputs: every
+file in Git's view of the tree — tracked, plus untracked and not ignored, so a
+script is covered before it is ever committed — whose first line is a shell or
+Python shebang. That is what makes the extensionless `ops/libexec/update-swift-csp`
+appear on its own. Discovery found 29 scripts against the array's 25.
+
+`self-test` is the control, and it is not decorative: five deliberately broken
+fixtures (a parse error, a shellcheck-only finding, an extensionless script, a
+Python syntax error, and a discovery check) plus one clean fixture that must
+pass, so a gate that silently stopped inspecting anything fails loudly. The
+first thing the new gate did was reject its own source for two shellcheck
+findings.
+
+### F10 — Low: the database password was reachable through `/proc`
+
+`backup.sh` invoked the dump as `env -i PATH=… PGPASSWORD="$DATABASE_PASSWORD"
+pg_dump …`. The rest of that line is careful — `env -i` deliberately drops
+inherited libpq configuration so nothing can redirect the dump — but the
+password is an *argument to `env`*, and `/proc/<pid>/cmdline` is world-readable.
+Between `env` starting and `env` exec'ing `pg_dump`, any local account can read
+the credential. The window is short and the attacker must already be running
+code on the box; the host is shared with other services, and the backup runs on
+a predictable timer.
+
+**Fixed** (`1f67207`). libpq now reads a passfile: mode 0600 inside a 0700
+private directory created per run, removed on exit and on the success path.
+Host and port are wildcards because `DATABASE_HOST` is already restricted to
+approved local endpoints, which keeps one line correct for both TCP and socket
+connections. Only the password can contain the separators the format reserves,
+so only it is escaped — backslashes before colons, since the other order
+double-escapes.
+
+The contract test asserts `PGPASSWORD` is *unset* in the dump's environment,
+that the passfile and its directory carry the right modes, and that a password
+containing both reserved characters survives escaping intact; removing the colon
+escaping makes it fail. Because a mocked `pg_dump` never exercises libpq, the
+change was also run end to end against the production database: dump, encrypt,
+decrypt, gzip verification, rotation, 31,627 encrypted bytes.
+
+### F11 — Low: the alert body was passed through `curl`'s argv
+
+`alert-notify.sh` built its JSON carefully — `json.dumps`, so no log line can
+break out of the string it belongs in — and then handed it to `curl` as
+`--data "$payload"`. The API key was already kept out of argv via a header
+file; the body was not. It carries the failed unit's `systemctl status` and
+journal tail, and unlike F10 the exposure lasts the whole request: up to twenty
+seconds, times three attempts.
+
+**Fixed** (`47b3e4a`). The payload is written to a file and sent with
+`--data-binary @file`, which also preserves the bytes exactly rather than
+stripping newlines the way `--data` does. Verified by delivering a real alert
+through the systemd path.
+
+### F12 — Informational: unvalidated numbers reaching bash arithmetic
+
+`alert-notify.sh` validated `ALERT_MIN_INTERVAL_SECONDS` but not
+`ALERT_LOG_LINES` or `ALERT_MAX_BODY_BYTES`; `healthcheck.sh` validated none of
+its three thresholds. Each lands in `(( … ))`, where bash evaluates its operand
+as an arithmetic *expression* — an array subscript there is a command
+substitution, so an unvalidated value is code execution rather than a wrong
+number.
+
+Not reachable today: every one of these comes from a root-owned unit file or
+environment file, and an attacker who can write those already has root. It is
+listed because that reasoning is the only thing making it safe, and it is
+invisible at the point of use.
+
+**Fixed** (`47b3e4a`). Both scripts reject a non-integer before the first
+arithmetic context.
+
+### F13 — Informational: the drift gate could disappear silently
+
+`healthcheck.sh` ran the configuration-drift check only `if [[ -x … ]]`. Deleting
+or chmod-ing `config-manifest.sh` would therefore have turned drift detection
+off with no signal — a probe reporting "all checks passed" while silently
+checking one thing fewer. Its sibling backup gate already reported a missing
+helper as a problem.
+
+**Fixed** (`47b3e4a`). A configured-but-missing helper is now a reported
+problem; opting out requires setting `HEALTHCHECK_CONFIG_MANIFEST=` explicitly.
+
+### F14 — Informational: a second, hand-frozen Cloudflare trust list — open
+
+Outside this repository, but found while auditing what writes to nginx and
+worth writing down. `update-cloudflare-ips.sh` regenerates
+`conf.d/cloudflare-origin-guard.conf` from Cloudflare's published ranges and
+defines `$from_cloudflare_origin`, which every swift-vapor vhost gates on. The
+host also carries `conf.d/cloudflare-geo.conf`, a hand-written copy of the same
+data defining `$cf_edge`, last touched 2026-08-16, regenerated by nothing and
+verified by nothing. `config-manifest.sh` deliberately excludes
+`cloudflare-*.conf`, so it does not pin that file either.
+
+Exactly one vhost still reads it — `video.micutu.com`, another project on the
+shared box. The two lists agree today. They will not agree forever: when
+Cloudflare releases a range and it is reassigned, the frozen copy keeps trusting
+it, and that vhost's origin guard starts admitting whoever holds it.
+
+**Open, and deliberately not fixed here.** The change is one line in another
+project's vhost (`$cf_edge` → `$from_cloudflare_origin`) plus deleting the stale
+file, and that is the operator's call, not this repository's.
+
+While checking this, `update-cloudflare-ips.sh --check` was found reporting the
+live real-IP snippet as stale. The ranges were identical; only a comment line
+differed from the current generator. Refreshed, so the check is green again — a
+gate that is permanently red is a gate nobody reads.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
@@ -195,6 +323,27 @@ and found sound:
 - **Boot gates.** Production refuses to start without a valid encryption key or
   audit signing key, and bounds notification, export and dark-web configuration
   at startup rather than trusting them at use.
+- **Shell scripts.** No `eval`, no `source` of a variable path, no shell string
+  built from remote data. Every temporary file comes from `mktemp` — never a
+  predictable `/tmp` name — and the privileged writers place their temporary
+  file in the *destination* directory so the publish is a rename within one
+  filesystem rather than a copy across a window. Retention parses generated UTC
+  names instead of `ls`, and never accepts a caller-supplied removal target.
+- **Downloads.** The VoidAccess installer pins `--proto '=https'` and
+  `--proto-redir '=https'`, checks SHA-256 on both the archive and the model
+  wheel, and installs Python dependencies with `--require-hashes`. The Cloudflare
+  fetch now pins the same way (`47b3e4a`), and its response is parsed
+  through `ipaddress` with a plausibility floor before a single byte reaches an
+  nginx trust list.
+- **The privilege boundary.** `update-swift-csp` is the only thing the deploy
+  account may run as root beyond two fixed `systemctl` verbs. It accepts nothing
+  but syntactically valid SHA-256 source hashes, holds every path and directive
+  itself, verifies its own output before installing it, and rolls the previous
+  snippet back if `nginx -t` or the reload fails.
+- **Secrets in scripts.** After F10 and F11, no script places a credential in
+  argv. `restore-drill.sh` passes `--passphrase-file`; `backup.sh` reads private
+  scalars from files, rejects inline passwords outright, and refuses a
+  world-readable credential file.
 - **Frontend DOM sinks.** 71 `innerHTML` uses across three non-vendored files,
   against 177 uses of `textContent`. The result renderer is a static template of
   empty placeholders filled by `textContent`, deliberately and with a comment.
