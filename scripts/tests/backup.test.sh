@@ -5,7 +5,16 @@ set -euo pipefail
 # The test installs a copy of itself under this name so backup.sh can execute a
 # deterministic pg_dump replacement without weakening the production command.
 if [[ "$(basename -- "$0")" == "mock-pg-dump" ]]; then
-    [[ -n "${PGPASSWORD:-}" ]]
+    # The credential must never be reachable through argv, so it must arrive as
+    # a private passfile and PGPASSWORD must be gone entirely: `env -i
+    # PGPASSWORD=secret` would publish the password in env's own command line.
+    [[ -z "${PGPASSWORD+x}" ]]
+    [[ -n "${PGPASSFILE:-}" ]]
+    [[ "$(stat -c '%a' "$PGPASSFILE")" == "600" ]]
+    [[ "$(stat -c '%a' "$(dirname -- "$PGPASSFILE")")" == "700" ]]
+    # env -i means expectations cannot be passed in; report the observed line
+    # back through a path derived from $0 and let the harness assert on it.
+    cp -- "$PGPASSFILE" "$(dirname -- "$0")/observed-pgpass"
     [[ "${PGCONNECT_TIMEOUT:-}" == "10" ]]
     [[ -z "${HOME+x}" ]]
     expected=(
@@ -61,6 +70,7 @@ run_backup() {
 }
 
 run_backup >/dev/null
+[[ "$(cat "$TMP/observed-pgpass")" == "*:*:footprint_test:footprint_test:dddddddddddddddddddddddd" ]]
 mapfile -t artifacts < <(find "$OUTPUT" -maxdepth 1 -type f -name 'footprint-*.sql.gz.gpg' -print)
 [[ "${#artifacts[@]}" -eq 1 ]]
 [[ "$(stat -c '%a' "${artifacts[0]}")" == "600" ]]
@@ -95,5 +105,16 @@ chmod 0600 "$DATABASE_SECRET"
 sleep 1
 run_backup >/dev/null
 [[ "$(find "$OUTPUT" -maxdepth 1 -type f -name 'footprint-*.sql.gz.gpg' | wc -l)" -eq 1 ]]
+
+# A password containing the characters .pgpass reserves must reach libpq
+# intact: an unescaped colon would silently shift every field and libpq would
+# then look up a password that does not exist. Backslash first, then colon —
+# the reverse order would double-escape the escapes.
+printf '%s' 'pa:ss\\word:x' > "$DATABASE_SECRET"
+printf '\n' >> "$DATABASE_SECRET"
+chmod 0600 "$DATABASE_SECRET"
+sleep 1
+run_backup >/dev/null
+[[ "$(cat "$TMP/observed-pgpass")" == '*:*:footprint_test:footprint_test:pa\:ss\\\\word\:x' ]]
 
 echo "encrypted backup contract tests passed"

@@ -113,6 +113,7 @@ OUT="$BACKUP_DIR/footprint-${STAMP}.sql.gz.gpg"
 [[ ! -e "$OUT" && ! -L "$OUT" ]] || die "refusing to overwrite an existing generation."
 TMP="$(mktemp --tmpdir="$BACKUP_DIR" ".footprint-${STAMP}.partial.XXXXXX")"
 GNUPGHOME="$(mktemp -d "${TMPDIR:-/tmp}/swift-vapor-backup.XXXXXX")"
+PRIVATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swift-vapor-backup.XXXXXX")"
 cleanup() {
     if [[ -n "${TMP:-}" && "$TMP" == "$BACKUP_DIR"/.footprint-*.partial.* ]]; then
         rm -f -- "$TMP"
@@ -120,14 +121,36 @@ cleanup() {
     if [[ -n "${GNUPGHOME:-}" && "$GNUPGHOME" == "${TMPDIR:-/tmp}"/swift-vapor-backup.* ]]; then
         rm -rf -- "$GNUPGHOME"
     fi
+    if [[ -n "${PRIVATE_DIR:-}" && "$PRIVATE_DIR" == "${TMPDIR:-/tmp}"/swift-vapor-backup.* ]]; then
+        rm -rf -- "$PRIVATE_DIR"
+    fi
 }
 trap cleanup EXIT
 
 echo "backup: dumping ${DATABASE_NAME}@${DATABASE_HOST}:${DATABASE_PORT}"
 
+# The password reaches libpq through a private passfile, not through PGPASSWORD.
+# `env -i ... PGPASSWORD=secret` puts the credential in *env's own argv*, and
+# /proc/<pid>/cmdline is world-readable: on a host shared with other service
+# accounts, anything sampling /proc during env's fork-to-exec window reads the
+# database password. A passfile path in argv discloses nothing.
+#
+# Host and port are wildcards because DATABASE_HOST is already restricted to
+# approved local endpoints above; that keeps one line correct for both TCP and
+# Unix-socket connections without re-deriving libpq's matching rules. Only the
+# password can contain the characters the format reserves — the database and
+# user names are pattern-validated above — so only it needs escaping.
+PGPASS_FILE="$PRIVATE_DIR/pgpass"
+pgpass_password="${DATABASE_PASSWORD//\\/\\\\}"
+pgpass_password="${pgpass_password//:/\\:}"
+( umask 077; printf '*:*:%s:%s:%s\n' \
+    "$DATABASE_NAME" "$DATABASE_USERNAME" "$pgpass_password" > "$PGPASS_FILE" )
+pgpass_password=""
+[[ "$(stat -c '%a' "$PGPASS_FILE")" == "600" ]] || die "passfile permissions are unsafe."
+
 # `env -i` prevents libpq configuration inherited from an operator session or
 # service manager from redirecting the dump. Pipefail propagates every stage.
-env -i PATH="$PATH" LC_ALL=C PGPASSWORD="$DATABASE_PASSWORD" PGCONNECT_TIMEOUT=10 \
+env -i PATH="$PATH" LC_ALL=C PGPASSFILE="$PGPASS_FILE" PGCONNECT_TIMEOUT=10 \
     "$PG_DUMP_PATH" \
     --host="$DATABASE_HOST" \
     --port="$DATABASE_PORT" \
@@ -143,6 +166,7 @@ env -i PATH="$PATH" LC_ALL=C PGPASSWORD="$DATABASE_PASSWORD" PGCONNECT_TIMEOUT=1
         --s2k-mode 3 --s2k-digest-algo SHA512 --compress-algo none \
         --output "$TMP"
 DATABASE_PASSWORD=""
+rm -f -- "$PGPASS_FILE"
 
 # Authenticated decryption and gzip verification must pass before publication.
 gpg --homedir "$GNUPGHOME" --no-options --batch --yes \
