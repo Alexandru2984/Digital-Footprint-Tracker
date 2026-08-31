@@ -17,7 +17,12 @@ struct HealthController: RouteCollection {
         // listener by deploy/container gates. nginx explicitly does not publish
         // this path, and the handler independently rejects non-loopback peers.
         routes.get("ready", use: readiness)
-        routes.get("metrics", use: metrics)
+        // Authenticated (bearer token or admin session), but a call runs more
+        // than a dozen COUNT(*) queries, and the loopback listener is reachable
+        // directly by anything on the host — where nginx's limit does not apply.
+        // Generous next to a 15-second scrape, bounded next to a loop.
+        routes.grouped(ScanRateLimiter(anonMax: 30, authedMax: 60, windowSeconds: 60))
+            .get("metrics", use: metrics)
         // Registered at /geolocate (not /api/geolocate) — nginx strips the /api/
         // prefix when forwarding, so the public URL remains /api/geolocate.
         // Rate-limited even though it's now fully offline (bounded CPU per call).

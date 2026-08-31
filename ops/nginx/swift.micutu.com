@@ -6,17 +6,26 @@ server {
     include snippets/block-dotfiles.conf;
     server_name swift.micutu.com;
 
-    # The public TLS origin is Cloudflare-only. The geo map uses the original
-    # TCP peer, not the visitor address restored by cloudflare-realip.conf.
-    # A direct request with forged forwarding headers therefore still gets 403.
-    if ($from_cloudflare_origin = 0) { return 403; }
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+    include snippets/cloudflare-realip.conf;
+
+    # Reject direct-to-origin TLS traffic. $realip_remote_addr retains the
+    # original TCP peer before the trusted Cloudflare real-IP rewrite.
+    set $swift_origin_allowed $from_cloudflare_origin;
+    if ($swift_origin_allowed = 0) {
+        return 403;
+    }
 
     # ── Security headers ──────────────────────────────────────────────────────
     add_header X-Frame-Options           "DENY" always;
     add_header X-Content-Type-Options    "nosniff" always;
     add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy        "camera=(), microphone=(), geolocation=()" always;
-    add_header X-Robots-Tag              "noindex, nofollow" always;
+    add_header X-Robots-Tag              "index, follow" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
     include snippets/swift-csp.conf;
     add_header Onion-Location "http://5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion$request_uri" always;
@@ -84,7 +93,13 @@ server {
     }
 
     # ── Health & Metrics (direct, no /api/ prefix) ─────────────────────────
+    # These two were the only proxied locations without a limit_req. Liveness is
+    # cheap but unauthenticated; /metrics is authenticated (bearer token or admin
+    # session) and runs more than a dozen COUNT(*) queries per call, so neither
+    # should be the one door in this file without a bound on it.
     location /health {
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
         proxy_pass        http://127.0.0.1:8085/health;
         proxy_http_version 1.1;
         proxy_set_header  Host              $host;
@@ -100,6 +115,8 @@ server {
     location = /api/ready { return 404; }
 
     location /metrics {
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
         proxy_pass        http://127.0.0.1:8085/metrics;
         proxy_http_version 1.1;
         proxy_set_header  Host              $host;
@@ -132,10 +149,16 @@ server {
 
 server {
     include snippets/block-dotfiles.conf;
-    if ($host = swift.micutu.com) {
+    location / {
         return 301 https://$host$request_uri;
     }
     listen      80;
     server_name swift.micutu.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
     return      404;
 }
