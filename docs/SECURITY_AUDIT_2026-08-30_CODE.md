@@ -324,6 +324,52 @@ scan ID: the limiter runs before the handler, so a `404` still spends the
 budget, which makes the probe cheap and aims it at the middleware rather than
 the route. Removing any one limiter fails it.
 
+### F16 — Medium: a second copy of the live secrets, invisible to every gate
+
+`/home/micu/swift+vapor/.env.bak-mailcow-20260816T221809Z` is a snapshot of this
+project's own environment file, taken during the 2026-08-16 mail migration and
+never removed. Compared key by key against the current `.env` (values hashed,
+never printed), it still holds the **live** `ENCRYPTION_KEY`,
+`DATABASE_PASSWORD`, `ADMIN_PASSWORD` and the Shodan, VirusTotal, AbuseIPDB and
+Abstract API keys. Only `SMTP_PASS` has since been rotated.
+
+`ENCRYPTION_KEY` is the one that matters: it decrypts every stored scan input,
+result and audit record.
+
+Production itself is clean, and worth stating: `/etc/swift-vapor/app.env` is
+world-readable and contains *no* secret at all — every one arrives through
+`LoadCredentialEncrypted=`, and the preflight already asserts that. The exposure
+is entirely in the developer working tree, mode 0600 and owned by an account
+that already holds unrestricted sudo, so this is not a privilege boundary
+anybody crosses by reading it. What makes it worth a finding is that it is a
+*duplicate* — a file with an unpredictable name, holding the key to the whole
+database, that nobody will ever open again and nothing will ever mention.
+
+And nothing did mention it. The repository runs gitleaks and semgrep: gitleaks
+reads Git *history*, semgrep reads *source*. An untracked, gitignored file
+sitting between them is outside both. The gate looked convincing and did not
+cover the case.
+
+**Fixed, in the tooling** (`c2c1202`). `run-security-gates.sh working-tree` —
+also run as part of `scan` — allows exactly one `.env` plus `*.example`
+templates and fails on any other env-shaped file carrying a real secret value.
+Controls in `self-test`: a `.env.bak` fixture with a real-looking key must be
+flagged; a `.env`, an `.env.example` with a placeholder, and a file that only
+names `*_FILE=` credential *paths* must not be. Disabling the detection makes
+the self-test fail. Run against this repository it reports exactly the one file.
+It is a local gate by construction — a CI checkout has no environment files, so
+CI passing it proves nothing, and the doc says so.
+
+**Open, and the operator's call:** the file itself. Shredding it is enough *if*
+it never left this host. If it was ever swept into a backup, an archive or a
+sync, then the copies matter more than this one and the answer is rotation —
+which the application supports through `ENCRYPTION_KEY_ID`,
+`ENCRYPTION_WRITE_VERSION` and `ENCRYPTION_PREVIOUS_KEYS`.
+
+Related, and also the operator's call: the development `.env` carries the
+*production* encryption key. A dev key that differs from the production one
+would mean a leaked working copy decrypts nothing real.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
