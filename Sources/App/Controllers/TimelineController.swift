@@ -7,6 +7,7 @@ import Vapor
 struct TimelineController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.grouped(NoCacheMiddleware())
+            .grouped(ScanRateLimiter(anonMax: 20, authedMax: 120, windowSeconds: 60))
             .get("scans", ":scanID", "timeline", use: getTimeline)
     }
 

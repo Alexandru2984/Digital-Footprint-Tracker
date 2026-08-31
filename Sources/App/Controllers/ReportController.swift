@@ -4,8 +4,12 @@ import Foundation
 
 struct ReportController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
+        // The only endpoint in the application that spawns a subprocess: one
+        // request buys up to 30 seconds of Python and 20 MB of output, so it
+        // gets the tightest read budget in the app rather than none at all.
         let noCache = routes.grouped(NoCacheMiddleware())
-        noCache.get("report", ":id", use: generateReport)
+        noCache.grouped(ScanRateLimiter(anonMax: 3, authedMax: 10, windowSeconds: 60))
+               .get("report", ":id", use: generateReport)
     }
 
     @Sendable
@@ -24,20 +28,18 @@ struct ReportController: RouteCollection {
             throw Abort(.notFound, reason: "Scan not found.")
         }
 
-        // If the scan belongs to a specific user, only that user may download the report.
-        // Anonymous scans (no owner) are restricted to admins only.
-        if let ownerID = scan.$user.id {
-            guard let currentUser = try await req.currentUser(), currentUser.id == ownerID else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        } else {
-            guard let currentUser = try await req.currentUser(), currentUser.isAdmin else {
-                throw Abort(.forbidden, reason: "Access denied.")
-            }
-        }
+        // One policy for reading a scan, in one place. This handler used to
+        // carry its own copy that made an anonymous scan admin-only while
+        // `authorizeRead` made it capability-readable. The divergence protected
+        // nothing — `GET /export/:id` already returns the same findings, plus
+        // result IDs and metadata, under the capability rule — and it locked a
+        // logged-out user out of the report for the scan they had just run.
+        try await scan.authorizeRead(req)
 
         // Serialise scan + results to JSON for the Python script.
         let input = try scan.input
+        // Every other export of this data is audited; this one was not.
+        await AuditLogger.log(req: req, action: "export_pdf", target: input)
         let payload: [String: Any] = [
             "scanID":      scan.id?.uuidString ?? "",
             "input":       input,

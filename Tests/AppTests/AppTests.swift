@@ -4332,6 +4332,92 @@ final class AppTests: XCTestCase {
         }
     }
 
+    // MARK: - Scan read surface (security)
+
+    func testTheReportEndpointFollowsTheSameReadPolicyAsEveryOtherExport() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // An anonymous scan is capability-readable: whoever holds the 122-bit
+        // scan ID may read it. `/report/:id` used to carry its own copy of the
+        // rule that made the same scan admin-only, so the person who ran the
+        // scan could download every other export of it but not the PDF.
+        let anonymous = Scan(input: "anon-report-target", status: .completed)
+        anonymous.completedAt = Date()
+        try await anonymous.save(on: app.db)
+        let anonymousID = try XCTUnwrap(anonymous.id)
+
+        try await app.test(.GET, "/export/\(anonymousID)") { response in
+            XCTAssertEqual(response.status, .ok,
+                "the capability rule already grants the richer JSON export")
+        }
+        try await app.test(.GET, "/report/\(anonymousID)") { response in
+            // Report generation itself may be unavailable in a test environment;
+            // the authorization decision is what this asserts.
+            XCTAssertNotEqual(response.status, .forbidden,
+                "the PDF exposes strictly less than the JSON export that is already permitted")
+        }
+
+        // The other half of the policy must not have moved: an owned scan stays
+        // owner-only, and a stranger is refused.
+        let cookie = try await registerAndLogin(app, username: "report-owner")
+        let storedOwner = try await User.query(on: app.db)
+            .filter(\.$username == "report-owner")
+            .first()
+        let ownerID = try XCTUnwrap(try XCTUnwrap(storedOwner).id)
+        let owned = Scan(input: "owned-report-target", status: .completed, userID: ownerID)
+        owned.completedAt = Date()
+        try await owned.save(on: app.db)
+        let ownedID = try XCTUnwrap(owned.id)
+
+        try await app.test(.GET, "/report/\(ownedID)") { response in
+            XCTAssertEqual(response.status, .forbidden,
+                "an owned scan's report must refuse an unauthenticated caller")
+        }
+        _ = cookie
+    }
+
+    func testEveryCapabilityReadableScanRouteIsRateLimited() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        // Taken from Vapor's live registry rather than a hand-kept list: these
+        // are the routes an anonymous caller can reach with nothing but a scan
+        // ID. `/report/:id` was the one that mattered — it is the only endpoint
+        // in the application that spawns a subprocess, and it had no budget at
+        // all — but a limiter that covers one route and not its neighbours is
+        // the same hand-maintained list problem in a different place.
+        let readPrefixes: Set<String> = ["export", "report", "identity"]
+        let capabilityRoutes = app.routes.all.filter { route in
+            guard route.method == .GET else { return false }
+            guard route.path.contains(where: { $0.description.hasPrefix(":") }) else { return false }
+            if let first = route.path.first?.description, readPrefixes.contains(first) { return true }
+            // /scans/:scanID/timeline, /diff, /exposure-diff
+            return route.path.first?.description == "scans"
+                && route.path.count >= 3
+                && ["timeline", "diff", "exposure-diff"].contains(route.path.last?.description ?? "")
+        }
+        XCTAssertGreaterThanOrEqual(capabilityRoutes.count, 8,
+            "the known capability-read surface is eight routes; if this drops, routing changed")
+
+        for route in capabilityRoutes {
+            let path = "/" + route.path.map { component -> String in
+                component.description.hasPrefix(":") ? UUID().uuidString : component.description
+            }.joined(separator: "/")
+
+            // A random scan ID answers 404, but the limiter runs before the
+            // handler, so the budget is still spent — which is exactly what
+            // makes this a cheap probe of the middleware rather than the route.
+            var limited = false
+            for _ in 0..<26 where !limited {
+                try await app.test(.GET, path) { response in
+                    if response.status == .tooManyRequests { limited = true }
+                }
+            }
+            XCTAssertTrue(limited, "GET \(path) served 26 anonymous requests without a rate limit")
+        }
+    }
+
     // MARK: - Pivot input validation (security)
 
     func testAPivotCandidateCannotBecomeACommandLineFlag() {

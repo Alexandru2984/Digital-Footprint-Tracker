@@ -4,7 +4,11 @@ import Foundation
 
 struct CorrelationController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.get("correlations", use: getCorrelations)
+        // Authenticated, but it loads every completed scan the caller owns with
+        // all of their results and correlates across them — the most expensive
+        // read in the app after the report.
+        routes.grouped(ScanRateLimiter(anonMax: 0, authedMax: 30, windowSeconds: 60))
+              .get("correlations", use: getCorrelations)
     }
 
     struct EntityOccurrence: Content {

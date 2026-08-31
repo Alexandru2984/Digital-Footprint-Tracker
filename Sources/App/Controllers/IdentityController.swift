@@ -6,7 +6,9 @@ import Fluent
 /// results: the owner only; anonymous scans are admin-only.
 struct IdentityController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.grouped(NoCacheMiddleware()).get("identity", ":id", use: getIdentity)
+        routes.grouped(NoCacheMiddleware())
+              .grouped(ScanRateLimiter(anonMax: 20, authedMax: 120, windowSeconds: 60))
+              .get("identity", ":id", use: getIdentity)
     }
 
     @Sendable

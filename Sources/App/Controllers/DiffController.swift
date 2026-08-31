@@ -33,6 +33,7 @@ struct ExposureDiffResponse: Content {
 struct DiffController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let noCache = routes.grouped(NoCacheMiddleware())
+            .grouped(ScanRateLimiter(anonMax: 20, authedMax: 120, windowSeconds: 60))
         noCache.get("scans", ":scanID", "diff", ":otherId", use: diff)
         noCache.get("scans", ":scanID", "exposure-diff", use: exposureDiff)
     }

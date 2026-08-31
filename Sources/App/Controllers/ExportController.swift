@@ -3,10 +3,14 @@ import Fluent
 
 struct ExportController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.get("export", ":id", use: exportJSON)
-        routes.get("export", ":id", "graph", use: exportGraphML)
-        routes.get("export", ":id", "report", use: exportReport)
-        routes.get("export", ":id", "report.html", use: exportReportHTML)
+        // Capability-reachable: anyone holding the scan ID may call these, and
+        // each one serialises every result in the scan. Bounded like the other
+        // anonymous read surfaces rather than left open.
+        let limited = routes.grouped(ScanRateLimiter(anonMax: 10, authedMax: 60, windowSeconds: 60))
+        limited.get("export", ":id", use: exportJSON)
+        limited.get("export", ":id", "graph", use: exportGraphML)
+        limited.get("export", ":id", "report", use: exportReport)
+        limited.get("export", ":id", "report.html", use: exportReportHTML)
     }
 
     @Sendable
