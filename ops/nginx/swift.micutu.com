@@ -11,7 +11,12 @@ server {
         default_type "text/plain";
         try_files $uri =404;
     }
-    include snippets/cloudflare-realip.conf;
+    # The Cloudflare real-IP trust list is deliberately not re-included at server
+    # level. It is loaded once at http level from conf.d, and `set_real_ip_from` is an
+    # array directive: a server block that declares its own list *replaces* the
+    # inherited one rather than adding to it. Identical content made it harmless,
+    # but the invariant is enforced by scripts/tests/production-boundaries.test.sh
+    # and production had drifted away from it.
 
     # Reject direct-to-origin TLS traffic. $realip_remote_addr retains the
     # original TCP peer before the trusted Cloudflare real-IP rewrite.
@@ -49,12 +54,7 @@ server {
         client_max_body_size 10k;
 
         proxy_pass        http://127.0.0.1:8085/scan;
-        proxy_http_version 1.1;
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
-        proxy_set_header  CF-Connecting-IP  $remote_addr;
+        include snippets/swift-proxy-headers.conf;
     }
 
     # ── SSE stream (long-lived, unbuffered) ──────────────────────────────────────
@@ -66,13 +66,8 @@ server {
         proxy_cache          off;
         proxy_read_timeout   130s;
         proxy_pass        http://127.0.0.1:8085/stream/;
-        proxy_http_version 1.1;
         proxy_set_header  Connection "";
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
-        proxy_set_header  CF-Connecting-IP  $remote_addr;
+        include snippets/swift-proxy-headers.conf;
     }
 
     # Investigation graphs are capped at 512 KB after JSON decoding. Their
@@ -84,12 +79,7 @@ server {
         client_max_body_size 1m;
 
         proxy_pass        http://127.0.0.1:8085/investigations;
-        proxy_http_version 1.1;
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
-        proxy_set_header  CF-Connecting-IP  $remote_addr;
+        include snippets/swift-proxy-headers.conf;
     }
 
     # ── Health & Metrics (direct, no /api/ prefix) ─────────────────────────
@@ -101,11 +91,7 @@ server {
         limit_req zone=api_limit burst=20 nodelay;
         limit_req_status 429;
         proxy_pass        http://127.0.0.1:8085/health;
-        proxy_http_version 1.1;
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
+        include snippets/swift-proxy-headers.conf;
     }
 
     # Database readiness is an internal deploy signal, never a public endpoint.
@@ -118,11 +104,7 @@ server {
         limit_req zone=api_limit burst=20 nodelay;
         limit_req_status 429;
         proxy_pass        http://127.0.0.1:8085/metrics;
-        proxy_http_version 1.1;
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
+        include snippets/swift-proxy-headers.conf;
     }
 
     # ── All other API routes ──────────────────────────────────────────────────
@@ -132,12 +114,7 @@ server {
         client_max_body_size 10k;
 
         proxy_pass        http://127.0.0.1:8085/;
-        proxy_http_version 1.1;
-        proxy_set_header  Host              $host;
-        proxy_set_header  X-Real-IP         $remote_addr;
-        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header  X-Forwarded-Proto $scheme;
-        proxy_set_header  CF-Connecting-IP  $remote_addr;
+        include snippets/swift-proxy-headers.conf;
     }
 
     listen 443 ssl; # managed by Certbot

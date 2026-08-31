@@ -39,7 +39,7 @@ PINNED_GLOBS=(
     "/etc/systemd/system/swift-vapor*.service.d/*.conf"
     "/etc/nginx/sites-available/swift.micutu.com"
     "/etc/nginx/sites-available/swift-onion.conf"
-    "/etc/nginx/snippets/swift-csp.conf"
+    "/etc/nginx/snippets/swift-*.conf"
     "/etc/swift-vapor/*.env"
     "/usr/local/libexec/swift-vapor/*"
 )
