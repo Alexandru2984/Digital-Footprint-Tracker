@@ -20,11 +20,11 @@ public func configure(_ app: Application) async throws {
     // A live deployment must never persist sensitive fields in plaintext merely
     // because ENCRYPTION_KEY is absent or malformed. Validate before connecting,
     // migrating, seeding, or serving any request.
-    try TokenEncryption.validateConfiguration(required: app.environment == .production)
+    try TokenEncryption.validateConfiguration(required: app.environment.isRealDeployment)
     // The immutable audit ledger uses an independent Ed25519 signing key. A
     // live process must never silently fall back to unsigned audit entries.
     app.auditIntegrityConfiguration = try AuditIntegrityConfiguration.fromEnvironment(
-        required: app.environment == .production
+        required: app.environment.isRealDeployment
     )
     if app.auditIntegrityConfiguration == nil {
         app.logger.warning("AUDIT_SIGNING_KEY is unset; signed audit integrity is disabled outside production.")
@@ -42,7 +42,7 @@ public func configure(_ app: Application) async throws {
     app.exportJobConfiguration = try ExportJobConfiguration.fromEnvironment()
     // CORS — in production restrict to the real origin; allow all only during development.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
-    if app.environment == .production {
+    if app.environment.isRealDeployment {
         let origin = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
         allowedOrigin = .custom(origin)
     } else {
@@ -102,8 +102,8 @@ public func configure(_ app: Application) async throws {
     let databasePassword: String
     if let pw = try RuntimeSecret.value("DATABASE_PASSWORD") {
         databasePassword = pw
-    } else if app.environment == .production {
-        fatalError("DATABASE_PASSWORD environment variable must be set in production.")
+    } else if app.environment.isRealDeployment {
+        fatalError("DATABASE_PASSWORD environment variable must be set in a deployment.")
     } else {
         app.logger.warning("DATABASE_PASSWORD not set — using insecure default (development only)")
         databasePassword = "footprint_pass"
@@ -264,7 +264,7 @@ enum MigrationPolicy {
         environment: Environment,
         productionSetting: String?
     ) throws -> Bool {
-        guard environment == .production else { return true }
+        guard environment.isRealDeployment else { return true }
         guard let raw = productionSetting?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else {
             return false

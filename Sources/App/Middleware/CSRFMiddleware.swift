@@ -41,7 +41,7 @@ struct CSRFMiddleware: AsyncMiddleware {
                 && (request.session.data["userID"] != nil
                     || request.session.data["pending2FAUserID"] != nil)
             let requireProvenance = requireProvenanceForSessions
-                ?? (request.application.environment == .production)
+                ?? request.application.environment.isRealDeployment
             if requireProvenance && hasAmbientAuthenticatedSession {
                 throw Abort(.forbidden, reason: "Request provenance is required.")
             }
@@ -77,8 +77,9 @@ struct CSRFMiddleware: AsyncMiddleware {
         if candidate == allowed { return true }
 
         // Local front-end dev servers may use arbitrary ports. This exception is
-        // deliberately unavailable in production.
-        return environment != .production
+        // deliberately unavailable in any real deployment, not merely in one
+        // named `production`.
+        return !environment.isRealDeployment
             && (candidate.host == "localhost" || candidate.host == "127.0.0.1")
     }
 }

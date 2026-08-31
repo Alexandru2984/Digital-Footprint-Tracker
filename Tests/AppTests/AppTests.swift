@@ -4332,6 +4332,69 @@ final class AppTests: XCTestCase {
         }
     }
 
+    // MARK: - Environment policy (security)
+
+    func testOnlyDevelopmentAndTestingRelaxSecurityControls() {
+        XCTAssertFalse(Environment.development.isRealDeployment)
+        XCTAssertFalse(Environment.testing.isRealDeployment)
+        XCTAssertTrue(Environment.production.isRealDeployment)
+
+        // The case the old `== .production` test got wrong. A deployment named
+        // anything else — `staging`, `canary`, or a production unit that lost
+        // its `--env production` flag and fell back to Vapor's default — used to
+        // relax every control at once while still talking to a real database.
+        for name in ["staging", "canary", "prod", "Production"] {
+            let environment = Environment(name: name, arguments: ["vapor"])
+            XCTAssertTrue(environment.isRealDeployment,
+                "environment '\(name)' must be treated as a real deployment")
+        }
+    }
+
+    func testAnUnnamedDeploymentDoesNotAutoMigrate() throws {
+        // Automatic migrations on boot are a production footgun: they make
+        // rollback and concurrency control impossible. The gate keyed on the
+        // literal name, so a `staging` process pointed at a real database
+        // migrated it on every restart.
+        let staging = Environment(name: "staging", arguments: ["vapor"])
+        XCTAssertFalse(try MigrationPolicy.shouldAutoMigrate(
+            environment: staging, productionSetting: nil))
+        XCTAssertTrue(try MigrationPolicy.shouldAutoMigrate(
+            environment: staging, productionSetting: "true"))
+        XCTAssertTrue(try MigrationPolicy.shouldAutoMigrate(
+            environment: .development, productionSetting: nil))
+        XCTAssertFalse(try MigrationPolicy.shouldAutoMigrate(
+            environment: .production, productionSetting: nil))
+    }
+
+    func testNoSecurityControlIsKeyedToTheLiteralEnvironmentName() throws {
+        // The defect this replaces was six separate `== .production` checks that
+        // all had to be found by hand. Scanning the source keeps a seventh from
+        // being written: `isRealDeployment` is the only correct spelling, and it
+        // is defined in exactly one place.
+        let appDirectory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // AppTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // repository root
+            .appendingPathComponent("Sources/App")
+        let sources = FileManager.default.enumerator(atPath: appDirectory.path)
+        var offenders: [String] = []
+        var scanned = 0
+        while let entry = sources?.nextObject() as? String {
+            guard entry.hasSuffix(".swift"), entry != "Services/EnvironmentPolicy.swift" else { continue }
+            scanned += 1
+            let text = try String(
+                contentsOf: appDirectory.appendingPathComponent(entry), encoding: .utf8)
+            for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                if line.contains("environment == .production") || line.contains("environment != .production") {
+                    offenders.append("\(entry):\(index + 1)")
+                }
+            }
+        }
+        XCTAssertGreaterThan(scanned, 100, "no sources scanned at \(appDirectory.path)")
+        XCTAssertEqual(offenders, [],
+            "these gate a security control on the literal environment name; use isRealDeployment")
+    }
+
     // MARK: - Scan read surface (security)
 
     func testTheReportEndpointFollowsTheSameReadPolicyAsEveryOtherExport() async throws {
