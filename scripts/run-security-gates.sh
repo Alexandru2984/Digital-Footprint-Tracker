@@ -9,7 +9,52 @@ REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 readonly REPOSITORY_ROOT
 
 usage() {
-    printf 'Usage: %s {self-test|scan}\n' "$0" >&2
+    printf 'Usage: %s {self-test|scan|working-tree}\n' "$0" >&2
+}
+
+# Env-shaped files in the working tree that carry a real secret value.
+#
+# Gitleaks scans Git history and semgrep scans source, so between them nothing
+# looks at an *untracked* file sitting next to them. That is exactly where the
+# problem turned up: a `.env.bak-mailcow-<timestamp>` copy of this project's own
+# environment, holding the live ENCRYPTION_KEY, DATABASE_PASSWORD, ADMIN_PASSWORD
+# and three API keys, gitignored and therefore invisible to every gate here.
+#
+# One `.env` is how the project is developed and is deliberately allowed. What
+# is not allowed is the second copy: an editor backup, a pre-migration snapshot,
+# a `.env.save` — names nobody predicts, that nobody prunes, and that hold the
+# key to every encrypted field in the database. `*.example` files are templates
+# and are allowed to carry placeholder values.
+#
+# Prints paths only; values never leave the file.
+stray_secret_files() {
+    local root="$1" path relative
+    local secret_assignment='^[[:space:]]*([A-Z0-9_]*(PASSWORD|PASS|TOKEN|SECRET|PRIVATE_KEY|API_KEY)|ENCRYPTION_KEY|AUDIT_SIGNING_KEY|AUDIT_COMMITMENT_KEY)=[^[:space:]]{8,}'
+    while IFS= read -r path; do
+        relative="${path#"${root}"/}"
+        [[ "$relative" == ".env" ]] && continue
+        [[ "$path" == *.example ]] && continue
+        if grep -Eq "$secret_assignment" "$path" 2>/dev/null; then
+            printf '%s\n' "$relative"
+        fi
+    done < <(
+        find "$root" \
+            \( -name .git -o -name .build -o -name node_modules \) -prune -o \
+            -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' -o -name '*.env.*' \) \
+            -print
+    )
+}
+
+scan_working_tree() {
+    local findings
+    findings="$(stray_secret_files "$REPOSITORY_ROOT")"
+    if [[ -n "$findings" ]]; then
+        printf 'Plaintext secrets in files outside the single allowed .env:\n' >&2
+        printf '  %s\n' "$findings" >&2
+        printf 'Move the value into a systemd credential, or shred the file.\n' >&2
+        return 1
+    fi
+    printf 'No stray plaintext secret files in the working tree.\n'
 }
 
 run_semgrep() {
@@ -71,6 +116,26 @@ self_test() {
     fi
     run_semgrep "$negative_dir" >/dev/null 2>&1
 
+    # The working-tree check needs its own controls: it is the only gate here
+    # that would have caught the file that prompted it.
+    printf '%s\n' 'ENCRYPTION_KEY=0123456789abcdef0123456789abcdef' \
+        > "${positive_dir}/.env.bak-fixture"
+    printf '%s\n' 'ENCRYPTION_KEY=replace-me-with-64-hex-characters' \
+        > "${negative_dir}/.env.example"
+    printf '%s\n' 'ENCRYPTION_KEY=0123456789abcdef0123456789abcdef' \
+        > "${negative_dir}/.env"
+    printf '%s\n' 'DATABASE_PASSWORD_FILE=/run/credentials/database-password' \
+        > "${negative_dir}/paths.env"
+
+    [[ "$(stray_secret_files "$positive_dir")" == ".env.bak-fixture" ]] || {
+        printf 'working-tree positive control was not detected\n' >&2
+        return 1
+    }
+    [[ -z "$(stray_secret_files "$negative_dir")" ]] || {
+        printf 'working-tree negative control was flagged\n' >&2
+        return 1
+    }
+
     printf 'Security scanner positive and negative controls passed.\n'
 }
 
@@ -88,6 +153,8 @@ scan_repository() {
         --exclude frontend/d3.min.js \
         --exclude frontend/leaflet.js \
         --exclude frontend/docs/swagger-ui-bundle.js
+
+    scan_working_tree
 }
 
 case "${1:-}" in
@@ -96,6 +163,9 @@ case "${1:-}" in
         ;;
     scan)
         scan_repository
+        ;;
+    working-tree)
+        scan_working_tree
         ;;
     *)
         usage

@@ -39,9 +39,17 @@ commands:
 ```bash
 scripts/run-security-gates.sh self-test
 scripts/run-security-gates.sh scan
+scripts/run-security-gates.sh working-tree
 output_dir="$(mktemp -d)"
 scripts/generate-sbom.sh "$output_dir"
 ```
+
+`working-tree` is also run as part of `scan`, and it is the one gate that only
+means something *locally*: gitleaks reads Git history and semgrep reads source,
+so neither ever sees an untracked file, and a CI checkout has no environment
+files at all. It allows exactly one `.env` plus `*.example` templates, and fails
+on any other env-shaped file carrying a real secret value — the editor backup,
+the pre-migration snapshot, the `.env.save` that nobody prunes.
 
 The SBOM command mounts the checkout read-only, disables networking and writes
 only the two requested JSON artifacts. The source version is the exact Git SHA.
