@@ -69,13 +69,27 @@ cross-site scripting: the response is `Content-Disposition: attachment`.
 **Fixed.** `esc` drops control characters other than tab, LF and CR before
 escaping.
 
-### F3 — Informational: two different policies for anonymous scans
+### F3 — Low: two different policies for anonymous scans — fixed
 
-`Scan.authorizeRead` treats an ownerless scan as capability-access — anyone
+`Scan.authorizeRead` treats an ownerless scan as capability access — anyone
 holding the 122-bit scan ID may read it, which is deliberate and documented.
-`ReportController` treats the same scan as admin-only. The stricter rule is on
-the more sensitive artifact, so this is not a weakness, but the two policies
-should be reconciled deliberately rather than left divergent.
+`ReportController` carried its own copy of the rule and treated the same scan as
+admin-only.
+
+Filed first as informational on the reasoning that the stricter rule sat on the
+more sensitive artifact. That reasoning does not survive contact with the other
+endpoint: `GET /export/:id` returns the same findings under the capability rule,
+*plus* result IDs and per-result metadata the PDF omits. The divergence
+protected nothing and cost a real thing — a logged-out user could download every
+other export of the scan they had just run, but not the report.
+
+**Fixed** (`c5cb053`). The handler calls `authorizeRead`, so there is one policy
+in one place. Two tests hold it: an anonymous scan's report must not answer
+`403` where its JSON export answers `200`, and an owned scan's report must still
+refuse a stranger.
+
+The same handler was also the only export of this data that wrote no audit
+record; it now logs `export_pdf` like its four siblings.
 
 ### F4 — Informational: silent unkeyed blind-index fallback
 
@@ -284,6 +298,31 @@ While checking this, `update-cloudflare-ips.sh --check` was found reporting the
 live real-IP snippet as stale. The ranges were identical; only a comment line
 differed from the current generator. Refreshed, so the check is green again — a
 gate that is permanently red is a gate nobody reads.
+
+### F15 — Low: the one endpoint that spawns a subprocess had no rate limit
+
+Rate limiting is applied per controller, by hand, at `boot`. Nine controllers
+carried none. Most of those are authenticated and cheap; one was neither.
+
+`GET /report/:id` spawns a Python process per request — up to 30 seconds of CPU
+and 20 MB of output, bounded per-process by `BoundedProcess` but not in
+aggregate. After F3 it is reachable by capability, so anyone holding a scan ID
+— including their own, freshly created — could open concurrent requests and buy
+a subprocess with each one. The neighbouring capability reads were unbounded
+too: the four `/export/:id` formats, `/identity/:id`, `/scans/:id/timeline` and
+both diff endpoints each serialise or recompute over every result in a scan.
+
+**Fixed** (`c5cb053`). The report gets the tightest budget in the application
+(3 anonymous / 10 authenticated per minute); the export formats share 10/60; the
+remaining capability reads take 20/120. `/correlations` — authenticated, but it
+loads every completed scan the caller owns and correlates across all of them —
+takes 30 per minute.
+
+The test that holds this enumerates the capability-read surface from Vapor's
+live route registry and fires 26 anonymous requests at each route with a random
+scan ID: the limiter runs before the handler, so a `404` still spends the
+budget, which makes the probe cheap and aims it at the middleware rather than
+the route. Removing any one limiter fails it.
 
 ## Verified clean
 
