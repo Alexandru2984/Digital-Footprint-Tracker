@@ -46,3 +46,15 @@ b8b50aed692d3fe75e36c92ca09a624055303a49:scripts/tests/voidaccess-worker.test.py
 # Explicit non-production encryption examples, since replaced with inert labels.
 7f360b9204c0170684a75efd929303c7c691073a:.env.docker.example:generic-api-key:45
 f71e02c8032be21b736f7e36297fe2c5a6a07b3a:.env.docker.example:generic-api-key:33
+
+# Working-tree secret-scanner controls: a fixture ENCRYPTION_KEY of
+# `0123456789abcdef` repeated twice, and the literal string
+# `replace-me-with-64-hex-characters`. Reviewed redacted; neither is or ever was
+# an operational credential — both were written in this repository as inputs to
+# the control that proves `run-security-gates.sh working-tree` detects a stray
+# secret file. The current tree no longer contains them: the fixture is now
+# assembled from fragments, matching the older gitleaks control beside it, so
+# these three fingerprints are the whole of the exposure and it is historical.
+c2c12027eb7228dc68690db40d2404268774fa42:scripts/run-security-gates.sh:generic-api-key:121
+c2c12027eb7228dc68690db40d2404268774fa42:scripts/run-security-gates.sh:generic-api-key:123
+c2c12027eb7228dc68690db40d2404268774fa42:scripts/run-security-gates.sh:generic-api-key:125

@@ -118,12 +118,18 @@ self_test() {
 
     # The working-tree check needs its own controls: it is the only gate here
     # that would have caught the file that prompted it.
-    printf '%s\n' 'ENCRYPTION_KEY=0123456789abcdef0123456789abcdef' \
-        > "${positive_dir}/.env.bak-fixture"
-    printf '%s\n' 'ENCRYPTION_KEY=replace-me-with-64-hex-characters' \
+    #
+    # The key name and its value are assembled from fragments, the same way the
+    # gitleaks fixture above is. Writing `KEY=<32 hex characters>` as one literal
+    # puts a secret-shaped string in Git history — and gitleaks, correctly, flags
+    # it. A control for a secret scanner must not itself trip the secret scanner.
+    local key_name="ENCRYPTION" fixture_value
+    key_name="${key_name}_KEY"
+    fixture_value="0123456789ab""cdef0123456789ab""cdef"
+    printf '%s=%s\n' "$key_name" "$fixture_value" > "${positive_dir}/.env.bak-fixture"
+    printf '%s=%s\n' "$key_name" 'replace-me-with-64-hex-characters' \
         > "${negative_dir}/.env.example"
-    printf '%s\n' 'ENCRYPTION_KEY=0123456789abcdef0123456789abcdef' \
-        > "${negative_dir}/.env"
+    printf '%s=%s\n' "$key_name" "$fixture_value" > "${negative_dir}/.env"
     printf '%s\n' 'DATABASE_PASSWORD_FILE=/run/credentials/database-password' \
         > "${negative_dir}/paths.env"
 
