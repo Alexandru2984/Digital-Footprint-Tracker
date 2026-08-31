@@ -370,6 +370,43 @@ Related, and also the operator's call: the development `.env` carries the
 *production* encryption key. A dev key that differs from the production one
 would mean a leaked working copy decrypts nothing real.
 
+### F17 — Low: the repository's copy of the production vhost was not production
+
+`ops/nginx/swift.micutu.com` is checked in as the deployed web-server
+configuration. It was not the deployed configuration. Diffed against
+`/etc/nginx/sites-available/swift.micutu.com`:
+
+- the live file has two `^~ /.well-known/acme-challenge/` locations; the
+  repository copy has none, so **deploying the repository copy would have broken
+  certificate renewal** — silently, until the certificate expired;
+- the live file includes `snippets/cloudflare-realip.conf` (a symlink to the
+  managed `conf.d/` file — checked, not a third stale copy);
+- `X-Robots-Tag` disagreed outright: `index, follow` live against
+  `noindex, nofollow` in the repository.
+
+`config-manifest.sh` pins the *live* file against its own recorded checksum, so
+it detects an out-of-band edit on the host — but nothing ever compared the host
+against the repository, which is where the same file supposedly lives under
+review.
+
+Two locations were also the only proxied ones in the file without a `limit_req`:
+`/health`, cheap but unauthenticated, and `/metrics`, which is properly gated
+(bearer `METRICS_TOKEN`, else an admin session — verified live: an
+unauthenticated request answers `401`) but runs more than a dozen `COUNT(*)`
+queries per call. The application route had no budget either, and the loopback
+listener is reachable directly by anything on the host, where nginx's limit does
+not apply.
+
+**Fixed** (`da8e555`). The repository copy is now the deployed file, plus
+`limit_req` on both locations; the metrics route takes 30 anonymous / 60
+authenticated per minute, generous next to a fifteen-second scrape. Deployed and
+verified: `nginx -t`, reload, `/health` 200, `/metrics` 401, `/ready` 404, and
+80 concurrent requests to `/health` answered 48 × 200 and 32 × 429.
+
+The `X-Robots-Tag` divergence is resolved in favour of what is actually serving
+(`index, follow`) and is flagged rather than decided here: whether an OSINT
+scanner should be indexed is a product call, not an audit one.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
@@ -408,6 +445,11 @@ and found sound:
 - **Boot gates.** Production refuses to start without a valid encryption key or
   audit signing key, and bounds notification, export and dark-web configuration
   at startup rather than trusting them at use.
+- **Forwarded-header trust.** Every proxied location resets `X-Real-IP` from
+  nginx's own `$remote_addr`, and `Request.clientIP` reads `X-Real-IP` *before*
+  `CF-Connecting-IP` and only from a loopback peer. So the two locations that do
+  not reset `CF-Connecting-IP` (`/health`, `/metrics`) cannot be used to forge a
+  client address: the header that wins is the one nginx always overwrites.
 - **Shell scripts.** No `eval`, no `source` of a variable path, no shell string
   built from remote data. Every temporary file comes from `mktemp` — never a
   predictable `/tmp` name — and the privileged writers place their temporary
