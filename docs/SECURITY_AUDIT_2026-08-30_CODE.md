@@ -407,6 +407,53 @@ The `X-Robots-Tag` divergence is resolved in favour of what is actually serving
 (`index, follow`) and is flagged rather than decided here: whether an OSINT
 scanner should be indexed is a product call, not an audit one.
 
+### F18 — Medium: the onion vhost let a Tor client choose its own client IP
+
+The service has two entrances. The clearnet vhost sets `X-Real-IP` from nginx's
+`$remote_addr` in every proxied location. The onion vhost sets it in four of six:
+`/health` and `/metrics` were written as one-liners —
+`location /health { proxy_pass …; proxy_set_header Host $host; }` — with no
+`X-Real-IP` line at all.
+
+`Request.clientIP` trusts `X-Real-IP` whenever the socket peer is loopback, and
+nginx always is. Where nginx does not overwrite the header, the client's own
+value passes through and becomes the address the application rate-limits and
+attributes on. Over Tor, `GET /health` with `X-Real-IP: 1.2.3.4` therefore chose
+its own limiter bucket — and neither location carried a `limit_req` either, so
+nothing else bounded it.
+
+The mechanism is worth naming, because the header block was correct in the four
+locations beside it: it was copied by hand into each location, and a location
+written later did not get the copy. The same failure as F9's script array and
+F15's per-controller limiters, in nginx syntax.
+
+**Fixed** (`51c3d79`). Both vhosts now include a shared snippet in every proxied
+location — `swift-proxy-headers.conf` and `swift-onion-proxy-headers.conf` — and
+both pin `CF-Connecting-IP` as well as `X-Real-IP`, rather than relying on
+`Request.clientIP`'s preference order to make the unset one harmless. A
+protection that holds only because of an ordering decision in unrelated code is
+one refactor away from not holding.
+
+`scripts/tests/nginx-proxy-headers.test.py` brace-matches every `location` block
+and fails on any that reaches `proxy_pass` without the include. It runs in two
+modes: against the checked-in vhosts in CI, and — with `--live`, needing root —
+against `nginx -T`, which is the only form that would notice a vhost edited on
+the host and never returned to the repository, exactly what F17 found. Removing
+one include fails it; both modes pass now, six proxied locations each.
+
+Two related things surfaced while deploying it:
+
+- The live clearnet vhost re-included the Cloudflare real-IP trust list at
+  *server* level. `set_real_ip_from` is an array directive: a server block that
+  declares its own list replaces the inherited one rather than adding to it.
+  Identical content made it harmless — and the repository's own
+  `production-boundaries.test.sh` already forbids it, which is how it was
+  caught, as production had drifted away from an invariant the tests assert.
+  Removed and verified: an access-log probe records the same real visitor
+  address before and after.
+- `snippets/cloudflare-realip.conf` is a symlink to the managed `conf.d/` file,
+  not a third frozen copy like F14's `cloudflare-geo.conf`.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
@@ -445,11 +492,12 @@ and found sound:
 - **Boot gates.** Production refuses to start without a valid encryption key or
   audit signing key, and bounds notification, export and dark-web configuration
   at startup rather than trusting them at use.
-- **Forwarded-header trust.** Every proxied location resets `X-Real-IP` from
-  nginx's own `$remote_addr`, and `Request.clientIP` reads `X-Real-IP` *before*
-  `CF-Connecting-IP` and only from a loopback peer. So the two locations that do
-  not reset `CF-Connecting-IP` (`/health`, `/metrics`) cannot be used to forge a
-  client address: the header that wins is the one nginx always overwrites.
+- **Forwarded-header trust** — on the *clearnet* vhost. Every proxied location
+  there resets `X-Real-IP` from nginx's own `$remote_addr`, and
+  `Request.clientIP` reads `X-Real-IP` before `CF-Connecting-IP` and only from a
+  loopback peer, so the locations that did not reset `CF-Connecting-IP` could
+  not be used to forge a client address. This bullet originally claimed the same
+  for the whole deployment; the onion vhost is F18.
 - **Shell scripts.** No `eval`, no `source` of a variable path, no shell string
   built from remote data. Every temporary file comes from `mktemp` — never a
   predictable `/tmp` name — and the privileged writers place their temporary
