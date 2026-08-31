@@ -58,14 +58,21 @@ The CI artifacts are retained for 14 days and named with that SHA.
 ## Historical finding baseline
 
 The first full-history review found 37 `generic-api-key` introduction
-fingerprints across 11 commits. Thirty corresponding secret-shaped literals
-remain intentionally in the current test/example tree; none is an operational
-credential, and the candidate history has zero unbaselined findings. Every
-value was reviewed redacted and was one of:
+fingerprints across 11 commits. The baseline now holds 40 across 12: three were
+added on 2026-08-31 for the working-tree control's own fixtures, which were
+written as whole `KEY=<32 hex>` literals and were correctly flagged. Those three
+no longer exist in the current tree — the fixture is assembled from fragments,
+the way the older gitleaks control beside it already was — so they are the one
+entry in this list that is purely historical.
+
+Thirty corresponding secret-shaped literals remain intentionally in the current
+test/example tree; none is an operational credential, and the candidate history
+has zero unbaselined findings. Every value was reviewed redacted and was one of:
 
 - password/shared-secret literals used only by test fixtures;
 - inert encryption-key examples in `.env.docker.example`;
-- public VoidAccess commit and SHA-256 pins misclassified as API keys.
+- public VoidAccess commit and SHA-256 pins misclassified as API keys;
+- fixture inputs to a secret-scanner control, since rewritten.
 
 [`.gitleaksignore`](../.gitleaksignore) records only exact
 `commit:path:rule:line` fingerprints. It does not allow a rule, path or regular
