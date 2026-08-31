@@ -96,11 +96,12 @@ record; it now logs `export_pdf` like its four siblings.
 `FieldCrypto.blindIndex` falls back to unkeyed `sha256Hex` when
 `TokenEncryption` is unconfigured. An unkeyed hash of an email address is
 reversible by dictionary attack, defeating the point of a blind index.
-Production cannot reach this: `configure.swift` calls
-`TokenEncryption.validateConfiguration(required: app.environment == .production)`
-and refuses to boot without a valid key. The residual risk is a non-production
-environment pointed at real data, which would write reversible indexes without
-logging anything.
+Production cannot reach this: `configure.swift` refuses to boot without a valid
+key. The residual risk is a non-production environment pointed at real data,
+which would write reversible indexes without logging anything.
+
+Pulling on which environments are exempt is what produced F19; the fallback
+itself is unchanged and still intended for local development.
 
 ### F5 — Informational: polynomial backtracking on attacker-influenced text
 
@@ -453,6 +454,47 @@ Two related things surfaced while deploying it:
   address before and after.
 - `snippets/cloudflare-realip.conf` is a symlink to the managed `conf.d/` file,
   not a third frozen copy like F14's `cloudflare-geo.conf`.
+
+### F19 — Medium: every safety relaxation keyed to one literal string
+
+`configure.swift` and `CSRFMiddleware` decided six separate questions with
+`environment == .production`:
+
+| control | when the name is not `production` |
+|---|---|
+| `TokenEncryption.validateConfiguration` | boots without a key; sensitive columns are written in plaintext and blind indexes unkeyed (F4) |
+| `AuditIntegrityConfiguration` | audit entries are written unsigned |
+| CSRF provenance requirement | a session-authenticated request with no `Origin`/`Referer` is allowed |
+| CSRF origin allowlist | `localhost` and `127.0.0.1` are accepted as origins |
+| CORS | `allowedOrigin` opens to `*` |
+| `DATABASE_PASSWORD` | falls back to the hardcoded `footprint_pass` |
+| `MigrationPolicy.shouldAutoMigrate` | migrations run automatically on every boot |
+
+Vapor takes any string on `--env`, and **defaults to `.development` when the
+flag is absent**. So this is not only about a `staging` deployment named
+honestly. A production unit that loses its `--env production` flag keeps its
+`DATABASE_HOST`, connects to the real database, and comes up with encryption
+off, audit signing off, CSRF off, CORS open, and automatic migrations on. One
+missing flag, seven controls, no error.
+
+The current unit does pass the flag —
+`ExecStart=… Run serve --env production --hostname 127.0.0.1 --port 8085` — so
+this is latent, not live. It is filed at Medium because the blast radius is the
+whole security posture and the trigger is a one-token edit to a file that is
+routinely edited.
+
+**Fixed** (`f22b46b`). `Environment.isRealDeployment` is `self != .development
+&& self != .testing`: only the two environments that are definitionally not a
+deployment relax anything, and every other name — including ones that do not
+exist yet — is strict. An unknown environment now fails safe rather than open.
+
+Three tests hold it. Two assert the predicate and the migration gate directly,
+including four names that used to pass as non-production (`staging`, `canary`,
+`prod`, and `Production` with a capital P). The third scans every file under
+`Sources/App` for `environment == .production` and fails on any hit, with
+`EnvironmentPolicy.swift` — where the rule is defined and explained — as the
+only exemption; reintroducing one of the old checks fails it, naming the file
+and line.
 
 ## Verified clean
 
