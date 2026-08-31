@@ -2,7 +2,7 @@
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # Statically link the Swift runtime so the final image only needs system C libs.
-FROM swift:6.2-jammy@sha256:1c1f422aee767a7f33b88bc3aee99cad5de4af8723fbee8a3ab6951a6879f929 AS builder
+FROM swift:6.3-jammy@sha256:a05aa080e573b1f7e10bd630ce9e1d7645abb08a32d1def73cb611ac708d2a8a AS builder
 WORKDIR /build
 
 # Resolve deps in a layer that only invalidates when the manifest changes.
@@ -33,7 +33,7 @@ RUN --mount=type=cache,id=swift-vapor-spm-6.2,target=/build/.build,sharing=locke
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
 # Ubuntu (no Swift toolchain) — the binary is statically linked so we only
 # need the system C libraries it dynamically depends on.
-FROM ubuntu:22.04@sha256:0e0a0fc6d18feda9db1590da249ac93e8d5abfea8f4c3c0c849ce512b5ef8982 AS runtime
+FROM ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b AS runtime
 
 # Runtime dependencies:
 #   libatomic1 libcurl4 libxml2 — required by the Vapor binary
