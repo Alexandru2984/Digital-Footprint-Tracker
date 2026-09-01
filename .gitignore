@@ -50,3 +50,8 @@ frontend/.cache/
 # Isolated Python worker
 __pycache__/
 *.py[cod]
+
+# Playwright output. The HTML report bundles a minified React trace viewer that
+# semgrep --strict cannot parse, so committing it turns the SAST gate red.
+frontend/playwright-report/
+frontend/test-results/

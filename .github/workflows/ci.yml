@@ -40,7 +40,9 @@ jobs:
         run: |
           npm test
           npm run build:css
-          git diff --exit-code -- tailwind.css
+          # The stylesheet must rebuild byte-for-byte, and the integrity
+          # attributes it feeds must already match what a rebuild derives.
+          git diff --exit-code -- tailwind.css '*.html'
 
       - name: Audit frontend dependencies
         working-directory: frontend

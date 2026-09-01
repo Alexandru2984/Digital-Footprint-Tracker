@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:css": "tailwindcss -i ./input.css -o ./tailwind.css --minify",
+    "build:css": "tailwindcss -i ./input.css -o ./tailwind.css --minify && node ./sri.mjs",
     "test": "node ./check.mjs",
     "test:browser": "playwright test"
   },

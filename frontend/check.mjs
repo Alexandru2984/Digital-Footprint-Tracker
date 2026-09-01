@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const repositoryDir = resolve(frontendDir, '..');
-const pages = ['index.html', 'login.html', 'register.html', 'admin.html'];
+// Derived, not listed. Three legal pages were added to this directory and to
+// no list, so nothing here checked them: not the inline-handler ban, not the
+// first-party rule, not SRI. A page that exists is a page that ships.
+const pages = readdirSync(frontendDir).filter(name => name.endsWith('.html')).sort();
+if (pages.length === 0) fail('no pages found to check');
 const inlineHashes = [];
 
 function fail(message) {
