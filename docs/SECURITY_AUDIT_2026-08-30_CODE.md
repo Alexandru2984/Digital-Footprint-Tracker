@@ -530,6 +530,38 @@ one is re-pinned, and the other must still be reported by name. Verified against
 the live baseline too — with two recorded checksums corrupted, re-pinning the
 CSP entry cleared that one and left the other reported.
 
+### F21 — Low: three shipped pages were checked by nothing
+
+`check.mjs` enforces the frontend's client-side rules — no inline event
+handlers, no third-party script or stylesheet, origin-relative asset paths,
+correct SRI, and every inline script's hash present in the deployed CSP. It
+applied them to a hardcoded list of four pages. `csp-hashes.mjs`, which
+generates the hashes a deploy installs, kept a *second* copy of that same list.
+
+`privacy.html`, `terms.html` and `acceptable-use.html` were added to the
+directory and to neither list. Nothing checked them. Today they contain no
+scripts, so nothing is live — but the failure mode is quiet in the wrong
+direction: adding one inline script to a legal page would ship a page whose
+script the production CSP does not allow, with no test failing and no error
+until a browser blocks it.
+
+The same shape produced the immediate CI failure. `admin.html` carries the only
+`integrity=` attribute in the frontend, hand-copied. Regenerating `tailwind.css`
+for the legal pages moved the file and left the attribute describing the
+previous bytes — a browser honouring SRI refuses the stylesheet outright, so the
+admin page would have rendered unstyled.
+
+**Fixed** (`9cb64e8`). Both lists are gone: `check.mjs` and `csp-hashes.mjs`
+each read `*.html` from the directory they are pointed at, so a page that exists
+is a page that is checked, and a candidate tree's new inline script reaches the
+CSP the same deploy installs. `sri.mjs` derives every integrity attribute from
+the bytes it protects and runs as part of `npm run build:css`, so the digest
+cannot outlive a rebuild of the asset. CI now diffs the pages as well as the
+stylesheet, asserting both are reproducible.
+
+This is the seventh instance in this audit of one decision kept by hand in
+several places, where the n+1th copy is the one that is missed.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
