@@ -11,6 +11,19 @@ umask 077
 
 CSP=/etc/nginx/snippets/swift-csp.conf
 BACKUP_DIR=/var/lib/swift-vapor-csp-backups
+MANIFEST_TOOL=/usr/local/libexec/swift-vapor/config-manifest.sh
+
+# The drift gate pins this file, and a deploy rewrites it every time — so
+# without this the gate would sit in permanent, expected failure, and a gate
+# nobody can distinguish from broken is a gate nobody reads. --accept-path
+# re-pins this one entry and refuses to touch any other, so an unrelated
+# hand-edit under /etc is still reported. Best effort on purpose: the CSP is
+# installed either way, and a baseline left stale simply shows up as drift.
+repin_csp() {
+    [[ -x "$MANIFEST_TOOL" ]] || return 0
+    "$MANIFEST_TOOL" --accept-path "$CSP" \
+        || echo "csp-install: could not re-pin the config baseline; drift will be reported" >&2
+}
 [[ $EUID -eq 0 ]] || { echo "csp-install: must run as root" >&2; exit 1; }
 (( $# >= 1 && $# <= 32 )) || { echo "csp-install: expected 1..32 hashes" >&2; exit 2; }
 [[ -f "$CSP" && ! -L "$CSP" ]] || { echo "csp-install: CSP snippet is missing or unsafe" >&2; exit 1; }
@@ -76,6 +89,7 @@ chmod 0644 "$temporary"
 mv -f -- "$temporary" "$CSP"
 temporary=""
 if nginx -t && systemctl reload nginx.service; then
+    repin_csp
     echo "csp-install: nginx reloaded; rollback copy $backup"
     exit 0
 fi
