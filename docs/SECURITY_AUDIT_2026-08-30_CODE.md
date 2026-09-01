@@ -496,6 +496,40 @@ including four names that used to pass as non-production (`staging`, `canary`,
 only exemption; reintroducing one of the old checks fails it, naming the file
 and line.
 
+### F20 — Low: the drift gate was designed to fail on every deploy
+
+`config-manifest.sh` pins `/etc/nginx/snippets/swift-csp.conf`. `deploy.sh`
+rewrites that file through `update-csp-hashes.sh` → `sudo update-swift-csp` on
+every deploy — up to three times per run (union CSP, final CSP, and again on
+rollback). So the gate reported drift after every single deploy, the healthcheck
+turned that into a failure, and `alert-notify.sh` mailed about it until someone
+ran `--accept` by hand.
+
+Nothing here was broken in the sense of a wrong checksum. The defect is that the
+only correct state of this control was "red", and a control whose normal state
+is red is one people learn to clear without reading. That is how a real
+out-of-band edit gets acknowledged away along with the expected one.
+
+A second gap surfaced while fixing it: `/usr/local/sbin/update-swift-csp` — the
+one thing the deploy account may run as root with arguments — was itself
+unpinned. `PINNED_GLOBS` covered `/usr/local/libexec/swift-vapor/*`, and this
+helper lives outside it. An out-of-band edit to the privilege boundary was the
+one root-owned change the gate would not have reported.
+
+**Fixed** (`23ac32f`). `config-manifest.sh` gains `--accept-path P`: it
+re-records exactly one entry and refuses everything else. `P` must be a file the
+globs already cover *and* an entry the baseline already holds — a genuinely new
+pinned file stays a human decision through `--accept`, so this cannot be used to
+admit anything. `update-swift-csp` calls it after a successful `nginx -t` and
+reload, best-effort: the CSP installs either way, and a baseline left stale just
+shows up as ordinary drift. `/usr/local/sbin/update-swift-csp` is now pinned.
+
+The property that matters is that a sanctioned re-pin cannot launder anyone
+else's change. `scripts/tests/config-manifest.test.sh` holds it: two files drift,
+one is re-pinned, and the other must still be reported by name. Verified against
+the live baseline too — with two recorded checksums corrupted, re-pinning the
+CSP entry cleared that one and left the other reported.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined

@@ -56,6 +56,10 @@ PINNED_GLOBS=(
     "/etc/nginx/snippets/swift-*.conf"
     "/etc/swift-vapor/*.env"
     "/usr/local/libexec/swift-vapor/*"
+    # The narrow privilege boundary the deploy account can invoke as root.
+    # It lives outside libexec, so it was the one root-owned helper in this
+    # design that nothing watched.
+    "/usr/local/sbin/update-swift-csp"
 )
 fi
 
