@@ -79,13 +79,18 @@ HOST="$(hostname -s 2>/dev/null || echo unknown)"
 [[ -n "$SUBJECT" ]] || SUBJECT="${UNIT:-swift-vapor} failed on ${HOST}"
 
 # ── Body ────────────────────────────────────────────────────────────────────
-body_file="$(mktemp)"
-trap 'rm -f "$body_file"' EXIT
-
-{
+# Nothing from here on writes a file except the throttle marker, and that one is
+# allowed to fail. The pager has to work on the day the host is sick, and on a
+# shared box /tmp is among the first things to go: when another tenant fills
+# it, systemd does not refuse to start a PrivateTmp= unit — it hands it an
+# empty, read-only /tmp. On 2026-09-13 that turned every alert about the
+# resulting healthcheck failure into a `mktemp` crash, and nothing was sent.
+# So the body lives in memory, the JSON reaches curl on stdin, and the key
+# arrives through a pipe.
+collect_body() {
     echo "Host:  $HOST"
     echo "Time:  $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-    [[ -n "$UNIT" ]] && echo "Unit:  $UNIT"
+    if [[ -n "$UNIT" ]]; then echo "Unit:  $UNIT"; fi
     echo
     if [[ -n "$BODY_FILE" && -r "$BODY_FILE" ]]; then
         cat "$BODY_FILE"
@@ -100,20 +105,19 @@ trap 'rm -f "$body_file"' EXIT
         echo "--- last $LOG_LINES journal lines ---"
         journalctl -u "$UNIT" --no-pager --lines="$LOG_LINES" -o short-iso 2>&1 | tail -n "$LOG_LINES" || true
     fi
-} > "$body_file" 2>/dev/null || true
-
-if (( $(stat -c '%s' "$body_file") > MAX_BODY_BYTES )); then
-    truncated="$(mktemp)"
-    head -c "$MAX_BODY_BYTES" "$body_file" > "$truncated"
-    printf '\n\n[truncated at %s bytes]\n' "$MAX_BODY_BYTES" >> "$truncated"
-    mv "$truncated" "$body_file"
-fi
+}
+# One byte past the ceiling is enough to know truncation is needed, and it
+# bounds what a runaway producer can make this hold in memory.
+body="$(collect_body 2>/dev/null | head -c "$(( MAX_BODY_BYTES + 1 ))" || true)"
 
 # Always leave a trace in the journal, even if delivery is throttled or fails —
 # the journal is the record of record; the mail is only the pager.
 echo "alert-notify: $SUBJECT"
 
 # ── Throttle ────────────────────────────────────────────────────────────────
+# A marker that cannot be written must not stop the mail: a full disk is one of
+# the things this exists to report. Failing open costs a possible duplicate,
+# never a silence.
 if mkdir -p "$STATE_DIR" 2>/dev/null; then
     chmod 0700 "$STATE_DIR" 2>/dev/null || true
     key="$(printf '%s' "${UNIT}|${SUBJECT}" | sha256sum | cut -c1-32)"
@@ -127,41 +131,45 @@ if mkdir -p "$STATE_DIR" 2>/dev/null; then
             exit 0
         fi
     fi
-    printf '%s' "$now" > "$marker"
+    if ! printf '%s' "$now" > "$marker"; then
+        echo "alert-notify: could not record the throttle marker; sending anyway." >&2
+    fi
 fi
 
 # ── Send ────────────────────────────────────────────────────────────────────
 # python3 builds the JSON so the subject and an arbitrary log tail can never
-# break out of the string they belong in. It goes to a file rather than to
-# `--data "$payload"`: curl's argv is world-readable through /proc for the whole
-# request, and the body carries the failed unit's journal tail.
-payload_file="$(mktemp)"
-trap 'rm -f "$body_file" "$payload_file"' EXIT
-SUBJECT="$SUBJECT" EMAIL_TO="$EMAIL_TO" EMAIL_FROM="$EMAIL_FROM" BODY_PATH="$body_file" python3 - > "$payload_file" <<'PY'
-import json, os
-with open(os.environ["BODY_PATH"], "r", errors="replace") as handle:
-    body = handle.read()
+# break out of the string they belong in. Neither the payload nor the key goes
+# through argv — curl's argv is world-readable through /proc for the whole
+# request, and the body carries the failed unit's journal tail. The payload
+# arrives on stdin; the key through a process substitution, which is a pipe
+# behind a /dev/fd path, not a file.
+api_key="$(tr -d '\r\n' < "$API_KEY_FILE")"
+[[ -n "$api_key" ]] || fail "the API key file is empty."
+
+build_payload='
+import json, os, sys
+limit = int(os.environ["MAX_BODY_BYTES"])
+raw = sys.stdin.buffer.read()
+if len(raw) > limit:
+    raw = raw[:limit] + ("\n\n[truncated at %d bytes]\n" % limit).encode()
 print(json.dumps({
     "from": os.environ["EMAIL_FROM"],
     "to": [address.strip() for address in os.environ["EMAIL_TO"].split(",") if address.strip()],
     "subject": "[swift-vapor] " + os.environ["SUBJECT"],
-    "text": body,
+    "text": raw.decode("utf-8", errors="replace"),
 }))
-PY
+'
 
-# The key goes in via a header file so it never appears in argv or the journal.
-header_file="$(mktemp)"
-trap 'rm -f "$body_file" "$payload_file" "$header_file"' EXIT
-printf 'Authorization: Bearer %s\n' "$(tr -d '\r\n' < "$API_KEY_FILE")" > "$header_file"
-chmod 0600 "$header_file"
-
-if curl --silent --show-error --fail \
-        --max-time 20 --retry 2 --retry-delay 3 \
-        --header @"$header_file" \
-        --header 'Content-Type: application/json' \
-        --data-binary @"$payload_file" \
-        --output /dev/null \
-        "$API_URL"; then
+if printf '%s' "$body" \
+        | SUBJECT="$SUBJECT" EMAIL_TO="$EMAIL_TO" EMAIL_FROM="$EMAIL_FROM" \
+          MAX_BODY_BYTES="$MAX_BODY_BYTES" python3 -c "$build_payload" \
+        | curl --silent --show-error --fail \
+            --max-time 20 --retry 2 --retry-delay 3 \
+            --header @<(printf 'Authorization: Bearer %s\n' "$api_key") \
+            --header 'Content-Type: application/json' \
+            --data-binary @- \
+            --output /dev/null \
+            "$API_URL"; then
     echo "alert-notify: delivered to $EMAIL_TO"
 else
     echo "alert-notify: DELIVERY FAILED — the alert exists only in this journal." >&2

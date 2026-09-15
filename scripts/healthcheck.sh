@@ -22,6 +22,7 @@ CERT_PATH="${HEALTHCHECK_CERT_PATH:-/etc/letsencrypt/live/swift.micutu.com/fullc
 CERT_MIN_DAYS="${HEALTHCHECK_CERT_MIN_DAYS:-21}"
 DISK_PATH="${HEALTHCHECK_DISK_PATH:-/srv}"
 DISK_MIN_FREE_PERCENT="${HEALTHCHECK_DISK_MIN_FREE_PERCENT:-15}"
+TMP_MIN_FREE_PERCENT="${HEALTHCHECK_TMP_MIN_FREE_PERCENT:-10}"
 BACKUP_CHECK="${HEALTHCHECK_BACKUP_CHECK:-/usr/local/libexec/swift-vapor/check-backup.sh}"
 CONFIG_MANIFEST_CHECK="${HEALTHCHECK_CONFIG_MANIFEST:-/usr/local/libexec/swift-vapor/config-manifest.sh}"
 # Restarts between two probe runs. One is a deploy; several is flapping that
@@ -36,7 +37,7 @@ note() { problems+=("$1"); }
 # as an arithmetic *expression* — an unvalidated value there is code execution,
 # not merely a wrong comparison. They come from a root-owned unit file today;
 # this keeps that from being the only thing that makes it safe.
-for setting in CERT_MIN_DAYS DISK_MIN_FREE_PERCENT MAX_RESTARTS_PER_INTERVAL; do
+for setting in CERT_MIN_DAYS DISK_MIN_FREE_PERCENT TMP_MIN_FREE_PERCENT MAX_RESTARTS_PER_INTERVAL; do
     if [[ ! "${!setting}" =~ ^[0-9]+$ ]]; then
         echo "healthcheck: $setting must be a non-negative integer." >&2
         exit 2
@@ -72,7 +73,9 @@ if [[ "$restarts" =~ ^[0-9]+$ ]] && mkdir -p "$STATE_DIR" 2>/dev/null; then
             note "$SERVICE restarted $delta time(s) since the last probe (threshold $MAX_RESTARTS_PER_INTERVAL) — it is flapping without reaching the failed state."
         fi
     fi
-    printf '%s' "$restarts" > "$marker"
+    if ! printf '%s' "$restarts" > "$marker"; then
+        note "could not record the restart counter in $STATE_DIR — flapping detection is blind until it can."
+    fi
 fi
 
 # ── 4. Backup freshness ─────────────────────────────────────────────────────
@@ -114,7 +117,33 @@ else
     note "could not read disk usage for $DISK_PATH."
 fi
 
-# ── 7. Host configuration drift ─────────────────────────────────────────────
+# ── 7. Shared scratch space ─────────────────────────────────────────────────
+# /tmp in this unit is private, but it is carved out of the host's shared tmpfs,
+# so its headroom is the host's. When another tenant fills it, systemd does not
+# fail PrivateTmp= units — it quietly hands them an empty, read-only /tmp — and
+# anything needing scratch space breaks without saying why. On 2026-09-13 an
+# unrelated R service filled it, and this probe reported the fallout as
+# configuration drift. Two signals: this unit cannot write /tmp at all
+# (degraded now), or headroom is low (degraded soon). Only the write catches the
+# first — in a degraded unit, df describes the substitute mount, not the full one.
+if scratch="$(mktemp /tmp/swift-vapor-healthcheck.XXXXXX 2>&1)"; then
+    rm -f -- "$scratch"
+    for metric in pcent ipcent; do
+        if used="$(df --output="$metric" /tmp 2>/dev/null | tail -1 | tr -dc '0-9')" && [[ -n "$used" ]]; then
+            free=$(( 100 - used ))
+            if (( free < TMP_MIN_FREE_PERCENT )); then
+                if [[ "$metric" == ipcent ]]; then what="inodes"; else what="space"; fi
+                note "only ${free}% of /tmp ${what} free on this host (threshold ${TMP_MIN_FREE_PERCENT}%) — when the shared /tmp fills, every PrivateTmp= unit here gets a read-only /tmp."
+            fi
+        else
+            note "could not read /tmp usage ($metric)."
+        fi
+    done
+else
+    note "/tmp is not writable here (${scratch:0:160}) — the host's shared /tmp is full or read-only, so systemd has given every PrivateTmp= unit on this host a read-only /tmp; backups need it. Find what filled it."
+fi
+
+# ── 8. Host configuration drift ─────────────────────────────────────────────
 # Catches an out-of-band edit to a unit, vhost, CSP snippet, environment file or
 # installed helper. Not an availability problem — the service keeps running —
 # but a change nobody recorded is how a live config silently stops matching the

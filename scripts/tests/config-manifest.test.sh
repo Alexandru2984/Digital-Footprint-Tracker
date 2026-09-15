@@ -22,7 +22,11 @@ printf 'helper original\n' > "$LIB/update-swift-csp"
 chmod 0644 "$ETC"/*.conf
 chmod 0755 "$LIB/update-swift-csp"
 
+# Every call runs with no usable scratch space. The healthcheck runs --verify
+# every fifteen minutes, and on 2026-09-13 a full shared /tmp turned it into a
+# `mktemp` failure reported as configuration drift.
 manifest() {
+    TMPDIR="$TMP/no-scratch-space" \
     CONFIG_MANIFEST_PATH="$TMP/state/manifest.json" \
     CONFIG_MANIFEST_RELEASE_LINK="$TMP/current" \
     CONFIG_MANIFEST_GLOBS="$ETC/*.conf $LIB/*" \

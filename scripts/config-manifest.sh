@@ -162,7 +162,9 @@ case "$MODE" in
 
     accept)
         install_manifest_directory
-        tmp="$(mktemp)"
+        # Staged beside the manifest rather than in /tmp: nothing in this script
+        # may depend on the scratch space the host shares with other tenants.
+        tmp="$(mktemp --tmpdir="$(dirname "$MANIFEST")" .manifest.XXXXXX)"
         trap 'rm -f "$tmp"' EXIT
         collect | build_json > "$tmp"
         install_manifest "$tmp"
@@ -175,19 +177,21 @@ case "$MODE" in
             echo "config-manifest: no baseline at $MANIFEST — run --accept once to record one." >&2
             exit 1
         fi
-        live="$(mktemp)"
-        trap 'rm -f "$live"' EXIT
-        collect | build_json > "$live"
-        MANIFEST_PATH="$MANIFEST" LIVE_PATH="$live" python3 -c '
+        # Held in memory, never staged: the healthcheck runs this every fifteen
+        # minutes and it has to keep working on the day /tmp does not. Captured
+        # before python runs so a refusal inside collect still fails fast rather
+        # than being read as a half-empty tree.
+        live_json="$(collect | build_json)"
+        printf '%s' "$live_json" | MANIFEST_PATH="$MANIFEST" python3 -c '
 import json, os, sys
 
-def load(path):
-    with open(path) as handle:
-        data = json.load(handle)
+def load(handle):
+    data = json.load(handle)
     return {entry["path"]: entry for entry in data["entries"]}, data.get("release", "unknown")
 
-accepted, accepted_release = load(os.environ["MANIFEST_PATH"])
-live, live_release = load(os.environ["LIVE_PATH"])
+with open(os.environ["MANIFEST_PATH"]) as handle:
+    accepted, accepted_release = load(handle)
+live, live_release = load(sys.stdin)
 
 problems = []
 for path in sorted(set(accepted) | set(live)):
@@ -233,26 +237,24 @@ sys.exit(1)
             echo "config-manifest: no baseline at $MANIFEST — run --accept once to record one." >&2
             exit 1
         fi
-        live="$(mktemp)"
-        tmp="$(mktemp)"
-        trap 'rm -f "$live" "$tmp"' EXIT
-        collect > "$live"
+        tmp="$(mktemp --tmpdir="$(dirname "$MANIFEST")" .manifest.XXXXXX)"
+        trap 'rm -f "$tmp"' EXIT
+        live_tsv="$(collect)"
         # Exit 3 means "the entry is already correct" — separated from 0 so the
         # caller never installs a manifest that was not rewritten.
         status=0
-        MANIFEST_PATH="$MANIFEST" LIVE_PATH="$live" TARGET="$ACCEPT_PATH" python3 -c '
+        printf '%s\n' "$live_tsv" | MANIFEST_PATH="$MANIFEST" TARGET="$ACCEPT_PATH" python3 -c '
 import json, os, sys
 
 target = os.environ["TARGET"]
 
 live = {}
-with open(os.environ["LIVE_PATH"]) as handle:
-    for line in handle:
-        line = line.rstrip("\n")
-        if not line:
-            continue
-        path, digest, mode, owner = line.split("\t")
-        live[path] = {"path": path, "sha256": digest, "mode": mode, "owner": owner}
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line:
+        continue
+    path, digest, mode, owner = line.split("\t")
+    live[path] = {"path": path, "sha256": digest, "mode": mode, "owner": owner}
 
 # Two independent gates. The first is what keeps this from being a way to admit
 # anything: the path has to be a file the globs already cover. The second is
