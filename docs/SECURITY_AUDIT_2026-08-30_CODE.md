@@ -562,6 +562,68 @@ stylesheet, asserting both are reproducible.
 This is the seventh instance in this audit of one decision kept by hand in
 several places, where the n+1th copy is the one that is missed.
 
+### F22 — Medium: a full shared /tmp silenced the alert about itself
+
+On 2026-09-13 at 20:10, `r-traffic-intel.service` — an R Shiny app belonging to
+another project on this host — filled the host's 30 GiB `/tmp` tmpfs. When
+`mkdtemp` for a unit's private directory fails with a disk-space or read-only
+error, systemd does not refuse to start a `PrivateTmp=` unit: it mounts an
+empty, read-only directory at `/tmp` and starts it anyway. Every swift-vapor
+unit has `PrivateTmp=true`.
+
+From 20:12 to 22:33, nine consecutive healthcheck runs failed, and what they
+reported was "host configuration drift: mktemp: Read-only file system" —
+`config-manifest.sh --verify` staged its comparison in a temp file, so the probe
+mislabelled a capacity failure as an integrity one. Each failure started
+`swift-vapor-alert@`, and all nine alerts died on the sender's first `mktemp`
+before reaching the mail API. That unit then sat in the failed state for two
+days. Nothing was sent. The application was unaffected, and the 05:00 backups
+ran outside the window.
+
+The dependency is as old as the sender (`e9617e9` staged the body, the
+truncation and the auth header in `/tmp`); `47b3e4a` added a fourth file for
+the payload. Every delivery test passed because `/tmp` was healthy when it ran:
+the failure needs a condition none of them created. A pager that shares a
+dependency with what it reports on is silenced by the same event that breaks
+the service — the one property it must not have.
+
+**Fixed** (`ad5f298`).
+
+- `alert-notify.sh` writes no files. The body is held in memory and capped at
+  the byte ceiling as it is read; the JSON reaches curl on stdin, the key
+  through a process substitution — a pipe behind a `/dev/fd` path. Neither is
+  in argv. An unwritable throttle marker is journalled and the mail goes out
+  anyway: a possible duplicate, never a silence.
+- `config-manifest.sh --verify` streams instead of staging, and `--accept` /
+  `--accept-path` stage beside the manifest. The script no longer touches `/tmp`.
+- The healthcheck gains a "shared scratch space" check. It writes a probe file
+  — only a write detects the degraded state, since `df` inside a degraded unit
+  describes the substitute mount — and warns below 10% free space or inodes. An
+  unwritable state directory is now a finding rather than a `set -e` exit that
+  skipped every later check, which broke the probe's own stated contract that
+  one failure never hides another.
+
+`scripts/tests/alert-notify.test.sh` runs the real sender against a local
+stand-in for the mail API with `TMPDIR` pointing at a directory that does not
+exist, and statically rejects `mktemp` and here-documents — bash can fall back
+from an unusable `TMPDIR` to `/tmp` for those, so the dynamic case alone cannot
+see them. The sender that ran on 13 September fails both halves.
+`config-manifest.test.sh` now runs every call the same way.
+
+Verified by reproducing the incident. Under `TemporaryFileSystem=/tmp:ro` with
+the alert unit's own sandbox, the old sender fails with the exact error from the
+journal and the new one delivers; the healthcheck reports one problem — the
+real one — and no drift. Then the real `swift-vapor-alert@` unit, with its
+encrypted credential and the real API, was started under a runtime drop-in
+forcing `/tmp` read-only: `touch` in `ExecStartPre` failed with EROFS, and the
+alert was delivered.
+
+Not changed: `backup.sh` keeps its GnuPG home and passfile under `/tmp`, which
+as tmpfs is the right place for secrets. A tenant filling `/tmp` at 05:00 would
+cost that night's backup; the healthcheck now names the cause within fifteen
+minutes and the alert reaches someone. A `RuntimeDirectory=` would remove the
+dependency outright.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined
