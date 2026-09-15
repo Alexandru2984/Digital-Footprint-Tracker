@@ -58,6 +58,10 @@ validate each subsystem.
   nothing the application owns, because it runs precisely when the application
   is down. Identical alerts are throttled (default one hour) so a flapping unit
   cannot mailbomb the operator; every attempt is journalled regardless.
+  It writes no files — the body is held in memory, the payload goes to curl on
+  stdin and the key through a pipe — because on this shared host a full `/tmp`
+  makes systemd hand every `PrivateTmp=` unit a read-only one, and a pager that
+  needs scratch space is silenced by the same event it should report (F22).
   Routing lives in `/etc/swift-vapor/alerts.env` (non-secret).
 - `config-manifest.sh` (installed to `libexec`) — records and verifies the
   checksum, mode and owner of the host configuration this service depends on:
@@ -69,7 +73,11 @@ validate each subsystem.
   systemd drop-in is as much a change as an edited one. Because the manifest
   covers `libexec` itself, updating any helper requires a deliberate
   `--accept`; that is the point, since a tampered probe is precisely what this
-  should catch. `/etc/nginx/conf.d/cloudflare-*.conf` and TLS certificates are
+  should catch. The one sanctioned exception is the CSP snippet, which every
+  deploy rewrites: `update-swift-csp` re-pins that single entry with
+  `--accept-path` after a successful reload, and `--accept-path` refuses any
+  path the baseline does not already hold, so it cannot absorb anyone else's
+  change. `/etc/nginx/conf.d/cloudflare-*.conf` and TLS certificates are
   deliberately excluded: a reviewed script and certbot legitimately rewrite
   them, and pinning either would turn routine maintenance into a standing false
   alarm.
@@ -78,8 +86,9 @@ validate each subsystem.
   unit reaches `failed` only on a hard crash-loop (5 starts in 10s), so the
   quiet degradations are checked here instead: readiness including the database,
   restart flapping that never trips the start limit, backup freshness (via the
-  existing read-only `check-backup.sh` gate), certificate expiry and disk
-  headroom. It reports and never repairs; a non-zero exit fires the same alert
+  existing read-only `check-backup.sh` gate), certificate expiry, disk
+  headroom, the shared `/tmp` — whether this unit can write it at all, and its
+  free space and inodes — and configuration drift. It reports and never repairs; a non-zero exit fires the same alert
   handler. It carries `SupplementaryGroups=swift-backup-check` because its empty
   `CapabilityBoundingSet` leaves uid 0 unable to read the 0750 backup artifact
   directory it does not own.
