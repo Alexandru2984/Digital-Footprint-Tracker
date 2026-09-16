@@ -1,0 +1,87 @@
+[Unit]
+Description=Off-host copy of the swift-vapor encrypted backups
+Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
+# Started by OnSuccess= on the backup unit, so it only ever runs against an
+# artifact that has already been decrypted and gzip-verified. It is not enabled
+# and has no timer of its own: an off-host copy with no fresh backup behind it
+# would be a copy of yesterday, reported as success.
+After=network-online.target
+Wants=network-online.target
+ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/offsite-backup.sh
+OnFailure=swift-vapor-alert@%n.service
+
+[Service]
+Type=oneshot
+User=swift-backup
+Group=swift-backup
+WorkingDirectory=/usr/local/libexec/swift-vapor
+
+# Only the destination lives here, and it is not a secret: routing, like
+# alerts.env, is reviewable configuration.
+EnvironmentFile=/etc/swift-vapor/offsite.env
+
+# A minimal rclone config holding one remote — not the operator's own config,
+# which also carries the object-storage keys and the crypt password. Copied into
+# the runtime directory because rclone rewrites the file when it refreshes an
+# OAuth access token; that copy is tmpfs and is gone when the unit stops, so the
+# refreshed token never outlives the run.
+LoadCredentialEncrypted=rclone.conf:/etc/credstore.encrypted/swift-vapor-rclone-config
+RuntimeDirectory=swift-vapor-offsite
+RuntimeDirectoryMode=0700
+ExecStartPre=/usr/bin/install -m 0600 %d/rclone.conf %t/swift-vapor-offsite/rclone.conf
+Environment=HOME=%t/swift-vapor-offsite
+Environment=OFFSITE_RCLONE_CONFIG=%t/swift-vapor-offsite/rclone.conf
+
+# The status file carries a timestamp, a count and the destination — no secret —
+# and the health probe reads it as root without the backup group.
+StateDirectory=swift-vapor-offsite
+StateDirectoryMode=0755
+Environment=OFFSITE_SOURCE_DIR=/var/lib/swift-vapor-backup/artifacts
+Environment=OFFSITE_STATUS_FILE=/var/lib/swift-vapor-offsite/last-success
+ExecStart=/usr/local/libexec/swift-vapor/offsite-backup.sh
+TimeoutStartSec=30min
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectProc=invisible
+ProcSubset=pid
+InaccessiblePaths=-/run/docker.sock -/run/containerd/containerd.sock -/run/podman/podman.sock
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Unlike every other unit here this one must reach the public internet, so it
+# gets the application's egress policy rather than localhost-only: RFC1918,
+# link-local, metadata, benchmark and documentation networks stay unreachable,
+# loopback stays open for the local resolver.
+IPAddressDeny=0.0.0.0/8 10.0.0.0/8 100.64.0.0/10
+IPAddressDeny=169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16
+IPAddressDeny=192.0.2.0/24 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24
+IPAddressDeny=224.0.0.0/4 240.0.0.0/4
+IPAddressDeny=::/128 100::/64 2001:2::/48 2001:db8::/32
+IPAddressDeny=fc00::/7 fe80::/10 ff00::/8
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
+UMask=0077
+KeyringMode=private
+RemoveIPC=true
+
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+MemoryHigh=256M
+MemoryMax=384M
+TasksMax=64
+LimitNOFILE=1024

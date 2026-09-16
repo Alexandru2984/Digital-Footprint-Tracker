@@ -4,6 +4,9 @@ Documentation=https://github.com/Alexandru2984/Digital-Footprint-Tracker
 After=postgresql.service local-fs.target
 Wants=postgresql.service
 ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/backup.sh
+# The off-host copy is chained to a *verified* backup rather than to a clock:
+# it can never ship what this run failed to produce.
+OnSuccess=swift-vapor-offsite.service
 
 [Service]
 Type=oneshot
@@ -20,6 +23,13 @@ Environment=BACKUP_OUTPUT_DIR=/var/lib/swift-vapor-backup/artifacts
 Environment=BACKUP_STATUS_FILE=/var/lib/swift-vapor-backup/status/last-success
 Environment=PG_DUMP_PATH=/usr/bin/pg_dump
 ExecStart=/usr/local/libexec/swift-vapor/backup.sh
+# GnuPG's home and the libpq passfile are scratch space holding key material.
+# %t keeps them on this unit's own tmpfs instead of the /tmp this host shares
+# with other tenants — a tenant filling that leaves sandboxed units a
+# read-only /tmp and would cost a night's backup (F22).
+RuntimeDirectory=swift-vapor-backup
+RuntimeDirectoryMode=0700
+Environment=TMPDIR=%t/swift-vapor-backup
 TimeoutStartSec=2h
 
 NoNewPrivileges=true

@@ -126,4 +126,34 @@ grep -Eq '^m[[:space:]]+swift-deploy[[:space:]]+swift-backup-check$' "$BACKUP_SY
 grep -Eq '^d[[:space:]]+/var/lib/swift-vapor-backup/artifacts[[:space:]]+0750[[:space:]]+swift-backup[[:space:]]+swift-backup-check[[:space:]]' "$BACKUP_TMPFILES"
 grep -Eq '^d[[:space:]]+/var/lib/swift-vapor-backup/status[[:space:]]+0755[[:space:]]+swift-backup[[:space:]]+swift-backup[[:space:]]' "$BACKUP_TMPFILES"
 
+
+# Derived, not listed. Everything above names its units by hand, so a unit added
+# later is checked by nothing — which is exactly how swift-vapor-offsite.service
+# would have arrived. These are the properties all of them already carry, so the
+# baseline is a floor no new unit can silently drop below.
+mapfile -t ALL_UNITS < <(find "$ROOT_DIR/ops/systemd" -maxdepth 1 -name 'swift-vapor*.service' | sort)
+(( ${#ALL_UNITS[@]} >= 6 )) || { echo "expected to find the swift-vapor units" >&2; exit 1; }
+for unit in "${ALL_UNITS[@]}"; do
+    mapfile -t fragments < <(find "$ROOT_DIR/ops/systemd/$(basename "$unit").d" -maxdepth 1 \
+        -name '*.conf' -not -name '*.example' 2>/dev/null | sort)
+    text="$(cat "$unit" "${fragments[@]}" 2>/dev/null)"
+    for required in \
+        'NoNewPrivileges=(true|yes)' \
+        'ProtectSystem=strict' \
+        'ProtectHome=(true|yes|read-only)' \
+        'PrivateDevices=(true|yes)' \
+        'CapabilityBoundingSet=' \
+        'RestrictSUIDSGID=(true|yes)' \
+        'RestrictNamespaces=(true|yes)' \
+        'LockPersonality=(true|yes)' \
+        'SystemCallArchitectures=native' \
+        'MemoryDenyWriteExecute=(true|yes)' \
+        'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
+        'UMask=0077'
+    do
+        grep -qE "^${required}\$" <<<"$text" \
+            || { echo "$(basename "$unit") is missing ${required%%=*}" >&2; exit 1; }
+    done
+done
+
 echo "production boundary tests passed"

@@ -23,6 +23,8 @@ CERT_MIN_DAYS="${HEALTHCHECK_CERT_MIN_DAYS:-21}"
 DISK_PATH="${HEALTHCHECK_DISK_PATH:-/srv}"
 DISK_MIN_FREE_PERCENT="${HEALTHCHECK_DISK_MIN_FREE_PERCENT:-15}"
 TMP_MIN_FREE_PERCENT="${HEALTHCHECK_TMP_MIN_FREE_PERCENT:-10}"
+OFFSITE_STATUS="${HEALTHCHECK_OFFSITE_STATUS:-/var/lib/swift-vapor-offsite/last-success}"
+OFFSITE_MAX_AGE_HOURS="${HEALTHCHECK_OFFSITE_MAX_AGE_HOURS:-36}"
 BACKUP_CHECK="${HEALTHCHECK_BACKUP_CHECK:-/usr/local/libexec/swift-vapor/check-backup.sh}"
 CONFIG_MANIFEST_CHECK="${HEALTHCHECK_CONFIG_MANIFEST:-/usr/local/libexec/swift-vapor/config-manifest.sh}"
 # Restarts between two probe runs. One is a deploy; several is flapping that
@@ -37,7 +39,7 @@ note() { problems+=("$1"); }
 # as an arithmetic *expression* — an unvalidated value there is code execution,
 # not merely a wrong comparison. They come from a root-owned unit file today;
 # this keeps that from being the only thing that makes it safe.
-for setting in CERT_MIN_DAYS DISK_MIN_FREE_PERCENT TMP_MIN_FREE_PERCENT MAX_RESTARTS_PER_INTERVAL; do
+for setting in CERT_MIN_DAYS DISK_MIN_FREE_PERCENT TMP_MIN_FREE_PERCENT OFFSITE_MAX_AGE_HOURS MAX_RESTARTS_PER_INTERVAL; do
     if [[ ! "${!setting}" =~ ^[0-9]+$ ]]; then
         echo "healthcheck: $setting must be a non-negative integer." >&2
         exit 2
@@ -143,7 +145,29 @@ else
     note "/tmp is not writable here (${scratch:0:160}) — the host's shared /tmp is full or read-only, so systemd has given every PrivateTmp= unit on this host a read-only /tmp; backups need it. Find what filled it."
 fi
 
-# ── 8. Host configuration drift ─────────────────────────────────────────────
+# ── 8. Off-host copy freshness ──────────────────────────────────────────────
+# A local backup survives a bad migration; it does not survive the host. The
+# copy is written by swift-vapor-offsite.service only after it re-reads the
+# far side and the checksums match, so this timestamp means "verified there",
+# not "upload returned". Set HEALTHCHECK_OFFSITE_STATUS= (empty) to opt out on a
+# host with no off-host destination — a check that quietly stops running is
+# indistinguishable from one that finds nothing.
+if [[ -n "$OFFSITE_STATUS" ]]; then
+    if [[ -f "$OFFSITE_STATUS" ]]; then
+        if copied_at="$(stat -c '%Y' "$OFFSITE_STATUS" 2>/dev/null)" && [[ "$copied_at" =~ ^[0-9]+$ ]]; then
+            age_hours=$(( ( $(date +%s) - copied_at ) / 3600 ))
+            if (( age_hours > OFFSITE_MAX_AGE_HOURS )); then
+                note "the off-host backup copy is ${age_hours}h old (threshold ${OFFSITE_MAX_AGE_HOURS}h) — the backups exist only on this host."
+            fi
+        else
+            note "could not read the off-host copy timestamp at $OFFSITE_STATUS."
+        fi
+    else
+        note "no off-host backup copy has ever been verified ($OFFSITE_STATUS is missing) — the backups exist only on this host."
+    fi
+fi
+
+# ── 9. Host configuration drift ─────────────────────────────────────────────
 # Catches an out-of-band edit to a unit, vhost, CSP snippet, environment file or
 # installed helper. Not an availability problem — the service keeps running —
 # but a change nobody recorded is how a live config silently stops matching the

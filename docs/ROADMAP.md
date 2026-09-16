@@ -111,7 +111,7 @@ Status as of 2026-08-30, verified against the running box.
 |---|---|---|
 | Restore main SPA/CSP compatibility | **Met** | Exact hashes plus per-request JSD nonce; browser gate open |
 | Encrypted backup credential/job | **Met** | Daily timer active, seven verified artifacts, newest authenticated |
-| Restore/offsite recovery | **Partly met** | Isolated restore drill evidenced 2026-08-24; off-host immutable copy and measured RPO/RTO still open |
+| Restore/offsite recovery | **Partly met** | Isolated restore drill evidenced 2026-08-24; off-host copy delivered 2026-09-16 (checksum-verified after upload, never pruned remotely); true immutability and measured RPO/RTO still open |
 | Dedicated runtime identity | **Met** | `swift-vapor`/`swift-deploy`/`swift-backup`, `/srv` layout, no personal-home access |
 | Narrow deploy authority | **Met, with accepted deviation** | Forced-command deploy key only; `micu`'s broad sudo retained deliberately as root recovery |
 | Immutable atomic deployment | **Met** | `current` → `releases/<sha>`; deployed SHA equals the CI artifact |
@@ -131,10 +131,13 @@ series), with its own rollback note and production evidence before the next one.
 
 1. **Emergency edge consistency — delivered.** The served CSP carries the exact
    hashes plus the per-request JSD nonce; validated and reloaded in production.
-2. **Recovery first — delivered except the off-host copy.** Encrypted credential
-   provisioned, verified backups running daily, isolated restore drill evidenced,
-   and timer failure now pages the operator. An immutable off-host copy and a
-   measured RPO/RTO remain open.
+2. **Recovery first — delivered.** Encrypted credential provisioned, verified
+   backups running daily, isolated restore drill evidenced, timer failure pages
+   the operator, and every verified backup is copied off-host and re-read there
+   before the copy is recorded as done. Two things remain open: the destination
+   is not *immutable* — the credential that writes can also delete, so nothing
+   but policy stops a compromised host from erasing history — and RPO/RTO are
+   still unmeasured.
 3. **Identity cutover — delivered.** `swift-vapor`, `/srv` releases and scoped
    credential access are live and deploy uses a restricted forced-command key.
    Broad sudo for `micu` is retained by operator decision (see accepted

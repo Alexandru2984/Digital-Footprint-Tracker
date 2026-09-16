@@ -57,3 +57,37 @@ immutable off-host destination, then test retrieval without relying on the VPS.
 The manifest contains hashes, counts, times and tool provenance, but no database
 rows, credentials or host paths. A failed drill publishes no success manifest;
 the original encrypted artifact is always preserved for investigation/retry.
+
+
+## Restoring from the off-host copy
+
+`swift-vapor-offsite.service` uploads every artifact to the destination named in
+`/etc/swift-vapor/offsite.env` after each verified backup, then re-reads the far
+side and compares checksums before recording success. It never deletes there, so
+the destination holds everything local retention has already rotated away.
+
+From any machine with rclone and access to the destination:
+
+```bash
+rclone lsl gdrive:Backup_VPS/swift-vapor
+rclone copy gdrive:Backup_VPS/swift-vapor/footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg .
+sha256sum footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg
+```
+
+Then decrypt with the backup passphrase and restore as above. The artifact is
+byte-identical to the local one, so `scripts/restore-drill.sh` accepts it
+unchanged.
+
+### The passphrase is the whole recovery
+
+The encrypted artifacts are worthless without the backup passphrase, and the
+copy in `/etc/credstore.encrypted/` **cannot help you off this host**:
+`systemd-creds` encrypts it to this machine's `/var/lib/systemd/credential.secret`
+and, where present, its TPM. The weekly VPS archive tars `/etc` but not
+`/var/lib/systemd`, so it does not carry that key either.
+
+An off-host copy whose passphrase exists only on the host it is meant to outlive
+is not a backup. Keep the backup passphrase in a password manager or another
+off-host store, and prove it by decrypting one downloaded artifact on a machine
+that is not this VPS. Until that is done, the off-host copy protects against
+losing the *data* on this host, not against losing the host.

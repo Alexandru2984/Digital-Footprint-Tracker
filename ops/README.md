@@ -88,14 +88,33 @@ validate each subsystem.
   restart flapping that never trips the start limit, backup freshness (via the
   existing read-only `check-backup.sh` gate), certificate expiry, disk
   headroom, the shared `/tmp` — whether this unit can write it at all, and its
-  free space and inodes — and configuration drift. It reports and never repairs; a non-zero exit fires the same alert
+  free space and inodes — the age of the off-host copy, and configuration drift.
+  It reports and never repairs; a non-zero exit fires the same alert
   handler. It carries `SupplementaryGroups=swift-backup-check` because its empty
   `CapabilityBoundingSet` leaves uid 0 unable to read the 0750 backup artifact
   directory it does not own.
 - `swift-vapor-backup.service` and `.timer` — the daily encrypted PostgreSQL
   stream, isolated as `swift-backup` with database and recovery passphrases
   mounted as separate encrypted credentials. The job has localhost-only network
-  access and no personal-home/container-socket visibility.
+  access and no personal-home/container-socket visibility. Its GnuPG home and
+  libpq passfile live in a per-unit `RuntimeDirectory=` rather than `/tmp`,
+  which this host shares with other tenants (F22).
+- `swift-vapor-offsite.service` — the off-host copy, started by `OnSuccess=` on
+  the backup rather than by a clock, so it can only ever ship an artifact that
+  has already been decrypted and gzip-verified. It uploads with rclone and then
+  *re-reads the far side and compares checksums*; only then does it publish the
+  timestamp the health probe watches. It never deletes remotely — a mirror
+  propagates a local wipe, and a retention pass that runs while backups are
+  failing removes the last good copies — so the destination is a superset of
+  local retention. The destination is plain (non-secret) routing in
+  `/etc/swift-vapor/offsite.env`; the token that can write to it is a *minimal*
+  rclone config holding one remote, mounted as the encrypted credential
+  `swift-vapor-rclone-config`, never the operator's own config with its
+  object-storage keys. It is the only unit here allowed to reach the public
+  internet, and it carries the application's egress deny-list so it still cannot
+  reach RFC1918, link-local or metadata addresses. Because the artifacts are
+  already GPG-encrypted, the remote holds ciphertext and recovery needs the
+  backup passphrase and nothing else.
 - `swift-vapor.service.d/10-hardening.conf` — sandbox (read-only application
   tree with other home directories hidden, no capabilities/devices, private
   file defaults, one permitted listen port, restricted address families, and
