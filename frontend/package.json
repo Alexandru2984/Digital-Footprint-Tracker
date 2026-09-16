@@ -14,7 +14,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.62.1",
-    "tailwindcss": "^3.4.19"
+    "@playwright/test": "1.63.0",
+    "tailwindcss": "^4.3.3"
   }
 }
