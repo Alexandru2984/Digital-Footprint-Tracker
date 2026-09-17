@@ -23,9 +23,20 @@ updates:
     groups:
       frontend-dependencies:
         patterns: ["*"]
+    ignore:
+      # Tailwind 4 is a migration, not a bump: the CLI moved to @tailwindcss/cli,
+      # configuration became CSS-first, and the purged stylesheet that the SRI
+      # and browser gates depend on changes wholesale. Grouped with everything
+      # else it also held every other frontend update hostage to a red build.
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /
+    # The worker has its own entry below. Without this, both entries rewrote the
+    # same worker lock every week and opened two PRs that conflict with each other.
+    exclude-paths:
+      - "worker/**"
     schedule:
       interval: weekly
       day: monday
@@ -71,3 +82,15 @@ updates:
     groups:
       container-dependencies:
         patterns: ["*"]
+    ignore:
+      # The Dockerfile builder, CI's Build & Test container and the production
+      # host all run Swift 6.2. Moving the image alone is a toolchain split that
+      # nothing tests: no CI job builds this image.
+      - dependency-name: "swift"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # A new Ubuntu release is a platform move — package names and sonames
+      # change (libcurl4 became libcurl4t64 in 24.04) and the builder and runtime
+      # stages have to move together. Digest refreshes of the pinned tags still
+      # come through; release jumps are a deliberate, locally built change.
+      - dependency-name: "ubuntu"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
