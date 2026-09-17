@@ -61,12 +61,41 @@ jobs:
           retention-days: 7
           compression-level: 9
 
+  toolchain:
+    name: Resolve Swift toolchain image
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Dockerfile's builder stage is the one place the toolchain image is
+      # pinned. This job used to carry its own copy, and dependabot only ever
+      # moves the Dockerfile — so the two drifted apart on the first digest
+      # refresh, and a container PR was never tested on the image it changed.
+      - name: Read the builder image from the Dockerfile
+        id: resolve
+        run: |
+          set -euo pipefail
+          image="$(awk '$1 == "FROM" && $3 == "AS" && $4 == "builder" { print $2; exit }' Dockerfile)"
+          if [[ ! "$image" =~ ^swift:[0-9]+\.[0-9]+-[a-z]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Dockerfile builder image is missing or not digest-pinned: ${image:-none}"
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Swift toolchain: $image"
+
   test:
     name: Build & Test
+    needs: [toolchain]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: swift:6.2-jammy@sha256:1c1f422aee767a7f33b88bc3aee99cad5de4af8723fbee8a3ab6951a6879f929
+      image: ${{ needs.toolchain.outputs.image }}
 
     steps:
       - name: Check out repository
