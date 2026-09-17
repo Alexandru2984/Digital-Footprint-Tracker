@@ -13,8 +13,8 @@ feedparser==6.0.14
 filelock==3.32.6
 langdetect==1.0.9
 lxml_html_clean>=0.4.2
-networkx==3.4.2
-numpy==2.2.6
+networkx==3.6.1
+numpy==2.5.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-socks[asyncio]==3.1.1
