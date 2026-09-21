@@ -33,7 +33,7 @@ RUN --mount=type=cache,id=swift-vapor-spm-6.2,target=/build/.build,sharing=locke
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
 # Ubuntu (no Swift toolchain) — the binary is statically linked so we only
 # need the system C libraries it dynamically depends on.
-FROM ubuntu:22.04@sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7 AS runtime
+FROM ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 AS runtime
 
 # Runtime dependencies:
 #   libatomic1 libcurl4 libxml2 — required by the Vapor binary
