@@ -10,7 +10,7 @@ alembic==1.20.0
 beautifulsoup4==4.15.0
 click==8.5.0
 feedparser==6.0.14
-filelock==3.32.6
+filelock==4.0.0
 langdetect==1.0.9
 lxml_html_clean>=0.4.2
 networkx==3.6.1
@@ -21,11 +21,11 @@ python-socks[asyncio]==3.1.1
 requests==2.34.2
 rich==15.0.0
 spacy==3.8.16
-sqlalchemy[asyncio]==2.0.52
+sqlalchemy[asyncio]==2.0.54
 tldextract==5.3.2
 trafilatura==2.2.0
 typer==0.27.2
-urllib3==2.7.0
+urllib3==2.8.0
 
 # Build tooling is installed inside the isolated venv and pinned as part of
 # the same hash-locked supply-chain boundary.
