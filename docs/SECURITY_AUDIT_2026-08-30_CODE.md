@@ -624,6 +624,40 @@ cost that night's backup; the healthcheck now names the cause within fifteen
 minutes and the alert reaches someone. A `RuntimeDirectory=` would remove the
 dependency outright.
 
+### F23 — Accepted risk: one unfixable build-time advisory
+
+On 2026-10-05 `GHSA-vfj7-8cjw-p6xm` (High, 8.7) was published against `braces`
+3.0.3 — a stack-exhaustion denial of service through deeply nested glob
+patterns. 3.0.3 is the newest published release; there is no fixed version.
+`braces` reaches this repository only through `tailwindcss` 3, via `chokidar`
+and `micromatch`. It runs at build time, over content globs this repository
+writes, and ships nothing: the browser gets the generated stylesheet, and the
+server binary contains no JavaScript at all.
+
+It still blocked everything. Both gates treat High as fatal, so three dependabot
+PRs failed on it — including the one carrying **urllib3 2.8.0, which fixes three
+real advisories (8.9, 7.6, 6.9) in the worker lock**. An unreachable build-time
+finding was holding back a server-side HTTP library fix. That is the wrong way
+round, and it is the argument for an exception rather than for waiting.
+
+**Accepted until 2026-12-01.** `npm audit` cannot waive one advisory — the
+alternatives were lowering the threshold for every dependency or dropping the
+gate — so `scripts/audit-frontend.mjs` wraps it with an explicit list
+(`frontend/npm-audit-allowlist.json`), and `frontend/osv-scanner.toml` carries
+the same decision for OSV-Scanner. Both record the id, the reason and the date.
+
+The list is built to rot loudly. It fails on any high or critical advisory it
+does not name, on a named advisory whose date has passed, and on an entry that
+no longer appears at all — an exception nobody needs is one nobody is reviewing.
+`scripts/tests/audit-frontend.test.sh` holds all four behaviours against fixture
+reports, so the rules are tested rather than the current dependency tree.
+
+The real fix is the Tailwind 4 migration, which drops `chokidar` and
+`micromatch` outright; 2026-12-01 is when that decision gets revisited. The
+migration is not small — 403 distinct utility classes across seven pages, about
+140 of them using utilities v4 renames — and doing it under a red build is how
+visual regressions ship, so it is deliberately a separate piece of work.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined

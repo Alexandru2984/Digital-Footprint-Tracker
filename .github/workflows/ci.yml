@@ -45,8 +45,10 @@ jobs:
           git diff --exit-code -- tailwind.css '*.html'
 
       - name: Audit frontend dependencies
-        working-directory: frontend
-        run: npm audit --audit-level=high
+        # Wraps `npm audit --audit-level=high`, which cannot waive a single
+        # advisory: an unfixable one would otherwise force lowering the
+        # threshold for everything. Exceptions are named, dated and expire.
+        run: node scripts/audit-frontend.mjs
 
       - name: Run responsive, accessibility and CSP browser gate
         run: scripts/run-browser-tests.sh "$RUNNER_TEMP/playwright"
