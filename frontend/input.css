@@ -1,8 +1,10 @@
-@import 'tailwindcss';
-
-/* The same two globs tailwind.config.js declared under v3. Explicit rather
-   than relying on automatic detection, so the generated stylesheet depends on
-   a stated set of files and stays reproducible. */
+/* source(none) turns off v4's automatic directory scanning, so the input set is
+   exactly the two globs below — the same ones tailwind.config.js declared under
+   v3. Without it, detection also picked up whatever else happened to be in the
+   directory: three .tmp copies left by the upgrade tool were scanned, their v3
+   class names generated, and the committed stylesheet then differed from a
+   clean checkout's by 610 bytes. Now the output depends on stated files only. */
+@import 'tailwindcss' source(none);
 @source './*.html';
 @source './*.js';
 
