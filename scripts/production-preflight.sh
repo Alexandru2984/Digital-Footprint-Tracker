@@ -444,7 +444,6 @@ check "backup unit uses isolated file credentials" backup_unit_is_effective
 check "encrypted backup and freshness marker are current" backup_is_current
 check "restore drill can read the dumps this host writes" restore_drill_can_read_these_dumps
 check "current immutable release passes its manifest" active_release_is_valid
-check "served tree carries no build or test tooling" served_tree_has_no_tooling
 check "running executable exactly matches current release" running_process_matches_release
 check "internal database readiness is healthy" internal_readiness_is_healthy
 check "public readiness route is hidden" public_readiness_is_hidden
@@ -464,6 +463,12 @@ else
     check "installed deployment tools are root-owned" installed_deploy_tools_are_root_owned
     check "runtime identity cannot reach the Docker socket" runtime_cannot_reach_docker_socket
     check "deploy sudo policy is narrow" sudo_policy_is_narrow
+    # Audit-only: build-release.sh refuses to publish a bundle carrying
+    # tooling, so this is the second look at what is actually on disk. It
+    # must stay out of the deployment gate — asserting it there blocks the
+    # deploy that would replace the offending tree, which is exactly what
+    # happened on 2026-10-05.
+    check "served tree carries no build or test tooling" served_tree_has_no_tooling
     check "deploy account password is locked" account_is_locked swift-deploy
     check "backup account password is locked" account_is_locked swift-backup
     check "installed nginx configuration parses" nginx -t

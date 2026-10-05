@@ -77,6 +77,21 @@ rsync -a --chmod=D0555,F0444 \
     "$SOURCE/frontend/" "$BUNDLE/frontend/"
 install -m 0555 "$SOURCE/scripts/generate_report.py" "$BUNDLE/scripts/generate_report.py"
 
+# The filter decides what enters the bundle; this refuses to publish one where
+# it went wrong. A release is immutable once published and nginx serves it
+# straight off disk, so "only runtime assets" has to be true here, not intended
+# here. Checked on the bundle rather than on the live tree, because a gate that
+# inspects what is already served would block the very deploy that fixes it.
+STRAY="$(find "$BUNDLE/frontend" \
+    \( -name '*.mjs' -o -name '*.tmp' -o -name 'package.json' \
+       -o -name 'package-lock.json' -o -name 'input.css' -o -name '*.toml' \
+       -o -name 'tailwind.config.js' -o -path "$BUNDLE/frontend/tests/*" \) \
+    -print -quit)"
+[[ -z "$STRAY" ]] || {
+    echo "release: build tooling reached the served bundle: ${STRAY#"$BUNDLE/"}" >&2
+    exit 1
+}
+
 [[ -z "$(find "$BUNDLE" -type l -print -quit)" ]] || {
     echo "release: symlinks are forbidden inside release bundles" >&2
     exit 1
