@@ -55,3 +55,7 @@ __pycache__/
 # semgrep --strict cannot parse, so committing it turns the SAST gate red.
 frontend/playwright-report/
 frontend/test-results/
+
+# The Tailwind upgrade tool leaves these behind when it is interrupted, and a
+# `git add -A` then commits them into the served tree.
+frontend/.*.tailwind-upgrade.*.tmp

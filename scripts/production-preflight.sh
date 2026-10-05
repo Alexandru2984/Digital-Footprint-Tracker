@@ -353,6 +353,23 @@ restore_drill_can_read_these_dumps() {
     (( drill_major >= dump_major ))
 }
 
+# What the release *intends* to publish is decided by ops/release-frontend.filter
+# at build time; this checks what is actually on disk under nginx's root. The
+# filter only takes effect once the installed build-release.sh carries it, and
+# the release that first shipped the filter was built by the previous copy — so
+# the intent and the served tree were briefly two different things, and only the
+# tree matters to a visitor.
+served_tree_has_no_tooling() {
+    local root="$CURRENT_LINK/frontend" offender
+    [[ -d "$root" ]] || return 1
+    offender="$(find -L "$root" \
+        \( -name '*.mjs' -o -name '*.tmp' -o -name 'package.json' \
+           -o -name 'package-lock.json' -o -name 'input.css' \
+           -o -name '*.toml' -o -name 'tailwind.config.js' \
+           -o -path "$root/tests/*" \) -print -quit 2>/dev/null)"
+    [[ -z "$offender" ]]
+}
+
 runtime_cannot_reach_docker_socket() {
     runuser -u swift-vapor -- test ! -r /run/docker.sock \
         && runuser -u swift-vapor -- test ! -w /run/docker.sock
@@ -427,6 +444,7 @@ check "backup unit uses isolated file credentials" backup_unit_is_effective
 check "encrypted backup and freshness marker are current" backup_is_current
 check "restore drill can read the dumps this host writes" restore_drill_can_read_these_dumps
 check "current immutable release passes its manifest" active_release_is_valid
+check "served tree carries no build or test tooling" served_tree_has_no_tooling
 check "running executable exactly matches current release" running_process_matches_release
 check "internal database readiness is healthy" internal_readiness_is_healthy
 check "public readiness route is hidden" public_readiness_is_hidden

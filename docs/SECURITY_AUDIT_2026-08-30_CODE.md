@@ -746,6 +746,29 @@ rule and the extension rules would otherwise pull every `.js` out of
 a future directory of fixtures does not ride along, and `--prune-empty-dirs`
 keeps unlisted directories from appearing empty.
 
+Two things went wrong while fixing it, both worth recording.
+
+The first deploy carrying the filter **still published the tooling**.
+`deploy.sh` runs `$SCRIPT_DIR/build-release.sh` — the *installed* copy under
+`/usr/local/libexec/swift-vapor/`, not the one in the checkout — and that copy
+was still the previous version. Installed helpers are pinned by
+`config-manifest.sh` and are meant to be installed deliberately, so a change to
+a build script in the repository does nothing until it is. The repository's
+intent and the served tree were briefly two different things, and only the tree
+matters to a visitor.
+
+The second: the Tailwind upgrade tool left three
+`.<name>.tailwind-upgrade.<pid>.<uuid>.tmp` files in the working tree when it
+was interrupted, a `git add -A` committed them, and they were served too. They
+are in `.gitignore` now and the filter's closing `- *` excludes them anyway.
+
+So the check that matters is on the host, against the tree itself:
+`production-preflight.sh` gains `served_tree_has_no_tooling`, which looks under
+nginx's actual root for `.mjs`, `.tmp`, `package*.json`, `input.css`, `.toml`,
+a Tailwind config or a `tests/` directory. It fails on the pre-rebuild tree and
+passes after, which is the only form of this check that cannot be fooled by
+good intentions in the repository.
+
 `scripts/tests/release-frontend-filter.test.sh` runs the real filter over the
 real frontend plus two invented tooling files and a fixture directory, and
 asserts the 25 runtime files arrive while every tool — including the ones that
