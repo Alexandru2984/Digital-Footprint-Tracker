@@ -66,7 +66,10 @@ services:
       - egress
 
   db:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    # Must stay on production's PostgreSQL major: a dump restores into its own
+    # major or a newer one, never an older one, and scripts/restore-drill.sh
+    # pins the same image to prove the backups are restorable.
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: unless-stopped
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-footprint}

@@ -16,6 +16,7 @@ CREDENTIAL_ROOT=/etc/credstore.encrypted
 BACKUP_DIRECTORY=/var/lib/swift-vapor-backup/artifacts
 BACKUP_STATUS=/var/lib/swift-vapor-backup/status/last-success
 CHECK_BACKUP=/usr/local/libexec/swift-vapor/check-backup.sh
+RESTORE_DRILL=/usr/local/libexec/swift-vapor/restore-drill.sh
 DEPLOYMENT_GATE=0
 SELF_TEST=0
 PASSED=0
@@ -333,6 +334,25 @@ backup_is_current() {
         --max-age-hours 30
 }
 
+# A dump restores into its own PostgreSQL major or a newer one, never an older
+# one, and the drill's pinned image is the only evidence the backups can be
+# restored at all. Nothing tied the two together, so the image sat on 16 while
+# the server moved to 18 and every drill died on `unrecognized configuration
+# parameter "transaction_timeout"`. Compared against the pg_dump that actually
+# writes the artifacts, which is the version the dump has to be read by.
+restore_drill_can_read_these_dumps() {
+    local drill_major dump_path dump_major
+    [[ -r "$RESTORE_DRILL" ]] || return 1
+    drill_major="$(sed -n 's/^DEFAULT_IMAGE="postgres:\([0-9][0-9]*\).*/\1/p' "$RESTORE_DRILL" | head -1)"
+    dump_path="$(systemctl show swift-vapor-backup.service -p Environment --value 2>/dev/null \
+        | tr ' ' '\n' | sed -n 's/^PG_DUMP_PATH=//p' | head -1)"
+    [[ -n "$dump_path" ]] || dump_path=/usr/bin/pg_dump
+    [[ -x "$dump_path" ]] || return 1
+    dump_major="$("$dump_path" --version 2>/dev/null | sed -n 's/^pg_dump (PostgreSQL) \([0-9][0-9]*\).*/\1/p')"
+    [[ "$drill_major" =~ ^[0-9]+$ && "$dump_major" =~ ^[0-9]+$ ]] || return 1
+    (( drill_major >= dump_major ))
+}
+
 runtime_cannot_reach_docker_socket() {
     runuser -u swift-vapor -- test ! -r /run/docker.sock \
         && runuser -u swift-vapor -- test ! -w /run/docker.sock
@@ -405,6 +425,7 @@ check "application unit uses the isolated release contract" application_unit_is_
 check "migration unit is explicit and isolated" migration_unit_is_effective
 check "backup unit uses isolated file credentials" backup_unit_is_effective
 check "encrypted backup and freshness marker are current" backup_is_current
+check "restore drill can read the dumps this host writes" restore_drill_can_read_these_dumps
 check "current immutable release passes its manifest" active_release_is_valid
 check "running executable exactly matches current release" running_process_matches_release
 check "internal database readiness is healthy" internal_readiness_is_healthy

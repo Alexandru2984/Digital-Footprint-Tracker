@@ -8,7 +8,15 @@ set -euo pipefail
 umask 077
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-DEFAULT_IMAGE="postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
+# Must be production's PostgreSQL major or newer: a dump restores into its own
+# major or a newer one, never an older one. This pin stayed on 16 while the
+# server moved to 18, so every drill died on `unrecognized configuration
+# parameter "transaction_timeout"` — a backup nobody could restore. The
+# literal lives here because this script is installed without the repository;
+# restore-drill.test.sh keeps it equal to docker-compose.yml, and
+# production-preflight.sh compares it against the pg_dump that writes the
+# artifacts.
+DEFAULT_IMAGE="postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
 BACKUP=""
 PASSPHRASE_FILE=""
 MANIFEST=""

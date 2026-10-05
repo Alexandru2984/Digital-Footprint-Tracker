@@ -12,7 +12,15 @@ BACKUP="$TMP/footprint-2026-08-24_00-00-00.sql.gz.gpg"
 MANIFEST="$TMP/restore-manifest.json"
 FAKE_BIN="$TMP/bin"
 ENGINE_LOG="$TMP/engine.log"
-IMAGE="postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777"
+# Derived from docker-compose.yml, and asserted equal to the drill's own
+# default below: three copies of this digest is how the drill came to pin a
+# PostgreSQL older than the one writing the dumps.
+IMAGE="$(awk '$1 == "image:" && $2 ~ /^postgres:/ { print $2; exit }' "$ROOT/docker-compose.yml")"
+[[ "$IMAGE" =~ ^postgres:[0-9]+-alpine@sha256:[0-9a-f]{64}$ ]] \
+    || { echo "docker-compose.yml has no digest-pinned postgres image" >&2; exit 1; }
+DRILL_DEFAULT="$(sed -n 's/^DEFAULT_IMAGE="\(.*\)"$/\1/p' "$ROOT/scripts/restore-drill.sh")"
+[[ "$DRILL_DEFAULT" == "$IMAGE" ]] \
+    || { echo "restore-drill.sh pins $DRILL_DEFAULT but docker-compose.yml uses $IMAGE" >&2; exit 1; }
 mkdir -m 0700 "$FAKE_BIN"
 printf '%s\n' 'correct-horse-battery-staple-restore-drill-secret' > "$PASSPHRASE"
 chmod 0600 "$PASSPHRASE"

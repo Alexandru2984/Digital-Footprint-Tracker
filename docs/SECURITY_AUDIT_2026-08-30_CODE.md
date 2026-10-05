@@ -658,6 +658,48 @@ migration is not small — 403 distinct utility classes across seven pages, abou
 140 of them using utilities v4 renames — and doing it under a red build is how
 visual regressions ship, so it is deliberately a separate piece of work.
 
+### F24 — High: the only proof the backups were restorable had stopped working
+
+The restore drill pinned `postgres:16-alpine`. This host's `pg_dump` is 18.6.
+A dump restores into its own PostgreSQL major or a newer one, never an older
+one, so every drill since the server moved to 18 would have failed — and it did,
+immediately, on the first run from the off-host copy:
+
+```
+ERROR:  unrecognized configuration parameter "transaction_timeout"
+restore-drill: restore pipeline failed; no success manifest was published.
+```
+
+Nothing was corrupt. The backups were fine, the off-host copies were fine, and
+the SHA-256 of the Drive copy matched the local artifact exactly. What had
+quietly stopped working was the *only evidence* that any of it could be
+restored. The last successful drill was 2026-08-24; the database major moved
+afterwards, and no drill ran in between to notice. "Restore proven" had become
+a claim about the past.
+
+The pin existed in five places — `scripts/restore-drill.sh`,
+`docker-compose.yml`, `scripts/tests/restore-drill.test.sh` twice, and
+`docs/RECOVERY_DRILL.md` — all of them wrong together, which is the seventh
+instance in this audit of one decision kept by hand in several places.
+
+**Fixed** (`pending`). All of them move to `postgres:18-alpine`, and three
+independent things now hold the invariant:
+
+- `restore-drill.test.sh` derives the image from `docker-compose.yml` and
+  asserts the drill's own default equals it, so the repository cannot hold two
+  answers. A deliberately mismatched pin fails the suite.
+- `production-preflight.sh` gains `restore_drill_can_read_these_dumps`, which
+  compares the drill's pinned major against the `pg_dump` the backup unit is
+  configured to run. This is the check that would have caught the upgrade: it
+  compares the image to the thing that writes the dumps, on the host where both
+  are observable.
+- The drill was then run from the off-host copy and published a success
+  manifest with 22 tables restored and the logical read-back hash — recorded
+  with timings in `docs/RECOVERY_DRILL.md`.
+
+Filed High because the failure was in the recovery path, the one place where a
+latent fault is only discovered when it is already too late to fix.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined

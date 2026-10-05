@@ -19,11 +19,20 @@ never connects to the host PostgreSQL instance.
 2. The passphrase is available through a private mode-`0600` file or a systemd
    `LoadCredentialEncrypted=` mount. Never put it in argv, shell history or an
    environment variable.
-3. The exact digest already used by `docker-compose.yml` is present locally:
+3. The exact digest already used by `docker-compose.yml` is present locally.
+   Derive it rather than copying it — the literal is what went stale:
 
    ```bash
-   docker pull 'postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777'
+   docker pull "$(awk '$1 == "image:" && $2 ~ /^postgres:/ { print $2; exit }' docker-compose.yml)"
    ```
+
+   That image must be the PostgreSQL major this host's `pg_dump` writes, or a
+   newer one: a dump restores into its own major or newer, never older. The pin
+   sat on 16 while the server moved to 18, and every drill failed with
+   `unrecognized configuration parameter "transaction_timeout"` until
+   2026-10-05. `scripts/tests/restore-drill.test.sh` keeps the drill's pin equal
+   to `docker-compose.yml`, and `production-preflight.sh` compares it against
+   the `pg_dump` that writes the artifacts.
 
 4. Create a private evidence directory on a filesystem with enough free memory
    for the disposable 2 GiB tmpfs ceiling:
@@ -77,6 +86,29 @@ sha256sum footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg
 Then decrypt with the backup passphrase and restore as above. The artifact is
 byte-identical to the local one, so `scripts/restore-drill.sh` accepts it
 unchanged.
+
+### Measured, 2026-10-05
+
+The drill above was run end to end against the **off-host copy** — the artifact
+was fetched from Drive by name, not taken from the local directory:
+
+| step | measured |
+|---|---|
+| retrieve `footprint-2026-10-05_02-00-15.sql.gz.gpg` (40 562 B) from Drive | 4 s |
+| decrypt, restore and logical read-back in a disposable PostgreSQL 18 container | 8 s |
+| **total data-path RTO** | **12 s** |
+| restored database | 22 public base tables, 9 197 247 B |
+| integrity | SHA-256 of the Drive copy equals the on-host artifact |
+
+Manifest: `/var/lib/swift-vapor-recovery/restore-drills/offsite-2026-10-05T07-56-54Z.json`.
+
+**RPO is the backup interval: up to 24 hours.** The timer runs daily at 05:00
+local, and the off-host copy follows the verified backup within about 30
+seconds, so the off-host copy is never meaningfully older than the local one.
+
+**This 12 s is the data path only.** It does not include provisioning a host,
+installing the service, or pointing DNS at it. Full service RTO has not been
+measured, and claiming 12 s as recovery time would be dishonest.
 
 ### The passphrase is the whole recovery
 
