@@ -778,6 +778,49 @@ directories, so the rule and its user cannot drift apart. This is the eighth
 instance in this audit of one decision kept by hand where the next addition is
 the one that is missed.
 
+### F26 — Medium: a stale edge cache plus SRI takes the stylesheet away entirely
+
+Every page links the stylesheet as `/tailwind.css?v=3` — a hand-bumped query
+that had not moved since it was written — and `admin.html` declares an
+`integrity` hash for it (F21). Cloudflare caches the asset for four hours.
+
+When the Tailwind 4 build changed the stylesheet's bytes, the deploy published
+both the new file and the new hash, but the *URL* stayed the same. Measured
+20 minutes after the deploy:
+
+```
+content-length: 47181      <- the previous stylesheet
+cf-cache-status: HIT
+age: 1771
+cache-control: max-age=14400
+```
+
+The origin had the new 46 410-byte file; the edge served the old one against a
+page declaring the new hash. SRI is all-or-nothing, so a browser does not fall
+back to unstyled-but-close — it **refuses the stylesheet**, and the admin page
+renders with no CSS at all. Pages without an integrity attribute merely got
+four hours of stale styling, which is quieter and no more correct.
+
+This is the hazard of the two mechanisms together. Either alone is fine: a
+stale cache without SRI degrades gently, and SRI without caching always
+matches. Pairing a content hash with a URL that does not follow the content
+guarantees that any cache miss of timing becomes a hard failure.
+
+**Fixed** (`pending`). `sri.mjs` now derives the query from the file —
+twelve hex characters of its sha256, `/tailwind.css?v=8611f9208fe3` — in the
+same pass that writes the integrity attribute, because both answer to the same
+bytes. If the stylesheet changes, the URL changes, so no cache can pair an old
+body with a new hash. `check.mjs` recomputes it independently and fails on a
+mismatch; a hand-edited version is rejected by name:
+
+```
+login.html: /tailwind.css is versioned ?v=deadbeef1234 but its content hashes to 8611f9208fe3
+```
+
+The lesson is narrower than "bump your cache-busters": a hash in one place and
+a version in another are the same decision written twice, and this is the ninth
+instance of that pattern in this audit.
+
 ## Verified clean
 
 Stating only defects would misrepresent the codebase. The following were examined

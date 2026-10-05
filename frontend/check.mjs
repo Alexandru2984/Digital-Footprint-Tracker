@@ -56,6 +56,19 @@ for (const page of pages) {
         if (actual !== integrityMatch[2]) fail(`${page}: stale SRI for ${assetPath}`);
     }
 
+    // A cache-busting query that does not follow the file is how a stale edge
+    // object gets paired with a fresh SRI hash, which makes the browser drop the
+    // asset entirely. Derived by sri.mjs; verified here against the bytes.
+    const versioned = /\b(?:href|src)=["'](\/[^"'?#]+)\?v=([^"'#]*)["']/gi;
+    let versionMatch;
+    while ((versionMatch = versioned.exec(html))) {
+        const asset = readFileSync(join(frontendDir, versionMatch[1].slice(1)));
+        const expected = createHash('sha256').update(asset).digest('hex').slice(0, 12);
+        if (versionMatch[2] !== expected) {
+            fail(`${page}: ${versionMatch[1]} is versioned ?v=${versionMatch[2]} but its content hashes to ${expected}`);
+        }
+    }
+
     const inlineScript = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi;
     while ((scriptMatch = inlineScript.exec(html))) {
         const attributes = scriptMatch[1];

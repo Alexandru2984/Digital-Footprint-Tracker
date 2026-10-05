@@ -19,17 +19,40 @@ import { fileURLToPath } from 'node:url';
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const pages = readdirSync(frontendDir).filter(name => name.endsWith('.html')).sort();
 
+// Twelve hex characters of the file's sha256: long enough that two builds never
+// collide, short enough to read in a URL.
+const VERSION_LENGTH = 12;
+
+function contentVersion(assetPath) {
+    return createHash('sha256')
+        .update(readFileSync(join(frontendDir, assetPath.slice(1))))
+        .digest('hex')
+        .slice(0, VERSION_LENGTH);
+}
+
 let rewritten = 0;
 let attributes = 0;
+let versions = 0;
 
 for (const page of pages) {
     const file = join(frontendDir, page);
     const original = readFileSync(file, 'utf8');
 
+    // The cache-busting query comes from the file, not from someone remembering
+    // to bump it. On 2026-10-05 Cloudflare held the previous tailwind.css for
+    // four hours against pages declaring the new integrity hash, and a browser
+    // that honours SRI refuses a stylesheet whose hash does not match — so the
+    // admin page rendered unstyled. When the bytes change, the URL changes.
+    const versioned = /\b(href|src)=(["'])(\/[^"'?#]+)\?v=[^"'#]*\2/gi;
+    const rebusted = original.replace(versioned, (whole, attr, quote, assetPath) => {
+        versions += 1;
+        return `${attr}=${quote}${assetPath}?v=${contentVersion(assetPath)}${quote}`;
+    });
+
     // A negated character class spans newlines, which the multi-line link tag
     // in admin.html needs.
     const element = /<(?:script|link)\b[^>]*\bintegrity=["']sha384-[^"']*["'][^>]*>/gi;
-    const updated = original.replace(element, (tag) => {
+    const updated = rebusted.replace(element, (tag) => {
         attributes += 1;
         const asset = /\b(?:src|href)=["']([^"']+)["']/i.exec(tag);
         if (!asset) throw new Error(`${page}: integrity attribute with no asset`);
@@ -50,4 +73,4 @@ for (const page of pages) {
     }
 }
 
-console.log(`sri: ${attributes} integrity attribute(s) across ${pages.length} page(s), ${rewritten} rewritten.`);
+console.log(`sri: ${attributes} integrity attribute(s) and ${versions} versioned URL(s) across ${pages.length} page(s), ${rewritten} rewritten.`);
