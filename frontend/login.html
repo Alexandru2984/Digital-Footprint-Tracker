@@ -38,19 +38,19 @@
 
         <!-- Form Card -->
         <div class="bg-dark-800 border border-dark-700 rounded-xl p-5 sm:p-6 shadow-2xl">
-            <div id="error-msg" class="hidden mb-4 p-3 bg-red-900/30 border border-red-700 rounded text-red-400 text-xs"></div>
+            <div id="error-msg" class="hidden mb-4 p-3 bg-red-900/30 border border-red-700 rounded-sm text-red-400 text-xs"></div>
 
             <form id="login-form" method="POST" class="flex flex-col gap-4">
                 <div>
                     <label for="username" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Username</label>
                     <input type="text" id="username" name="username" required autocomplete="username"
-                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
+                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-hidden transition-all placeholder-slate-600"
                            placeholder="your_username">
                 </div>
                 <div>
                     <label for="password" class="block text-xs text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password"
-                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none transition-all placeholder-slate-600"
+                           class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-hidden transition-all placeholder-slate-600"
                            placeholder="••••••••">
                 </div>
                 <button type="submit" id="submit-btn"
@@ -64,7 +64,7 @@
                 <p class="text-xs text-slate-400">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
                 <label for="twofa-code" class="sr-only">Authenticator or recovery code</label>
                 <input type="text" id="twofa-code" inputmode="numeric" autocomplete="one-time-code"
-                       class="bg-dark-900 border border-dark-700 text-white text-center tracking-[0.3em] text-lg rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-none"
+                       class="bg-dark-900 border border-dark-700 text-white text-center tracking-[0.3em] text-lg rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full px-3 py-2.5 outline-hidden"
                        placeholder="123456">
                 <button type="submit" id="twofa-btn"
                         class="w-full text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:ring-brand-500/50 font-bold rounded-lg text-sm px-5 py-3 text-center transition-colors">

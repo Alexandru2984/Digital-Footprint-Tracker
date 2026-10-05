@@ -72,12 +72,8 @@ rsync -a --chmod=D0555,F0444 "$RESOURCE/" "$BUNDLE/DigitalFootprintTracker_App.r
 # Only runtime assets enter the served tree. Build tooling, lockfiles and
 # node_modules stay outside the release and outside nginx's document root.
 rsync -a --chmod=D0555,F0444 \
-    --exclude='/node_modules/' \
-    --exclude='/package.json' \
-    --exclude='/package-lock.json' \
-    --exclude='/check.mjs' \
-    --exclude='/input.css' \
-    --exclude='/tailwind.config.js' \
+    --filter=". $SOURCE/ops/release-frontend.filter" \
+    --prune-empty-dirs \
     "$SOURCE/frontend/" "$BUNDLE/frontend/"
 install -m 0555 "$SOURCE/scripts/generate_report.py" "$BUNDLE/scripts/generate_report.py"
 

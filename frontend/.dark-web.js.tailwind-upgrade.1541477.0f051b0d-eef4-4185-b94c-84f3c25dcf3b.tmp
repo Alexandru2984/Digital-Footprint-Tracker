@@ -59,7 +59,7 @@
   function setMessage(message, tone) {
     var item = byID('dark-web-form-message');
     item.textContent = message || '';
-    item.className = 'min-h-[1.25rem] mt-2 text-[11px] ' +
+    item.className = 'min-h-5 mt-2 text-[11px] ' +
       (tone === 'error' ? 'text-red-400' : tone === 'ok' ? 'text-brand-400' : 'text-slate-500');
   }
 
@@ -269,7 +269,7 @@
     container.replaceChildren();
     section.classList.toggle('hidden', events.length === 0);
     events.slice(0, 100).forEach(function (event) {
-      var row = node('div', 'grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2 rounded-sm border border-dark-700 bg-dark-800 px-3 py-2 text-[11px]');
+      var row = node('div', 'grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2 rounded border border-dark-700 bg-dark-800 px-3 py-2 text-[11px]');
       row.appendChild(node('span', 'font-mono text-red-300', event.date));
       row.appendChild(node('span', 'dw-value text-slate-300', event.label));
       container.appendChild(row);

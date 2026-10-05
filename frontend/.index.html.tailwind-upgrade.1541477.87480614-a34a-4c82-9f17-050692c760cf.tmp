@@ -247,32 +247,32 @@
                 <p class="text-slate-400 text-sm mt-1">Aggregated target intel analysis module</p>
             </div>
             <!-- Hamburger (mobile only) -->
-            <button id="hamburger-btn" title="Menu" class="items-center justify-center w-10 h-10 rounded-sm bg-dark-800 border border-dark-700 text-slate-400 hover:text-white shrink-0" aria-label="Toggle menu" aria-expanded="false">☰</button>
+            <button id="hamburger-btn" title="Menu" class="items-center justify-center w-10 h-10 rounded bg-dark-800 border border-dark-700 text-slate-400 hover:text-white shrink-0" aria-label="Toggle menu" aria-expanded="false">☰</button>
             <!-- Auth widget -->
             <div id="auth-widget" class="flex items-center gap-2 shrink-0">
                 <!-- Shown when logged out -->
                 <div id="auth-logged-out" class="hidden flex items-center gap-2">
-                    <a href="/login.html" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-white hover:border-brand-500/50 transition-colors">LOGIN</a>
-                    <a href="/register.html" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 rounded-sm text-white transition-colors font-bold">REGISTER</a>
+                    <a href="/login.html" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-white hover:border-brand-500/50 transition-colors">LOGIN</a>
+                    <a href="/register.html" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 rounded text-white transition-colors font-bold">REGISTER</a>
                 </div>
                 <!-- Shown when logged in -->
                 <div id="auth-logged-in" class="hidden flex items-center gap-2">
-                    <button id="my-scans-toggle-btn" title="My scan history" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="my-scans-toggle-btn" title="My scan history" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                         MY SCANS
                     </button>
-                    <button id="bulk-scan-open-btn" title="Bulk scan multiple targets" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center gap-1">
+                    <button id="bulk-scan-open-btn" title="Bulk scan multiple targets" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="2" y="2" rx="1"/><rect width="8" height="8" x="14" y="2" rx="1"/><rect width="8" height="8" x="14" y="14" rx="1"/><rect width="8" height="8" x="2" y="14" rx="1"/></svg>
                         BULK
                     </button>
-                    <button id="dark-web-toggle-btn" title="Authorized dark-web investigation" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-red-400 hover:border-red-500/50 transition-colors flex items-center gap-1">
+                    <button id="dark-web-toggle-btn" title="Authorized dark-web investigation" class="text-xs px-3 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-red-400 hover:border-red-500/50 transition-colors flex items-center gap-1">
                         <span aria-hidden="true">◈</span>
                         <span class="hidden lg:inline">DARK WEB</span>
                     </button>
-                    <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded-sm text-brand-400 font-bold flex items-center gap-1">
+                    <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded text-brand-400 font-bold flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         <span id="auth-username-text">—</span>
-                        <span id="auth-admin-badge" class="hidden text-[10px] px-1 bg-yellow-500/20 text-yellow-400 rounded-sm ml-1">ADMIN</span>
+                        <span id="auth-admin-badge" class="hidden text-[10px] px-1 bg-yellow-500/20 text-yellow-400 rounded ml-1">ADMIN</span>
                     </span>
                     <div class="relative inline-block" id="notif-bell-container">
                       <button id="notif-bell-btn" class="relative text-slate-400 hover:text-white transition-colors text-lg px-1" title="Notifications">
@@ -288,12 +288,12 @@
                         <div id="notif-empty" class="hidden px-3 py-4 text-xs text-slate-500 text-center">No notifications yet.</div>
                       </div>
                     </div>
-                    <button id="logout-btn" title="Logout" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-500 hover:text-red-400 hover:border-red-500/50 transition-colors">
+                    <button id="logout-btn" title="Logout" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-500 hover:text-red-400 hover:border-red-500/50 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
                     </button>
-                    <button id="boards-toggle-btn" title="Investigation boards" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">🕸</button>
-                    <button id="settings-toggle-btn" title="Settings" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">⚙</button>
-                    <button id="theme-toggle-btn" title="Toggle dark/light mode" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded-sm text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors" aria-label="Toggle theme">🌙</button>
+                    <button id="boards-toggle-btn" title="Investigation boards" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">🕸</button>
+                    <button id="settings-toggle-btn" title="Settings" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors">⚙</button>
+                    <button id="theme-toggle-btn" title="Toggle dark/light mode" class="text-xs px-2 py-1.5 bg-dark-800 border border-dark-700 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors" aria-label="Toggle theme">🌙</button>
                 </div>
             </div>
         </header>
@@ -311,8 +311,8 @@
                 </div>
             </div>
             <div class="mb-2 flex gap-2">
-                <input type="text" id="my-scans-search" placeholder="Search…" class="grow bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 outline-hidden focus:border-brand-500 placeholder-slate-600">
-                <select id="tag-filter" class="bg-dark-900 border border-dark-700 text-slate-400 text-xs rounded-sm px-2 py-1.5 outline-hidden focus:border-brand-500">
+                <input type="text" id="my-scans-search" placeholder="Search…" class="grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                <select id="tag-filter" class="bg-dark-900 border border-dark-700 text-slate-400 text-xs rounded px-2 py-1.5 outline-none focus:border-brand-500">
                     <option value="">All tags</option>
                 </select>
             </div>
@@ -320,9 +320,9 @@
                 <p class="text-slate-500 text-xs">Loading...</p>
             </div>
             <div id="my-scans-pagination" class="hidden flex items-center justify-between mt-2 text-xs text-slate-500">
-                <button id="my-scans-prev" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded-sm hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
+                <button id="my-scans-prev" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
                 <span id="my-scans-page-info">Page 1 of 1</span>
-                <button id="my-scans-next" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded-sm hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
+                <button id="my-scans-next" class="px-2 py-1 bg-dark-900 border border-dark-700 rounded hover:border-brand-500/50 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
             </div>
             <!-- Correlations sub-section -->
             <div class="mt-4 pt-3 border-t border-dark-700">
@@ -354,8 +354,8 @@
             <div class="mb-3">
                 <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Webhook URL (POST on scan completion)</label>
                 <div class="flex flex-col sm:flex-row gap-2">
-                    <input type="url" id="webhook-url-input" placeholder="https://example.com/hook" class="grow min-w-0 bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 outline-hidden focus:border-brand-500 placeholder-slate-600">
-                    <button id="save-webhook-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors">Save</button>
+                    <input type="url" id="webhook-url-input" placeholder="https://example.com/hook" class="grow min-w-0 bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                    <button id="save-webhook-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Save</button>
                 </div>
                 <p id="webhook-save-msg" class="text-[10px] mt-1 hidden"></p>
             </div>
@@ -363,21 +363,21 @@
             <div>
                 <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Tags</label>
                 <div class="flex gap-2 mb-2">
-                    <input type="text" id="new-tag-name" placeholder="Tag name" maxlength="32" class="grow bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 outline-hidden focus:border-brand-500 placeholder-slate-600">
-                    <input type="color" id="new-tag-colour" value="#10b981" class="w-8 h-7 rounded-sm border-0 cursor-pointer bg-dark-900">
-                    <button id="create-tag-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">+ Add</button>
+                    <input type="text" id="new-tag-name" placeholder="Tag name" maxlength="32" class="grow bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 outline-none focus:border-brand-500 placeholder-slate-600">
+                    <input type="color" id="new-tag-colour" value="#10b981" class="w-8 h-7 rounded border-0 cursor-pointer bg-dark-900">
+                    <button id="create-tag-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">+ Add</button>
                 </div>
                 <div id="tags-list" class="flex flex-wrap gap-1.5 text-xs"></div>
             </div>
             <!-- API Keys -->
             <div class="mt-3 border-t border-dark-700 pt-3">
               <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🔑 API Keys</p>
-              <p class="text-[10px] text-slate-500 mb-2">Use <code class="bg-dark-900 px-1 rounded-sm">Authorization: Bearer &lt;key&gt;</code> for programmatic access.</p>
+              <p class="text-[10px] text-slate-500 mb-2">Use <code class="bg-dark-900 px-1 rounded">Authorization: Bearer &lt;key&gt;</code> for programmatic access.</p>
               <div id="api-keys-list" class="mb-2"></div>
               <div class="flex gap-2">
                 <input id="api-key-label" type="text" placeholder="Key label (e.g. My Script)"
-                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus:border-brand-500">
-                <button id="generate-api-key-btn" type="button" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Generate</button>
+                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                <button id="generate-api-key-btn" type="button" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded">Generate</button>
               </div>
             </div>
             <!-- Data Retention -->
@@ -385,13 +385,13 @@
               <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🗑 Data Retention</p>
               <p class="text-[10px] text-slate-500 mb-2">Auto-delete your scans after a period.</p>
               <div class="flex gap-2 items-center">
-                <select id="retention-select" class="flex-1 bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-300 focus:outline-hidden focus:border-brand-500">
+                <select id="retention-select" class="flex-1 bg-dark-900 border border-dark-700 rounded px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-brand-500">
                   <option value="">Never (keep forever)</option>
                   <option value="30">30 days</option>
                   <option value="90">90 days</option>
                   <option value="365">1 year</option>
                 </select>
-                <button id="save-retention-btn" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Save</button>
+                <button id="save-retention-btn" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded">Save</button>
               </div>
               <p id="retention-status" class="text-[10px] mt-1 hidden"></p>
             </div>
@@ -402,24 +402,24 @@
               <div class="space-y-2">
                 <div>
                   <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Discord Webhook URL</label>
-                  <input type="url" id="discord-webhook-input" placeholder="https://discord.com/api/webhooks/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
+                  <input type="url" id="discord-webhook-input" placeholder="https://discord.com/api/webhooks/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                 </div>
                 <div>
                   <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Bot Token</label>
-                  <input type="text" id="telegram-token-input" placeholder="123456:ABC-DEF…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
+                  <input type="text" id="telegram-token-input" placeholder="123456:ABC-DEF…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                 </div>
                 <div>
                   <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Chat ID</label>
-                  <input type="text" id="telegram-chatid-input" placeholder="-100123456789" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
+                  <input type="text" id="telegram-chatid-input" placeholder="-100123456789" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                 </div>
                 <div>
                   <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Slack Webhook URL</label>
-                  <input type="url" id="slack-webhook-input" placeholder="https://hooks.slack.com/services/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
+                  <input type="url" id="slack-webhook-input" placeholder="https://hooks.slack.com/services/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                 </div>
               </div>
               <div class="flex gap-2 mt-2">
-                <button id="save-notification-settings-btn" class="grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors">Save Channels</button>
-                <button id="test-notification-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">Test</button>
+                <button id="save-notification-settings-btn" class="grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Save Channels</button>
+                <button id="test-notification-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">Test</button>
               </div>
               <p id="notif-settings-msg" class="text-[10px] mt-1 hidden"></p>
             </div>
@@ -431,39 +431,39 @@
 
               <!-- Disabled → offer enable -->
               <div id="twofa-enable-block" class="hidden">
-                <button id="twofa-start-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors">Enable 2FA</button>
+                <button id="twofa-start-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors">Enable 2FA</button>
               </div>
 
               <!-- Setup wizard -->
               <div id="twofa-setup-block" class="hidden space-y-2">
                 <p class="text-[10px] text-slate-500">Scan this QR with your authenticator app:</p>
-                <div id="twofa-qr" class="inline-block bg-white p-2 rounded-sm"></div>
+                <div id="twofa-qr" class="inline-block bg-white p-2 rounded"></div>
                 <p class="text-[10px] text-slate-500">…or add the secret manually (key entry):</p>
-                <code id="twofa-secret" class="block bg-dark-900 border border-dark-700 rounded-sm px-2 py-1.5 text-[11px] text-brand-400 break-all select-all"></code>
+                <code id="twofa-secret" class="block bg-dark-900 border border-dark-700 rounded px-2 py-1.5 text-[11px] text-brand-400 break-all select-all"></code>
                 <p class="text-[10px] text-slate-600 break-all">On mobile you can also <a id="twofa-uri-link" href="#" class="text-brand-400 underline">tap to open your authenticator</a>.</p>
                 <span id="twofa-uri" class="hidden"></span>
                 <label class="block text-[10px] text-slate-500 uppercase tracking-wide mt-1">Enter the 6-digit code to confirm</label>
-                <input type="text" id="twofa-confirm-code" inputmode="numeric" placeholder="123456" class="w-full bg-dark-900 border border-dark-700 text-white text-center tracking-[0.2em] text-sm rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
+                <input type="text" id="twofa-confirm-code" inputmode="numeric" placeholder="123456" class="w-full bg-dark-900 border border-dark-700 text-white text-center tracking-[0.2em] text-sm rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
                 <div class="flex gap-2">
-                  <button id="twofa-confirm-btn" class="grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Confirm & Enable</button>
-                  <button id="twofa-cancel-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">Cancel</button>
+                  <button id="twofa-confirm-btn" class="grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded">Confirm & Enable</button>
+                  <button id="twofa-cancel-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Cancel</button>
                 </div>
               </div>
 
               <!-- Recovery codes (shown once) -->
               <div id="twofa-recovery-block" class="hidden mt-2">
                 <p class="text-[10px] text-amber-400 mb-1">⚠ Save these recovery codes now — each works once and they won't be shown again.</p>
-                <pre id="twofa-recovery-codes" class="bg-dark-900 border border-amber-700/40 rounded-sm px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap select-all"></pre>
-                <button id="twofa-recovery-done-btn" class="mt-1 text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm">I've saved them</button>
+                <pre id="twofa-recovery-codes" class="bg-dark-900 border border-amber-700/40 rounded px-2 py-1.5 text-[11px] text-slate-300 whitespace-pre-wrap select-all"></pre>
+                <button id="twofa-recovery-done-btn" class="mt-1 text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded">I've saved them</button>
               </div>
 
               <!-- Enabled → offer disable -->
               <div id="twofa-disable-block" class="hidden space-y-2">
                 <label for="twofa-disable-pass" class="block text-[10px] text-slate-500 uppercase tracking-wide">Current password</label>
-                <input type="password" id="twofa-disable-pass" placeholder="Confirm with your password" autocomplete="current-password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
+                <input type="password" id="twofa-disable-pass" placeholder="Confirm with your password" autocomplete="current-password" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
                 <label for="twofa-disable-code" class="block text-[10px] text-slate-500 uppercase tracking-wide">Authenticator or recovery code</label>
-                <input type="text" id="twofa-disable-code" placeholder="6-digit or recovery code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
-                <button id="twofa-disable-btn" class="text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded-sm">Disable 2FA</button>
+                <input type="text" id="twofa-disable-code" placeholder="6-digit or recovery code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
+                <button id="twofa-disable-btn" class="text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded">Disable 2FA</button>
               </div>
               <p id="twofa-msg" class="text-[10px] mt-1 hidden"></p>
             </div>
@@ -472,7 +472,7 @@
         <!-- Email verification banner (shown for unverified accounts) -->
         <div id="email-verify-banner" class="hidden flex-col sm:flex-row sm:items-center gap-3 bg-amber-900/25 border border-amber-700/50 rounded-lg px-4 py-2.5 mb-6 text-xs text-amber-300">
             <span>✉ Please verify your email address to secure your account.</span>
-            <button id="resend-verify-btn" class="w-full sm:w-auto sm:ml-auto px-3 py-1 bg-amber-700/40 hover:bg-amber-700/60 rounded-sm text-amber-200 transition-colors whitespace-nowrap">Resend email</button>
+            <button id="resend-verify-btn" class="w-full sm:w-auto sm:ml-auto px-3 py-1 bg-amber-700/40 hover:bg-amber-700/60 rounded text-amber-200 transition-colors whitespace-nowrap">Resend email</button>
             <span id="resend-verify-msg" class="hidden"></span>
         </div>
 
@@ -485,12 +485,12 @@
                         <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-brand-500">
                             <span class="">&gt;_</span>
                         </div>
-                        <input type="text" id="target-input" class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 pr-28 p-3 outline-hidden transition-all placeholder-slate-500" placeholder="Enter target email or username..." required autocomplete="off">
+                        <input type="text" id="target-input" class="bg-dark-900 border border-dark-700 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full pl-10 pr-28 p-3 outline-none transition-all placeholder-slate-500" placeholder="Enter target email or username..." required autocomplete="off">
                         <span id="input-type-badge" class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none hidden">
-                            <span id="input-type-label" class="text-xs px-2 py-0.5 rounded-sm font-bold uppercase tracking-wide"></span>
+                            <span id="input-type-label" class="text-xs px-2 py-0.5 rounded font-bold uppercase tracking-wide"></span>
                         </span>
                     </div>
-                    <button type="submit" id="scan-btn" class="text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:outline-hidden focus:ring-brand-500/50 font-medium rounded-lg text-sm px-8 py-3 text-center transition-colors flex items-center justify-center gap-2 whitespace-nowrap shadow-[0_0_10px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]">
+                    <button type="submit" id="scan-btn" class="text-white bg-brand-600 hover:bg-brand-500 focus:ring-4 focus:outline-none focus:ring-brand-500/50 font-medium rounded-lg text-sm px-8 py-3 text-center transition-colors flex items-center justify-center gap-2 whitespace-nowrap shadow-[0_0_10px_rgba(16,185,129,0.3)] hover:shadow-[0_0_20px_rgba(16,185,129,0.5)]">
                         <span id="btn-text">INITIATE SCAN</span>
                         <svg id="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M5 12h14"></path>
@@ -529,7 +529,7 @@
                     <input type="checkbox" id="schedule-check" class="accent-brand-500">
                     Schedule this scan
                 </label>
-                <select id="schedule-interval" class="bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded-sm px-2 py-1 outline-hidden focus:border-brand-500">
+                <select id="schedule-interval" class="bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded px-2 py-1 outline-none focus:border-brand-500">
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
                 </select>
@@ -602,16 +602,16 @@
                     <p id="scan-age-display" class="text-xs text-slate-500 mt-1 hidden"></p>
                 </div>
                 <div class="flex w-full sm:w-auto items-center gap-2 flex-wrap justify-start sm:justify-end">
-                    <button id="toggle-graph-btn" title="Toggle identity graph visualization" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="toggle-graph-btn" title="Toggle identity graph visualization" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         GRAPH
                     </button>
-                    <button id="force-rescan-btn" title="Force a fresh scan, ignoring cache" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors flex items-center gap-1">
+                    <button id="force-rescan-btn" title="Force a fresh scan, ignoring cache" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
                         RESCAN
                     </button>
                     <div class="relative">
-                        <button id="sort-btn" title="Sort results" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-orange-400 hover:border-orange-500/50 transition-colors flex items-center gap-1">
+                        <button id="sort-btn" title="Sort results" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-orange-400 hover:border-orange-500/50 transition-colors flex items-center gap-1">
                             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>
                             <span id="sort-label">SORT</span>
                         </button>
@@ -624,7 +624,7 @@
                         </div>
                     </div>
                     <div class="relative">
-                        <button id="type-filter-btn" title="Filter by result type" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center gap-1">
+                        <button id="type-filter-btn" title="Filter by result type" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-purple-400 hover:border-purple-500/50 transition-colors flex items-center gap-1">
                             <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                             <span id="type-filter-label">FILTER TYPE</span>
                         </button>
@@ -632,38 +632,38 @@
                             <div id="type-filter-options"></div>
                         </div>
                     </div>
-                    <button id="confidence-filter-btn" title="Toggle: show only high-confidence results (≥70%)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-green-400 hover:border-green-500/50 transition-colors flex items-center gap-1">
+                    <button id="confidence-filter-btn" title="Toggle: show only high-confidence results (≥70%)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-green-400 hover:border-green-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
                         <span id="conf-filter-label">HIGH CONF</span>
                     </button>
-                    <button id="share-btn" title="Copy share link" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="share-btn" title="Copy share link" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         SHARE
                     </button>
-                    <button id="export-json-btn" title="Export results as JSON" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-json-btn" title="Export results as JSON" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                         JSON
                     </button>
-                    <button id="export-csv-btn" title="Export results as CSV" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-csv-btn" title="Export results as CSV" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                         CSV
                     </button>
-                    <button id="export-graph-btn" title="Export relationship graph (GraphML — opens in Gephi / yEd / Maltego)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-graph-btn" title="Export relationship graph (GraphML — opens in Gephi / yEd / Maltego)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                         GRAPHML
                     </button>
-                    <button id="seed-board-btn" title="Open this scan as an interactive investigation board" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="seed-board-btn" title="Open this scan as an interactive investigation board" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         🕸 BOARD
                     </button>
-                    <button id="export-report-btn" title="Open print-ready executive report (Save as PDF)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-report-btn" title="Open print-ready executive report (Save as PDF)" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
                         REPORT
                     </button>
-                    <button id="export-pdf-btn" title="Print / Save as PDF" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                    <button id="export-pdf-btn" title="Print / Save as PDF" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
                         PDF
                     </button>
-                    <div class="text-xs px-2 py-1 bg-dark-700 rounded-sm text-slate-300 shadow-inner flex items-center gap-2">
+                    <div class="text-xs px-2 py-1 bg-dark-700 rounded text-slate-300 shadow-inner flex items-center gap-2">
                         SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500 break-all"></span>
                         <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
@@ -732,8 +732,8 @@
                     <div class="flex gap-3 items-start">
                         <div class="grow relative rounded-xl overflow-hidden border border-dark-700" style="height:520px;background:#0f172a">
                             <svg id="social-graph-svg" style="width:100%;height:100%"></svg>
-                            <div id="graph-tooltip" class="pointer-events-none absolute z-50 bg-dark-900 border border-dark-600 text-xs text-slate-200 rounded-sm px-2 py-1.5 max-w-xs shadow-xl" style="display:none;word-break:break-all;top:0;left:0"></div>
-                            <button id="download-graph-btn" class="absolute top-2 right-2 text-xs px-3 py-1.5 bg-dark-900/90 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors z-10">⬇ PNG</button>
+                            <div id="graph-tooltip" class="pointer-events-none absolute z-50 bg-dark-900 border border-dark-600 text-xs text-slate-200 rounded px-2 py-1.5 max-w-xs shadow-xl" style="display:none;word-break:break-all;top:0;left:0"></div>
+                            <button id="download-graph-btn" class="absolute top-2 right-2 text-xs px-3 py-1.5 bg-dark-900 bg-opacity-90 border border-dark-600 rounded text-slate-400 hover:text-brand-400 hover:border-brand-500/50 transition-colors z-10">⬇ PNG</button>
                         </div>
                         <div id="graph-detail-panel" class="hidden w-56 shrink-0 bg-dark-900 border border-dark-700 rounded-xl p-3 overflow-y-auto" style="height:520px">
                             <div class="flex items-center justify-between mb-3">
@@ -769,7 +769,7 @@
         </section>
 
         <!-- D1: Share Report Modal -->
-        <div id="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4">
+        <div id="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4">
             <div class="bg-dark-800 border border-dark-700 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full max-w-md shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
                 <div class="flex items-center justify-between mb-4">
                     <h3 id="share-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Share Report</h3>
@@ -778,7 +778,7 @@
                 <div class="space-y-3">
                     <div>
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Expires In</label>
-                        <select id="share-expires-select" class="w-full bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
+                        <select id="share-expires-select" class="w-full bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500">
                             <option value="3600">1 hour</option>
                             <option value="86400">24 hours</option>
                             <option value="604800" selected>7 days (recommended)</option>
@@ -787,14 +787,14 @@
                     </div>
                     <div>
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Password (optional)</label>
-                        <input type="password" id="share-password-input" autocomplete="new-password" minlength="8" maxlength="72" placeholder="8–72 UTF-8 bytes" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
+                        <input type="password" id="share-password-input" autocomplete="new-password" minlength="8" maxlength="72" placeholder="8–72 UTF-8 bytes" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600">
                     </div>
-                    <button id="share-create-btn" class="w-full text-xs py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors font-bold">Generate Share Link</button>
+                    <button id="share-create-btn" class="w-full text-xs py-2 bg-brand-600 hover:bg-brand-500 text-white rounded transition-colors font-bold">Generate Share Link</button>
                     <div id="share-result" class="hidden" aria-live="polite">
                         <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Share URL</label>
                         <div class="flex flex-col sm:flex-row gap-2">
-                            <input type="text" id="share-url-output" readonly class="grow min-w-0 bg-dark-900 border border-dark-700 text-brand-400 text-xs rounded-sm px-3 py-1.5 focus:outline-hidden select-all">
-                            <button id="share-copy-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">Copy</button>
+                            <input type="text" id="share-url-output" readonly class="grow min-w-0 bg-dark-900 border border-dark-700 text-brand-400 text-xs rounded px-3 py-1.5 focus:outline-none select-all">
+                            <button id="share-copy-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded transition-colors">Copy</button>
                         </div>
                         <p id="share-expiry-output" class="text-[10px] text-slate-500 mt-1"></p>
                     </div>
@@ -810,14 +810,14 @@
         </div>
 
         <!-- E1: Bulk Scan Modal -->
-        <div id="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-modal-title" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4">
+        <div id="bulk-scan-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-modal-title" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4">
             <div class="bg-dark-800 border border-dark-700 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full max-w-lg shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
                 <div class="flex items-center justify-between mb-4">
                     <h3 id="bulk-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Bulk Scan</h3>
                     <button id="bulk-modal-close" aria-label="Close bulk scan dialog" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
                 </div>
                 <p class="text-xs text-slate-500 mb-3">Enter one target per line (max 50). Scans run in parallel.</p>
-                <textarea id="bulk-targets-textarea" rows="8" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-2 focus:outline-hidden focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
+                <textarea id="bulk-targets-textarea" rows="8" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded px-3 py-2 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
                 <div id="bulk-progress-section" class="hidden mt-2">
                     <div id="bulk-progress-bar" class="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden mb-1">
                         <div id="bulk-progress-fill" class="bg-purple-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
@@ -826,7 +826,7 @@
                 </div>
                 <div id="bulk-results-list" class="mt-2 space-y-1 max-h-40 overflow-y-auto text-xs"></div>
                 <div class="flex gap-2 mt-4">
-                    <button id="bulk-scan-submit-btn" class="grow text-xs py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-sm transition-colors font-bold">START BULK SCAN</button>
+                    <button id="bulk-scan-submit-btn" class="grow text-xs py-2 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors font-bold">START BULK SCAN</button>
                 </div>
             </div>
         </div>
@@ -1148,7 +1148,7 @@
                         <span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span>
                         <span class="js-source font-bold text-slate-200"></span>
                     </div>
-                    <span class="js-type text-xs px-2 py-0.5 rounded-sm bg-dark-700 text-slate-300 border border-dark-600"></span>
+                    <span class="js-type text-xs px-2 py-0.5 rounded bg-dark-700 text-slate-300 border border-dark-600"></span>
                 </div>
                 <div class="p-4">
                     <div class="flex justify-between items-end mb-4">
@@ -1168,7 +1168,7 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                             </button>
                         </div>
-                        <div class="bg-[#0b1120] rounded-sm p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
+                        <div class="bg-[#0b1120] rounded p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
                             <pre><code class="js-json"></code></pre>
                         </div>
                     </div>
@@ -1898,14 +1898,14 @@
                 const left = document.createElement('span');
                 left.className = 'flex items-center gap-2 min-w-0';
                 const dot = document.createElement('span');
-                dot.className = 'w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0';
+                dot.className = 'w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0';
                 const targetEl = document.createElement('span');
                 targetEl.className = 'text-white text-sm truncate max-w-[160px] sm:max-w-xs';
                 targetEl.textContent = String(h.target || '');
                 left.appendChild(dot);
                 left.appendChild(targetEl);
                 const right = document.createElement('span');
-                right.className = 'flex items-center gap-3 flex-shrink-0 ml-2';
+                right.className = 'flex items-center gap-3 shrink-0 ml-2';
                 const badge = document.createElement('span');
                 badge.className = 'text-xs text-brand-500';
                 badge.textContent = (h.resultCount || 0) + ' hit' + (h.resultCount !== 1 ? 's' : '');
@@ -2068,7 +2068,7 @@
                 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(shareID)) {
                     const revoke = document.createElement('button');
                     revoke.type = 'button';
-                    revoke.className = 'w-full sm:w-auto flex-shrink-0 text-[10px] px-3 py-1.5 rounded bg-red-900/40 text-red-300 hover:bg-red-800/60 transition-colors';
+                    revoke.className = 'w-full sm:w-auto shrink-0 text-[10px] px-3 py-1.5 rounded bg-red-900/40 text-red-300 hover:bg-red-800/60 transition-colors';
                     revoke.textContent = 'Revoke';
                     revoke.addEventListener('click', () => revokeShareLink(shareID, revoke));
                     row.appendChild(revoke);
@@ -2244,15 +2244,15 @@
                         const row = document.createElement('div');
                         row.className = 'flex items-center gap-2';
                         const label = document.createElement('span');
-                        label.className = 'text-xs text-slate-400 w-28 flex-shrink-0 truncate';
+                        label.className = 'text-xs text-slate-400 w-28 shrink-0 truncate';
                         label.textContent = String(src.source || '');
                         const bar = document.createElement('div');
-                        bar.className = 'flex-grow bg-dark-900 rounded overflow-hidden h-4 relative border border-dark-700';
+                        bar.className = 'grow bg-dark-900 rounded overflow-hidden h-4 relative border border-dark-700';
                         const fill = document.createElement('div');
                         fill.className = 'h-full bg-brand-600/70 rounded transition-all duration-700';
                         fill.style.width = pct + '%';
                         const count = document.createElement('span');
-                        count.className = 'text-xs text-slate-300 w-8 text-right flex-shrink-0';
+                        count.className = 'text-xs text-slate-300 w-8 text-right shrink-0';
                         count.textContent = src.hitCount;
                         bar.appendChild(fill);
                         row.appendChild(label);
@@ -3025,21 +3025,21 @@
                     const div = document.createElement('div');
                     div.className = 'flex flex-wrap sm:flex-nowrap items-center justify-between px-3 py-2 gap-2';
                     const inputEl = document.createElement('span');
-                    inputEl.className = 'text-slate-300 font-mono text-xs flex-grow truncate';
+                    inputEl.className = 'text-slate-300 font-mono text-xs grow truncate';
                     inputEl.textContent = s.input || '';
                     const statusEl = document.createElement('span');
-                    statusEl.className = 'text-[10px] ' + statusColor + ' uppercase flex-shrink-0';
+                    statusEl.className = 'text-[10px] ' + statusColor + ' uppercase shrink-0';
                     statusEl.textContent = s.status;
                     const hitsEl = document.createElement('span');
-                    hitsEl.className = 'text-[10px] text-brand-500 flex-shrink-0';
+                    hitsEl.className = 'text-[10px] text-brand-500 shrink-0';
                     hitsEl.textContent = (s.resultCount || 0) + ' hit' + (s.resultCount !== 1 ? 's' : '');
                     const dateEl = document.createElement('span');
-                    dateEl.className = 'text-[10px] text-slate-600 flex-shrink-0';
+                    dateEl.className = 'text-[10px] text-slate-600 shrink-0';
                     dateEl.textContent = date;
                     div.appendChild(inputEl);
                     if (riskCls) {
                         const riskEl = document.createElement('span');
-                        riskEl.className = `text-[10px] border rounded px-1 flex-shrink-0 ${riskCls}`;
+                        riskEl.className = `text-[10px] border rounded px-1 shrink-0 ${riskCls}`;
                         riskEl.textContent = s.riskLevel + ' ' + s.riskScore;
                         div.appendChild(riskEl);
                     }
@@ -3048,26 +3048,26 @@
                     div.appendChild(dateEl);
                     if (s.scanID) {
                         const viewBtn = document.createElement('button');
-                        viewBtn.className = 'text-[10px] text-brand-400 hover:text-brand-300 flex-shrink-0 underline';
+                        viewBtn.className = 'text-[10px] text-brand-400 hover:text-brand-300 shrink-0 underline';
                         viewBtn.textContent = 'VIEW';
                         viewBtn.addEventListener('click', () => loadScanByID(s.scanID));
                         div.appendChild(viewBtn);
                         if (s.status === 'completed') {
                             const pdfBtn = document.createElement('a');
-                            pdfBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 flex-shrink-0 underline';
+                            pdfBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 shrink-0 underline';
                             pdfBtn.textContent = 'PDF';
                             pdfBtn.href = '/api/report/' + s.scanID;
                             pdfBtn.target = '_blank';
                             div.appendChild(pdfBtn);
                             const jsonBtn = document.createElement('a');
-                            jsonBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 flex-shrink-0 underline';
+                            jsonBtn.className = 'text-[10px] text-slate-400 hover:text-slate-200 shrink-0 underline';
                             jsonBtn.textContent = 'JSON';
                             jsonBtn.href = '/api/export/' + s.scanID;
                             jsonBtn.download = '';
                             div.appendChild(jsonBtn);
                             if (currentUser) {
                                 const tagBtn = document.createElement('button');
-                                tagBtn.className = 'text-[10px] text-slate-400 hover:text-brand-400 flex-shrink-0';
+                                tagBtn.className = 'text-[10px] text-slate-400 hover:text-brand-400 shrink-0';
                                 tagBtn.textContent = '🏷';
                                 tagBtn.title = 'Manage tags';
                                 tagBtn.addEventListener('click', () => openTagDropdown(s.scanID, tagBtn));
@@ -3075,17 +3075,17 @@
 
                                 // Compare button for diff
                                 const cmpBtn = document.createElement('button');
-                                cmpBtn.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors';
+                                cmpBtn.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors';
                                 const updateCmpBtn = () => {
                                     if (diffSelectA && diffSelectA.scanID === s.scanID) {
                                         cmpBtn.textContent = '✕ A';
-                                        cmpBtn.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors border-brand-500/60 text-brand-400';
+                                        cmpBtn.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors border-brand-500/60 text-brand-400';
                                     } else if (diffSelectA) {
                                         cmpBtn.textContent = 'vs B';
-                                        cmpBtn.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors border-green-600/60 text-green-400';
+                                        cmpBtn.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors border-green-600/60 text-green-400';
                                     } else {
                                         cmpBtn.textContent = '⇄';
-                                        cmpBtn.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
+                                        cmpBtn.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
                                     }
                                 };
                                 updateCmpBtn();
@@ -3096,14 +3096,14 @@
                                         // Reset all compare buttons
                                         document.querySelectorAll('[data-cmp-btn]').forEach(b => {
                                             b.textContent = '⇄';
-                                            b.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
+                                            b.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
                                         });
                                     } else if (diffSelectA) {
                                         openDiffModal(diffSelectA.scanID, s.scanID);
                                         diffSelectA = null;
                                         document.querySelectorAll('[data-cmp-btn]').forEach(b => {
                                             b.textContent = '⇄';
-                                            b.className = 'text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
+                                            b.className = 'text-[10px] shrink-0 px-1.5 py-0.5 rounded border transition-colors border-dark-600 text-slate-500 hover:text-brand-400 hover:border-brand-500/50';
                                         });
                                     } else {
                                         diffSelectA = { scanID: s.scanID };
@@ -3211,7 +3211,7 @@
                     const row = document.createElement('div');
                     row.className = 'flex items-center gap-1.5 cursor-pointer hover:bg-dark-700 rounded px-1 py-0.5 select-none';
                     const dot = document.createElement('span');
-                    dot.className = 'w-2 h-2 rounded-full flex-shrink-0';
+                    dot.className = 'w-2 h-2 rounded-full shrink-0';
                     dot.style.background = t.colour;
                     const lbl = document.createElement('span');
                     lbl.textContent = t.name;
@@ -3260,7 +3260,7 @@
                     const row = document.createElement('div');
                     row.className = 'flex items-center gap-2 bg-dark-900 rounded px-2 py-1 border border-dark-700 text-[10px]';
                     const input = document.createElement('span');
-                    input.className = 'font-mono text-slate-300 flex-grow truncate';
+                    input.className = 'font-mono text-slate-300 grow truncate';
                     input.textContent = ss.input;
                     const intv = document.createElement('span');
                     intv.className = 'text-slate-500';
@@ -3428,7 +3428,7 @@
                     return;
                 }
                 el.innerHTML = data.correlations.map(c => `
-                  <div class="rounded-sm bg-dark-700 px-2 py-1.5 mb-1">
+                  <div class="rounded bg-dark-700 px-2 py-1.5 mb-1">
                     <div class="flex items-center gap-1 flex-wrap">
                       <span class="text-[10px] font-semibold text-brand-400 uppercase">${escapeHtml(c.entityType)}</span>
                       <span class="text-[11px] text-slate-200 font-mono">${escapeHtml(c.entity)}</span>
@@ -3452,7 +3452,7 @@
         function showToast(msg, type = 'success') {
             const t = document.createElement('div');
             const color = type === 'error' ? 'bg-red-600' : type === 'warning' ? 'bg-yellow-600' : 'bg-brand-600';
-            t.className = `fixed bottom-6 right-6 z-[200] px-4 py-2.5 rounded-lg text-white text-sm shadow-xl transition-all duration-300 ${color}`;
+            t.className = `fixed bottom-6 right-6 z-200 px-4 py-2.5 rounded-lg text-white text-sm shadow-xl transition-all duration-300 ${color}`;
             t.textContent = msg;
             document.body.appendChild(t);
             setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3500);
@@ -3766,7 +3766,7 @@
                         <h3 class="text-[10px] uppercase tracking-widest font-bold text-${color}-400 mb-2">${escapeHtml(title)}</h3>
                         <div class="flex flex-col gap-2">${items.map(r => {
                             const raw = escapeHtml(r.rawData || r.title || '');
-                            return `<div class="text-xs bg-dark-900 rounded-sm px-3 py-2 border border-${color}-500/30">
+                            return `<div class="text-xs bg-dark-900 rounded px-3 py-2 border border-${color}-500/30">
                                 <span class="font-semibold text-${color}-300">[${escapeHtml(r.type || '')}]</span>
                                 <span class="text-slate-300 ml-1">${escapeHtml(r.source || '')}</span>
                                 <div class="text-slate-400 mt-0.5 truncate" title="${raw}">${raw}</div>
@@ -3898,7 +3898,7 @@
             .dw-table td::before { content: attr(data-label); color: var(--text-muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
         }
     </style>
-    <div id="dark-web-overlay" class="hidden fixed inset-0 z-[9400] items-center justify-center" aria-hidden="true">
+    <div id="dark-web-overlay" class="hidden fixed inset-0 z-9400 items-center justify-center" aria-hidden="true">
         <div id="dark-web-panel" role="dialog" aria-modal="true" aria-labelledby="dark-web-title" tabindex="-1" class="rounded-xl border border-dark-700 overflow-hidden flex flex-col">
             <div class="flex items-center gap-3 px-4 sm:px-5 py-3 border-b border-dark-700 bg-dark-900 shrink-0">
                 <div class="w-9 h-9 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400" aria-hidden="true">◈</div>
@@ -3907,7 +3907,7 @@
                     <p class="text-[11px] text-slate-500 truncate">Isolated worker · Tor-only · shallow collection · no LLM</p>
                 </div>
                 <span id="dark-web-availability" class="dw-state text-[10px] uppercase tracking-wider rounded-full px-2.5 py-1">Checking…</span>
-                <button id="dark-web-close-btn" type="button" class="rounded-sm bg-dark-700 hover:bg-dark-600 text-slate-300 px-3" aria-label="Close dark-web investigations">✕</button>
+                <button id="dark-web-close-btn" type="button" class="rounded bg-dark-700 hover:bg-dark-600 text-slate-300 px-3" aria-label="Close dark-web investigations">✕</button>
             </div>
 
             <div class="dw-layout min-h-0 flex-1">
@@ -3919,24 +3919,24 @@
 
                     <form id="dark-web-form" novalidate>
                         <label for="dark-web-target" class="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Email, domain, phone or username</label>
-                        <input id="dark-web-target" name="target" type="text" maxlength="255" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="target@example.com" class="w-full bg-dark-900 border border-dark-700 text-white text-sm rounded-lg px-3 outline-hidden focus:border-red-500 placeholder-slate-600">
+                        <input id="dark-web-target" name="target" type="text" maxlength="255" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="target@example.com" class="w-full bg-dark-900 border border-dark-700 text-white text-sm rounded-lg px-3 outline-none focus:border-red-500 placeholder-slate-600">
                         <label class="flex items-start gap-2.5 mt-3 cursor-pointer text-[11px] leading-relaxed text-slate-400">
                             <input id="dark-web-ack" type="checkbox" class="mt-0.5 w-4 h-4 accent-red-500 shrink-0">
                             <span>I confirm that I am authorized to investigate this target for defensive purposes.</span>
                         </label>
                         <button id="dark-web-submit" type="submit" class="w-full mt-3 px-4 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">START SHALLOW INVESTIGATION</button>
-                        <p id="dark-web-form-message" role="status" aria-live="polite" class="min-h-[1.25rem] mt-2 text-[11px] text-slate-500"></p>
+                        <p id="dark-web-form-message" role="status" aria-live="polite" class="min-h-5 mt-2 text-[11px] text-slate-500"></p>
                     </form>
 
                     <div class="flex items-center justify-between mt-4 mb-2">
                         <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recent jobs</h3>
-                        <button id="dark-web-refresh-btn" type="button" class="text-[10px] px-2.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">Refresh</button>
+                        <button id="dark-web-refresh-btn" type="button" class="text-[10px] px-2.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Refresh</button>
                     </div>
                     <div id="dark-web-jobs" class="space-y-2" aria-live="polite"></div>
                 </aside>
 
                 <section class="dw-detail dw-scroll p-4 sm:p-6 overflow-y-auto bg-dark-900/30" aria-label="Investigation details">
-                    <div id="dark-web-detail-empty" class="h-full min-h-[16rem] flex flex-col items-center justify-center text-center px-6">
+                    <div id="dark-web-detail-empty" class="h-full min-h-64 flex flex-col items-center justify-center text-center px-6">
                         <div class="text-4xl text-slate-700 mb-3" aria-hidden="true">◈</div>
                         <p class="text-sm font-semibold text-slate-300">Select an investigation</p>
                         <p class="text-xs text-slate-500 mt-1 max-w-sm">Completed findings appear here as a bounded indicator set, ready to move into an investigation board.</p>
@@ -3953,9 +3953,9 @@
                                 <p id="dark-web-detail-meta" class="text-[11px] text-slate-500 mt-1">—</p>
                             </div>
                             <div class="flex gap-2 flex-wrap">
-                                <button id="dark-web-board-btn" type="button" class="hidden px-3 bg-brand-600 hover:bg-brand-500 text-white text-xs rounded-sm">🕸 Add to board</button>
-                                <button id="dark-web-cancel-btn" type="button" class="hidden px-3 bg-amber-700 hover:bg-amber-600 text-white text-xs rounded-sm">Cancel</button>
-                                <button id="dark-web-delete-btn" type="button" class="hidden px-3 bg-red-900/70 hover:bg-red-800 text-red-100 text-xs rounded-sm">Delete</button>
+                                <button id="dark-web-board-btn" type="button" class="hidden px-3 bg-brand-600 hover:bg-brand-500 text-white text-xs rounded">🕸 Add to board</button>
+                                <button id="dark-web-cancel-btn" type="button" class="hidden px-3 bg-amber-700 hover:bg-amber-600 text-white text-xs rounded">Cancel</button>
+                                <button id="dark-web-delete-btn" type="button" class="hidden px-3 bg-red-900/70 hover:bg-red-800 text-red-100 text-xs rounded">Delete</button>
                             </div>
                         </div>
 
@@ -4022,41 +4022,41 @@
             #board-detail-close { display: block; }
         }
     </style>
-    <div id="board-overlay" class="hidden fixed inset-0 z-[9500] bg-dark-900 flex-col">
+    <div id="board-overlay" class="hidden fixed inset-0 z-9500 bg-dark-900 flex-col">
         <!-- Primary toolbar — always visible, compact on phones -->
         <div class="flex items-center gap-2 px-3 py-2 border-b border-dark-700 bg-dark-800">
             <span class="text-sm font-bold text-brand-400 hidden sm:inline whitespace-nowrap">🕸 Boards</span>
-            <select id="board-list-select" class="bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded-sm px-2 py-1.5 focus:outline-hidden focus:border-brand-500 flex-1 sm:flex-none sm:max-w-[200px] min-w-0"></select>
-            <input id="board-search" type="search" placeholder="🔍 find" title="Find & focus a node" class="bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-2 py-1.5 w-24 sm:w-40 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
-            <button id="board-save-btn" title="Save board" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm whitespace-nowrap">💾<span class="hidden sm:inline"> Save</span></button>
-            <button id="board-ack-btn" title="Acknowledge new findings" class="hidden text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-sm whitespace-nowrap">✨ <span id="board-ack-count">0</span> new</button>
-            <button id="board-more-btn" title="More actions" class="md:hidden text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded-sm">⋯</button>
+            <select id="board-list-select" class="bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 flex-1 sm:flex-none sm:max-w-[200px] min-w-0"></select>
+            <input id="board-search" type="search" placeholder="🔍 find" title="Find & focus a node" class="bg-dark-900 border border-dark-700 text-white text-xs rounded px-2 py-1.5 w-24 sm:w-40 focus:outline-none focus:border-brand-500 placeholder-slate-600">
+            <button id="board-save-btn" title="Save board" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded whitespace-nowrap">💾<span class="hidden sm:inline"> Save</span></button>
+            <button id="board-ack-btn" title="Acknowledge new findings" class="hidden text-xs px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded whitespace-nowrap">✨ <span id="board-ack-count">0</span> new</button>
+            <button id="board-more-btn" title="More actions" class="md:hidden text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded">⋯</button>
             <span id="board-status" class="text-[11px] text-slate-500 ml-auto hidden md:inline truncate max-w-[280px]"></span>
-            <button id="board-close-btn" title="Close" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm whitespace-nowrap">✕</button>
+            <button id="board-close-btn" title="Close" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">✕</button>
         </div>
         <!-- Secondary toolbar — collapsed behind ⋯ on phones -->
         <div id="board-more" class="flex-wrap items-center gap-2 px-3 py-2 border-b border-dark-700 bg-dark-800/60">
-            <input id="board-name-input" placeholder="Board name" class="bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-2 py-1.5 w-36 focus:outline-hidden focus:border-brand-500">
-            <button id="board-new-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded-sm">+ New</button>
-            <button id="board-undo-btn" title="Undo (Ctrl+Z)" disabled class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed">↶</button>
-            <button id="board-redo-btn" title="Redo (Ctrl+Shift+Z)" disabled class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed">↷</button>
-            <button id="board-delete-btn" class="text-xs px-3 py-1.5 bg-red-700/70 hover:bg-red-600 text-white rounded-sm">Delete</button>
-            <button id="board-fit-btn" title="Fit graph to view" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">⤢ Fit</button>
-            <button id="board-labels-btn" title="Toggle relationship labels" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">Labels</button>
-            <button id="board-link-btn" title="Draw a manual relationship: click two nodes to connect them" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">🔗 Link: off</button>
-            <button id="board-path-btn" title="Connection finder: click two entities to trace how they're linked" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm whitespace-nowrap">🧭 Path: off</button>
-            <button id="board-hub-btn" title="Hubs: size entities by how connected they are (degree centrality)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm whitespace-nowrap">◎ Hubs: off</button>
+            <input id="board-name-input" placeholder="Board name" class="bg-dark-900 border border-dark-700 text-white text-xs rounded px-2 py-1.5 w-36 focus:outline-none focus:border-brand-500">
+            <button id="board-new-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded">+ New</button>
+            <button id="board-undo-btn" title="Undo (Ctrl+Z)" disabled class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded disabled:opacity-40 disabled:cursor-not-allowed">↶</button>
+            <button id="board-redo-btn" title="Redo (Ctrl+Shift+Z)" disabled class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded disabled:opacity-40 disabled:cursor-not-allowed">↷</button>
+            <button id="board-delete-btn" class="text-xs px-3 py-1.5 bg-red-700/70 hover:bg-red-600 text-white rounded">Delete</button>
+            <button id="board-fit-btn" title="Fit graph to view" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⤢ Fit</button>
+            <button id="board-labels-btn" title="Toggle relationship labels" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">Labels</button>
+            <button id="board-link-btn" title="Draw a manual relationship: click two nodes to connect them" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">🔗 Link: off</button>
+            <button id="board-path-btn" title="Connection finder: click two entities to trace how they're linked" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">🧭 Path: off</button>
+            <button id="board-hub-btn" title="Hubs: size entities by how connected they are (degree centrality)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">◎ Hubs: off</button>
             <span class="w-px h-5 bg-dark-700 mx-1"></span>
-            <button id="board-watch-btn" title="Re-scan this board's entities on a schedule and alert on new findings" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm whitespace-nowrap">👁 Watch: off</button>
-            <select id="board-watch-interval" class="hidden bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded-sm px-2 py-1.5 focus:outline-hidden focus:border-brand-500">
+            <button id="board-watch-btn" title="Re-scan this board's entities on a schedule and alert on new findings" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded whitespace-nowrap">👁 Watch: off</button>
+            <select id="board-watch-interval" class="hidden bg-dark-900 border border-dark-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brand-500">
                 <option value="daily">daily</option>
                 <option value="weekly">weekly</option>
             </select>
-            <button id="board-import-btn" title="Import a GraphML or board JSON file into this board" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">⬆ Import</button>
+            <button id="board-import-btn" title="Import a GraphML or board JSON file into this board" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬆ Import</button>
             <input id="board-import-file" type="file" accept=".graphml,.xml,.json,application/xml,application/json" class="hidden">
-            <button id="board-export-graphml-btn" title="Export as GraphML (Maltego / Gephi / yEd)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">⬇ GraphML</button>
-            <button id="board-export-png-btn" title="Export as PNG" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">⬇ PNG</button>
-            <button id="board-report-btn" title="Print-ready case-file report (Save as PDF)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">📄 Report</button>
+            <button id="board-export-graphml-btn" title="Export as GraphML (Maltego / Gephi / yEd)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ GraphML</button>
+            <button id="board-export-png-btn" title="Export as PNG" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">⬇ PNG</button>
+            <button id="board-report-btn" title="Print-ready case-file report (Save as PDF)" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded">📄 Report</button>
         </div>
         <!-- Legend + type filters (chips are injected by investigation.js) -->
         <div id="board-filters" class="flex flex-wrap gap-1.5 px-3 py-2 border-b border-dark-700 bg-dark-900"></div>
@@ -4065,21 +4065,21 @@
             <div class="grow relative" style="background:#0b1120">
                 <svg id="board-svg" style="width:100%;height:100%"></svg>
                 <div class="absolute top-2 left-2 right-2 flex gap-2 z-10">
-                    <input id="board-add-input" placeholder="add entity (email / username / domain / IP)" class="bg-dark-900/90 border border-dark-700 text-white text-xs rounded-sm px-2 py-1.5 flex-1 min-w-0 sm:max-w-xs focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
-                    <button id="board-add-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm whitespace-nowrap">+ Add</button>
+                    <input id="board-add-input" placeholder="add entity (email / username / domain / IP)" class="bg-dark-900/90 border border-dark-700 text-white text-xs rounded px-2 py-1.5 flex-1 min-w-0 sm:max-w-xs focus:outline-none focus:border-brand-500 placeholder-slate-600">
+                    <button id="board-add-btn" class="text-xs px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded whitespace-nowrap">+ Add</button>
                 </div>
                 <div id="board-hint" class="absolute inset-0 flex items-center justify-center text-center px-6 text-slate-600 text-sm pointer-events-none">Add an entity, or open a saved board, then tap a node → Expand to grow the graph.</div>
-                <div id="board-graph-tooltip" class="pointer-events-none absolute z-50 hidden bg-dark-900 border border-dark-600 text-[11px] text-slate-200 rounded-sm px-2 py-1.5 max-w-xs shadow-xl" style="word-break:break-all"></div>
+                <div id="board-graph-tooltip" class="pointer-events-none absolute z-50 hidden bg-dark-900 border border-dark-600 text-[11px] text-slate-200 rounded px-2 py-1.5 max-w-xs shadow-xl" style="word-break:break-all"></div>
                 <div id="board-status-m" class="md:hidden absolute bottom-2 left-2 right-2 text-[11px] text-slate-500 truncate pointer-events-none"></div>
                 <!-- Minimap: whole-graph overview + click-to-pan (hidden on small boards) -->
-                <div id="board-minimap" class="hidden absolute bottom-2 right-2 bg-dark-900/85 border border-dark-700 rounded-sm overflow-hidden cursor-crosshair" style="width:150px;height:110px">
+                <div id="board-minimap" class="hidden absolute bottom-2 right-2 bg-dark-900/85 border border-dark-700 rounded overflow-hidden cursor-crosshair" style="width:150px;height:110px">
                     <svg id="board-minimap-svg" width="150" height="110" style="display:block"></svg>
                 </div>
             </div>
             <div id="board-detail" class="md:w-72 shrink-0 md:border-l border-dark-700 bg-dark-900 p-3 overflow-y-auto">
                 <div class="flex items-center justify-between mb-2">
                     <p class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Node</p>
-                    <button id="board-detail-close" class="text-xs px-2 py-1 bg-dark-700 text-slate-300 rounded-sm">✕</button>
+                    <button id="board-detail-close" class="text-xs px-2 py-1 bg-dark-700 text-slate-300 rounded">✕</button>
                 </div>
                 <div id="board-detail-empty" class="text-xs text-slate-600">Tap a node to inspect and expand it.</div>
                 <div id="board-detail-content" class="hidden"></div>

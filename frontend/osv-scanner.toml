@@ -1,6 +1,0 @@
-# Same decision as npm-audit-allowlist.json, for the other scanner. OSV-Scanner
-# reports the advisory again once ignoreUntil passes, so this expires by itself.
-[[IgnoredVulns]]
-id = "GHSA-vfj7-8cjw-p6xm"
-ignoreUntil = 2026-12-01
-reason = "braces 3.0.3 is the newest published release; no fix exists upstream. Build-time dev dependency of tailwindcss 3 only, never shipped. Real fix is the Tailwind 4 migration."

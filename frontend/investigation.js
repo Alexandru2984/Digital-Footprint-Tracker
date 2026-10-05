@@ -52,7 +52,7 @@
       var off = hiddenTypes[t];
       // Entity types can originate in imported GraphML/JSON. Escape them in
       // both attribute and text contexts so a crafted board cannot inject DOM.
-      return '<button data-type="' + escapeHtml(t) + '" class="board-filter-chip text-[11px] px-2 py-1 rounded border transition-colors ' +
+      return '<button data-type="' + escapeHtml(t) + '" class="board-filter-chip text-[11px] px-2 py-1 rounded-sm border transition-colors ' +
         (off ? 'border-dark-700 bg-dark-800 text-slate-600' : 'border-dark-600 bg-dark-800 text-slate-200') + '">' +
         '<span style="color:' + color(t) + ';opacity:' + (off ? '.35' : '1') + '">●</span> ' + escapeHtml(t) + ' <span class="text-slate-500">' + counts[t] + '</span></button>';
     }).join('') + '<span class="text-[11px] text-slate-600 ml-auto self-center">' + board.nodes.length + ' nodes · ' + board.edges.length + ' links</span>';
@@ -133,7 +133,7 @@
   function refreshLinkUI() {
     var btn = document.getElementById('board-link-btn'); if (!btn) return;
     btn.textContent = linkMode ? (linkSource ? '🔗 pick target…' : '🔗 pick source…') : '🔗 Link: off';
-    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+    btn.className = 'text-xs px-3 py-1.5 rounded-sm whitespace-nowrap ' +
       (linkMode ? 'bg-blue-500 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (linkMode || pathMode) ? 'crosshair' : '';
   }
@@ -192,7 +192,7 @@
   function refreshPathUI() {
     var btn = document.getElementById('board-path-btn'); if (!btn) return;
     btn.textContent = pathMode ? (pathSource ? '🧭 pick destination…' : '🧭 pick start…') : '🧭 Path: off';
-    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+    btn.className = 'text-xs px-3 py-1.5 rounded-sm whitespace-nowrap ' +
       (pathMode ? 'bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     var svg = document.getElementById('board-svg'); if (svg) svg.style.cursor = (pathMode || linkMode) ? 'crosshair' : '';
   }
@@ -235,7 +235,7 @@
   function refreshHubUI() {
     var btn = document.getElementById('board-hub-btn'); if (!btn) return;
     btn.textContent = hubMode ? '◎ Hubs: on' : '◎ Hubs: off';
-    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+    btn.className = 'text-xs px-3 py-1.5 rounded-sm whitespace-nowrap ' +
       (hubMode ? 'bg-yellow-900 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
   }
   function toggleHubs() {
@@ -594,7 +594,7 @@
     var sel = document.getElementById('board-watch-interval');
     if (!btn) return;
     btn.textContent = board.watched ? ('👁 Watch: ' + (board.watchInterval || 'daily')) : '👁 Watch: off';
-    btn.className = 'text-xs px-3 py-1.5 rounded whitespace-nowrap ' +
+    btn.className = 'text-xs px-3 py-1.5 rounded-sm whitespace-nowrap ' +
       (board.watched ? 'bg-brand-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-slate-300');
     sel.classList.toggle('hidden', !board.watched);
     if (board.watched) sel.value = board.watchInterval || 'daily';
@@ -847,11 +847,11 @@
       '<div class="text-sm text-white break-all mb-1">' + escapeHtml(node.label) + '</div>' +
       '<div class="text-[11px] mb-3"><span style="color:' + color(node.etype) + '">●</span> ' + escapeHtml(node.etype) + (node.root ? ' · root' : '') + '</div>';
     if (canExpand) {
-      html += '<button id="board-expand-btn" class="w-full text-xs py-1.5 mb-2 bg-brand-600 hover:bg-brand-500 text-white rounded">' + (node.expanded ? '↻ Re-expand (all)' : '⚡ Expand (all)') + '</button>';
+      html += '<button id="board-expand-btn" class="w-full text-xs py-1.5 mb-2 bg-brand-600 hover:bg-brand-500 text-white rounded-sm">' + (node.expanded ? '↻ Re-expand (all)' : '⚡ Expand (all)') + '</button>';
       if (transforms.length) {
         html += '<p class="text-[10px] text-slate-500 uppercase tracking-widest mt-3 mb-1">Transforms</p>';
         transforms.forEach(function (t, i) {
-          html += '<button data-tf="' + i + '" class="board-tf-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-slate-300 rounded">↳ ' + escapeHtml(t.label) + '</button>';
+          html += '<button data-tf="' + i + '" class="board-tf-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-slate-300 rounded-sm">↳ ' + escapeHtml(t.label) + '</button>';
         });
       }
     } else {
@@ -861,7 +861,7 @@
     if (also.length) {
       html += '<p class="text-[10px] text-yellow-300 uppercase tracking-widest mt-3 mb-1">Also in ' + also.length + ' other board' + (also.length > 1 ? 's' : '') + '</p>';
       also.forEach(function (b, i) {
-        html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-600 border border-yellow-700 text-yellow-300 rounded">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
+        html += '<button data-merge="' + i + '" class="board-merge-btn w-full text-left text-[11px] py-1 px-2 mb-1 bg-dark-800 hover:bg-dark-600 border border-yellow-700 text-yellow-300 rounded-sm">⇄ Merge “' + escapeHtml(b.name) + '”</button>';
       });
     }
     // Verification status + investigator note — the case-file layer.
@@ -869,15 +869,15 @@
     html += '<div class="flex gap-1 mb-2">';
     [['confirmed', '✓', 'Confirmed', '#22c55e'], ['suspect', '?', 'Suspect', '#f59e0b'], ['false', '✕', 'False', '#ef4444']].forEach(function (s) {
       var on = node.status === s[0];
-      html += '<button data-status="' + s[0] + '" title="' + s[2] + '" class="board-status-btn flex-1 text-xs py-1 rounded border ' +
+      html += '<button data-status="' + s[0] + '" title="' + s[2] + '" class="board-status-btn flex-1 text-xs py-1 rounded-sm border ' +
         (on ? 'text-white' : 'text-slate-400 border-dark-700 bg-dark-800 hover:bg-dark-700') + '"' +
         (on ? ' style="background:' + s[3] + ';border-color:' + s[3] + '"' : '') + '>' + s[1] + '</button>';
     });
-    html += '<button data-status="" title="Clear" class="board-status-btn text-xs py-1 px-2 rounded border border-dark-700 bg-dark-800 text-slate-400 hover:bg-dark-700">–</button>';
+    html += '<button data-status="" title="Clear" class="board-status-btn text-xs py-1 px-2 rounded-sm border border-dark-700 bg-dark-800 text-slate-400 hover:bg-dark-700">–</button>';
     html += '</div>';
-    html += '<textarea id="board-note" rows="3" placeholder="Notes for this entity…" class="w-full bg-dark-900 border border-dark-700 text-slate-200 text-[11px] rounded px-2 py-1.5 focus:outline-none focus:border-brand-500 placeholder-slate-600 resize-y">' + escapeHtml(node.note || '') + '</textarea>';
+    html += '<textarea id="board-note" rows="3" placeholder="Notes for this entity…" class="w-full bg-dark-900 border border-dark-700 text-slate-200 text-[11px] rounded-sm px-2 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600 resize-y">' + escapeHtml(node.note || '') + '</textarea>';
 
-    html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-red-900 text-slate-300 rounded">Remove node</button>';
+    html += '<button id="board-remove-btn" class="w-full text-xs py-1.5 mt-2 bg-red-900 text-slate-300 rounded-sm">Remove node</button>';
     content.innerHTML = html;
     Array.prototype.forEach.call(content.querySelectorAll('.board-merge-btn'), function (b) {
       b.onclick = function () { var o = also[+b.getAttribute('data-merge')]; mergeBoard(o.id, o.name); };

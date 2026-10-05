@@ -1,7 +1,1 @@
-[
-  {
-    "id": "GHSA-vfj7-8cjw-p6xm",
-    "until": "2026-12-01",
-    "reason": "braces 3.0.3 is the newest published release and no fix exists upstream. It reaches this repository only through tailwindcss 3 (chokidar, micromatch), runs at build time over our own content globs, and ships nothing to the browser or the server binary. The real fix is the Tailwind 4 migration, which drops both dependencies; this date is when that decision gets revisited."
-  }
-]
+[]
