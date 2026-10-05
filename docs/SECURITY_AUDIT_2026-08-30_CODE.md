@@ -652,11 +652,24 @@ no longer appears at all — an exception nobody needs is one nobody is reviewin
 `scripts/tests/audit-frontend.test.sh` holds all four behaviours against fixture
 reports, so the rules are tested rather than the current dependency tree.
 
-The real fix is the Tailwind 4 migration, which drops `chokidar` and
-`micromatch` outright; 2026-12-01 is when that decision gets revisited. The
-migration is not small — 403 distinct utility classes across seven pages, about
-140 of them using utilities v4 renames — and doing it under a red build is how
-visual regressions ship, so it is deliberately a separate piece of work.
+**Closed the same day, and the premise was wrong.** Tailwind 4 does *not* drop
+the dependency: v4 moved its CLI into `@tailwindcss/cli`, which depends on
+`@parcel/watcher`, which depends on `micromatch` and so on `braces` again.
+Migrating alone would have changed nothing.
+
+What removes it is not using that CLI. `@tailwindcss/cli` is a file watcher
+wrapped around one compile call, and a build needs only the compile, so
+`frontend/build-css.mjs` runs the PostCSS plugin directly and minifies with the
+same lightningcss Tailwind already uses internally. That dependency set is 26
+packages with no watcher, no `micromatch` and no `braces`; `npm audit` and
+OSV-Scanner both report nothing, and the exception was deleted seven weeks
+before its date — on the gate's own insistence, since it fails an entry that no
+longer applies.
+
+Worth keeping in view: the accepted-risk machinery was right to exist, and the
+reasoning attached to it was wrong. It bought the time in which urllib3 8.9 got
+fixed, and then the wrong assumption inside it was found by trying to act on
+it rather than by re-reading it.
 
 ### F24 — High: the only proof the backups were restorable had stopped working
 
@@ -699,6 +712,48 @@ independent things now hold the invariant:
 
 Filed High because the failure was in the recovery path, the one place where a
 latent fault is only discovered when it is already too late to fix.
+
+### F25 — Low: the release served its own build tooling
+
+`build-release.sh` copied `frontend/` into the served release tree while
+excluding the build tooling **by name**: `node_modules`, `package.json`,
+`package-lock.json`, `check.mjs`, `input.css`, `tailwind.config.js`. The comment
+above it said "Only runtime assets enter the served tree", but an exclude list
+cannot say that — it only names what existed when it was written.
+
+Four files added after it were therefore published at the document root, and
+served with real content rather than the SPA fallback:
+
+| path | what it is |
+|---|---|
+| `/sri.mjs` | the subresource-integrity generator (added for F21) |
+| `/playwright.config.mjs` | browser-test configuration |
+| `/npm-audit-allowlist.json` | the F23 exception list, reason text included |
+| `/tests/browser/*.spec.mjs` | the browser specs, selectors and assertions |
+
+No secret is in any of them, which is why this is Low: the cost is disclosing
+how the site is built and tested, and the specs name the selectors and gates an
+attacker would otherwise have to discover. The two files the list did name,
+`check.mjs` and `input.css`, were correctly absent — the mechanism worked, its
+coverage did not.
+
+**Fixed** (`pending`). `ops/release-frontend.filter` is an rsync filter that
+allows runtime assets and ends with `- *`, so anything unnamed stays out by
+default. Directory excludes come first, because rsync takes the first matching
+rule and the extension rules would otherwise pull every `.js` out of
+`node_modules`. One-off root documents (`robots.txt`, `sitemap.xml`,
+`openapi.yaml`, `manifest.json`) are named rather than matched by extension, so
+a future directory of fixtures does not ride along, and `--prune-empty-dirs`
+keeps unlisted directories from appearing empty.
+
+`scripts/tests/release-frontend-filter.test.sh` runs the real filter over the
+real frontend plus two invented tooling files and a fixture directory, and
+asserts the 25 runtime files arrive while every tool — including the ones that
+do not exist yet — does not. It also asserts no `.mjs` reaches the tree at all,
+and that `build-release.sh` still references the shared filter and prunes empty
+directories, so the rule and its user cannot drift apart. This is the eighth
+instance in this audit of one decision kept by hand where the next addition is
+the one that is missed.
 
 ## Verified clean
 

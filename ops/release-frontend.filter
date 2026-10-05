@@ -1,0 +1,41 @@
+# Which frontend files may enter the served release tree, as an rsync filter.
+#
+# This was an exclude list that named the build tooling of the day, so every
+# tool added later shipped by default: sri.mjs, playwright.config.mjs, the npm
+# audit allowlist and the browser specs were all being served from the public
+# document root. An allowlist cannot fail that way — something new is excluded
+# until someone says otherwise.
+#
+# Directory excludes come first: rsync takes the first matching rule, and the
+# extension rules below would otherwise pull in every .js under node_modules.
+- /node_modules/
+- /tests/
+- /playwright-report/
+- /test-results/
+
+# The Tailwind source compiles into tailwind.css; only the output is served.
+- /input.css
+
+# Descend into the remaining directories (docs/ holds the API reference).
++ */
+
+# Runtime assets only. Tooling is .mjs by convention here, and never listed.
+# One-off root documents, named rather than matched by extension, so a future
+# directory of .txt or .yaml fixtures does not ride along.
++ /manifest.json
++ /robots.txt
++ /sitemap.xml
++ /openapi.yaml
+
+# Asset types that are legitimately runtime anywhere in the tree.
++ *.html
++ *.css
++ *.js
++ *.svg
++ *.png
++ *.ico
++ *.woff2
+
+# Anything not named above — package manifests, lockfiles, input.css, .mjs
+# tooling, scanner configs, fixtures — stays out of the release.
+- *
