@@ -27,6 +27,9 @@ cat > "$MOCK" <<'MOCKEOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${MOCK_LOG}"
 subcommand="$1"
+if [[ -n "${MOCK_FAIL_REMOTE:-}" && "$*" == *"${MOCK_FAIL_REMOTE}"* ]]; then
+    exit 1
+fi
 status_var="MOCK_${subcommand^^}_STATUS"
 exit "${!status_var:-0}"
 MOCKEOF
@@ -36,17 +39,20 @@ ship() {
     env -i PATH="$PATH" HOME="$TMP" TMPDIR="$TMP/no-scratch-space" \
         MOCK_LOG="$TMP/rclone.log" \
         MOCK_COPY_STATUS="${COPY_STATUS:-0}" MOCK_CHECK_STATUS="${CHECK_STATUS:-0}" \
+        MOCK_FAIL_REMOTE="${FAIL_REMOTE:-}" \
         OFFSITE_RCLONE="$MOCK" OFFSITE_RCLONE_CONFIG="$CONF" \
         OFFSITE_SOURCE_DIR="$SRC" OFFSITE_STATUS_FILE="$STATE/last-success" \
-        OFFSITE_REMOTE="${REMOTE-gdrive:Backup_VPS/swift-vapor}" \
+        OFFSITE_REMOTES="${REMOTES-gdrive:Backup_VPS/swift-vapor r2:micutu-vps-backup/swift-vapor}" \
         "$SHIPPER"
 }
 
 # 1. Happy path: copy then verify, and only then a status file.
 : > "$TMP/rclone.log"
 ship >/dev/null || fail "expected a clean run to succeed"
-grep -q '^copy ' "$TMP/rclone.log" || fail "expected an rclone copy"
-grep -q '^check ' "$TMP/rclone.log" || fail "expected an rclone check"
+for remote in gdrive:Backup_VPS/swift-vapor r2:micutu-vps-backup/swift-vapor; do
+    grep "^copy " "$TMP/rclone.log" | grep -q -- "$remote" || fail "expected a copy to $remote"
+    grep "^check " "$TMP/rclone.log" | grep -q -- "$remote" || fail "expected a verification at $remote"
+done
 grep '^copy ' "$TMP/rclone.log" | grep -q -- '--immutable' \
     || fail "the copy must refuse to rewrite remote history (--immutable)"
 grep '^copy ' "$TMP/rclone.log" | grep -q -- '--checksum' || fail "the copy must compare checksums"
@@ -57,7 +63,25 @@ grep -q -- "--include footprint-\*.sql.gz.gpg" "$TMP/rclone.log" \
 [[ -f "$STATE/last-success" ]] || fail "expected a status file"
 [[ "$(stat -c '%a' "$STATE/last-success")" == "644" ]] || fail "status file should be world-readable, no secret in it"
 grep -q "verified=2" "$STATE/last-success" || fail "expected the verified artifact count"
-grep -q "remote=gdrive:Backup_VPS/swift-vapor" "$STATE/last-success" || fail "expected the destination recorded"
+grep -q "destinations=gdrive:Backup_VPS/swift-vapor,r2:micutu-vps-backup/swift-vapor" "$STATE/last-success" \
+    || fail "expected every destination recorded"
+
+# The property two destinations exist for: one of them failing is a failure, and
+# a copy that reached only half of them is not recorded as a copy.
+rm -f "$STATE/last-success"; : > "$TMP/rclone.log"
+if FAIL_REMOTE="r2:micutu-vps-backup" ship >/dev/null 2>&1; then
+    fail "expected a failure at the second destination to fail the run"
+fi
+[[ ! -f "$STATE/last-success" ]] || fail "a partial copy must not publish success"
+grep "^copy " "$TMP/rclone.log" | grep -q -- "gdrive:" || fail "expected the first destination to still be attempted"
+
+# An environment file written before this was plural keeps working.
+: > "$TMP/rclone.log"
+env -i PATH="$PATH" HOME="$TMP" TMPDIR="$TMP/no-scratch-space" MOCK_LOG="$TMP/rclone.log" \
+    OFFSITE_RCLONE="$MOCK" OFFSITE_RCLONE_CONFIG="$CONF" OFFSITE_SOURCE_DIR="$SRC" \
+    OFFSITE_STATUS_FILE="$STATE/last-success" OFFSITE_REMOTE="gdrive:legacy/path" \
+    "$SHIPPER" >/dev/null || fail "expected the singular OFFSITE_REMOTE to still work"
+grep -q "destinations=gdrive:legacy/path" "$STATE/last-success" || fail "expected the legacy variable honoured"
 
 # Nothing may ever be deleted on the far side.
 grep -qE '^(delete|purge|sync|rmdir|cleanup) ' "$TMP/rclone.log" \
@@ -82,8 +106,8 @@ if OFFSITE_SOURCE_DIR_OVERRIDE=1 env -i PATH="$PATH" HOME="$TMP" MOCK_LOG="$TMP/
 fi
 
 # 5. A destination that could turn into an option, or into nothing at all.
-for bad in "--config=/etc/shadow" "" "gdrive:; rm -rf /" "gdrive:\$(id)"; do
-    if REMOTE="$bad" ship >/dev/null 2>&1; then fail "expected the destination '$bad' to be refused"; fi
+for bad in "--config=/etc/shadow" "" "gdrive:; rm -rf /" "gdrive:\$(id)" "gdrive:ok r2:bad;rm"; do
+    if REMOTES="$bad" ship >/dev/null 2>&1; then fail "expected the destination '$bad' to be refused"; fi
 done
 
 # 6. A config anyone can read is a credential problem.

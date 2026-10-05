@@ -101,7 +101,13 @@ validate each subsystem.
   which this host shares with other tenants (F22).
 - `swift-vapor-offsite.service` — the off-host copy, started by `OnSuccess=` on
   the backup rather than by a clock, so it can only ever ship an artifact that
-  has already been decrypted and gzip-verified. It uploads with rclone and then
+  has already been decrypted and gzip-verified. It copies to **every**
+  destination in `OFFSITE_REMOTES` — Google Drive and Cloudflare R2 today — each
+  verified separately, and publishes nothing unless all of them held: a copy
+  that reached half the destinations is not a copy. Two providers on purpose, so
+  an expiring OAuth client, a quota or a deleted folder cannot take the only
+  off-host copy with it; R2 also needs no OAuth at all, which is the one that
+  keeps working when rclone's shared Google client id is retired during 2026. It uploads with rclone and then
   *re-reads the far side and compares checksums*; only then does it publish the
   timestamp the health probe watches. It never deletes remotely — a mirror
   propagates a local wipe, and a retention pass that runs while backups are

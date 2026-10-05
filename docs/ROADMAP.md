@@ -111,7 +111,7 @@ Status as of 2026-08-30, verified against the running box.
 |---|---|---|
 | Restore main SPA/CSP compatibility | **Met** | Exact hashes plus per-request JSD nonce; browser gate open |
 | Encrypted backup credential/job | **Met** | Daily timer active, seven verified artifacts, newest authenticated |
-| Restore/offsite recovery | **Partly met** | Off-host copy delivered 2026-09-16; restored *from that copy* on 2026-10-05 — 4 s retrieve + 8 s restore, 22 tables, manifest retained — after fixing a drill pinned to PostgreSQL 16 while the server writes 18. RPO is the 24 h backup interval. Full service RTO and true immutability still open |
+| Restore/offsite recovery | **Partly met** | Two off-host destinations as of 2026-10-05 (Google Drive and Cloudflare R2), each verified after upload and neither ever pruned; restored *from the off-host copy* — 4 s retrieve + 8 s restore, 22 tables, manifest retained — after fixing a drill pinned to PostgreSQL 16 while the server writes 18. RPO is the 24 h backup interval. Full service RTO and true immutability (the writing credential can still delete) remain open |
 | Dedicated runtime identity | **Met** | `swift-vapor`/`swift-deploy`/`swift-backup`, `/srv` layout, no personal-home access |
 | Narrow deploy authority | **Met, with accepted deviation** | Forced-command deploy key only; `micu`'s broad sudo retained deliberately as root recovery |
 | Immutable atomic deployment | **Met** | `current` → `releases/<sha>`; deployed SHA equals the CI artifact |

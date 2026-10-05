@@ -18,7 +18,9 @@ set -euo pipefail
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 SOURCE_DIR="${OFFSITE_SOURCE_DIR:-/var/lib/swift-vapor-backup/artifacts}"
-REMOTE="${OFFSITE_REMOTE:-}"
+# One or more destinations, space separated. OFFSITE_REMOTE is still read so
+# an installed environment file from before this was plural keeps working.
+REMOTES_RAW="${OFFSITE_REMOTES:-${OFFSITE_REMOTE:-}}"
 RCLONE="${OFFSITE_RCLONE:-/usr/bin/rclone}"
 CONFIG_FILE="${OFFSITE_RCLONE_CONFIG:-}"
 STATUS_FILE="${OFFSITE_STATUS_FILE:-/var/lib/swift-vapor-offsite/last-success}"
@@ -35,9 +37,15 @@ die() { echo "offsite-backup: $*" >&2; exit 1; }
 # cannot reach a shell — nothing here uses eval — but a value starting with '-'
 # would become an option instead of a path, so keep it to what a remote name and
 # path actually need.
-[[ -n "$REMOTE" ]] || die "OFFSITE_REMOTE is not configured."
-[[ "$REMOTE" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*:[A-Za-z0-9_./-]*$ ]] \
-    || die "OFFSITE_REMOTE must look like 'remote:path' and hold no surprising characters."
+[[ -n "$REMOTES_RAW" ]] || die "OFFSITE_REMOTES is not configured."
+# Split without a here-string: those stage through a temp file for large input,
+# and this unit runs with a private /tmp that a full host /tmp makes read-only.
+mapfile -t REMOTES < <(printf '%s' "$REMOTES_RAW" | tr -s ' \t' '\n' | grep -v '^$')
+(( ${#REMOTES[@]} > 0 )) || die "OFFSITE_REMOTES holds no destination."
+for remote in "${REMOTES[@]}"; do
+    [[ "$remote" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*:[A-Za-z0-9_./-]*$ ]] \
+        || die "destination '$remote' must look like 'remote:path' and hold no surprising characters."
+done
 
 for path in "$SOURCE_DIR" "$STATUS_FILE" "$CONFIG_FILE"; do
     [[ "$path" == /* ]] || die "expected an absolute path, got: ${path:-<unset>}"
@@ -75,26 +83,35 @@ common=(
     --log-level NOTICE
 )
 
-echo "offsite-backup: copying ${#artifacts[@]} artifact(s) to $REMOTE"
-# --immutable refuses to replace a remote file whose content differs: a name
-# already on the far side is history, and history is not rewritten from here.
-"$RCLONE" copy "$SOURCE_DIR" "$REMOTE" "${common[@]}" --immutable --checksum \
-    || die "upload failed."
+# Each destination is copied and then verified on its own, and the status below
+# is published only if every one of them held. Two destinations exist so that a
+# single provider — an expiring OAuth client, a quota, a deleted folder — cannot
+# take the only off-host copy with it.
+echo "offsite-backup: copying ${#artifacts[@]} artifact(s) to ${#REMOTES[@]} destination(s)"
+for remote in "${REMOTES[@]}"; do
+    # --immutable refuses to replace a remote file whose content differs: a name
+    # already on the far side is history, and history is not rewritten from here.
+    "$RCLONE" copy "$SOURCE_DIR" "$remote" "${common[@]}" --immutable --checksum \
+        || die "upload to $remote failed."
 
-# Upload success only means the transfers returned. This re-reads the far side
-# and compares checksums, so the claim below is about what is actually there.
-"$RCLONE" check "$SOURCE_DIR" "$REMOTE" "${common[@]}" --one-way --checksum \
-    || die "post-upload verification failed."
+    # Upload success only means the transfers returned. This re-reads the far
+    # side and compares checksums, so the claim below is about what is there.
+    "$RCLONE" check "$SOURCE_DIR" "$remote" "${common[@]}" --one-way --checksum \
+        || die "post-upload verification at $remote failed."
+
+    echo "offsite-backup: verified ${#artifacts[@]} artifact(s) at $remote"
+done
 
 # Published only after verification, and staged in its own directory rather than
 # /tmp — on this shared host a full /tmp leaves sandboxed units a read-only one
 # (see healthcheck.sh, "Shared scratch space").
 STATUS_TMP="$(mktemp --tmpdir="$STATUS_DIR" .last-success.partial.XXXXXX)"
 trap 'rm -f -- "$STATUS_TMP"' EXIT
-printf '%s verified=%d remote=%s\n' \
-    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${#artifacts[@]}" "$REMOTE" > "$STATUS_TMP"
+destinations="$(printf '%s,' "${REMOTES[@]}")"
+printf '%s verified=%d destinations=%s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${#artifacts[@]}" "${destinations%,}" > "$STATUS_TMP"
 chmod 0644 "$STATUS_TMP"
 mv -f -- "$STATUS_TMP" "$STATUS_FILE"
 trap - EXIT
 
-echo "offsite-backup: ${#artifacts[@]} artifact(s) verified at $REMOTE"
+echo "offsite-backup: ${#artifacts[@]} artifact(s) verified at every destination (${#REMOTES[@]})"

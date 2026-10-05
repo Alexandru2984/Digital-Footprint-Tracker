@@ -75,13 +75,24 @@ the original encrypted artifact is always preserved for investigation/retry.
 side and compares checksums before recording success. It never deletes there, so
 the destination holds everything local retention has already rotated away.
 
-From any machine with rclone and access to the destination:
+There are two destinations, and either is sufficient — the artifacts are
+identical. From any machine with rclone and access to one of them:
 
 ```bash
+# Google Drive
 rclone lsl gdrive:Backup_VPS/swift-vapor
 rclone copy gdrive:Backup_VPS/swift-vapor/footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg .
+
+# or Cloudflare R2, which needs no OAuth and so survives a retired client id
+rclone lsl r2:micutu-vps-backup/swift-vapor
+rclone copy r2:micutu-vps-backup/swift-vapor/footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg .
+
 sha256sum footprint-YYYY-MM-DD_HH-MM-SS.sql.gz.gpg
 ```
+
+Prefer naming the file instead of listing the directory: a listing against
+Google Drive through rclone's shared client id has twice returned empty with a
+zero exit status under rate limiting, which is misleading rather than wrong.
 
 Then decrypt with the backup passphrase and restore as above. The artifact is
 byte-identical to the local one, so `scripts/restore-drill.sh` accepts it
