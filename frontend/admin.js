@@ -231,7 +231,7 @@
             const body = await res.json();
             const items = body.items || [];
             if (!items.length) { container.innerHTML = '<p class="text-[11px] text-slate-500">No audit entries found.</p>'; return; }
-            const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
             container.innerHTML = `
                 <div class="overflow-x-auto"><table class="w-full min-w-[640px] text-[10px] border-collapse">
                     <thead><tr class="border-b border-dark-700 text-slate-400">

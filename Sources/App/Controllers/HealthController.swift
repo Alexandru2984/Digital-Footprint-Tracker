@@ -30,8 +30,6 @@ struct HealthController: RouteCollection {
             .post("geolocate", use: geolocate)
     }
 
-    struct GeoQuery: Content { let query: String }
-
     /// Resolve a batch of IPs against the **local** GeoLite2 database.
     ///
     /// Privacy-first: this used to proxy the caller's list of IPs to

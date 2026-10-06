@@ -173,12 +173,6 @@ enum TokenEncryption {
         value.hasPrefix(reservedPrefix)
     }
 
-    static func envelopeVersion(_ value: String) -> WriteVersion? {
-        if value.hasPrefix(v1Prefix) { return .v1 }
-        if value.hasPrefix(v2Prefix) { return .v2 }
-        return nil
-    }
-
     static func envelopeKeyID(_ value: String) -> String? {
         guard value.hasPrefix(v2Prefix) else { return nil }
         let parts = value.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
