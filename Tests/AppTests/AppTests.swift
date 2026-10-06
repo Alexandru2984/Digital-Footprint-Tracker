@@ -3885,6 +3885,47 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testScanListAttributesResultsToTheRightScan() async throws {
+        // The list now fetches every listed scan's results in one query and
+        // groups them in memory; a grouping slip would show one scan's findings
+        // under another. Three scans with 0, 1 and 3 results pin the attribution.
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "scan-list-owner")
+        let storedOwner = try await User.query(on: app.db)
+            .filter(\.$username == "scan-list-owner").first()
+        let owner = try XCTUnwrap(storedOwner)
+        let ownerID = try XCTUnwrap(owner.id)
+
+        var expected: [UUID: Int] = [:]
+        for (index, count) in [0, 1, 3].enumerated() {
+            let scan = Scan(input: "list-target-\(index)", status: .completed, userID: ownerID)
+            scan.createdAt = Date().addingTimeInterval(Double(index))
+            try await scan.save(on: app.db)
+            let scanID = try XCTUnwrap(scan.id)
+            for finding in 0..<count {
+                try await Result(
+                    scanID: scanID, source: "ListFixture", type: "account",
+                    confidenceScore: 0.9, rawData: "finding-\(index)-\(finding)", metadata: nil
+                ).save(on: app.db)
+            }
+            expected[scanID] = count
+        }
+
+        try await app.test(.GET, "/my-scans", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let body = try response.content.decode(PagedScans.self)
+            XCTAssertEqual(body.total, 3)
+            XCTAssertEqual(body.items.count, 3)
+            for item in body.items {
+                let scanID = try XCTUnwrap(item.scanID)
+                XCTAssertEqual(item.resultCount, expected[scanID], "results attributed to the wrong scan")
+            }
+        })
+    }
+
     func testCSRFAcceptsAnAdditionalOriginOnlyWhenConfigured() {
         // The Tor mirror: Tor Browser sends this as Origin on every POST, and it
         // never matches the clearnet origin, so without the extra entry login

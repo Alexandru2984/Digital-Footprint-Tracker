@@ -30,63 +30,12 @@ struct UserController: RouteCollection {
 
     @Sendable
     func myScans(req: Request) async throws -> PagedScans {
-        guard let user = try await req.currentUser() else {
+        guard let user = try await req.currentUser(), let userID = user.id else {
             throw Abort(.unauthorized, reason: "Not authenticated.")
         }
-
-        let page  = max(1, (try? req.query.get(Int.self, at: "page"))  ?? 1)
-        let limit = max(1, min(100, (try? req.query.get(Int.self, at: "limit")) ?? 20))
-        let q     = try? req.query.get(String.self, at: "q")
-
-        // DB-level pagination — never load the user's full scan history into
-        // memory. For the search path we still need Swift-side substring
-        // filtering (case-insensitive across DB dialects), but bounded to a
-        // 500-row candidate window to avoid OOM on huge histories.
-        let total: Int
-        let paged: [Scan]
-        if let q = q, !q.isEmpty {
-            let candidates = try await Scan.query(on: req.db)
-                .filter(\.$user.$id == user.id!)
-                .sort(\.$createdAt, .descending)
-                .range(..<500)
-                .all()
-            let matched = try candidates.filter { try $0.input.localizedCaseInsensitiveContains(q) }
-            total = matched.count
-            let offset = (page - 1) * limit
-            paged = Array(matched.dropFirst(offset).prefix(limit))
-        } else {
-            total = try await Scan.query(on: req.db)
-                .filter(\.$user.$id == user.id!)
-                .count()
-            let offset = (page - 1) * limit
-            paged = try await Scan.query(on: req.db)
-                .filter(\.$user.$id == user.id!)
-                .sort(\.$createdAt, .descending)
-                .range(offset..<(offset + limit))
-                .all()
+        return try await pagedSummaries(req: req, maskInputs: false) {
+            Scan.query(on: req.db).filter(\.$user.$id == userID)
         }
-        let pages = max(1, Int(ceil(Double(total) / Double(limit))))
-
-        var items: [ScanSummary] = []
-        for scan in paged {
-            guard let scanID = scan.id else { continue }
-            let scanResults = try await Result.query(on: req.db)
-                .filter(\Result.$scan.$id == scanID)
-                .all()
-            let risk = try RiskScorer.compute(results: scanResults)
-            items.append(ScanSummary(
-                scanID: scanID,
-                input: try scan.input,
-                status: scan.status.rawValue,
-                resultCount: scanResults.count,
-                riskScore: risk.value,
-                riskLevel: risk.level.rawValue,
-                createdAt: scan.createdAt.map { $0.timeIntervalSince1970 },
-                completedAt: scan.completedAt.map { $0.timeIntervalSince1970 }
-            ))
-        }
-
-        return PagedScans(items: items, total: total, page: page, pages: pages)
     }
 
     @Sendable
@@ -95,51 +44,68 @@ struct UserController: RouteCollection {
         guard user.isAdmin else {
             throw Abort(.forbidden, reason: "Admin access required.")
         }
+        return try await pagedSummaries(req: req, maskInputs: true) {
+            Scan.query(on: req.db)
+        }
+    }
 
-        let page  = max(1, (try? req.query.get(Int.self, at: "page"))  ?? 1)
-        let limit = max(1, min(100, (try? req.query.get(Int.self, at: "limit")) ?? 20))
-        let q     = try? req.query.get(String.self, at: "q")
+    /// One pagination and summary path for both lists. They were two copies of
+    /// the same fifty lines, and both fetched each listed scan's results with a
+    /// query of its own — a round trip per row, every column of every result.
+    private func pagedSummaries(
+        req: Request,
+        maskInputs: Bool,
+        scans: () -> QueryBuilder<Scan>
+    ) async throws -> PagedScans {
+        let page   = max(1, (try? req.query.get(Int.self, at: "page"))  ?? 1)
+        let limit  = max(1, min(100, (try? req.query.get(Int.self, at: "limit")) ?? 20))
+        let q      = try? req.query.get(String.self, at: "q")
+        let offset = (page - 1) * limit
 
-        // DB-level pagination across all users. Search path still does
-        // Swift-side substring matching but capped at 500 candidates.
+        // DB-level pagination — never load a full scan history into memory. The
+        // search path still matches substrings in Swift (case-insensitive across
+        // DB dialects), bounded to a 500-row candidate window.
         let total: Int
         let paged: [Scan]
-        if let q = q, !q.isEmpty {
-            let candidates = try await Scan.query(on: req.db)
+        if let q, !q.isEmpty {
+            let candidates = try await scans()
                 .sort(\.$createdAt, .descending)
                 .range(..<500)
                 .all()
             let matched = try candidates.filter { try $0.input.localizedCaseInsensitiveContains(q) }
             total = matched.count
-            let offset = (page - 1) * limit
             paged = Array(matched.dropFirst(offset).prefix(limit))
         } else {
-            total = try await Scan.query(on: req.db).count()
-            let offset = (page - 1) * limit
-            paged = try await Scan.query(on: req.db)
+            total = try await scans().count()
+            paged = try await scans()
                 .sort(\.$createdAt, .descending)
                 .range(offset..<(offset + limit))
                 .all()
         }
         let pages = max(1, Int(ceil(Double(total) / Double(limit))))
 
-        var items: [ScanSummary] = []
-        for scan in paged {
-            guard let scanID = scan.id else { continue }
-            let scanResults = try await Result.query(on: req.db)
-                .filter(\Result.$scan.$id == scanID)
-                .all()
+        // Every listed scan's results in one query, grouped here.
+        let scanIDs = paged.compactMap(\.id)
+        let resultsByScan: [UUID: [Result]] = scanIDs.isEmpty ? [:] : Dictionary(
+            grouping: try await Result.query(on: req.db).filter(\.$scan.$id ~~ scanIDs).all(),
+            by: { $0.$scan.id }
+        )
+
+        let items: [ScanSummary] = try paged.compactMap { scan in
+            guard let scanID = scan.id else { return nil }
+            let scanResults = resultsByScan[scanID] ?? []
             let risk = try RiskScorer.compute(results: scanResults)
-            items.append(ScanSummary(
+            let input = try scan.input
+            return ScanSummary(
                 scanID: scanID,
-                input: maskInput(try scan.input),
+                input: maskInputs ? maskInput(input) : input,
                 status: scan.status.rawValue,
                 resultCount: scanResults.count,
                 riskScore: risk.value,
                 riskLevel: risk.level.rawValue,
                 createdAt: scan.createdAt.map { $0.timeIntervalSince1970 },
                 completedAt: scan.completedAt.map { $0.timeIntervalSince1970 }
-            ))
+            )
         }
 
         return PagedScans(items: items, total: total, page: page, pages: pages)
