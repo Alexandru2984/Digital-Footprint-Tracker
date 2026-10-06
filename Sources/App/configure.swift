@@ -245,6 +245,8 @@ private func registerMigrationsAndCommands(on app: Application) {
     // Adds created_at to _fluent_sessions so old rows can be pruned (the driver
     // never expires them itself). Must run after SessionRecord.migration.
     app.migrations.add(AddSessionCreatedAt())
+    app.migrations.add(IndexForeignKeys())
+    app.migrations.add(CascadeScansOnUserDelete())
 
     // Maintenance command registration is available in every environment, but
     // still requires explicit write-version and active-key-ID confirmation.
