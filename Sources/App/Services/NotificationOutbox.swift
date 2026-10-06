@@ -106,7 +106,7 @@ enum NotificationOutbox {
         )
         let now = Date()
 
-        return try await database.transaction { transaction in
+        let receipt = try await database.transaction { transaction in
             guard let sql = transaction as? SQLDatabase else {
                 throw EnqueueError.unsupportedDatabase
             }
@@ -158,5 +158,8 @@ enum NotificationOutbox {
                 .all()
             return Receipt(eventID: storedEventID, jobIDs: jobs.compactMap(\.id))
         }
+        // After commit: woken earlier, the worker could look before the rows exist.
+        await WorkSignal.notificationDelivery.signal()
+        return receipt
     }
 }

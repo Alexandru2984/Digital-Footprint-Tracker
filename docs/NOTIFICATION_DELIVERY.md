@@ -59,9 +59,14 @@ and provider error objects are never stored in the job or logged.
 |---|---:|---:|
 | `NOTIFICATION_WORKER_ENABLED` | `true` | explicit boolean |
 | `NOTIFICATION_MAX_ATTEMPTS` | `5` | 1–10 |
-| `NOTIFICATION_POLL_SECONDS` | `2` | 1–60 |
+| `NOTIFICATION_POLL_SECONDS` | `30` | 1–60 |
 | `NOTIFICATION_LEASE_SECONDS` | `60` | 30–300 |
 | `NOTIFICATION_RETENTION_DAYS` | `30` | 1–365 |
+
+The poll is the safety net, not the pickup path: enqueuing wakes the worker
+in-process within about 200 ms. The poll only finds work that becomes due
+some other way, such as a retry whose backoff has expired, so a long
+interval costs latency only there.
 
 Present but invalid values fail application boot. Disabling the worker does not
 drop queued work; it is useful for a controlled worker cutover, but queue depth

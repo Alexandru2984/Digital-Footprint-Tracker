@@ -28,13 +28,13 @@ actor ExportJobWorker: LifecycleHandler {
 
     private func start(app: Application) {
         guard loopTask == nil else { return }
-        let interval = UInt64(app.exportJobConfiguration.pollSeconds) * 1_000_000_000
+        let pollSeconds = app.exportJobConfiguration.pollSeconds
         loopTask = Task { [weak self] in
             guard let self else { return }
             app.logger.notice("[ExportWorker] Durable export worker started.")
             while !Task.isCancelled {
                 await self.tick(app: app)
-                try? await Task.sleep(nanoseconds: interval)
+                await WorkSignal.exportJobs.wait(upTo: pollSeconds)
             }
         }
     }

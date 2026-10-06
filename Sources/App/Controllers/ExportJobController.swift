@@ -119,6 +119,7 @@ struct ExportJobController: RouteCollection {
             return job
         }
 
+        await WorkSignal.exportJobs.signal()
         await AuditLogger.log(
             req: req,
             action: "create_export_job",

@@ -58,12 +58,17 @@ Defaults:
 | Variable | Default | Accepted |
 |---|---:|---:|
 | `EXPORT_WORKER_ENABLED` | `true` | explicit boolean |
-| `EXPORT_POLL_SECONDS` | `2` | 1–60 |
+| `EXPORT_POLL_SECONDS` | `30` | 1–60 |
 | `EXPORT_LEASE_SECONDS` | `120` | 60–600 |
 | `EXPORT_RETENTION_HOURS` | `24` | 1–168 |
 | `EXPORT_MAX_OUTSTANDING_PER_USER` | `3` | 1–20 |
 | `EXPORT_MAX_JOBS_PER_USER_PER_DAY` | `20` | 1–200 |
 | `EXPORT_MAX_RESULTS` | `10000` | 1–50000 |
+
+The poll is the safety net, not the pickup path: enqueuing wakes the worker
+in-process within about 200 ms. The poll only finds work that becomes due
+some other way, such as a retry whose backoff has expired, so a long
+interval costs latency only there.
 | `EXPORT_BATCH_SIZE` | `250` | 25–1000 |
 | `EXPORT_MAX_SOURCE_MIB` | `10` | 1–16 |
 | `EXPORT_MAX_ARTIFACT_MIB` | `20` | 1–32 |

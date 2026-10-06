@@ -981,6 +981,34 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(configuration.retentionDays, 45)
     }
 
+    func testWorkSignalWakesAWaitingWorkerOnceAndOtherwiseTimesOut() async throws {
+        let signal = WorkSignal()
+        let clock = ContinuousClock()
+
+        // Raised before the worker looks: the next wait returns at once.
+        await signal.signal()
+        var elapsed = await clock.measure { await signal.wait(upTo: 30) }
+        XCTAssertLessThan(elapsed, .seconds(1))
+
+        // Consumed by that wait: with nothing new, the next one runs its course.
+        elapsed = await clock.measure { await signal.wait(upTo: 1) }
+        XCTAssertGreaterThanOrEqual(elapsed, .seconds(1))
+
+        // Raised while the worker sleeps: it wakes within a step, not a poll.
+        let waiter = Task { await clock.measure { await signal.wait(upTo: 30) } }
+        try await Task.sleep(for: .milliseconds(300))
+        await signal.signal()
+        elapsed = await waiter.value
+        XCTAssertLessThan(elapsed, .seconds(2))
+
+        // Shutdown: cancellation ends the wait instead of holding it to the deadline.
+        let cancelled = Task { await clock.measure { await signal.wait(upTo: 30) } }
+        try await Task.sleep(for: .milliseconds(100))
+        cancelled.cancel()
+        elapsed = await cancelled.value
+        XCTAssertLessThan(elapsed, .seconds(2))
+    }
+
     func testAsyncExportJobBuildsEncryptedArtifactAndManifest() async throws {
         let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
         defer { environment.restore() }

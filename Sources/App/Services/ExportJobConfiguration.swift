@@ -16,7 +16,7 @@ struct ExportJobConfiguration: Sendable {
 
     static let defaults = ExportJobConfiguration(
         enabled: true,
-        pollSeconds: 2,
+        pollSeconds: 30,
         leaseSeconds: 120,
         retentionHours: 24,
         maxOutstandingPerUser: 3,
@@ -31,7 +31,7 @@ struct ExportJobConfiguration: Sendable {
     static func fromEnvironment() throws -> Self {
         ExportJobConfiguration(
             enabled: try boolean("EXPORT_WORKER_ENABLED", fallback: true),
-            pollSeconds: try integer("EXPORT_POLL_SECONDS", fallback: 2, range: 1...60),
+            pollSeconds: try integer("EXPORT_POLL_SECONDS", fallback: 30, range: 1...60),
             leaseSeconds: try integer("EXPORT_LEASE_SECONDS", fallback: 120, range: 60...600),
             retentionHours: try integer("EXPORT_RETENTION_HOURS", fallback: 24, range: 1...168),
             maxOutstandingPerUser: try integer("EXPORT_MAX_OUTSTANDING_PER_USER", fallback: 3, range: 1...20),

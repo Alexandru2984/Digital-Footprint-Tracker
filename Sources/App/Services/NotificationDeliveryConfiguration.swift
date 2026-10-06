@@ -11,7 +11,7 @@ struct NotificationDeliveryConfiguration: Sendable {
     static let defaults = NotificationDeliveryConfiguration(
         enabled: true,
         maxAttempts: 5,
-        pollSeconds: 2,
+        pollSeconds: 30,
         leaseSeconds: 60,
         retentionDays: 30
     )
@@ -20,7 +20,7 @@ struct NotificationDeliveryConfiguration: Sendable {
         NotificationDeliveryConfiguration(
             enabled: try boolean("NOTIFICATION_WORKER_ENABLED", fallback: true),
             maxAttempts: try integer("NOTIFICATION_MAX_ATTEMPTS", fallback: 5, range: 1...10),
-            pollSeconds: try integer("NOTIFICATION_POLL_SECONDS", fallback: 2, range: 1...60),
+            pollSeconds: try integer("NOTIFICATION_POLL_SECONDS", fallback: 30, range: 1...60),
             leaseSeconds: try integer("NOTIFICATION_LEASE_SECONDS", fallback: 60, range: 30...300),
             retentionDays: try integer("NOTIFICATION_RETENTION_DAYS", fallback: 30, range: 1...365)
         )

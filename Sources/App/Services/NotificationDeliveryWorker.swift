@@ -69,13 +69,13 @@ actor NotificationDeliveryWorker: LifecycleHandler {
 
     private func start(app: Application) {
         guard loopTask == nil else { return }
-        let pollNanoseconds = UInt64(app.notificationDeliveryConfiguration.pollSeconds) * 1_000_000_000
+        let pollSeconds = app.notificationDeliveryConfiguration.pollSeconds
         loopTask = Task { [weak self] in
             guard let self else { return }
             app.logger.notice("[NotificationWorker] Durable delivery worker started.")
             while !Task.isCancelled {
                 await self.tick(app: app)
-                try? await Task.sleep(nanoseconds: pollNanoseconds)
+                await WorkSignal.notificationDelivery.wait(upTo: pollSeconds)
             }
         }
     }
