@@ -88,7 +88,8 @@ struct ShareController: RouteCollection {
             throw Abort(.notFound)
         }
         guard scan.$user.id == user.id else {
-            throw Abort(.forbidden)
+            // 404, not 403: a different answer for "exists but not yours" confirms existence.
+            throw Abort(.notFound)
         }
 
         let body = try req.content.decode(CreateShareRequest.self)
@@ -161,7 +162,8 @@ struct ShareController: RouteCollection {
             throw Abort(.notFound)
         }
         guard scan.$user.id == user.id else {
-            throw Abort(.forbidden)
+            // 404, not 403: a different answer for "exists but not yours" confirms existence.
+            throw Abort(.notFound)
         }
 
         let shares = try await SharedReport.query(on: req.db)

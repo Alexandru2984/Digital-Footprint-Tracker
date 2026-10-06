@@ -33,7 +33,11 @@ struct CSRFMiddleware: AsyncMiddleware {
             ?? request.headers.first(name: "Referer")
 
         if let provenance {
-            guard Self.isAllowed(provenance, for: request.application.environment) else {
+            guard Self.isAllowed(
+                provenance,
+                allowedOrigins: Self.configuredOrigins(),
+                environment: request.application.environment
+            ) else {
                 throw Abort(.forbidden, reason: "Cross-origin request blocked.")
             }
         } else {
@@ -69,12 +73,35 @@ struct CSRFMiddleware: AsyncMiddleware {
         }
     }
 
-    private static func isAllowed(_ rawOriginOrReferer: String, for environment: Environment) -> Bool {
-        guard let candidate = NormalizedOrigin(rawOriginOrReferer) else { return false }
-        let configured = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
-        guard let allowed = NormalizedOrigin(configured) else { return false }
+    /// `ALLOWED_ORIGIN` plus the comma-separated `ADDITIONAL_ALLOWED_ORIGINS`.
+    /// The Tor mirror is why the list exists: Tor Browser sends
+    /// `Origin: http://<onion>`, which never matches the clearnet origin, so every
+    /// POST through the onion vhost — login included — was refused as cross-origin.
+    static func configuredOrigins() -> [String] {
+        let primary = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
+        let additional = (Environment.get("ADDITIONAL_ALLOWED_ORIGINS") ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return [primary] + additional
+    }
 
-        if candidate == allowed { return true }
+    /// Refuses to boot on an origin that cannot be parsed. A typo here would not
+    /// fail loudly at request time — it would just match nothing, and the site
+    /// behind it would quietly reject every form.
+    static func validateConfiguration() throws {
+        for origin in configuredOrigins() where NormalizedOrigin(origin) == nil {
+            throw Abort(.internalServerError, reason: "Unparseable CSRF origin in configuration: \(origin)")
+        }
+    }
+
+    static func isAllowed(
+        _ rawOriginOrReferer: String,
+        allowedOrigins: [String],
+        environment: Environment
+    ) -> Bool {
+        guard let candidate = NormalizedOrigin(rawOriginOrReferer) else { return false }
+        if allowedOrigins.compactMap(NormalizedOrigin.init).contains(candidate) { return true }
 
         // Local front-end dev servers may use arbitrary ports. This exception is
         // deliberately unavailable in any real deployment, not merely in one

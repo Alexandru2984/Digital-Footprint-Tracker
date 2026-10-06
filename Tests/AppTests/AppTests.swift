@@ -2166,10 +2166,10 @@ final class AppTests: XCTestCase {
             Probe(
                 .POST,
                 "/scans/\(ownerScanID)/share",
-                .forbidden,
+                .notFound,
                 body: #"{"expiresIn":3600}"#
             ),
-            Probe(.GET, "/scans/\(ownerScanID)/shares", .forbidden),
+            Probe(.GET, "/scans/\(ownerScanID)/shares", .notFound),
             Probe(.DELETE, "/shares/\(shareID)", .notFound),
             Probe(
                 .POST,
@@ -2183,8 +2183,8 @@ final class AppTests: XCTestCase {
             Probe(.POST, "/export-jobs/\(exportJobID)/cancel", .notFound),
             Probe(.DELETE, "/scheduled-scans/\(scheduledID)", .notFound),
             Probe(.PATCH, "/scheduled-scans/\(scheduledID)/toggle", .notFound),
-            Probe(.POST, "/notifications/\(notificationID)/read", .forbidden),
-            Probe(.DELETE, "/auth/api-keys/\(apiKeyID)", .forbidden),
+            Probe(.POST, "/notifications/\(notificationID)/read", .notFound),
+            Probe(.DELETE, "/auth/api-keys/\(apiKeyID)", .notFound),
             Probe(.GET, "/investigations/\(investigationID)", .notFound),
             Probe(
                 .PUT,
@@ -3883,6 +3883,26 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in
             XCTAssertNotEqual(res.status, .forbidden, "Legitimate origin must pass the CSRF check")
         })
+    }
+
+    func testCSRFAcceptsAnAdditionalOriginOnlyWhenConfigured() {
+        // The Tor mirror: Tor Browser sends this as Origin on every POST, and it
+        // never matches the clearnet origin, so without the extra entry login
+        // through the onion vhost was refused as cross-origin.
+        let onion = "http://5jyd4lflkewyc3gm42uxvi2aryh5g2l4ib2pm5uewpff3ld7yfii5iid.onion"
+        let configured = ["https://swift.micutu.com", onion]
+
+        XCTAssertTrue(CSRFMiddleware.isAllowed(onion, allowedOrigins: configured, environment: .production))
+        XCTAssertTrue(CSRFMiddleware.isAllowed(onion + "/login.html", allowedOrigins: configured, environment: .production),
+                      "a Referer from the configured origin is the same provenance")
+        XCTAssertTrue(CSRFMiddleware.isAllowed("https://swift.micutu.com", allowedOrigins: configured, environment: .production))
+
+        XCTAssertFalse(CSRFMiddleware.isAllowed("http://someone-else.onion", allowedOrigins: configured, environment: .production))
+        XCTAssertFalse(CSRFMiddleware.isAllowed(onion.replacingOccurrences(of: "http://", with: "https://"),
+                                                allowedOrigins: configured, environment: .production),
+                       "scheme is part of the origin")
+        XCTAssertFalse(CSRFMiddleware.isAllowed(onion, allowedOrigins: ["https://swift.micutu.com"], environment: .production),
+                       "nothing beyond ALLOWED_ORIGIN is accepted unless configured")
     }
 
     func testCSRFValidatesSchemeAndPort() async throws {

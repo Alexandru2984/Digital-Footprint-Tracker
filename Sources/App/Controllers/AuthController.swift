@@ -57,7 +57,10 @@ struct AuthController: RouteCollection {
         auth.post("webhook", use: setWebhook)
         auth.post("retention", use: setRetention)
         auth.patch("settings", use: updateSettings)
-        auth.post("notifications", "test", use: testNotifications)
+        // Each call sends a real request to whatever URL the account configured,
+        // so without a budget this is an unlimited relay to any public HTTPS host.
+        auth.grouped(ScanRateLimiter(anonMax: 0, authedMax: 5, windowSeconds: 3600))
+            .post("notifications", "test", use: testNotifications)
     }
 
     @Sendable

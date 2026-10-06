@@ -67,7 +67,8 @@ struct APIKeyController: RouteCollection {
         let user = try await req.requireRecentSessionUser()
         guard let id = req.parameters.get("id", as: UUID.self),
               let key = try await APIKey.find(id, on: req.db) else { throw Abort(.notFound) }
-        guard key.$user.id == user.id! else { throw Abort(.forbidden) }
+        // 404, not 403: a different answer for "exists but not yours" confirms existence.
+        guard key.$user.id == user.id! else { throw Abort(.notFound) }
         let label = key.label
         try await key.delete(on: req.db)
         await AuditLogger.log(req: req, action: "api_key_deleted", target: label)

@@ -41,7 +41,8 @@ struct NotificationController: RouteCollection {
         guard let user = try await req.currentUser() else { throw Abort(.unauthorized) }
         guard let id = req.parameters.get("id", as: UUID.self),
               let notif = try await ScanNotification.find(id, on: req.db) else { throw Abort(.notFound) }
-        guard notif.$user.id == user.id! else { throw Abort(.forbidden) }
+        // 404, not 403: a different answer for "exists but not yours" confirms existence.
+        guard notif.$user.id == user.id! else { throw Abort(.notFound) }
         notif.isRead = true
         try await notif.save(on: req.db)
         return .ok

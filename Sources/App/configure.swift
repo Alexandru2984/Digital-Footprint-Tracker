@@ -41,6 +41,7 @@ public func configure(_ app: Application) async throws {
     // never silently remove per-user quotas or artifact/source ceilings.
     app.exportJobConfiguration = try ExportJobConfiguration.fromEnvironment()
     // CORS — in production restrict to the real origin; allow all only during development.
+    try CSRFMiddleware.validateConfiguration()
     let allowedOrigin: CORSMiddleware.AllowOriginSetting
     if app.environment.isRealDeployment {
         let origin = Environment.get("ALLOWED_ORIGIN") ?? "https://swift.micutu.com"
