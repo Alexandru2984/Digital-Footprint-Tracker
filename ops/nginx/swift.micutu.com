@@ -126,9 +126,12 @@ server {
 
 server {
     include snippets/block-dotfiles.conf;
-    location / {
-        return 301 https://$host$request_uri;
-    }
+    # Nothing here redirects to HTTPS, on purpose. The server-level `return 404`
+    # below runs in nginx's rewrite phase, before any location is chosen, so a
+    # `location / { return 301 https://$host... }` that used to sit here was
+    # never reachable — and it reflected the client's Host header besides.
+    # Visitors reach HTTPS through Cloudflare; the tunnel sends this port only
+    # ACME challenges, which certbot's nginx authenticator answers itself.
     listen      80;
     server_name swift.micutu.com;
 
