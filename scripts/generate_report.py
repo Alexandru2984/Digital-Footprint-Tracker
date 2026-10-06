@@ -5,6 +5,7 @@ Usage: python3 generate_report.py < scan.json > report.pdf
 """
 import sys, json
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 from datetime import datetime, timezone
 
 
@@ -57,7 +58,7 @@ def make_report(data: dict) -> bytes:
     # Title
     pdf.set_font('Helvetica', 'B', 18)
     pdf.set_text_color(20, 20, 20)
-    pdf.cell(0, 10, 'OSINT Report  -  Digital Footprint Tracker', ln=True)
+    pdf.cell(0, 10, 'OSINT Report  -  Digital Footprint Tracker', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_draw_color(80, 120, 200)
     pdf.set_line_width(0.5)
     pdf.line(10, pdf.get_y(), 287, pdf.get_y())
@@ -69,7 +70,7 @@ def make_report(data: dict) -> bytes:
     pdf.set_fill_color(*risk_colour)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(70, 7, f'Risk Score: {risk_score}/100  [{risk_level}]', border=0, fill=True, align='C', ln=True)
+    pdf.cell(70, 7, f'Risk Score: {risk_score}/100  [{risk_level}]', border=0, fill=True, align='C', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_text_color(20, 20, 20)
     pdf.set_xy(10, pdf.get_y())
 
@@ -86,15 +87,15 @@ def make_report(data: dict) -> bytes:
         meta_rows.insert(3, ('Completed', completed_str))
     for label, value in meta_rows:
         pdf.set_font('Helvetica', 'B', 9)
-        pdf.cell(35, 5, label + ':', ln=False)
+        pdf.cell(35, 5, label + ':')
         pdf.set_font('Helvetica', '', 9)
-        pdf.cell(0, 5, value, ln=True)
+        pdf.cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
     # Summary
     pdf.set_font('Helvetica', 'B', 12)
     pdf.set_text_color(20, 20, 20)
-    pdf.cell(0, 7, 'Summary', ln=True)
+    pdf.cell(0, 7, 'Summary', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font('Helvetica', '', 9)
     pdf.set_text_color(60, 60, 60)
     for label in [
@@ -103,18 +104,18 @@ def make_report(data: dict) -> bytes:
         f'Medium confidence (50-79%): {len(med)}',
         f'Low confidence (<50%): {len(low)}',
     ]:
-        pdf.cell(70, 5, label, ln=False)
+        pdf.cell(70, 5, label)
     pdf.ln()
     pdf.ln(4)
 
     if not results:
         pdf.set_font('Helvetica', 'I', 10)
-        pdf.cell(0, 8, 'No findings recorded for this scan.', ln=True)
+        pdf.cell(0, 8, 'No findings recorded for this scan.', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     else:
         # Results table
         pdf.set_font('Helvetica', 'B', 12)
         pdf.set_text_color(20, 20, 20)
-        pdf.cell(0, 7, f'Findings ({len(results)} total, sorted by confidence)', ln=True)
+        pdf.cell(0, 7, f'Findings ({len(results)} total, sorted by confidence)', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1)
 
         # A4 landscape = 297mm, margins 10+10 = 277mm
@@ -163,7 +164,7 @@ def make_report(data: dict) -> bytes:
     pdf.ln(5)
     pdf.set_font('Helvetica', 'I', 7)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 4, 'Digital Footprint Tracker  -  swift.micutu.com  -  Authorised use only.', align='C', ln=True)
+    pdf.cell(0, 4, 'Digital Footprint Tracker  -  swift.micutu.com  -  Authorised use only.', align='C', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     return bytes(pdf.output())
 

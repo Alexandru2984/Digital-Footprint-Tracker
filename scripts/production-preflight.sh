@@ -334,6 +334,17 @@ backup_is_current() {
         --max-age-hours 30
 }
 
+# PDF reports and holehe shell out to this runtime. The container image ships
+# it; the systemd host never had it, and both features failed without a word
+# until 2026-10-06. Checked by running the interpreter, not by testing a path.
+python_runtime_is_usable() {
+    local python holehe
+    python="$(sed -n 's/^REPORT_PYTHON_PATH=//p' "$APP_ENV" | tail -1)"
+    holehe="$(sed -n 's/^HOLEHE_PATH=//p' "$APP_ENV" | tail -1)"
+    [[ -n "$python" && -x "$python" && -n "$holehe" && -x "$holehe" ]] || return 1
+    "$python" -c 'import fpdf' >/dev/null 2>&1
+}
+
 # A dump restores into its own PostgreSQL major or a newer one, never an older
 # one, and the drill's pinned image is the only evidence the backups can be
 # restored at all. Nothing tied the two together, so the image sat on 16 while
@@ -443,6 +454,7 @@ check "migration unit is explicit and isolated" migration_unit_is_effective
 check "backup unit uses isolated file credentials" backup_unit_is_effective
 check "encrypted backup and freshness marker are current" backup_is_current
 check "restore drill can read the dumps this host writes" restore_drill_can_read_these_dumps
+check "Python runtime for reports and holehe is usable" python_runtime_is_usable
 check "current immutable release passes its manifest" active_release_is_valid
 check "running executable exactly matches current release" running_process_matches_release
 check "internal database readiness is healthy" internal_readiness_is_healthy
