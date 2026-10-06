@@ -88,35 +88,9 @@ enum SSRFGuard {
         // Greedy numeric forms resolve locally without touching DNS.
         if let greedy = parseGreedyIPv4(host) { return isNonGlobalIPv4(greedy) }
 
-        var hints = addrinfo()
-        hints.ai_family = AF_UNSPEC
-        var res: UnsafeMutablePointer<addrinfo>?
-        let status = host.withCString { getaddrinfo($0, nil, &hints, &res) }
-        guard status == 0, let head = res else { return true } // fail closed
-        defer { freeaddrinfo(head) }
-
-        var node: UnsafeMutablePointer<addrinfo>? = head
-        while let cur = node {
-            if let sa = cur.pointee.ai_addr {
-                switch cur.pointee.ai_family {
-                case AF_INET:
-                    let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
-                        UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
-                    }
-                    if isNonGlobalIPv4(v4) { return true }
-                case AF_INET6:
-                    let bytes = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p -> [UInt8] in
-                        var a6 = p.pointee.sin6_addr
-                        return withUnsafeBytes(of: &a6) { Array($0) }
-                    }
-                    if isNonGlobalIPv6(bytes) { return true }
-                default:
-                    break
-                }
-            }
-            node = cur.pointee.ai_next
-        }
-        return false
+        // Fail closed: a name that does not resolve is never dialled.
+        guard let addresses = resolveAll(host) else { return true }
+        return addresses.contains(where: \.isNonGlobal)
     }
 
     /// Resolve `host` and return the concrete public IP the caller must dial to
@@ -130,40 +104,69 @@ enum SSRFGuard {
         // Numeric literal forms are deterministic (no DNS) — return as-is once public.
         if let greedy = parseGreedyIPv4(host) { return isNonGlobalIPv4(greedy) ? nil : host }
 
+        // Any non-global answer blocks the whole name, not just that address.
+        guard let addresses = resolveAll(host),
+              !addresses.contains(where: \.isNonGlobal),
+              let first = addresses.first else { return nil }
+        return first.literal
+    }
+
+    /// One answer from `getaddrinfo`.
+    private enum ResolvedAddress {
+        case v4(UInt32)
+        case v6([UInt8])
+
+        var isNonGlobal: Bool {
+            switch self {
+            case .v4(let address): return SSRFGuard.isNonGlobalIPv4(address)
+            case .v6(let bytes): return SSRFGuard.isNonGlobalIPv6(bytes)
+            }
+        }
+
+        var literal: String {
+            switch self {
+            case .v4(let a):
+                return "\((a >> 24) & 0xff).\((a >> 16) & 0xff).\((a >> 8) & 0xff).\(a & 0xff)"
+            case .v6(let bytes):
+                return SSRFGuard.ipv6String(bytes)
+            }
+        }
+    }
+
+    /// Every A and AAAA answer for `host`, in resolver order, or nil when the
+    /// name does not resolve. The single place the DNS answer is read: the two
+    /// verdicts above each used to walk `getaddrinfo` themselves, and in code
+    /// this sensitive a fix applied to one copy and not the other is the
+    /// realistic way to open a hole.
+    private static func resolveAll(_ host: String) -> [ResolvedAddress]? {
         var hints = addrinfo()
         hints.ai_family = AF_UNSPEC
         var res: UnsafeMutablePointer<addrinfo>?
         let status = host.withCString { getaddrinfo($0, nil, &hints, &res) }
-        guard status == 0, let head = res else { return nil } // fail closed
+        guard status == 0, let head = res else { return nil }
         defer { freeaddrinfo(head) }
 
-        var chosen: String?
+        var addresses: [ResolvedAddress] = []
         var node: UnsafeMutablePointer<addrinfo>? = head
         while let cur = node {
             if let sa = cur.pointee.ai_addr {
                 switch cur.pointee.ai_family {
                 case AF_INET:
-                    let v4 = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                    addresses.append(.v4(sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
                         UInt32(bigEndian: $0.pointee.sin_addr.s_addr)
-                    }
-                    if isNonGlobalIPv4(v4) { return nil } // any non-global answer → block
-                    if chosen == nil {
-                        chosen = "\((v4 >> 24) & 0xff).\((v4 >> 16) & 0xff).\((v4 >> 8) & 0xff).\(v4 & 0xff)"
-                    }
+                    }))
                 case AF_INET6:
-                    let bytes = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p -> [UInt8] in
+                    addresses.append(.v6(sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { p -> [UInt8] in
                         var a6 = p.pointee.sin6_addr
                         return withUnsafeBytes(of: &a6) { Array($0) }
-                    }
-                    if isNonGlobalIPv6(bytes) { return nil }
-                    if chosen == nil { chosen = ipv6String(bytes) }
+                    }))
                 default:
                     break
                 }
             }
             node = cur.pointee.ai_next
         }
-        return chosen
+        return addresses
     }
 
     /// True if `host` is an IP literal (dotted-quad, greedy-numeric, or IPv6),

@@ -3718,6 +3718,18 @@ final class AppTests: XCTestCase {
         XCTAssertNil(SSRFGuard.resolveValidatedIP(""))
     }
 
+    func testSSRFResolversAgreeThroughTheDNSPath() {
+        // Both names pass the structural checks and reach getaddrinfo — the code
+        // these two functions used to duplicate, which literal IPs never touch.
+        // `localhost.` (trailing dot) resolves through the hosts file to loopback;
+        // where it does not resolve, failing closed gives the same verdict.
+        XCTAssertTrue(SSRFGuard.resolvesToInternal("localhost."))
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("localhost."))
+        // `.invalid` never resolves (RFC 6761), so both must fail closed.
+        XCTAssertTrue(SSRFGuard.resolvesToInternal("probe.invalid"))
+        XCTAssertNil(SSRFGuard.resolveValidatedIP("probe.invalid"))
+    }
+
     func testSSRFIsIPLiteral() {
         XCTAssertTrue(SSRFGuard.isIPLiteral("8.8.8.8"))
         XCTAssertTrue(SSRFGuard.isIPLiteral("::1"))
