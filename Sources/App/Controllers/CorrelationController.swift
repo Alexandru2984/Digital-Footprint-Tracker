@@ -30,15 +30,22 @@ struct CorrelationController: RouteCollection {
         let correlatedEntityCount: Int
     }
 
+    static let maximumScans = 200
+
     @Sendable
     func getCorrelations(req: Request) async throws -> CorrelationResponse {
         guard let user = try await req.currentUser() else {
             throw Abort(.unauthorized)
         }
 
+        // The newest completed scans only. This loaded a user's entire history,
+        // every result of every scan, on each request — cost that grew forever
+        // with the account. Links between recent scans are the useful ones.
         let scans = try await Scan.query(on: req.db)
             .filter(\.$user.$id == user.id!)
             .filter(\.$statusRaw == "completed")
+            .sort(\.$createdAt, .descending)
+            .limit(Self.maximumScans)
             .with(\.$results)
             .all()
 
