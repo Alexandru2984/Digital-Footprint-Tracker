@@ -11,7 +11,9 @@ cleanup() { rm -rf -- "$BASE"; }
 trap cleanup EXIT
 
 mapfile -t current < <(node "$COLLECTOR" "$ROOT_DIR/frontend")
-(( ${#current[@]} >= 4 ))
+# A floor, so a collector that finds nothing cannot pass: one hash per inline
+# script the pages carry today (three since the app script moved to app.js).
+(( ${#current[@]} >= 3 ))
 mapfile -t duplicate < <(node "$COLLECTOR" "$ROOT_DIR/frontend" "$ROOT_DIR/frontend")
 [[ "${current[*]}" == "${duplicate[*]}" ]]
 
