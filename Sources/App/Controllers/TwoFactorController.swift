@@ -15,6 +15,8 @@ import SQLKit
 struct TwoFactorController: RouteCollection {
     /// Pending-login marker must be redeemed within this window.
     private static let pendingTTL: TimeInterval = 300
+    /// Wrong codes one pending login may submit before it is discarded.
+    static let maxCodesPerPendingLogin = 5
 
     func boot(routes: RoutesBuilder) throws {
         let twofa = routes.grouped("auth", "2fa")
@@ -119,20 +121,39 @@ struct TwoFactorController: RouteCollection {
         let now = Date().timeIntervalSince1970
         guard let atStr = req.session.data["pending2FAAt"], let at = Double(atStr),
               now >= at, now - at <= Self.pendingTTL else {
-            req.session.destroy()
+            try await SessionSecurity.invalidate(on: req)
             throw Abort(.unauthorized, reason: "Login timed out. Please sign in again.")
         }
         guard let user = try await User.find(userID, on: req.db), user.totpEnabled else {
-            req.session.destroy()
+            try await SessionSecurity.invalidate(on: req)
             throw Abort(.unauthorized)
+        }
+        // Two budgets. Per account, across every pending login and address, so
+        // guessing cannot be spread out; and per pending login, which ends after
+        // a handful of wrong codes, so each run of guesses costs the attacker the
+        // password step again — itself throttled per account.
+        let throttleKey = userID.uuidString
+        if let retry = await AccountThrottle.secondFactor.retryAfter(throttleKey) {
+            try await SessionSecurity.invalidate(on: req)
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
         }
         let body = try req.content.decode(CodeBody.self)
         let submitted = body.code.trimmingCharacters(in: .whitespaces)
 
         let ok = try await Self.verifySecondFactor(submitted, user: user, db: req.db)
         guard ok else {
+            await AccountThrottle.secondFactor.recordFailure(throttleKey)
+            // Counted in memory, keyed on this pending login: a session write
+            // would not survive the error this branch throws.
+            let pendingKey = "\(throttleKey)|\(atStr)"
+            await AccountThrottle.pendingSecondFactor.recordFailure(pendingKey)
+            if await AccountThrottle.pendingSecondFactor.retryAfter(pendingKey) != nil {
+                try await SessionSecurity.invalidate(on: req)
+                throw Abort(.unauthorized, reason: "Too many invalid codes. Please sign in again.")
+            }
             throw Abort(.unauthorized, reason: "Invalid code.")
         }
+        await AccountThrottle.secondFactor.recordSuccess(throttleKey)
 
         guard let userID = user.id else { throw Abort(.internalServerError) }
         try await SessionSecurity.establishAuthenticated(userID: userID, on: req)

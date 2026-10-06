@@ -201,6 +201,10 @@ struct AuthController: RouteCollection {
     @Sendable
     func login(req: Request) async throws -> LoginResponse {
         let body = try req.content.decode(LoginRequest.self)
+        let throttleKey = AccountThrottle.usernameKey(body.username)
+        if let retry = await AccountThrottle.passwords.retryAfter(throttleKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
 
         let existingUser = try await User.query(on: req.db)
             .filter(\.$username == body.username)
@@ -214,8 +218,10 @@ struct AuthController: RouteCollection {
         let passwordValid = try await req.password.async.verify(body.password, created: hashToVerify)
 
         guard let user = existingUser, passwordValid else {
+            await AccountThrottle.passwords.recordFailure(throttleKey)
             throw Abort(.unauthorized, reason: "Invalid username or password.")
         }
+        await AccountThrottle.passwords.recordSuccess(throttleKey)
 
         // If the account has 2FA, do NOT authenticate yet. Stash a short-lived
         // pending marker (cleared on success/timeout in TwoFactorController) and

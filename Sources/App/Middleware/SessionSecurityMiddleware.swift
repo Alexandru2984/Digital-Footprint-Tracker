@@ -37,7 +37,11 @@ enum SessionSecurity {
         req.session.data = data
     }
 
-    private static func invalidate(on req: Request) async throws {
+    /// Deletes the session from the store directly. `req.session.destroy()` alone
+    /// is only persisted when the response succeeds: Vapor's SessionsMiddleware
+    /// saves in the success path, so a destroy followed by a thrown error left
+    /// the session in place. Use this wherever the request then fails.
+    static func invalidate(on req: Request) async throws {
         if let oldID = req.session.id {
             try await req.application.sessions.driver.deleteSession(oldID, for: req).get()
         }

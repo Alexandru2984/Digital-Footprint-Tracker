@@ -3938,6 +3938,120 @@ final class AppTests: XCTestCase {
         })
     }
 
+    func testAccountThrottleBudgetsFailuresPerAccount() async {
+        let throttle = AccountThrottle(maxFailures: 3, window: 60, maxKeys: 4)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        for i in 0..<3 { await throttle.recordFailure("victim", now: t0.addingTimeInterval(Double(i))) }
+
+        let blocked = await throttle.retryAfter("victim", now: t0.addingTimeInterval(3))
+        XCTAssertNotNil(blocked, "the budget is spent")
+        let bystander = await throttle.retryAfter("bystander", now: t0.addingTimeInterval(3))
+        XCTAssertNil(bystander, "another account is unaffected")
+        let later = await throttle.retryAfter("victim", now: t0.addingTimeInterval(61))
+        XCTAssertNil(later, "the oldest failure has left the window")
+
+        await throttle.recordSuccess("victim")
+        let afterSuccess = await throttle.retryAfter("victim", now: t0.addingTimeInterval(4))
+        XCTAssertNil(afterSuccess, "a success forgives")
+
+        // Random names must not grow memory without bound.
+        for i in 0..<50 { await throttle.recordFailure("spray-\(i)", now: t0) }
+        let tracked = await throttle.trackedKeyCount()
+        XCTAssertLessThanOrEqual(tracked, 4)
+    }
+
+    func testLoginIsThrottledPerAccountAcrossAddresses() async throws {
+        // Each attempt from a different address: the per-IP limiter never sees
+        // more than one, which is exactly the distributed attack this closes.
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        _ = try await registerAndLogin(app, username: "throttle-victim")
+
+        func attempt(_ username: String, _ password: String, from address: String) async throws -> HTTPStatus {
+            var status: HTTPStatus = .ok
+            try await app.test(.POST, "/auth/login", beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "X-Real-IP", value: address)
+                try req.content.encode(["username": username, "password": password], as: .json)
+            }, afterResponse: { res in status = res.status })
+            return status
+        }
+
+        for i in 1...10 {
+            let status = try await attempt("throttle-victim", "wrong-\(i)", from: "198.51.100.\(i)")
+            XCTAssertEqual(status, .unauthorized)
+        }
+        let rightPassword = try await attempt("throttle-victim", "Xk9mQ2vLp7wZ", from: "198.51.100.200")
+        XCTAssertEqual(rightPassword, .tooManyRequests, "even the right password waits out the window")
+
+        // A name that does not exist is throttled the same way, so the
+        // throttle reveals nothing about which accounts are real.
+        for i in 1...10 {
+            let status = try await attempt("no-such-account-x", "wrong-\(i)", from: "203.0.113.\(i)")
+            XCTAssertEqual(status, .unauthorized)
+        }
+        let eleventh = try await attempt("no-such-account-x", "wrong-11", from: "203.0.113.200")
+        XCTAssertEqual(eleventh, .tooManyRequests)
+    }
+
+    func testPendingTwoFactorLoginEndsAfterRepeatedWrongCodes() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        _ = try await registerAndLogin(app, username: "twofa-guess-victim")
+        let lookup = try await User.query(on: app.db)
+            .filter(\.$username == "twofa-guess-victim").first()
+        let user = try XCTUnwrap(lookup)
+        let recoveryCode = "wxyz-abcd-efgh"
+        user.setTOTPSecret(TOTP.generateSecret())
+        user.totpEnabled = true
+        user.totpRecoveryCodes = String(decoding: try JSONEncoder().encode([
+            RecoveryCodes.hash(recoveryCode),
+        ]), as: UTF8.self)
+        try await user.save(on: app.db)
+
+        func pendingLogin(from address: String) async throws -> String {
+            var cookie = ""
+            try await app.test(.POST, "/auth/login", beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "X-Real-IP", value: address)
+                try req.content.encode(["username": "twofa-guess-victim", "password": "Xk9mQ2vLp7wZ"], as: .json)
+            }, afterResponse: { res in
+                XCTAssertEqual(res.status, .ok)
+                XCTAssertEqual(try res.content.get(Bool.self, at: "twoFactorRequired"), true)
+                if let raw = res.headers.first(name: "set-cookie"), let pair = raw.split(separator: ";").first {
+                    cookie = String(pair)
+                }
+            })
+            return cookie
+        }
+        func verify(_ code: String, cookie: String, from address: String) async throws -> (HTTPStatus, String) {
+            var result: (HTTPStatus, String) = (.ok, "")
+            try await app.test(.POST, "/auth/2fa/verify", beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .cookie, value: cookie)
+                req.headers.replaceOrAdd(name: "X-Real-IP", value: address)
+                try req.content.encode(["code": code], as: .json)
+            }, afterResponse: { res in
+                result = (res.status, (try? res.content.get(String.self, at: "reason")) ?? "")
+            })
+            return result
+        }
+
+        let pending = try await pendingLogin(from: "192.0.2.10")
+        for i in 1...TwoFactorController.maxCodesPerPendingLogin {
+            let (status, _) = try await verify("not-a-code", cookie: pending, from: "192.0.2.\(20 + i)")
+            XCTAssertEqual(status, .unauthorized)
+        }
+        // The pending login is over: even the valid recovery code is refused,
+        // because the session that carried it no longer exists.
+        let (afterStatus, afterReason) = try await verify(recoveryCode, cookie: pending, from: "192.0.2.40")
+        XCTAssertEqual(afterStatus, .unauthorized)
+        XCTAssertTrue(afterReason.contains("No pending login"), "got: \(afterReason)")
+
+        // The code was refused before it was checked, so it was not consumed:
+        // a fresh login with the password can still use it.
+        let fresh = try await pendingLogin(from: "192.0.2.50")
+        let (freshStatus, _) = try await verify(recoveryCode, cookie: fresh, from: "192.0.2.51")
+        XCTAssertEqual(freshStatus, .ok)
+    }
+
     func testCSRFAcceptsAnAdditionalOriginOnlyWhenConfigured() {
         // The Tor mirror: Tor Browser sends this as Origin on every POST, and it
         // never matches the clearnet origin, so without the extra entry login
