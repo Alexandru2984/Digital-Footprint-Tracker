@@ -83,11 +83,11 @@ for (const page of pages) {
     }
 }
 
-for (const script of ['admin.js', 'investigation.js', 'dark-web.js']) {
+for (const script of ['app.js', 'admin.js', 'investigation.js', 'dark-web.js']) {
     new Function(readFileSync(join(frontendDir, script), 'utf8'));
 }
 
-const firstPartySource = pages.concat(['admin.js', 'investigation.js', 'dark-web.js'])
+const firstPartySource = pages.concat(['app.js', 'admin.js', 'investigation.js', 'dark-web.js'])
     .map(file => readFileSync(join(frontendDir, file), 'utf8'))
     .join('\n');
 if (/localStorage\.(?:getItem|setItem)\(\s*["']authToken["']/i.test(firstPartySource)) {

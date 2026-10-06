@@ -162,3 +162,37 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
     });
     expect(overflow).toBe(false);
 });
+
+test('d3 and qrcode load only when their feature opens, within the CSP', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.__cspViolations = [];
+        document.addEventListener('securitypolicyviolation', event => {
+            window.__cspViolations.push({ directive: event.effectiveDirective, blockedURI: event.blockedURI });
+        });
+    });
+    const requested = [];
+    page.on('request', request => requested.push(new URL(request.url()).pathname));
+    await mockAPI(page, { authenticated: true });
+    await page.route('**/api/auth/2fa/setup', route => route.fulfill({
+        status: 200,
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify({
+            secret: 'JBSWY3DPEHPK3PXP',
+            otpauthURI: 'otpauth://totp/Browser:browser-tester?secret=JBSWY3DPEHPK3PXP&issuer=Browser',
+        }),
+    }));
+
+    await page.goto('/', { waitUntil: 'networkidle' });
+    expect(requested).not.toContain('/d3.min.js');
+    expect(requested).not.toContain('/qrcode.js');
+    expect(await page.evaluate(() => typeof window.d3)).toBe('undefined');
+
+    // The real setup handler: it has to fetch qrcode.js before it can draw.
+    await page.evaluate(() => document.getElementById('twofa-start-btn').click());
+    await expect(page.locator('#twofa-qr svg')).toBeAttached();
+    expect(requested.filter(path => path === '/qrcode.js')).toHaveLength(1);
+
+    await page.evaluate(() => loadScriptOnce('/d3.min.js'));
+    expect(await page.evaluate(() => typeof window.d3.forceSimulation)).toBe('function');
+    expect(await page.evaluate(() => window.__cspViolations)).toEqual([]);
+});
