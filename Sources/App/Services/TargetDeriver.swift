@@ -70,7 +70,9 @@ enum TargetDeriver {
         func add(_ value: String, _ origin: Origin) {
             guard out.count <= maxDerived,
                   value.count >= minUsernameLength,
-                  value.range(of: "^[a-z0-9._-]+$", options: .regularExpression) != nil,
+                  // No leading hyphen: derived targets reach the same tools the
+                  // validated input does, so they keep the same invariant.
+                  value.range(of: "^[a-z0-9._][a-z0-9._-]*$", options: .regularExpression) != nil,
                   seen.insert(value).inserted
             else { return }
             out.append(Candidate(value: value, origin: origin))

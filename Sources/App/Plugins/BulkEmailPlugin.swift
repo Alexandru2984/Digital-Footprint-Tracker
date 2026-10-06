@@ -32,7 +32,9 @@ struct BulkEmailPlugin: FootprintPlugin {
         do {
             let execution = try await BoundedProcess.run(
                 executable: holehePath,
-                arguments: [cleanedEmail, "--only-used", "--no-color"],
+                // `--` ends options: a target must never be readable as a flag, whatever
+                // the validators upstream happen to guarantee today.
+                arguments: ["--only-used", "--no-color", "--", cleanedEmail],
                 environment: processEnvironment,
                 timeout: 60,
                 maxOutputBytes: 1 * 1_024 * 1_024

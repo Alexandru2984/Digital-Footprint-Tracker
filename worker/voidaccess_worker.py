@@ -30,7 +30,10 @@ MAX_FINDINGS = 250
 MAX_RELATIONSHIPS = 500
 MAX_CLOCK_SKEW_SECONDS = 60
 MAX_JOB_SECONDS = int(os.environ.get("VOIDACCESS_JOB_TIMEOUT_SECONDS", "540"))
-TARGET_RE = re.compile(r"^[A-Za-z0-9@._+\-]{1,255}$")
+# No leading hyphen: the target is a positional argument to VoidAccess, and the
+# app refusing one before it signs the request is not a reason for this side to
+# accept it.
+TARGET_RE = re.compile(r"^[A-Za-z0-9@._+][A-Za-z0-9@._+\-]{0,254}$")
 DATE_RE = re.compile(r"^\d{4}(?:-\d{2}(?:-\d{2})?)?$")
 SOURCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+ \-]{0,79}$")
 RELATIONSHIP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ \-]{0,63}$")

@@ -162,7 +162,7 @@ struct DomainPlugin: FootprintPlugin {
         guard target.range(of: #"^[a-zA-Z0-9.\-:]+$"#, options: .regularExpression) != nil else {
             return nil
         }
-        return await runProcess(path: "/usr/bin/whois", args: [target], timeout: 15)
+        return await runProcess(path: "/usr/bin/whois", args: ["--", target], timeout: 15)
     }
 
     /// Runs WHOIS without a shell, inherited secrets, unbounded output, or a

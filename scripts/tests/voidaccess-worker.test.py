@@ -68,6 +68,16 @@ def health(port: int, secret: str) -> int:
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
     worker = repository / "worker" / "voidaccess_worker.py"
+
+    # A leading hyphen would reach VoidAccess as an option. Checked on the module
+    # itself: the worker must refuse it without relying on the app's validation.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("voidaccess_worker_under_test", worker)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for refused in ("-x", "--help", "-"):
+        assert module.TARGET_RE.fullmatch(refused) is None, f"{refused!r} must be refused"
+    assert module.TARGET_RE.fullmatch("person@example.test"), "a real target must pass"
     secret = "integration-test-secret-at-least-32-bytes"
     port = free_port()
 
