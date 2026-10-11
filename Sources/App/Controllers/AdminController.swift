@@ -72,6 +72,7 @@ struct AdminController: RouteCollection {
         noCache.get("admin", "dashboard", use: dashboard)
         noCache.get("admin", "audit", use: auditLog)
         noCache.get("admin", "audit", "integrity", use: auditIntegrity)
+        noCache.get("admin", "plugin-health", use: pluginHealth)
         noCache.get("admin", "notification-deliveries", use: notificationDeliveries)
         noCache.post("admin", "notification-deliveries", ":id", "retry", use: retryNotificationDelivery)
     }
@@ -138,6 +139,23 @@ struct AdminController: RouteCollection {
             scansPerDay: scansPerDay,
             topPlugins: topPlugins
         )
+    }
+
+    /// Live-run health of every registered plugin since the process started;
+    /// see `PluginHealth`. Unhealthy plugins first so a broken source is the
+    /// first thing on the page.
+    @Sendable
+    func pluginHealth(req: Request) async throws -> [PluginHealth.Report] {
+        let user = try await req.requireRecentSessionUser()
+        guard user.isAdmin else {
+            throw Abort(.forbidden, reason: "Admin access required.")
+        }
+        let names = ScanController.defaultPlugins.map(\.name)
+        let rank: [PluginHealth.Status: Int] = [.failing: 0, .degraded: 1, .healthy: 2, .idle: 3]
+        return await PluginHealth.shared.reports(for: names)
+            .enumerated()
+            .sorted { (rank[$0.element.status]!, $0.offset) < (rank[$1.element.status]!, $1.offset) }
+            .map(\.element)
     }
 
     @Sendable

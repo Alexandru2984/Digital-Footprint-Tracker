@@ -266,37 +266,43 @@ enum ScanPluginRunner {
         dedup: ResultDedupStore,
         timeout: Double
     ) async -> Outcome {
-        await withTaskGroup(of: Outcome?.self) { inner in
+        let probe = PluginHealth.RunProbe()
+        let started = Date()
+        var timedOut = false
+        let outcome = await withTaskGroup(of: Outcome?.self) { inner -> Outcome in
             inner.addTask {
-                do {
-                    var produced: [PluginResult] = []
-                    for candidate in pCandidates {
-                        guard !Task.isCancelled else { break }
-                        let cInput = candidate.value
-                        let raw: [PluginResult]
-                        if useCache, let cached = await PluginCacheStore.lookup(
-                            pluginName: pName,
-                            input: cInput,
-                            on: db,
-                            logger: app.logger
-                        ) {
-                            raw = PluginResultLimits.sanitize(cached)
-                        } else {
-                            let fresh = try await plugin.scan(input: cInput, on: app)
-                            let bounded = PluginResultLimits.sanitize(fresh)
-                            if useCache {
-                                await PluginCacheStore.store(pluginName: pName, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
+                await PluginHealth.$probe.withValue(probe) {
+                    do {
+                        var produced: [PluginResult] = []
+                        for candidate in pCandidates {
+                            guard !Task.isCancelled else { break }
+                            let cInput = candidate.value
+                            let raw: [PluginResult]
+                            if useCache, let cached = await PluginCacheStore.lookup(
+                                pluginName: pName,
+                                input: cInput,
+                                on: db,
+                                logger: app.logger
+                            ) {
+                                raw = PluginResultLimits.sanitize(cached)
+                            } else {
+                                probe.markLive()
+                                let fresh = try await plugin.scan(input: cInput, on: app)
+                                let bounded = PluginResultLimits.sanitize(fresh)
+                                if useCache {
+                                    await PluginCacheStore.store(pluginName: pName, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
+                                }
+                                raw = bounded
                             }
-                            raw = bounded
+                            for pr in raw where try await persist(pr, origin: candidate.origin, scanID: scanID, dedup: dedup, on: db) {
+                                produced.append(pr)
+                            }
                         }
-                        for pr in raw where try await persist(pr, origin: candidate.origin, scanID: scanID, dedup: dedup, on: db) {
-                            produced.append(pr)
-                        }
+                        return .done(name: pName, succeeded: true, results: produced)
+                    } catch {
+                        app.logger.error("Plugin \(pName) failed: \(error)")
+                        return .done(name: pName, succeeded: false, results: [])
                     }
-                    return .done(name: pName, succeeded: true, results: produced)
-                } catch {
-                    app.logger.error("Plugin \(pName) failed: \(error)")
-                    return .done(name: pName, succeeded: false, results: [])
                 }
             }
             inner.addTask {
@@ -311,8 +317,28 @@ enum ScanPluginRunner {
                 return outcome
             }
             app.logger.warning("Plugin \(pName) exceeded its \(Int(timeout))s per-plugin timeout; moving on without waiting for it")
+            timedOut = true
             return .done(name: pName, succeeded: false, results: [])
         }
+
+        // The round-wide deadline cancels this task from outside; the plugin
+        // then throws CancellationError, which is the round's timeout, not a
+        // fault of the plugin's own.
+        if Task.isCancelled { timedOut = true }
+        let tally = probe.tally
+        if tally.live, case .done(_, let succeeded, let results) = outcome {
+            let health = PluginHealth.outcome(
+                threw: !succeeded && !timedOut, timedOut: timedOut,
+                answered: tally.answered, failed: tally.failed
+            )
+            await PluginHealth.shared.record(
+                plugin: pName,
+                run: .init(at: started, outcome: health, duration: Date().timeIntervalSince(started),
+                           results: results.count, detail: health == .unreachable ? tally.lastFailure : nil),
+                logger: app.logger
+            )
+        }
+        return outcome
     }
 
     /// Runs `plugins` over `candidates` concurrently under a round-wide

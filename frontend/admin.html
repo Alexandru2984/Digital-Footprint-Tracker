@@ -8,8 +8,8 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/tailwind.css?v=8611f9208fe3"
-          integrity="sha384-Ve3DHzqCYaM8BgbVkUwCYB1oRLvHXH9meW5vjGmugq9P5dooWp42aYEYRIGsTMTY"
+    <link rel="stylesheet" href="/tailwind.css?v=06a9aa390acf"
+          integrity="sha384-+AMaQwKxpuU9XFyyHUMuyKhr30iPWY5Lu8gyDjM1fGxb2ykH9eP7BZozL4wfCS/5"
           crossorigin="anonymous">
     <style>
         body { background-color: #0f172a; color: #f8fafc; }
@@ -81,6 +81,18 @@
                     Top Plugins by Findings
                 </h2>
                 <div id="top-plugins-chart" style="min-height:200px;"></div>
+            </div>
+
+            <!-- Plugin health -->
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-5 shadow-xl">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex flex-wrap items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    Plugin Health
+                    <button id="refresh-plugin-health-btn" class="ml-auto min-h-6 text-[10px] px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm hover:bg-dark-600">Refresh</button>
+                </h2>
+                <p class="text-[11px] text-slate-500 mb-3">Live (uncached) runs since the last restart. A run fails when every upstream request it made was refused, errored or went unanswered.</p>
+                <div id="plugin-health-summary" role="status" aria-live="polite" class="mb-3 text-[11px] text-slate-400">Loading…</div>
+                <div id="plugin-health-container"></div>
             </div>
 
             <!-- Audit Log -->

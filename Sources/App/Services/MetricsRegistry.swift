@@ -85,11 +85,16 @@ actor MetricsRegistry {
         /// two drift.
         let hostCircuitTripsTotal: UInt64
         let hostCircuitsOpen: Int
+        /// Sourced from PluginHealth, which owns the per-run classification.
+        let pluginRuns: [String: [PluginHealth.Outcome: UInt64]]
+        let pluginsFailing: Int
     }
 
     func snapshot(
         hostCircuitTripsTotal: UInt64 = 0,
-        hostCircuitsOpen: Int = 0
+        hostCircuitsOpen: Int = 0,
+        pluginRuns: [String: [PluginHealth.Outcome: UInt64]] = [:],
+        pluginsFailing: Int = 0
     ) -> Snapshot {
         Snapshot(
             pluginCacheHits:   pluginCacheHits,
@@ -105,7 +110,9 @@ actor MetricsRegistry {
             auditIntegrityLastVerifiedUnix: auditIntegrityLastVerifiedUnix,
             auditIntegrityLastSequence: auditIntegrityLastSequence,
             hostCircuitTripsTotal: hostCircuitTripsTotal,
-            hostCircuitsOpen: hostCircuitsOpen
+            hostCircuitsOpen: hostCircuitsOpen,
+            pluginRuns: pluginRuns,
+            pluginsFailing: pluginsFailing
         )
     }
 }

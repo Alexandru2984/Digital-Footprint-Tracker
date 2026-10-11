@@ -207,7 +207,11 @@ struct HealthController: RouteCollection {
 
         let snap = await MetricsRegistry.shared.snapshot(
             hostCircuitTripsTotal: await HostCircuitBreaker.shared.tripsTotal,
-            hostCircuitsOpen: await HostCircuitBreaker.shared.openCircuitCount()
+            hostCircuitsOpen: await HostCircuitBreaker.shared.openCircuitCount(),
+            pluginRuns: await PluginHealth.shared.runTotals(),
+            pluginsFailing: await PluginHealth.shared
+                .reports(for: ScanController.defaultPlugins.map(\.name))
+                .filter { $0.status == .failing }.count
         )
         let backup = BackupStatus.current()
 
@@ -365,6 +369,9 @@ private extension HealthController {
         writeGauge(name: "swift_vapor_plugin_host_circuits_open",
                    help: "Upstream hosts currently being skipped because their circuit is open.",
                    value: snapshot.hostCircuitsOpen)
+        writeGauge(name: "swift_vapor_plugins_failing",
+                   help: "Plugins whose last three live runs all failed (see /api/admin/plugin-health).",
+                   value: snapshot.pluginsFailing)
         writeCounter(name: "swift_vapor_plugin_cache_misses_total",
                      help: "Plugin cache lookups that fell through to a live plugin run since process start.",
                      value: snapshot.pluginCacheMisses)
@@ -382,6 +389,14 @@ private extension HealthController {
             for outcome in ["attempted", "succeeded", "failed", "skipped"] {
                 guard let count = outcomes[outcome] else { continue }
                 output += "swift_vapor_notification_deliveries_total{channel=\"\(channel.rawValue)\",outcome=\"\(outcome)\"} \(count)\n"
+            }
+        }
+        output += "# HELP swift_vapor_plugin_runs_total Live (uncached) plugin runs by outcome since process start.\n"
+        output += "# TYPE swift_vapor_plugin_runs_total counter\n"
+        for plugin in snapshot.pluginRuns.keys.sorted() {
+            for outcome in PluginHealth.Outcome.allCases {
+                let count = snapshot.pluginRuns[plugin]?[outcome] ?? 0
+                output += "swift_vapor_plugin_runs_total{plugin=\"\(plugin)\",outcome=\"\(outcome.rawValue)\"} \(count)\n"
             }
         }
         output += "# HELP swift_vapor_notification_job_transitions_total Durable notification job state transitions since process start.\n"

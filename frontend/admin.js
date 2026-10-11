@@ -184,9 +184,71 @@
     }
 
     if (Array.isArray(data.topPlugins) && data.topPlugins.length) {
-        renderTopPlugins(data.topPlugins);
+        renderTopPlugins(data.topPlugins.map(p => ({ plugin: String(p.source ?? ''), count: Number(p.hitCount) || 0 })));
     } else {
         document.getElementById('top-plugins-chart').textContent = 'No plugin data available.';
+    }
+
+    // Plugin health
+    document.getElementById('refresh-plugin-health-btn')?.addEventListener('click', loadPluginHealth);
+
+    async function loadPluginHealth() {
+        const summary = document.getElementById('plugin-health-summary');
+        const container = document.getElementById('plugin-health-container');
+        try {
+            const res = await fetch('/api/admin/plugin-health', { credentials: 'include' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const reports = await res.json();
+            const count = status => reports.filter(r => r.status === status).length;
+            const failing = count('failing');
+            const degraded = count('degraded');
+            summary.className = 'mb-3 text-[11px] ' + (failing ? 'text-red-400' : degraded ? 'text-yellow-400' : 'text-green-400');
+            summary.textContent = `${failing} failing · ${degraded} degraded · ${count('healthy')} healthy · ${count('idle')} not run since restart`;
+
+            const statusClass = {
+                failing: 'text-red-400', degraded: 'text-yellow-400', healthy: 'text-green-400', idle: 'text-slate-500',
+            };
+            const when = value => value ? new Date(value).toLocaleString() : '—';
+            const table = document.createElement('table');
+            table.className = 'w-full text-[10px] border-collapse';
+            // Avg and last success are secondary; on a phone the table keeps
+            // the four columns that say what is broken and why, and wraps.
+            const secondary = ' hidden sm:table-cell';
+            const columns = [
+                ['Plugin', ''], ['Status', ''], ['Failed / runs', ''],
+                ['Avg', secondary], ['Last success', secondary], ['Last failure', ''],
+            ];
+            const head = table.createTHead().insertRow();
+            head.className = 'border-b border-dark-700 text-slate-400';
+            for (const [label, extra] of columns) {
+                const th = document.createElement('th');
+                th.className = 'text-left align-bottom py-1 pr-2' + extra;
+                th.textContent = label;
+                head.appendChild(th);
+            }
+            const body = table.createTBody();
+            for (const r of reports) {
+                const row = body.insertRow();
+                row.className = 'border-b border-dark-800 hover:bg-dark-700';
+                const cells = [
+                    [r.plugin, 'text-slate-200'],
+                    [r.status, statusClass[r.status] || 'text-slate-400'],
+                    [`${Number(r.failures) || 0} / ${Number(r.runs) || 0}`, 'text-slate-400'],
+                    [r.averageMilliseconds == null ? '—' : `${(r.averageMilliseconds / 1000).toFixed(1)}s`, 'text-slate-400'],
+                    [when(r.lastSuccessAt), 'text-slate-500'],
+                    [r.lastFailureAt ? `${when(r.lastFailureAt)} · ${r.lastFailure ?? ''}` : '—', 'text-slate-500'],
+                ];
+                cells.forEach(([text, cls], index) => {
+                    const td = row.insertCell();
+                    td.className = 'align-top py-1 pr-2 wrap-anywhere ' + cls + columns[index][1];
+                    td.textContent = String(text ?? '');
+                });
+            }
+            container.replaceChildren(table);
+        } catch (error) {
+            summary.className = 'mb-3 text-[11px] text-red-400';
+            summary.textContent = 'Plugin health unavailable: ' + String(error && error.message || error);
+        }
     }
 
     // Audit log
@@ -258,5 +320,5 @@
         }
     }
 
-    await loadAuditIntegrity();
+    await Promise.all([loadAuditIntegrity(), loadPluginHealth()]);
 })();

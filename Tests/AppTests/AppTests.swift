@@ -4558,6 +4558,206 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(round.timedOut)
     }
 
+    func testRoundDeadlineIsRecordedAsTheSlowPluginsTimeoutNotAnError() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "health-deadline-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+
+        _ = await ScanPluginRunner.runRound(
+            plugins: [SlowTestPlugin(name: "HealthSlowRound", delaySeconds: 5,
+                result: PluginResult(source: "HealthSlowRound", type: "t", confidenceScore: 1.0, rawData: "x"))],
+            candidates: [TargetDeriver.Candidate(value: "health-deadline-target", origin: .primary)],
+            scanID: scanID, deadline: 1, perPluginTimeout: 30, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        let report = await PluginHealth.shared.reports(for: ["HealthSlowRound"])[0]
+        XCTAssertEqual(report.runs, 1)
+        XCTAssertEqual(report.lastFailure, "timeout")
+    }
+
+    // MARK: - Plugin health
+
+    /// Calls one URL through `PluginHTTP` and, like the shipping plugins,
+    /// turns a missing response into "nothing found".
+    private struct HTTPTestPlugin: FootprintPlugin {
+        let name: String
+        let url: URL
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            guard await PluginHTTP.request(url, timeout: 5, on: app) != nil else { return [] }
+            return [PluginResult(source: name, type: "t", confidenceScore: 1.0, rawData: "answered")]
+        }
+    }
+
+    private final class CapturedLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lines: [(Logger.Level, String)] = []
+        func append(_ level: Logger.Level, _ message: String) {
+            lock.lock(); defer { lock.unlock() }
+            lines.append((level, message))
+        }
+        var all: [(Logger.Level, String)] {
+            lock.lock(); defer { lock.unlock() }
+            return lines
+        }
+    }
+
+    private struct CapturingLogHandler: LogHandler {
+        let log: CapturedLog
+        var metadata: Logger.Metadata = [:]
+        var logLevel: Logger.Level = .trace
+        subscript(metadataKey key: String) -> Logger.Metadata.Value? {
+            get { metadata[key] }
+            set { metadata[key] = newValue }
+        }
+        func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?,
+                 source: String, file: String, function: String, line: UInt) {
+            log.append(level, message.description)
+        }
+    }
+
+    func testPluginRunOutcomeCountsOnlyAnAllFailedRunAsUnreachable() {
+        XCTAssertEqual(PluginHealth.outcome(threw: false, timedOut: false, answered: 0, failed: 3), .unreachable)
+        XCTAssertEqual(PluginHealth.outcome(threw: false, timedOut: false, answered: 1, failed: 400), .ok,
+                       "a sweep where some sites refuse the VPS is still working")
+        XCTAssertEqual(PluginHealth.outcome(threw: false, timedOut: false, answered: 0, failed: 0), .ok,
+                       "a plugin without HTTP calls (DNS, WHOIS) is judged only by whether it threw")
+        XCTAssertEqual(PluginHealth.outcome(threw: true, timedOut: false, answered: 2, failed: 0), .error)
+        XCTAssertEqual(PluginHealth.outcome(threw: false, timedOut: true, answered: 2, failed: 0), .timeout)
+
+        XCTAssertEqual(PluginHealth.Call(status: 404), .answered, "404 is \"no such account\", a real answer")
+        XCTAssertEqual(PluginHealth.Call(status: 200), .answered)
+        XCTAssertEqual(PluginHealth.Call(status: 403), .refused(status: 403))
+        XCTAssertEqual(PluginHealth.Call(status: 401), .refused(status: 401))
+        XCTAssertEqual(PluginHealth.Call(status: 429), .refused(status: 429))
+        XCTAssertEqual(PluginHealth.Call(status: 503), .upstreamError(status: 503))
+    }
+
+    func testPluginHealthFailsAfterThreeFailedRunsAndLogsOnlyTheTransitions() async {
+        let health = PluginHealth()
+        let captured = CapturedLog()
+        let logger = Logger(label: "health-test") { _ in CapturingLogHandler(log: captured) }
+        func run(_ outcome: PluginHealth.Outcome, detail: String? = nil) async {
+            await health.record(plugin: "Probe", run: .init(at: Date(), outcome: outcome, duration: 0.5,
+                                                             results: 0, detail: detail), logger: logger)
+        }
+        func status() async -> PluginHealth.Status { await health.reports(for: ["Probe"])[0].status }
+
+        let idle = await status()
+        XCTAssertEqual(idle, .idle)
+        for _ in 0..<4 { await run(.ok) }
+        await run(.unreachable, detail: "HTTP 403")
+        await run(.unreachable, detail: "HTTP 403")
+        let twoFailures = await status()
+        XCTAssertEqual(twoFailures, .degraded, "2 of 6 failed: more than a quarter, not yet a streak")
+        await run(.unreachable, detail: "HTTP 403")
+        await run(.timeout)
+        let failing = await status()
+        XCTAssertEqual(failing, .failing)
+
+        let report = await health.reports(for: ["Probe"])[0]
+        XCTAssertEqual(report.runs, 8)
+        XCTAssertEqual(report.failures, 4)
+        XCTAssertEqual(report.lastFailure, "timeout")
+        XCTAssertEqual(report.averageMilliseconds, 500)
+        XCTAssertNotNil(report.lastSuccessAt)
+
+        await run(.ok)
+        let lines = captured.all
+        XCTAssertEqual(lines.count, 2, "one line entering failing, one leaving it; none per failed run")
+        XCTAssertEqual(lines.first?.0, .warning)
+        XCTAssertEqual(lines.first?.1, "Plugin Probe is failing: its last 3 live runs failed (latest: unreachable, HTTP 403).")
+        XCTAssertEqual(lines.last?.0, .notice)
+        XCTAssertEqual(lines.last?.1, "Plugin Probe recovered.")
+    }
+
+    func testPluginHealthKeepsOnlyTheRecentWindow() async {
+        let health = PluginHealth()
+        for _ in 0..<50 {
+            await health.record(plugin: "Busy", run: .init(at: Date(), outcome: .ok, duration: 0, results: 0, detail: nil))
+        }
+        let report = await health.reports(for: ["Busy", "NeverRan"])
+        XCTAssertEqual(report[0].runs, PluginHealth.window)
+        XCTAssertEqual(report[1].status, .idle, "a registered plugin with no runs is listed, not dropped")
+        let totals = await health.runTotals()
+        XCTAssertEqual(totals["Busy"]?[.ok], 50, "the metric counter is lifetime, not windowed")
+    }
+
+    func testRunnerRecordsAPluginWhoseEveryRequestFailedAsUnreachable() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let breaker = HostCircuitBreaker.shared
+        addTeardownBlock { await HostCircuitBreaker.shared.reset() }
+        // An open circuit answers instantly with no response, which is exactly
+        // what a dead or blocking upstream looks like to the plugin.
+        for _ in 0..<3 { await breaker.recordFailure("health-dead.example") }
+
+        let scan = Scan(input: "health-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let dead = HTTPTestPlugin(name: "HealthDead",
+                                  url: try XCTUnwrap(URL(string: "https://health-dead.example/api")))
+        let local = FixedResultTestPlugin(name: "HealthLocal",
+            results: [PluginResult(source: "HealthLocal", type: "t", confidenceScore: 1.0, rawData: "x")])
+
+        let round = await ScanPluginRunner.runRound(
+            plugins: [dead, local],
+            candidates: [TargetDeriver.Candidate(value: "health-target", origin: .primary)],
+            scanID: scanID, deadline: 20, perPluginTimeout: 10, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        XCTAssertEqual(round.failure, 0, "the scan itself still treats an empty answer as success")
+
+        let reports = await PluginHealth.shared.reports(for: ["HealthDead", "HealthLocal"])
+        XCTAssertEqual(reports[0].runs, 1)
+        XCTAssertEqual(reports[0].failures, 1)
+        XCTAssertEqual(reports[0].lastFailure, "unreachable, no response")
+        XCTAssertEqual(reports[1].runs, 1)
+        XCTAssertEqual(reports[1].failures, 0)
+    }
+
+    func testPluginHealthEndpointRequiresAdminAndListsEveryPlugin() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "plugin-health-admin")
+
+        try await app.test(.GET, "/admin/plugin-health") { response in
+            XCTAssertEqual(response.status, .unauthorized)
+        }
+        try await app.test(.GET, "/admin/plugin-health", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .forbidden)
+        })
+
+        let storedUser = try await User.query(on: app.db)
+            .filter(\.$username == "plugin-health-admin").first()
+        let user = try XCTUnwrap(storedUser)
+        user.isAdmin = true
+        try await user.update(on: app.db)
+
+        try await app.test(.GET, "/admin/plugin-health", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let reports = try response.content.decode([PluginHealth.Report].self)
+            XCTAssertEqual(Set(reports.map(\.plugin)), Set(ScanController.defaultPlugins.map(\.name)))
+        })
+
+        await PluginHealth.shared.record(plugin: "MetricsProbe", run: .init(
+            at: Date(), outcome: .unreachable, duration: 0, results: 0, detail: "HTTP 403"))
+        try await app.test(.GET, "/metrics", beforeRequest: { request in
+            request.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { response in
+            XCTAssertEqual(response.status, .ok)
+            let body = response.body.string
+            XCTAssertTrue(body.contains("swift_vapor_plugin_runs_total{plugin=\"MetricsProbe\",outcome=\"unreachable\"} 1"), body)
+            XCTAssertTrue(body.contains("swift_vapor_plugin_runs_total{plugin=\"MetricsProbe\",outcome=\"ok\"} 0"), body)
+            XCTAssertTrue(body.contains("\nswift_vapor_plugins_failing "), body)
+        })
+    }
+
     // MARK: - Admin surface coverage (security)
 
     func testEveryAdminRouteRefusesAnUnauthenticatedCaller() async throws {

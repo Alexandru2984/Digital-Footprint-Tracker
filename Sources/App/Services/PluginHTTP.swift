@@ -33,6 +33,7 @@ enum PluginHTTP {
         if let host {
             guard await HostCircuitBreaker.shared.allows(host) else {
                 app.logger.debug("PluginHTTP: skipping \(host); its circuit is open after repeated failures.")
+                PluginHealth.probe?.record(.unreachable)
                 return nil
             }
             let wait = await HostThrottle.shared.reserve(host)
@@ -75,6 +76,7 @@ enum PluginHTTP {
                         await HostCircuitBreaker.shared.recordSuccess(host)
                     }
                 }
+                PluginHealth.probe?.record(PluginHealth.Call(status: response.status))
                 return Response(status: response.status, data: response.data, finalURL: response.finalURL)
             } catch is OutboundHTTP.RequestError {
                 // URL-policy failures are deterministic; retrying only repeats a
@@ -84,7 +86,10 @@ enum PluginHTTP {
             } catch {
                 guard attempt < maxRetries, !Task.isCancelled else {
                     // Cancellation is our own doing, not the host's fault.
-                    if let host, !Task.isCancelled { await HostCircuitBreaker.shared.recordFailure(host) }
+                    if !Task.isCancelled {
+                        if let host { await HostCircuitBreaker.shared.recordFailure(host) }
+                        PluginHealth.probe?.record(.unreachable)
+                    }
                     return nil
                 }
                 await sleep(seconds: backoff(attempt))

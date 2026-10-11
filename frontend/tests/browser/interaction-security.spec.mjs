@@ -110,6 +110,26 @@ test('admin exposes signed audit verification without leaking ledger payloads', 
     await expect(status).not.toContainText('headHash');
 });
 
+test('admin shows plugin health and top plugins as text, and a populated chart does not stop the page', async ({ page }) => {
+    const fixture = await mockAPI(page, { authenticated: true, admin: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.goto('/admin.html', { waitUntil: 'networkidle' });
+
+    await expect(page.locator('#plugin-health-summary')).toHaveText('1 failing · 0 degraded · 1 healthy · 1 not run since restart');
+    const rows = page.locator('#plugin-health-container tbody tr');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText(fixture.malicious);
+    await expect(rows.nth(0)).toContainText('3 / 3');
+    await expect(rows.nth(1)).toContainText('healthy');
+    await expect(page.locator('#top-plugins-chart svg text').first()).toHaveText(/^<img data-browser-/);
+    await expect(page.locator('#audit-integrity-status')).toContainText('Valid signed ledger');
+
+    expect(errors).toEqual([]);
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+});
+
 test('timeline evidence is responsive, filterable and rendered only as text', async ({ page }) => {
     const fixture = await mockAPI(page);
     await page.goto('/', { waitUntil: 'networkidle' });

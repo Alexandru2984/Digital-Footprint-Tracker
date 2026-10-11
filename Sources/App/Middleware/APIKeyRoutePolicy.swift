@@ -71,6 +71,7 @@ enum APIKeyRoutePolicy {
         Rule(.GET, "/admin/dashboard", .deny),
         Rule(.GET, "/admin/audit", .deny),
         Rule(.GET, "/admin/audit/integrity", .deny),
+        Rule(.GET, "/admin/plugin-health", .deny),
         Rule(.GET, "/admin/notification-deliveries", .deny),
         Rule(.POST, "/admin/notification-deliveries/:id/retry", .deny),
 

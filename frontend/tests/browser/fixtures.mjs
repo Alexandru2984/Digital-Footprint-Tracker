@@ -26,7 +26,23 @@ export async function mockAPI(page, options = {}) {
         } else if (pathname === '/api/plugins') {
             body = [];
         } else if (pathname === '/api/admin/dashboard') {
-            body = { totalScans: 0, totalUsers: 1, totalResults: 0, scansPerDay: [], topPlugins: [] };
+            body = {
+                totalScans: 3, totalUsers: 1, totalResults: 7, scansPerDay: [],
+                topPlugins: [{ source: malicious, hitCount: 5 }, { source: 'Reddit', hitCount: 2 }],
+            };
+        } else if (pathname === '/api/admin/plugin-health') {
+            body = [
+                {
+                    plugin: malicious, status: 'failing', runs: 3, failures: 3, averageMilliseconds: 1200,
+                    lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: null,
+                    lastFailureAt: '2026-08-24T00:00:00Z', lastFailure: malicious,
+                },
+                { plugin: 'Reddit', status: 'healthy', runs: 4, failures: 0, averageMilliseconds: 800,
+                  lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: '2026-08-24T00:00:00Z',
+                  lastFailureAt: null, lastFailure: null },
+                { plugin: 'WHOIS', status: 'idle', runs: 0, failures: 0, averageMilliseconds: null,
+                  lastRunAt: null, lastSuccessAt: null, lastFailureAt: null, lastFailure: null },
+            ];
         } else if (pathname === '/api/admin/audit/integrity') {
             body = {
                 status: 'valid',
