@@ -457,15 +457,18 @@
     }
   }
 
-  function addSelectedToBoard() {
-    if (!state.detail || !state.detail.result || !window.InvestigationBoards ||
-        typeof window.InvestigationBoards.seedFromDarkWeb !== 'function') {
+  async function addSelectedToBoard() {
+    var detail = state.detail;
+    var boards = null;
+    if (detail && detail.result && typeof window.loadInvestigationBoards === 'function') {
+      try { boards = await window.loadInvestigationBoards(); } catch (error) { boards = null; }
+    }
+    if (!boards || typeof boards.seedFromDarkWeb !== 'function') {
       setMessage('Investigation boards are not available.', 'error');
       return;
     }
-    var detail = state.detail;
     closeDialog();
-    window.InvestigationBoards.seedFromDarkWeb(detail.target, detail.result);
+    boards.seedFromDarkWeb(detail.target, detail.result);
   }
 
   async function refresh() {

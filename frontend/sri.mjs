@@ -34,6 +34,25 @@ let rewritten = 0;
 let attributes = 0;
 let versions = 0;
 
+// Scripts app.js loads on demand carry the same content version, in the
+// loadScriptOnce('/file.js?v=...') calls, so an edge cache holding the previous
+// file cannot answer for the new one. Rewritten before the pages, because
+// app.js's own version in index.html depends on these bytes.
+{
+    const file = join(frontendDir, 'app.js');
+    const original = readFileSync(file, 'utf8');
+    const lazy = /loadScriptOnce\((["'])(\/[^"'?#]+)\?v=[0-9a-f]*\1\)/g;
+    const updated = original.replace(lazy, (whole, quote, assetPath) => {
+        versions += 1;
+        return `loadScriptOnce(${quote}${assetPath}?v=${contentVersion(assetPath)}${quote})`;
+    });
+    if (updated !== original) {
+        writeFileSync(file, updated);
+        rewritten += 1;
+        console.log('sri: refreshed app.js');
+    }
+}
+
 for (const page of pages) {
     const file = join(frontendDir, page);
     const original = readFileSync(file, 'utf8');

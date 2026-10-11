@@ -1,6 +1,7 @@
 /* Investigation Boards — a FlowSint-style interactive relationship graph.
  *
  * Self-contained (only depends on the global d3 from /d3.min.js and the DOM).
+ * Loaded on demand by loadInvestigationBoards() in app.js, after d3.
  * You add an entity, click it → Expand, and the app scans it and merges the
  * discovered entities/relationships into a persistent graph you can keep growing.
  * Boards are saved server-side (encrypted at rest) via /api/investigations.
@@ -1060,8 +1061,6 @@
   }
 
   function ready() {
-    var btn = document.getElementById('boards-toggle-btn');
-    if (btn) btn.addEventListener('click', open);
     document.getElementById('board-close-btn').addEventListener('click', close);
     document.getElementById('board-new-btn').addEventListener('click', newBoard);
     document.getElementById('board-save-btn').addEventListener('click', saveBoard);
@@ -1137,14 +1136,8 @@
     var mmSvg = document.getElementById('board-minimap-svg');
     if (mmSvg) mmSvg.addEventListener('click', minimapClick);
 
-    // "🕸 BOARD" in the scan-results toolbar: seed a fresh board from the scan
-    // currently on screen. `lastScanData` is owned by the page's inline script.
-    var seedBtn = document.getElementById('seed-board-btn');
-    if (seedBtn) seedBtn.addEventListener('click', function () {
-      var scan = null;
-      try { scan = (typeof lastScanData !== 'undefined') ? lastScanData : null; } catch (e) { scan = null; }
-      seedFromScan(scan);
-    });
+    // The boards and "🕸 BOARD" buttons are wired by app.js, which loads this
+    // file (and d3 before it) on their first click.
   }
 
   // Small public surface so the page can drive the board too.

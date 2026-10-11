@@ -1570,9 +1570,24 @@
             return lazyScripts.get(src);
         }
 
+        // Investigation boards draw with d3 and only open on request, so both
+        // load then, d3 first: render() in investigation.js draws nothing
+        // without it. dark-web.js reaches the boards through this too.
+        function loadInvestigationBoards() {
+            return loadScriptOnce('/d3.min.js?v=f2094bbf6141')
+                .then(() => loadScriptOnce('/investigation.js?v=ee31bb4c9ff9'))
+                .then(() => window.InvestigationBoards);
+        }
+        document.getElementById('boards-toggle-btn')?.addEventListener('click', () => {
+            loadInvestigationBoards().then(boards => boards.open()).catch(() => {});
+        });
+        document.getElementById('seed-board-btn')?.addEventListener('click', () => {
+            loadInvestigationBoards().then(boards => boards.seedFromScan(lastScanData)).catch(() => {});
+        });
+
         async function renderD3Graph(scanData) {
             if (!window.d3) {
-                try { await loadScriptOnce('/d3.min.js'); } catch { return; }
+                try { await loadScriptOnce('/d3.min.js?v=f2094bbf6141'); } catch { return; }
             }
             const results = (scanData && scanData.results) || [];
             const noData       = document.getElementById('graph-no-data');
@@ -1850,7 +1865,7 @@
                 // Render a QR from the otpauth URI using the first-party qrcode.js
                 // (fully offline — no network). White padding provides the quiet zone.
                 try {
-                    await loadScriptOnce('/qrcode.js');
+                    await loadScriptOnce('/qrcode.js?v=18ae399f8118');
                     const qr = qrcode(0, 'M');
                     qr.addData(data.otpauthURI);
                     qr.make();

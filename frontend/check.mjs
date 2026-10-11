@@ -83,6 +83,20 @@ for (const page of pages) {
     }
 }
 
+// On-demand scripts are versioned in app.js the way pages version theirs, and
+// every one of them must be: an unversioned URL is the stale-edge failure again.
+{
+    const appSource = readFileSync(join(frontendDir, 'app.js'), 'utf8');
+    for (const call of appSource.matchAll(/loadScriptOnce\((["'])([^"']*)\1\)/g)) {
+        const match = /^(\/[^"'?#]+)\?v=([0-9a-f]{12})$/.exec(call[2]);
+        if (!match) fail(`app.js: on-demand script ${call[2]} is not content-versioned`);
+        const expected = createHash('sha256').update(readFileSync(join(frontendDir, match[1].slice(1)))).digest('hex').slice(0, 12);
+        if (match[2] !== expected) {
+            fail(`app.js: ${match[1]} is versioned ?v=${match[2]} but its content hashes to ${expected}`);
+        }
+    }
+}
+
 for (const script of ['app.js', 'admin.js', 'investigation.js', 'dark-web.js']) {
     new Function(readFileSync(join(frontendDir, script), 'utf8'));
 }

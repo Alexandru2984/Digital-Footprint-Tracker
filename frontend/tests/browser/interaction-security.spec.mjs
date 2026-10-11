@@ -196,3 +196,26 @@ test('d3 and qrcode load only when their feature opens, within the CSP', async (
     expect(await page.evaluate(() => typeof window.d3.forceSimulation)).toBe('function');
     expect(await page.evaluate(() => window.__cspViolations)).toEqual([]);
 });
+
+test('a board seeded from a scan loads d3 with it and draws the graph', async ({ page }) => {
+    const requested = [];
+    page.on('request', request => requested.push(new URL(request.url()).pathname));
+    await mockAPI(page, { authenticated: true });
+    await page.route('**/api/investigations**', route => route.fulfill({
+        status: 200, contentType: 'application/json; charset=utf-8', body: '[]',
+    }));
+
+    await page.goto('/', { waitUntil: 'networkidle' });
+    expect(requested).not.toContain('/investigation.js');
+    expect(requested).not.toContain('/d3.min.js');
+
+    // Straight to the board, never through the graph tab: boards must not rely
+    // on something else having loaded d3 first.
+    await page.evaluate(() => {
+        lastScanData = { input: 'browser-tester', results: [] };
+        document.getElementById('seed-board-btn').click();
+    });
+    await expect(page.locator('#board-overlay')).toBeVisible();
+    await expect(page.locator('#board-svg circle').first()).toBeAttached();
+    expect(requested.indexOf('/d3.min.js')).toBeLessThan(requested.indexOf('/investigation.js'));
+});

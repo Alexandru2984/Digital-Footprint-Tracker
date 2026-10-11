@@ -207,7 +207,7 @@
     </style>
     <!-- Privacy-first: no third-party analytics, telemetry, or tracking beacons.
          All assets are served first-party from this origin. -->
-    <!-- d3 and qrcode load on first use (loadScriptOnce in app.js): the graph and the 2FA setup. -->
+    <!-- d3, qrcode and investigation.js load on first use (loadScriptOnce in app.js): the graph, the 2FA setup and the boards. -->
 </head>
 <body class="font-mono min-h-screen flex flex-col relative overflow-x-hidden">
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -878,7 +878,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=62a5861c44ba" integrity="sha384-LEnp0/tFxz98lemVmf+53MQk546nph1uGUQTZ57QpHatptXDawHnMxxc0dzFORGg"></script>
+    <script src="/app.js?v=99ef053cba36" integrity="sha384-6ufV79OipSUzXcK9fEbQd9+WRtAC7crFIvx8OMCumOaqUZ1oTZ7FGkghB4vxsPIS"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>
@@ -1109,7 +1109,6 @@
             </div>
         </div>
     </div>
-    <script src="/investigation.js"></script>
     <script src="/dark-web.js"></script>
 </body>
 </html>
