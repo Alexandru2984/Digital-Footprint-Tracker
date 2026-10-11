@@ -36,12 +36,13 @@ export async function mockAPI(page, options = {}) {
                     plugin: malicious, status: 'failing', runs: 3, failures: 3, averageMilliseconds: 1200,
                     lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: null,
                     lastFailureAt: '2026-08-24T00:00:00Z', lastFailure: malicious,
+                    skipped: 2, nextProbeAt: '2026-08-24T00:05:00Z',
                 },
                 { plugin: 'Reddit', status: 'healthy', runs: 4, failures: 0, averageMilliseconds: 800,
                   lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: '2026-08-24T00:00:00Z',
-                  lastFailureAt: null, lastFailure: null },
+                  lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null },
                 { plugin: 'WHOIS', status: 'idle', runs: 0, failures: 0, averageMilliseconds: null,
-                  lastRunAt: null, lastSuccessAt: null, lastFailureAt: null, lastFailure: null },
+                  lastRunAt: null, lastSuccessAt: null, lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null },
             ];
         } else if (pathname === '/api/admin/audit/integrity') {
             body = {

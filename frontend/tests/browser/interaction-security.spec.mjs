@@ -121,6 +121,8 @@ test('admin shows plugin health and top plugins as text, and a populated chart d
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText(fixture.malicious);
     await expect(rows.nth(0)).toContainText('3 / 3');
+    await expect(rows.nth(0)).toContainText('failing · 2 skipped · next probe');
+    await expect(rows.nth(1)).not.toContainText('skipped');
     await expect(rows.nth(1)).toContainText('healthy');
     await expect(page.locator('#top-plugins-chart svg text').first()).toHaveText(/^<img data-browser-/);
     await expect(page.locator('#audit-integrity-status')).toContainText('Valid signed ledger');

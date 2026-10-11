@@ -90,7 +90,7 @@
                     Plugin Health
                     <button id="refresh-plugin-health-btn" class="ml-auto min-h-6 text-[10px] px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm hover:bg-dark-600">Refresh</button>
                 </h2>
-                <p class="text-[11px] text-slate-500 mb-3">Live (uncached) runs since the last restart. A run fails when every upstream request it made was refused, errored or went unanswered.</p>
+                <p class="text-[11px] text-slate-500 mb-3">Live (uncached) runs since the last restart. A run fails when every upstream request it made was refused, errored or went unanswered. A failing plugin is skipped, apart from one probe run every 5 minutes to an hour, until a probe succeeds; cached results are still served.</p>
                 <div id="plugin-health-summary" role="status" aria-live="polite" class="mb-3 text-[11px] text-slate-400">Loading…</div>
                 <div id="plugin-health-container"></div>
             </div>

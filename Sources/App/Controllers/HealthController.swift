@@ -211,7 +211,8 @@ struct HealthController: RouteCollection {
             pluginRuns: await PluginHealth.shared.runTotals(),
             pluginsFailing: await PluginHealth.shared
                 .reports(for: ScanController.defaultPlugins.map(\.name))
-                .filter { $0.status == .failing }.count
+                .filter { $0.status == .failing }.count,
+            pluginSkips: await PluginHealth.shared.skipTotals()
         )
         let backup = BackupStatus.current()
 
@@ -398,6 +399,11 @@ private extension HealthController {
                 let count = snapshot.pluginRuns[plugin]?[outcome] ?? 0
                 output += "swift_vapor_plugin_runs_total{plugin=\"\(plugin)\",outcome=\"\(outcome.rawValue)\"} \(count)\n"
             }
+        }
+        output += "# HELP swift_vapor_plugin_skipped_runs_total Live plugin runs skipped because the plugin was failing.\n"
+        output += "# TYPE swift_vapor_plugin_skipped_runs_total counter\n"
+        for plugin in snapshot.pluginSkips.keys.sorted() {
+            output += "swift_vapor_plugin_skipped_runs_total{plugin=\"\(plugin)\"} \(snapshot.pluginSkips[plugin] ?? 0)\n"
         }
         output += "# HELP swift_vapor_notification_job_transitions_total Durable notification job state transitions since process start.\n"
         output += "# TYPE swift_vapor_notification_job_transitions_total counter\n"

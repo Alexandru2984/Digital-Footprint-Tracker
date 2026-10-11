@@ -232,7 +232,14 @@
                 row.className = 'border-b border-dark-800 hover:bg-dark-700';
                 const cells = [
                     [r.plugin, 'text-slate-200'],
-                    [r.status, statusClass[r.status] || 'text-slate-400'],
+                    [
+                        [
+                            r.status,
+                            Number(r.skipped) ? `${Number(r.skipped)} skipped` : '',
+                            r.nextProbeAt ? `next probe ${new Date(r.nextProbeAt).toLocaleTimeString()}` : '',
+                        ].filter(Boolean).join(' · '),
+                        statusClass[r.status] || 'text-slate-400',
+                    ],
                     [`${Number(r.failures) || 0} / ${Number(r.runs) || 0}`, 'text-slate-400'],
                     [r.averageMilliseconds == null ? '—' : `${(r.averageMilliseconds / 1000).toFixed(1)}s`, 'text-slate-400'],
                     [when(r.lastSuccessAt), 'text-slate-500'],

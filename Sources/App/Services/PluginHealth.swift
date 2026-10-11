@@ -17,6 +17,11 @@ import Vapor
 /// at least one real upstream answer is `ok` — a username sweep where some
 /// sites refuse the VPS is still working.
 ///
+/// A plugin whose last `failingStreak` runs failed stops making live runs:
+/// `ScanPluginRunner` asks `admit` before each uncached scan, and a failing
+/// plugin gets one probe run per window (5 minutes, doubling to an hour)
+/// until a probe succeeds. Cached results are still served meanwhile.
+///
 /// Process-local and reset on restart, like every other counter in
 /// `MetricsRegistry`. Cache hits are not runs: they say nothing about the
 /// upstream today.
@@ -134,15 +139,48 @@ actor PluginHealth {
         let lastSuccessAt: Date?
         let lastFailureAt: Date?
         let lastFailure: String?
+        /// Live runs skipped since the restart because the plugin was failing.
+        let skipped: Int
+        /// When a failing plugin may next make one live probe run.
+        let nextProbeAt: Date?
     }
 
     static let window = 20
     static let failingStreak = 3
+    static let firstProbeDelay: TimeInterval = 300
+    static let maxProbeDelay: TimeInterval = 3_600
 
     private var history: [String: [Run]] = [:]
     private var lastSuccess: [String: Date] = [:]
     private var lastFailure: [String: (at: Date, detail: String)] = [:]
     private var totals: [String: [Outcome: UInt64]] = [:]
+    /// Consecutive failed runs, reset by any success.
+    private var streak: [String: Int] = [:]
+    private var nextProbe: [String: Date] = [:]
+    private var skips: [String: UInt64] = [:]
+
+    /// Whether `plugin` may make a live run now. A failing plugin is let
+    /// through once per probe window, so concurrent scans cannot all probe a
+    /// dead source at once; every other call is refused and counted. The probe
+    /// window doubles with each failed probe, from `firstProbeDelay` up to
+    /// `maxProbeDelay`, and a successful run lifts it entirely.
+    ///
+    /// Only live runs are gated: cached results stay valid and keep being
+    /// served while the source is down.
+    func admit(_ plugin: String, now: Date = Date()) -> Bool {
+        guard Self.status(of: history[plugin] ?? []) == .failing else { return true }
+        if let next = nextProbe[plugin], now < next {
+            skips[plugin, default: 0] &+= 1
+            return false
+        }
+        nextProbe[plugin] = now.addingTimeInterval(Self.probeDelay(afterStreak: streak[plugin] ?? Self.failingStreak))
+        return true
+    }
+
+    static func probeDelay(afterStreak streak: Int) -> TimeInterval {
+        let doublings = Double(min(max(0, streak - failingStreak), 16))
+        return min(firstProbeDelay * pow(2, doublings), maxProbeDelay)
+    }
 
     /// Records one live run and logs when the plugin's status crosses into or
     /// out of `failing`, so a broken source reaches the journal at warning
@@ -158,14 +196,23 @@ actor PluginHealth {
         let detail = run.detail.map { "\(run.outcome.rawValue), \($0)" } ?? run.outcome.rawValue
         if run.outcome == .ok {
             lastSuccess[plugin] = run.at
+            streak[plugin] = nil
+            nextProbe[plugin] = nil
         } else {
             lastFailure[plugin] = (run.at, detail)
+            streak[plugin, default: 0] += 1
         }
 
         let after = Self.status(of: runs)
-        if after == .failing && before != .failing {
-            logger?.warning("Plugin \(plugin) is failing: its last \(Self.failingStreak) live runs failed (latest: \(detail)).")
-        } else if before == .failing && after != .failing {
+        if after == .failing {
+            let delay = Self.probeDelay(afterStreak: streak[plugin] ?? Self.failingStreak)
+            nextProbe[plugin] = run.at.addingTimeInterval(delay)
+            if before != .failing {
+                let message = "Plugin \(plugin) is failing: its last \(Self.failingStreak) live runs failed "
+                    + "(latest: \(detail)); skipping live runs, next probe in \(Int(delay / 60)) min."
+                logger?.warning("\(message)")
+            }
+        } else if before == .failing {
             logger?.notice("Plugin \(plugin) recovered.")
         }
     }
@@ -195,7 +242,9 @@ actor PluginHealth {
                 lastRunAt: runs.last?.at,
                 lastSuccessAt: lastSuccess[name],
                 lastFailureAt: lastFailure[name]?.at,
-                lastFailure: lastFailure[name]?.detail
+                lastFailure: lastFailure[name]?.detail,
+                skipped: Int(clamping: skips[name] ?? 0),
+                nextProbeAt: nextProbe[name]
             )
         }
     }
@@ -203,11 +252,17 @@ actor PluginHealth {
     /// Process-lifetime run counts for `/metrics`.
     func runTotals() -> [String: [Outcome: UInt64]] { totals }
 
+    /// Process-lifetime skipped-run counts for `/metrics`.
+    func skipTotals() -> [String: UInt64] { skips }
+
     /// Test seam.
     func reset() {
         history.removeAll()
         lastSuccess.removeAll()
         lastFailure.removeAll()
         totals.removeAll()
+        streak.removeAll()
+        nextProbe.removeAll()
+        skips.removeAll()
     }
 }

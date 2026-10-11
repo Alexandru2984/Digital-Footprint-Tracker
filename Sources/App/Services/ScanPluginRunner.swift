@@ -274,6 +274,9 @@ enum ScanPluginRunner {
                 await PluginHealth.$probe.withValue(probe) {
                     do {
                         var produced: [PluginResult] = []
+                        // Asked once, at the first cache miss: a failing plugin
+                        // gets at most one probe per window, not one per candidate.
+                        var admitted: Bool?
                         for candidate in pCandidates {
                             guard !Task.isCancelled else { break }
                             let cInput = candidate.value
@@ -286,6 +289,11 @@ enum ScanPluginRunner {
                             ) {
                                 raw = PluginResultLimits.sanitize(cached)
                             } else {
+                                if admitted == nil { admitted = await PluginHealth.shared.admit(pName) }
+                                guard admitted == true else {
+                                    app.logger.debug("Plugin \(pName) is failing; skipped its live run for this candidate.")
+                                    continue
+                                }
                                 probe.markLive()
                                 let fresh = try await plugin.scan(input: cInput, on: app)
                                 let bounded = PluginResultLimits.sanitize(fresh)

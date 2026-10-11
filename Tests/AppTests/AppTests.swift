@@ -4667,9 +4667,91 @@ final class AppTests: XCTestCase {
         let lines = captured.all
         XCTAssertEqual(lines.count, 2, "one line entering failing, one leaving it; none per failed run")
         XCTAssertEqual(lines.first?.0, .warning)
-        XCTAssertEqual(lines.first?.1, "Plugin Probe is failing: its last 3 live runs failed (latest: unreachable, HTTP 403).")
+        XCTAssertEqual(lines.first?.1,
+            "Plugin Probe is failing: its last 3 live runs failed (latest: unreachable, HTTP 403); skipping live runs, next probe in 5 min.")
         XCTAssertEqual(lines.last?.0, .notice)
         XCTAssertEqual(lines.last?.1, "Plugin Probe recovered.")
+    }
+
+    func testAFailingPluginGetsOneProbePerWindowAndBacksOff() async {
+        let health = PluginHealth()
+        let start = Date()
+        func fail(at offset: TimeInterval) async {
+            await health.record(plugin: "Dead", run: .init(at: start.addingTimeInterval(offset), outcome: .unreachable,
+                                                            duration: 0, results: 0, detail: "HTTP 403"))
+        }
+        func admit(at offset: TimeInterval) async -> Bool {
+            await health.admit("Dead", now: start.addingTimeInterval(offset))
+        }
+
+        await fail(at: 0)
+        await fail(at: 1)
+        let beforeFailing = await admit(at: 2)
+        XCTAssertTrue(beforeFailing, "two failures are not yet a streak")
+        await fail(at: 2)
+
+        let rightAway = await admit(at: 3)
+        XCTAssertFalse(rightAway, "failing: live runs are skipped until the first probe window ends")
+        let firstProbe = await admit(at: 2 + 300)
+        XCTAssertTrue(firstProbe, "one probe after five minutes")
+        let concurrent = await admit(at: 2 + 301)
+        XCTAssertFalse(concurrent, "a second scan must not probe while the first probe is out")
+
+        await fail(at: 2 + 310)
+        let tooSoon = await admit(at: 2 + 310 + 599)
+        XCTAssertFalse(tooSoon, "a failed probe doubles the window to ten minutes")
+        let secondProbe = await admit(at: 2 + 310 + 600)
+        XCTAssertTrue(secondProbe)
+
+        let report = await health.reports(for: ["Dead"])[0]
+        XCTAssertEqual(report.skipped, 3)
+        XCTAssertEqual(report.status, .failing)
+
+        await health.record(plugin: "Dead", run: .init(at: start.addingTimeInterval(1_000), outcome: .ok,
+                                                        duration: 0, results: 1, detail: nil))
+        let recovered = await admit(at: 1_001)
+        XCTAssertTrue(recovered, "a successful probe lifts the gate")
+        let afterRecovery = await health.reports(for: ["Dead"])[0]
+        XCTAssertNil(afterRecovery.nextProbeAt)
+        XCTAssertNotEqual(afterRecovery.status, .failing)
+
+        XCTAssertEqual(PluginHealth.probeDelay(afterStreak: 3), 300)
+        XCTAssertEqual(PluginHealth.probeDelay(afterStreak: 5), 1_200)
+        XCTAssertEqual(PluginHealth.probeDelay(afterStreak: 50), 3_600, "capped at an hour")
+    }
+
+    func testRunnerSkipsAFailingPluginsLiveRunButStillServesItsCache() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let name = "HealthGated"
+        for _ in 0..<3 {
+            await PluginHealth.shared.record(plugin: name, run: .init(
+                at: Date(), outcome: .unreachable, duration: 0, results: 0, detail: "HTTP 403"))
+        }
+        await PluginCacheStore.store(
+            pluginName: name, input: "gated-cached",
+            results: [PluginResult(source: name, type: "t", confidenceScore: 1.0, rawData: "from cache")],
+            ttl: 600, on: app.db, logger: app.logger)
+
+        let recorder = ScanRecorder()
+        let plugin = RecordingTestPlugin(name: name, recorder: recorder)
+        let scan = Scan(input: "gated-cached")
+        try await scan.save(on: app.db)
+        let round = await ScanPluginRunner.runRound(
+            plugins: [plugin],
+            candidates: [TargetDeriver.Candidate(value: "gated-cached", origin: .primary),
+                         TargetDeriver.Candidate(value: "gated-live", origin: .variant)],
+            scanID: try XCTUnwrap(scan.id), deadline: 20, perPluginTimeout: 10, reportProgress: false,
+            app: app, db: app.db, useCache: true, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+
+        let scanned = await recorder.inputs
+        XCTAssertEqual(scanned, [], "the failing plugin must not reach its upstream")
+        XCTAssertEqual(round.collected.map(\.rawData), ["from cache"], "cached findings stay valid while the source is down")
+        XCTAssertEqual(round.failure, 0)
+        let report = await PluginHealth.shared.reports(for: [name])[0]
+        XCTAssertEqual(report.skipped, 1, "one skipped run, not one per candidate")
+        XCTAssertEqual(report.runs, 3, "a skipped run is not a run")
     }
 
     func testPluginHealthKeepsOnlyTheRecentWindow() async {
@@ -5237,6 +5319,15 @@ final class AppTests: XCTestCase {
     private actor ScanRecorder {
         private(set) var inputs: [String] = []
         func record(_ input: String) { inputs.append(input) }
+    }
+
+    private struct RecordingTestPlugin: FootprintPlugin {
+        let name: String
+        let recorder: ScanRecorder
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            await recorder.record(input)
+            return []
+        }
     }
 
     private struct EmailOnlyTestPlugin: FootprintPlugin {

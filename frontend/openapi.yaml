@@ -181,7 +181,7 @@ components:
 
     PluginHealthReport:
       type: object
-      required: [plugin, status, runs, failures]
+      required: [plugin, status, runs, failures, skipped]
       properties:
         plugin: { type: string }
         status: { type: string, enum: [idle, healthy, degraded, failing] }
@@ -192,6 +192,8 @@ components:
         lastSuccessAt: { type: string, format: date-time, nullable: true }
         lastFailureAt: { type: string, format: date-time, nullable: true }
         lastFailure: { type: string, nullable: true, example: "unreachable, HTTP 403" }
+        skipped: { type: integer, description: Live runs skipped since the restart because the plugin was failing }
+        nextProbeAt: { type: string, format: date-time, nullable: true, description: When a failing plugin may next make one live probe run }
     AuditIntegrityVerification:
       type: object
       description: Metadata-only result of a bounded full verification of the signed audit ledger and retained display rows.
@@ -867,7 +869,10 @@ paths:
         whose requests all failed (blocked, rate limited, server error or no
         response) counts as a failure. A plugin is failing when its last three
         live runs failed and degraded when more than a quarter of its last
-        twenty did. Failing and degraded plugins are listed first.
+        twenty did. A failing plugin makes no live runs except one probe per
+        window (5 minutes, doubling up to an hour) until a probe succeeds;
+        cached results are still served. Failing and degraded plugins are
+        listed first.
       tags: [Admin]
       responses:
         '200':
