@@ -30,52 +30,18 @@ struct ExportJobConfiguration: Sendable {
 
     static func fromEnvironment() throws -> Self {
         ExportJobConfiguration(
-            enabled: try boolean("EXPORT_WORKER_ENABLED", fallback: true),
-            pollSeconds: try integer("EXPORT_POLL_SECONDS", fallback: 30, range: 1...60),
-            leaseSeconds: try integer("EXPORT_LEASE_SECONDS", fallback: 120, range: 60...600),
-            retentionHours: try integer("EXPORT_RETENTION_HOURS", fallback: 24, range: 1...168),
-            maxOutstandingPerUser: try integer("EXPORT_MAX_OUTSTANDING_PER_USER", fallback: 3, range: 1...20),
-            maxJobsPerUserPerDay: try integer("EXPORT_MAX_JOBS_PER_USER_PER_DAY", fallback: 20, range: 1...200),
-            maxResults: try integer("EXPORT_MAX_RESULTS", fallback: 10_000, range: 1...50_000),
-            batchSize: try integer("EXPORT_BATCH_SIZE", fallback: 250, range: 25...1_000),
-            maxSourceBytes: try mebibytes("EXPORT_MAX_SOURCE_MIB", fallback: 10, range: 1...16),
-            maxArtifactBytes: try mebibytes("EXPORT_MAX_ARTIFACT_MIB", fallback: 20, range: 1...32),
-            maxAttempts: try integer("EXPORT_MAX_ATTEMPTS", fallback: 2, range: 1...3)
+            enabled: try EnvironmentSetting.boolean("EXPORT_WORKER_ENABLED", fallback: true),
+            pollSeconds: try EnvironmentSetting.integer("EXPORT_POLL_SECONDS", fallback: 30, range: 1...60),
+            leaseSeconds: try EnvironmentSetting.integer("EXPORT_LEASE_SECONDS", fallback: 120, range: 60...600),
+            retentionHours: try EnvironmentSetting.integer("EXPORT_RETENTION_HOURS", fallback: 24, range: 1...168),
+            maxOutstandingPerUser: try EnvironmentSetting.integer("EXPORT_MAX_OUTSTANDING_PER_USER", fallback: 3, range: 1...20),
+            maxJobsPerUserPerDay: try EnvironmentSetting.integer("EXPORT_MAX_JOBS_PER_USER_PER_DAY", fallback: 20, range: 1...200),
+            maxResults: try EnvironmentSetting.integer("EXPORT_MAX_RESULTS", fallback: 10_000, range: 1...50_000),
+            batchSize: try EnvironmentSetting.integer("EXPORT_BATCH_SIZE", fallback: 250, range: 25...1_000),
+            maxSourceBytes: try EnvironmentSetting.mebibytes("EXPORT_MAX_SOURCE_MIB", fallback: 10, range: 1...16),
+            maxArtifactBytes: try EnvironmentSetting.mebibytes("EXPORT_MAX_ARTIFACT_MIB", fallback: 20, range: 1...32),
+            maxAttempts: try EnvironmentSetting.integer("EXPORT_MAX_ATTEMPTS", fallback: 2, range: 1...3)
         )
-    }
-
-    private static func boolean(_ name: String, fallback: Bool) throws -> Bool {
-        guard let raw = Environment.get(name)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return fallback }
-        switch raw.lowercased() {
-        case "1", "true", "yes": return true
-        case "0", "false", "no": return false
-        default: throw Abort(.internalServerError, reason: "\(name) must be an explicit boolean.")
-        }
-    }
-
-    private static func integer(
-        _ name: String,
-        fallback: Int,
-        range: ClosedRange<Int>
-    ) throws -> Int {
-        guard let raw = Environment.get(name)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return fallback }
-        guard let value = Int(raw), range.contains(value) else {
-            throw Abort(
-                .internalServerError,
-                reason: "\(name) must be an integer in \(range.lowerBound)...\(range.upperBound)."
-            )
-        }
-        return value
-    }
-
-    private static func mebibytes(
-        _ name: String,
-        fallback: Int,
-        range: ClosedRange<Int>
-    ) throws -> Int {
-        try integer(name, fallback: fallback, range: range) * 1_024 * 1_024
     }
 }
 
