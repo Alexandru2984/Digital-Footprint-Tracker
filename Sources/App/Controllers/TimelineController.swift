@@ -13,18 +13,7 @@ struct TimelineController: RouteCollection {
 
     @Sendable
     func getTimeline(req: Request) async throws -> TimelineIntelligence.Report {
-        guard let idString = req.parameters.get("scanID"),
-              let id = UUID(uuidString: idString) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db)
-            .filter(\.$id == id)
-            .with(\.$results)
-            .first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req, parameter: "scanID")
         return try scan.timelineIntelligence()
     }
 }

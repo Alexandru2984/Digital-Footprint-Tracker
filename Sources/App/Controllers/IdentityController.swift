@@ -13,17 +13,7 @@ struct IdentityController: RouteCollection {
 
     @Sendable
     func getIdentity(req: Request) async throws -> IdentitySynthesizer.IdentityProfile {
-        guard let idString = req.parameters.get("id"), let id = UUID(uuidString: idString) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db)
-            .filter(\.$id == id)
-            .with(\.$results)
-            .first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
         return try scan.synthesizedIdentity()
     }
 }

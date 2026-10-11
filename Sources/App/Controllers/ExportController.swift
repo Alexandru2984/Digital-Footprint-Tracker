@@ -15,15 +15,7 @@ struct ExportController: RouteCollection {
 
     @Sendable
     func exportJSON(req: Request) async throws -> Response {
-        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-        // Owned scans are owner-only; anonymous scans are readable by anyone
-        // holding the unguessable scanID (capability access).
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
         let input = try scan.input
         await AuditLogger.log(req: req, action: "export_json", target: input)
 
@@ -60,13 +52,7 @@ struct ExportController: RouteCollection {
     /// graph (Gephi / yEd / Cytoscape / Maltego). Same capability rules as the rest.
     @Sendable
     func exportGraphML(req: Request) async throws -> Response {
-        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
         let input = try scan.input
         await AuditLogger.log(req: req, action: "export_graphml", target: input)
 
@@ -82,13 +68,7 @@ struct ExportController: RouteCollection {
     /// Same capability rules as the rest; pure Swift, no Python/subprocess dependency.
     @Sendable
     func exportReport(req: Request) async throws -> Response {
-        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
         let input = try scan.input
         await AuditLogger.log(req: req, action: "export_report", target: input)
 
@@ -104,13 +84,7 @@ struct ExportController: RouteCollection {
     /// print-ready HTML document (browser "Save as PDF"). Inline so it opens in a tab.
     @Sendable
     func exportReportHTML(req: Request) async throws -> Response {
-        guard let idStr = req.parameters.get("id"), let scanID = UUID(uuidString: idStr) else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-        guard let scan = try await Scan.query(on: req.db).filter(\.$id == scanID).with(\.$results).first() else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
         let input = try scan.input
         await AuditLogger.log(req: req, action: "export_report_html", target: input)
 

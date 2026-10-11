@@ -14,27 +14,13 @@ struct ReportController: RouteCollection {
 
     @Sendable
     func generateReport(req: Request) async throws -> Response {
-        guard let idString = req.parameters.get("id"),
-              let scanID = UUID(uuidString: idString)
-        else {
-            throw Abort(.badRequest, reason: "Invalid scan ID.")
-        }
-
-        guard let scan = try await Scan.query(on: req.db)
-            .filter(\.$id == scanID)
-            .with(\.$results)
-            .first()
-        else {
-            throw Abort(.notFound, reason: "Scan not found.")
-        }
-
         // One policy for reading a scan, in one place. This handler used to
         // carry its own copy that made an anonymous scan admin-only while
         // `authorizeRead` made it capability-readable. The divergence protected
         // nothing — `GET /export/:id` already returns the same findings, plus
         // result IDs and metadata, under the capability rule — and it locked a
         // logged-out user out of the report for the scan they had just run.
-        try await scan.authorizeRead(req)
+        let scan = try await Scan.readableWithResults(req)
 
         // Serialise scan + results to JSON for the Python script.
         let input = try scan.input

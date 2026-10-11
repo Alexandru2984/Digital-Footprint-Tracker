@@ -16,4 +16,21 @@ extension Scan {
             throw Abort(.forbidden, reason: "Access denied.")
         }
     }
+
+    /// The scan named by route parameter `name`, with its results, already
+    /// through `authorizeRead`. Every results-reading handler starts here, so
+    /// none can load a scan and forget to authorize it.
+    static func readableWithResults(_ req: Request, parameter name: String = "id") async throws -> Scan {
+        guard let raw = req.parameters.get(name), let id = UUID(uuidString: raw) else {
+            throw Abort(.badRequest, reason: "Invalid scan ID.")
+        }
+        guard let scan = try await Scan.query(on: req.db)
+            .filter(\.$id == id)
+            .with(\.$results)
+            .first() else {
+            throw Abort(.notFound, reason: "Scan not found.")
+        }
+        try await scan.authorizeRead(req)
+        return scan
+    }
 }
