@@ -1009,6 +1009,32 @@ final class AppTests: XCTestCase {
         XCTAssertLessThan(elapsed, .seconds(2))
     }
 
+    func testExecutiveSummaryProseIsTheSameInMarkdownAndHTML() {
+        typealias I = IdentitySynthesizer.Input
+        // Remote values carrying both formats' markup: each renderer has to
+        // neutralise them its own way while saying the same thing.
+        let inputs = [
+            I(source: "GitHub", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "github", "username": "eve", "name": "<b>*Eve*</b> & [x](y)"], rawData: "x"),
+            I(source: "HIBP", type: "data_breach", confidence: 1.0,
+              metadata: ["breaches": "Ad|obe, Link_ed", "dataClasses": "Pass`words, \"Phone\""], rawData: "x"),
+            I(source: "InternetDB", type: "exposed_service", confidence: 0.9,
+              metadata: ["ip": "1.2.3.4", "ports": "22, 443"], rawData: "x"),
+            I(source: "crt.sh", type: "subdomain", confidence: 0.9, metadata: ["subdomain": "a.example.com"], rawData: "x"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 55, riskLevel: "High")
+        let surface = ExposureDiff.snapshot(from: inputs)
+        let date = Date(timeIntervalSince1970: 0)
+
+        let md = ExecutiveReport.markdown(input: "ex_<am>ple", profile: profile, surface: surface, generatedAt: date)
+        let html = ExecutiveReportHTML.html(input: "ex_<am>ple", profile: profile, surface: surface, generatedAt: date)
+        let mdSummary = md.components(separatedBy: "## Executive summary\n\n")[1].components(separatedBy: "\n\n")[0]
+        let htmlSummary = html.components(separatedBy: "<h2>Executive summary</h2><p>")[1].components(separatedBy: "</p>")[0]
+
+        XCTAssertEqual(mdSummary, #"**ex\_&lt;am&gt;ple** carries a **high** exposure risk (55/100). The most likely identity is **&lt;b&gt;\*Eve\*&lt;/b&gt; &amp; \[x\]\(y\)**. 1 account(s) were confirmed across platforms. The target appears in 2 known breach(es): Ad\|obe, Link\_ed. Leaked data categories include "Phone", Pass\`words. Across 1 host(s), 2 open port(s) and 0 known CVE(s) are exposed. 1 subdomain(s) were discovered."#)
+        XCTAssertEqual(htmlSummary, #"<strong>ex_&lt;am&gt;ple</strong> carries a <strong>high</strong> exposure risk (55/100). The most likely identity is <strong>&lt;b&gt;*Eve*&lt;/b&gt; &amp; [x](y)</strong>. 1 account(s) were confirmed across platforms. The target appears in 2 known breach(es): Ad|obe, Link_ed. Leaked data categories include &quot;Phone&quot;, Pass`words. Across 1 host(s), 2 open port(s) and 0 known CVE(s) are exposed. 1 subdomain(s) were discovered."#)
+    }
+
     func testAsyncExportJobBuildsEncryptedArtifactAndManifest() async throws {
         let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
         defer { environment.restore() }

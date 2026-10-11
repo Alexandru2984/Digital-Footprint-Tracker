@@ -102,23 +102,8 @@ enum ExecutiveReportHTML {
     private static func summary(input: String,
                                 profile: IdentitySynthesizer.IdentityProfile,
                                 surface: ExposureDiff.Snapshot) -> String {
-        var s = ["<strong>\(esc(input))</strong> carries a <strong>\(esc(profile.riskLevel.lowercased()))</strong> exposure risk (\(profile.riskScore)/100)."]
-        if let n = profile.likelyName { s.append("The most likely identity is <strong>\(esc(n))</strong>.") }
-        if !profile.confirmedAccounts.isEmpty { s.append("\(profile.confirmedAccounts.count) account(s) were confirmed across platforms.") }
-        if !profile.breaches.isEmpty {
-            s.append("The target appears in \(profile.breaches.count) known breach(es): \(esc(profile.breaches.prefix(5).joined(separator: ", "))).")
-        }
-        if !profile.exposedDataClasses.isEmpty {
-            s.append("Leaked data categories include \(esc(profile.exposedDataClasses.prefix(6).joined(separator: ", "))).")
-        }
-        let totalPorts = surface.portsByIP.values.reduce(0) { $0 + $1.count }
-        let totalCVEs = surface.cvesByIP.values.reduce(0) { $0 + $1.count }
-        if totalPorts > 0 || totalCVEs > 0 {
-            s.append("Across \(surface.portsByIP.count) host(s), \(totalPorts) open port(s) and \(totalCVEs) known CVE(s) are exposed.")
-        }
-        if !surface.subdomains.isEmpty { s.append("\(surface.subdomains.count) subdomain(s) were discovered.") }
-        if let first = profile.timeline.first { s.append("The earliest dated footprint is from \(esc(first.date)).") }
-        return s.joined(separator: " ")
+        ExecutiveSummary.prose(input: input, profile: profile, surface: surface,
+                               text: esc, strong: { "<strong>\($0)</strong>" })
     }
 
     // MARK: - Markup helpers
