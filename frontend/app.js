@@ -251,7 +251,36 @@
             resultsPanel.classList.add('hidden');
             resultsGrid.innerHTML = '';
             emptyState.classList.add('hidden');
+            renderUnavailableSources([]);
             switchResultsTab('results');
+        }
+
+        // Sources skipped because they were failing: without this note a skipped
+        // source reads as "checked, nothing found". Text only, never markup.
+        function renderUnavailableSources(names) {
+            let note = document.getElementById('unavailable-sources-note');
+            const list = Array.isArray(names) ? names.map(String).filter(Boolean) : [];
+            if (!list.length) {
+                note?.classList.add('hidden');
+                return;
+            }
+            if (!note) {
+                note = document.createElement('p');
+                note.id = 'unavailable-sources-note';
+                note.setAttribute('role', 'note');
+                resultsGrid.parentNode.insertBefore(note, resultsGrid);
+            }
+            // availablePlugins is declared further down; a shared link rendered
+            // during start-up can get here first.
+            let known = [];
+            try { known = Array.isArray(availablePlugins) ? availablePlugins : []; } catch (_) {}
+            const described = list.map(name => {
+                const plugin = known.find(p => p && p.name === name);
+                return plugin && plugin.description ? `${name} (${plugin.description})` : name;
+            });
+            note.className = 'text-[11px] text-yellow-400 border border-yellow-500/30 bg-yellow-500/5 rounded-sm px-3 py-2 mb-2';
+            note.textContent = `Not checked — source temporarily unavailable: ${described.join(', ')}. `
+                + 'No result from these does not mean no account there; scan again later.';
         }
 
         // Returns a DOM element; all API values set via textContent/classList — never innerHTML.
@@ -693,9 +722,12 @@
             panel.classList.remove('hidden');
         }
 
-        function displayResults(data) {
+        // `remember: false` keeps a scan the viewer does not own (a shared
+        // report) out of their local history.
+        function displayResults(data, { remember = true } = {}) {
             setScanningState(false);
             lastScanData = data;
+            renderUnavailableSources(data.unavailableSources);
             resultsPanel.classList.remove('hidden');
             scanIdDisplay.textContent = data.scanID;
 
@@ -711,7 +743,7 @@
             reRenderGrid();
             loadIdentity(data.scanID);
             loadExposureDiff(data.scanID);
-            saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
+            if (remember) saveToHistory(data.scanID, data.input, data.results ? data.results.length : 0);
             // Refresh graph / surface if the user has that tab open.
             if (activeResultsTab === 'graph') renderD3Graph(data);
             if (activeResultsTab === 'surface') renderAttackSurface(data);
@@ -837,6 +869,7 @@
                         emptyState.classList.remove('hidden');
                         resultsGrid.classList.add('hidden');
                     }
+                    renderUnavailableSources(info.unavailableSources);
                     // Fetch full scan data for export/share/history.
                     fetch('/api/results/' + encodeURIComponent(scanID))
                         .then(r => r.json())
@@ -2498,9 +2531,15 @@
                         return;
                     }
                     const data = await resp.json();
-                    lastScanData = { scanID: data.scan.id, input: data.scan.input, results: data.results, status: data.scan.status };
                     document.getElementById('target-input').value = data.scan.input;
-                    displayResults(data.results || [], data.scan.input);
+                    displayResults({
+                        scanID: data.scan.id,
+                        input: data.scan.input,
+                        status: data.scan.status,
+                        results: data.results || [],
+                        completedAt: data.scan.completedAt,
+                        unavailableSources: data.scan.unavailableSources,
+                    }, { remember: false });
                     logStatus('Viewing shared report for: ' + data.scan.input + ' (' + (data.results || []).length + ' results)');
                     document.getElementById('results-panel').classList.remove('hidden');
                 } catch(e) {

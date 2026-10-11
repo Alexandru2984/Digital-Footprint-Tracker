@@ -132,6 +132,26 @@ test('admin shows plugin health and top plugins as text, and a populated chart d
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });
 
+test('a shared report shows its results and names the sources that were not checked', async ({ page }) => {
+    const fixture = await mockAPI(page);
+    const requested = [];
+    page.on('request', request => requested.push(new URL(request.url()).pathname));
+    await page.goto('/share#' + 'A'.repeat(32), { waitUntil: 'networkidle' });
+
+    await expect(page.locator('#results-grid > *')).toHaveCount(2);
+    await expect(page.locator('#results-grid')).toContainText('GitHub account found.');
+    const note = page.locator('#unavailable-sources-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Not checked — source temporarily unavailable: Reddit');
+    await expect(note).toContainText(fixture.malicious);
+
+    expect(requested.some(path => path.includes('undefined')), requested.join('\n')).toBe(false);
+    const history = await page.evaluate(() => localStorage.getItem('dft_history'));
+    expect(history || '').not.toContain('00000000-0000-4000-8000-0000000000aa');
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+});
+
 test('timeline evidence is responsive, filterable and rendered only as text', async ({ page }) => {
     const fixture = await mockAPI(page);
     await page.goto('/', { waitUntil: 'networkidle' });

@@ -91,6 +91,13 @@ components:
           type: integer
           format: int64
           description: Unix timestamp
+        unavailableSources:
+          type: array
+          items: { type: string }
+          description: >
+            Plugins that were failing during this scan and did not check the
+            target live. An empty result from one of these says nothing about
+            the target.
 
     TimelineEvent:
       type: object

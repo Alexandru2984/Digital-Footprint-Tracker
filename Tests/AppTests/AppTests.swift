@@ -97,6 +97,7 @@ private func makeApp() async throws -> Application {
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
+    app.migrations.add(AddUnavailableSourcesToScans())
     app.migrations.add(AddResultMetadata())
     app.migrations.add(CreateScanResultEvents())
     app.migrations.add(AddInputIndex())
@@ -3427,6 +3428,29 @@ final class AppTests: XCTestCase {
 
     // MARK: - GET /results/:id
 
+    func testResultsNameTheSourcesAScanCouldNotCheck() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let skipped = Scan(input: "unavailable-sources-target", status: .completed)
+        skipped.unavailableSources = ["Reddit", "SteamAccountCheck"]
+        try await skipped.save(on: app.db)
+        let clean = Scan(input: "all-sources-target", status: .completed)
+        clean.unavailableSources = []
+        try await clean.save(on: app.db)
+        XCTAssertNil(clean.unavailableSourcesJSON, "an empty list stores nothing, like rows from before the column")
+
+        try await app.test(.GET, "/results/\(try XCTUnwrap(skipped.id).uuidString)") { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertEqual(body.unavailableSources, ["Reddit", "SteamAccountCheck"])
+        }
+        try await app.test(.GET, "/results/\(try XCTUnwrap(clean.id).uuidString)") { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertEqual(body.unavailableSources, [])
+        }
+    }
+
     func testGetResultsReturns404ForUnknownID() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }
@@ -4749,6 +4773,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(scanned, [], "the failing plugin must not reach its upstream")
         XCTAssertEqual(round.collected.map(\.rawData), ["from cache"], "cached findings stay valid while the source is down")
         XCTAssertEqual(round.failure, 0)
+        XCTAssertEqual(round.skipped, [name], "the scan must learn which source it did not check")
         let report = await PluginHealth.shared.reports(for: [name])[0]
         XCTAssertEqual(report.skipped, 1, "one skipped run, not one per candidate")
         XCTAssertEqual(report.runs, 3, "a skipped run is not a run")

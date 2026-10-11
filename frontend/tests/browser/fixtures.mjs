@@ -21,6 +21,23 @@ export async function mockAPI(page, options = {}) {
                     twoFactorEnabled: false,
                 };
             }
+        } else if (pathname === '/api/share') {
+            body = {
+                scan: {
+                    id: '00000000-0000-4000-8000-0000000000aa',
+                    input: 'shared-target',
+                    status: 'completed',
+                    completedAt: 1787000000,
+                    scannedAt: 1787000000,
+                    unavailableSources: ['Reddit', malicious],
+                },
+                results: [
+                    { id: null, source: 'GitHubAccountCheck', type: 'account_presence', confidenceScore: 0.9,
+                      rawData: 'GitHub account found.', metadata: null },
+                    { id: null, source: malicious, type: 'account_presence', confidenceScore: 0.8,
+                      rawData: malicious, metadata: null },
+                ],
+            };
         } else if (pathname === '/api/stats') {
             body = { totalScans: 0, scansLast24h: 0, scansLast7d: 0, totalResults: 0, topSources: [] };
         } else if (pathname === '/api/plugins') {

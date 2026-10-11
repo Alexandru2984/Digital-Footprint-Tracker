@@ -53,7 +53,10 @@ const server = createServer(async (request, response) => {
             return;
         }
 
-        const pathname = decodeURIComponent(requestURL.pathname === '/' ? '/index.html' : requestURL.pathname);
+        // Like production, the shared-report page is the app itself.
+        const isSharePage = requestURL.pathname === '/share' || requestURL.pathname.startsWith('/share/');
+        const pathname = decodeURIComponent(
+            requestURL.pathname === '/' || isSharePage ? '/index.html' : requestURL.pathname);
         const filePath = resolve(frontendRoot, `.${pathname}`);
         if (filePath !== frontendRoot && !filePath.startsWith(`${frontendRoot}${sep}`)) {
             response.writeHead(403, securityHeaders('text/plain; charset=utf-8'));

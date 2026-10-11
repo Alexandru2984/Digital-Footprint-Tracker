@@ -24,6 +24,8 @@ struct ScanResponse: Content {
     let results: [Result]
     let completedAt: Double?  // Unix timestamp (seconds since 1970), nil if not yet finished
     let scannedAt: Double?    // Unix timestamp of scan creation
+    /// Plugins that were failing and skipped checking the target live.
+    let unavailableSources: [String]
 }
 
 /// Process-wide counter of active SSE connections. Prevents a burst of open streams
@@ -42,6 +44,7 @@ private struct SSEDonePayload: Encodable {
     let count: Int
     let riskScore: Int
     let riskLevel: String
+    let unavailableSources: [String]
 }
 
 private struct SSEErrorPayload: Encodable {
@@ -204,7 +207,8 @@ struct ScanController: RouteCollection {
                         status: pendingScan.status.rawValue,
                         results: [],
                         completedAt: nil,
-                        scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 }
+                        scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 },
+                        unavailableSources: []
                     )
                 }
                 // Orphaned: the runner is gone. Reap so it stops blocking this input and
@@ -236,7 +240,8 @@ struct ScanController: RouteCollection {
                     status: existingScan.status.rawValue,
                     results: existingScan.results,
                     completedAt: existingScan.completedAt.map { $0.timeIntervalSince1970 },
-                    scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 }
+                    scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 },
+                    unavailableSources: existingScan.unavailableSources
                 )
             }
         }
@@ -264,7 +269,8 @@ struct ScanController: RouteCollection {
             await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app, pivotDepth: pivotDepth)
         }
 
-        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil, scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 })
+        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil,
+                            scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 }, unavailableSources: [])
     }
 
     @Sendable
@@ -277,7 +283,8 @@ struct ScanController: RouteCollection {
             status: scan.status.rawValue,
             results: scan.results,
             completedAt: scan.completedAt.map { $0.timeIntervalSince1970 },
-            scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 }
+            scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 },
+            unavailableSources: scan.unavailableSources
         )
     }
 
@@ -383,7 +390,8 @@ struct ScanController: RouteCollection {
                                 status: currentScan.status.rawValue,
                                 count: allResults.count,
                                 riskScore: risk.value,
-                                riskLevel: risk.level.rawValue
+                                riskLevel: risk.level.rawValue,
+                                unavailableSources: currentScan.unavailableSources
                             )
                         ))
                         return

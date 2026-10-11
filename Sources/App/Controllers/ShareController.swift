@@ -62,6 +62,7 @@ struct ShareController: RouteCollection {
             let status: String
             let completedAt: Double?
             let scannedAt: Double?
+            let unavailableSources: [String]
         }
         struct ResultDTO: Content {
             let id: String?
@@ -261,7 +262,8 @@ struct ShareController: RouteCollection {
                 input: try scan.input,
                 status: scan.status.rawValue,
                 completedAt: scan.completedAt.map { $0.timeIntervalSince1970 },
-                scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 }
+                scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 },
+                unavailableSources: scan.unavailableSources
             ),
             results: try results.map { r in
                 SharedReportResponse.ResultDTO(

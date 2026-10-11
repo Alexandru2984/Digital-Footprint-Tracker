@@ -54,6 +54,27 @@ final class Scan: Model, Content {
     @OptionalField(key: "completed_at")
     var completedAt: Date?
 
+    /// JSON array of plugin names skipped because they were failing; see
+    /// `unavailableSources`.
+    @OptionalField(key: "unavailable_sources")
+    var unavailableSourcesJSON: String?
+
+    /// Plugins that were failing during this scan and did not check the target
+    /// live. Empty for scans where every source answered, and for rows from
+    /// before this was recorded.
+    var unavailableSources: [String] {
+        get {
+            guard let json = unavailableSourcesJSON,
+                  let names = try? JSONDecoder().decode([String].self, from: Data(json.utf8)) else { return [] }
+            return names
+        }
+        set {
+            unavailableSourcesJSON = newValue.isEmpty
+                ? nil
+                : (try? JSONEncoder().encode(newValue)).flatMap { String(bytes: $0, encoding: .utf8) }
+        }
+    }
+
     @Children(for: \.$scan)
     var results: [Result]
 

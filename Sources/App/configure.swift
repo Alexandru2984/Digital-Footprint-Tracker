@@ -203,6 +203,11 @@ private func registerMigrationsAndCommands(on app: Application) {
     app.migrations.add(CreateScan())
     app.migrations.add(CreateResult())
     app.migrations.add(AddScanStatus())
+    // Kept next to the scans table rather than at the end: later data
+    // migrations (MigrateSensitiveFieldEncryption) load `Scan` through the
+    // model, which selects every field it declares. A database that already
+    // ran those simply applies this one as new.
+    app.migrations.add(AddUnavailableSourcesToScans())
     app.migrations.add(AddResultMetadata())
     app.migrations.add(CreateScanResultEvents())
     app.migrations.add(AddInputIndex())

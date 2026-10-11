@@ -71,6 +71,7 @@ enum ScanPluginRunner {
         var frontier = round1.collected
         let lightPlugins = plugins.filter { !$0.heavy }
         var pivotSuccess = 0
+        var unavailable = round1.skipped
         var levelsLeft = max(0, pivotDepth)
         while levelsLeft > 0 {
             let pivots = PivotExtractor.candidates(from: frontier, alreadyScanned: alreadyScanned)
@@ -83,6 +84,7 @@ enum ScanPluginRunner {
                 app: app, db: db, useCache: useCache, dedup: dedup
             )
             pivotSuccess += round.success
+            unavailable.formUnion(round.skipped)
             frontier = round.collected
             levelsLeft -= 1
             app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies); \(levelsLeft) level(s) left")
@@ -115,6 +117,7 @@ enum ScanPluginRunner {
                     scan.status = .failed
                 }
                 scan.completedAt = Date()
+                scan.unavailableSources = unavailable.sorted()
                 try await scan.save(on: db)
                 await ScanProgressTracker.shared.remove(for: scanID)
                 // Persist webhook work before returning. Provider/network
@@ -211,7 +214,9 @@ enum ScanPluginRunner {
     /// `runPlugin` can share it and tests can construct/inspect it via
     /// `runRound`'s return value.
     enum Outcome: Sendable {
-        case done(name: String, succeeded: Bool, results: [PluginResult])
+        /// `skipped` is true when the plugin was failing and at least one of
+        /// its live runs was not made (see `PluginHealth.admit`).
+        case done(name: String, succeeded: Bool, results: [PluginResult], skipped: Bool = false)
         case timeout
     }
 
@@ -277,6 +282,7 @@ enum ScanPluginRunner {
                         // Asked once, at the first cache miss: a failing plugin
                         // gets at most one probe per window, not one per candidate.
                         var admitted: Bool?
+                        var skippedLive = false
                         for candidate in pCandidates {
                             guard !Task.isCancelled else { break }
                             let cInput = candidate.value
@@ -291,6 +297,7 @@ enum ScanPluginRunner {
                             } else {
                                 if admitted == nil { admitted = await PluginHealth.shared.admit(pName) }
                                 guard admitted == true else {
+                                    skippedLive = true
                                     app.logger.debug("Plugin \(pName) is failing; skipped its live run for this candidate.")
                                     continue
                                 }
@@ -306,7 +313,7 @@ enum ScanPluginRunner {
                                 produced.append(pr)
                             }
                         }
-                        return .done(name: pName, succeeded: true, results: produced)
+                        return .done(name: pName, succeeded: true, results: produced, skipped: skippedLive)
                     } catch {
                         app.logger.error("Plugin \(pName) failed: \(error)")
                         return .done(name: pName, succeeded: false, results: [])
@@ -334,7 +341,7 @@ enum ScanPluginRunner {
         // fault of the plugin's own.
         if Task.isCancelled { timedOut = true }
         let tally = probe.tally
-        if tally.live, case .done(_, let succeeded, let results) = outcome {
+        if tally.live, case .done(_, let succeeded, let results, _) = outcome {
             let health = PluginHealth.outcome(
                 threw: !succeeded && !timedOut, timedOut: timedOut,
                 answered: tally.answered, failed: tally.failed
@@ -347,6 +354,16 @@ enum ScanPluginRunner {
             )
         }
         return outcome
+    }
+
+    /// What one round produced. `skipped` names the plugins that were failing
+    /// and did not make all of their live runs.
+    struct RoundOutcome: Sendable {
+        let collected: [PluginResult]
+        let success: Int
+        let failure: Int
+        let timedOut: Bool
+        let skipped: Set<String>
     }
 
     /// Runs `plugins` over `candidates` concurrently under a round-wide
@@ -370,12 +387,13 @@ enum ScanPluginRunner {
         db: Database,
         useCache: Bool,
         dedup: ResultDedupStore
-    ) async -> (collected: [PluginResult], success: Int, failure: Int, timedOut: Bool) {
+    ) async -> RoundOutcome {
 
         var collected: [PluginResult] = []
         var success = 0
         var failure = 0
         var timedOut = false
+        var skipped: Set<String> = []
 
         // Resolve the work up front so `expectedUnits` is derived from the tasks
         // actually spawned — it drives the early `cancelAll()` below, and a stale
@@ -385,7 +403,9 @@ enum ScanPluginRunner {
             return applicable.isEmpty ? nil : (plugin, applicable)
         }
         let expectedUnits = work.count
-        guard expectedUnits > 0 else { return ([], 0, 0, false) }
+        guard expectedUnits > 0 else {
+            return RoundOutcome(collected: [], success: 0, failure: 0, timedOut: false, skipped: [])
+        }
 
         await withTaskGroup(of: Outcome.self) { group in
             group.addTask {
@@ -412,8 +432,9 @@ enum ScanPluginRunner {
                 switch outcome {
                 case .timeout:
                     if !allDone { timedOut = true; group.cancelAll() }
-                case .done(let name, let succeeded, let results):
+                case .done(let name, let succeeded, let results, let wasSkipped):
                     if succeeded { success += 1 } else { failure += 1 }
+                    if wasSkipped { skipped.insert(name) }
                     pluginsDone += 1
                     collected.append(contentsOf: results)
                     if reportProgress { await ScanProgressTracker.shared.complete(scanID: scanID, pluginName: name) }
@@ -425,7 +446,7 @@ enum ScanPluginRunner {
             }
         }
 
-        return (collected, success, failure, timedOut)
+        return RoundOutcome(collected: collected, success: success, failure: failure, timedOut: timedOut, skipped: skipped)
     }
 
     /// Persists one plugin result, unless `dedup` has already seen an identical
