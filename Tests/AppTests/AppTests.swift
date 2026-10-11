@@ -1035,6 +1035,21 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(htmlSummary, #"<strong>ex_&lt;am&gt;ple</strong> carries a <strong>high</strong> exposure risk (55/100). The most likely identity is <strong>&lt;b&gt;*Eve*&lt;/b&gt; &amp; [x](y)</strong>. 1 account(s) were confirmed across platforms. The target appears in 2 known breach(es): Ad|obe, Link_ed. Leaked data categories include &quot;Phone&quot;, Pass`words. Across 1 host(s), 2 open port(s) and 0 known CVE(s) are exposed. 1 subdomain(s) were discovered."#)
     }
 
+    func testJournalPriorityPrefixesEachLineWithItsLevel() {
+        func line(_ level: Logger.Level) -> String {
+            var record = LogRecord(level: level, message: "boom", source: "App", file: "", function: "",
+                                   line: 0, label: "test", loggerLevel: .notice, loggerMetadata: [:])
+            var output = FragmentOutput()
+            JournalPriorityFragment().and(defaultLoggerFragment()).write(&record, to: &output)
+            return output.text.description
+        }
+        XCTAssertEqual(line(.error), "<3>[ ERROR ] boom")
+        XCTAssertEqual(line(.critical), "<2>[ CRITICAL ] boom")
+        XCTAssertEqual(line(.warning), "<4>[ WARNING ] boom")
+        XCTAssertEqual(line(.notice), "<5>[ NOTICE ] boom")
+        XCTAssertEqual(line(.info), "<6>[ INFO ] boom")
+    }
+
     func testAsyncExportJobBuildsEncryptedArtifactAndManifest() async throws {
         let environment = EnvironmentSnapshot(encryptionEnvironmentNames)
         defer { environment.restore() }

@@ -5,7 +5,16 @@ import App
 enum Run {
     static func main() async throws {
         var env = try Environment.detect()
-        try LoggingSystem.bootstrap(from: &env)
+        try LoggingSystem.bootstrap(from: &env) { level in
+            let console = Terminal()
+            let journal = JournalPriorityFragment.stdoutIsJournal
+            return { label -> LogHandler in
+                guard journal else { return ConsoleLogger(label: label, console: console, level: level) }
+                return ConsoleFragmentLogger(
+                    fragment: JournalPriorityFragment().and(defaultLoggerFragment()),
+                    label: label, console: console, level: level)
+            }
+        }
 
         let app = try await Application.make(env)
         do {
