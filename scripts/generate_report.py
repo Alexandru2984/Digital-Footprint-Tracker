@@ -40,6 +40,7 @@ def make_report(data: dict) -> bytes:
     status = data.get('status', 'unknown')
     results = data.get('results', [])
     completed_ts = data.get('completedAt')
+    unavailable = [str(s) for s in (data.get('unavailableSources') or []) if s]
 
     completed_str = ''
     if completed_ts:
@@ -107,6 +108,20 @@ def make_report(data: dict) -> bytes:
         pdf.cell(70, 5, label)
     pdf.ln()
     pdf.ln(4)
+
+    # Sources the scan skipped because they were failing: without this a
+    # skipped source reads as "checked, nothing found". Core fonts are
+    # Latin-1, so the text is kept to it.
+    if unavailable:
+        names = ', '.join(unavailable)
+        note = (f'Not checked - source temporarily unavailable: {names}. '
+                'No result from these sources does not mean there is nothing there.')
+        pdf.set_font('Helvetica', 'B', 9)
+        pdf.set_text_color(150, 80, 0)
+        pdf.multi_cell(0, 5, note.encode('latin-1', 'replace').decode('latin-1'),
+                       new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(60, 60, 60)
+        pdf.ln(3)
 
     if not results:
         pdf.set_font('Helvetica', 'I', 10)

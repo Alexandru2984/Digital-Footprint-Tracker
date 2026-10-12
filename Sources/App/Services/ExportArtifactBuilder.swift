@@ -58,6 +58,8 @@ enum ExportArtifactBuilder {
         let riskLevel: String
         let scannedAt: Double?
         let completedAt: Double?
+        /// Sources the scan skipped because they were failing.
+        let unavailableSources: [String]
         let results: [Finding]
         let provenance: Provenance
     }
@@ -232,6 +234,7 @@ enum ExportArtifactBuilder {
             riskLevel: risk.level.rawValue,
             scannedAt: scan.createdAt?.timeIntervalSince1970,
             completedAt: scan.completedAt?.timeIntervalSince1970,
+            unavailableSources: scan.unavailableSources,
             results: findings,
             provenance: Provenance(
                 schemaVersion: 1,
@@ -258,7 +261,8 @@ enum ExportArtifactBuilder {
             )
         case .markdown:
             var markdown = ExecutiveReport.markdown(
-                input: input, profile: profile, surface: surface, generatedAt: generatedAt
+                input: input, profile: profile, surface: surface, generatedAt: generatedAt,
+                unavailableSources: scan.unavailableSources
             )
             markdown += "\n\n## Export provenance\n\n"
             markdown += "- Complete source snapshot: \(sourceComplete ? "yes" : "no")\n"
@@ -271,7 +275,8 @@ enum ExportArtifactBuilder {
             )
         case .html:
             let html = ExecutiveReportHTML.html(
-                input: input, profile: profile, surface: surface, generatedAt: generatedAt
+                input: input, profile: profile, surface: surface, generatedAt: generatedAt,
+                unavailableSources: scan.unavailableSources
             )
             return ArtifactPayload(
                 data: Data(html.utf8),

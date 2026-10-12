@@ -32,6 +32,7 @@ struct ReportController: RouteCollection {
             "status":      scan.status.rawValue,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
             "scannedAt":   scan.createdAt.map  { $0.timeIntervalSince1970 } as Any,
+            "unavailableSources": scan.unavailableSources,
             "results": try scan.results.map { r in [
                 "source":          r.source,
                 "type":            r.type,

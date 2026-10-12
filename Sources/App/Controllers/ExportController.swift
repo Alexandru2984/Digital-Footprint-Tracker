@@ -28,6 +28,7 @@ struct ExportController: RouteCollection {
             "riskLevel": risk.level.rawValue,
             "scannedAt": scan.createdAt.map { $0.timeIntervalSince1970 } as Any,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
+            "unavailableSources": scan.unavailableSources,
             "results": try scan.results.map { r -> [String: Any] in
                 var row: [String: Any] = [
                     "id": r.id?.uuidString ?? "",
@@ -73,7 +74,8 @@ struct ExportController: RouteCollection {
         await AuditLogger.log(req: req, action: "export_report", target: input)
 
         let (profile, surface) = try Self.reportModel(for: scan)
-        let md = ExecutiveReport.markdown(input: input, profile: profile, surface: surface, generatedAt: Date())
+        let md = ExecutiveReport.markdown(input: input, profile: profile, surface: surface, generatedAt: Date(),
+                                          unavailableSources: scan.unavailableSources)
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
         headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(input)).md\"")
@@ -89,7 +91,8 @@ struct ExportController: RouteCollection {
         await AuditLogger.log(req: req, action: "export_report_html", target: input)
 
         let (profile, surface) = try Self.reportModel(for: scan)
-        let html = ExecutiveReportHTML.html(input: input, profile: profile, surface: surface, generatedAt: Date())
+        let html = ExecutiveReportHTML.html(input: input, profile: profile, surface: surface, generatedAt: Date(),
+                                            unavailableSources: scan.unavailableSources)
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/html; charset=utf-8")
         // This document needs only its embedded CSS. A report contains data from

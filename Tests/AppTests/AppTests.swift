@@ -995,6 +995,54 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(htmlSummary, #"<strong>ex_&lt;am&gt;ple</strong> carries a <strong>high</strong> exposure risk (55/100). The most likely identity is <strong>&lt;b&gt;*Eve*&lt;/b&gt; &amp; [x](y)</strong>. 1 account(s) were confirmed across platforms. The target appears in 2 known breach(es): Ad|obe, Link_ed. Leaked data categories include &quot;Phone&quot;, Pass`words. Across 1 host(s), 2 open port(s) and 0 known CVE(s) are exposed. 1 subdomain(s) were discovered."#)
     }
 
+    func testReportsNameTheSourcesTheScanSkipped() {
+        let profile = IdentitySynthesizer.synthesize(from: [], riskScore: 0, riskLevel: "Low")
+        let surface = ExposureDiff.snapshot(from: [])
+        let date = Date(timeIntervalSince1970: 0)
+        let skipped = ["Reddit", "<i>x</i>_y"]
+
+        let md = ExecutiveReport.markdown(input: "alice", profile: profile, surface: surface,
+                                          generatedAt: date, unavailableSources: skipped)
+        XCTAssertTrue(md.contains(
+            "> **Not checked — source temporarily unavailable: Reddit, &lt;i&gt;x&lt;/i&gt;\\_y. "
+            + "No result from these sources does not mean there is nothing there.**"), md)
+
+        let html = ExecutiveReportHTML.html(input: "alice", profile: profile, surface: surface,
+                                            generatedAt: date, unavailableSources: skipped)
+        XCTAssertTrue(html.contains(
+            "<p class=\"notice\" role=\"note\">Not checked — source temporarily unavailable: Reddit, &lt;i&gt;x&lt;/i&gt;_y. "
+            + "No result from these sources does not mean there is nothing there.</p>"), html)
+        XCTAssertFalse(html.contains("<i>x</i>"))
+
+        let quietMD = ExecutiveReport.markdown(input: "alice", profile: profile, surface: surface, generatedAt: date)
+        let quietHTML = ExecutiveReportHTML.html(input: "alice", profile: profile, surface: surface, generatedAt: date)
+        XCTAssertFalse(quietMD.contains("Not checked"))
+        XCTAssertFalse(quietHTML.contains("class=\"notice\""))
+    }
+
+    func testExportsCarryTheSourcesTheScanSkipped() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "export-skipped-target", status: .completed)
+        scan.unavailableSources = ["Reddit"]
+        try await scan.save(on: app.db)
+        let id = try XCTUnwrap(scan.id).uuidString
+
+        try await app.test(.GET, "/export/\(id)") { res in
+            XCTAssertEqual(res.status, .ok)
+            let json = try JSONSerialization.jsonObject(with: Data(res.body.readableBytesView)) as? [String: Any]
+            XCTAssertEqual(json?["unavailableSources"] as? [String], ["Reddit"])
+        }
+        try await app.test(.GET, "/export/\(id)/report") { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(res.body.string.contains("source temporarily unavailable: Reddit."))
+        }
+        try await app.test(.GET, "/export/\(id)/report.html") { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(res.body.string.contains("source temporarily unavailable: Reddit."))
+        }
+    }
+
     func testJournalPriorityPrefixesEachLineWithItsLevel() {
         func line(_ level: Logger.Level) -> String {
             var record = LogRecord(level: level, message: "boom", source: "App", file: "", function: "",

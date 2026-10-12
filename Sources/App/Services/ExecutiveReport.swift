@@ -14,11 +14,15 @@ enum ExecutiveReport {
     static func markdown(input: String,
                          profile: IdentitySynthesizer.IdentityProfile,
                          surface: ExposureDiff.Snapshot,
-                         generatedAt: Date) -> String {
+                         generatedAt: Date,
+                         unavailableSources: [String] = []) -> String {
         var out = "# Digital Footprint Report — \(line(input))\n\n"
         out += "- **Generated:** \(readableDate(generatedAt))\n"
         out += "- **Risk:** \(profile.riskLevel) (\(profile.riskScore)/100)\n"
         out += "- **Findings analysed:** \(profile.resultCount)\n\n"
+        if let notice = ExecutiveSummary.unavailableNotice(unavailableSources, text: line) {
+            out += "> **\(notice)**\n\n"
+        }
 
         out += "## Executive summary\n\n\(summary(input: input, profile: profile, surface: surface))\n\n"
 

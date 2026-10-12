@@ -13,7 +13,8 @@ enum ExecutiveReportHTML {
     static func html(input: String,
                      profile: IdentitySynthesizer.IdentityProfile,
                      surface: ExposureDiff.Snapshot,
-                     generatedAt: Date) -> String {
+                     generatedAt: Date,
+                     unavailableSources: [String] = []) -> String {
         var b = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         b += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         b += "<title>Digital Footprint Report — \(esc(input))</title>\n<style>\(css)</style>\n"
@@ -25,6 +26,9 @@ enum ExecutiveReportHTML {
         b += "<span class=\"risk risk-\(riskClass(profile.riskLevel))\">Risk \(profile.riskScore)/100 · \(esc(profile.riskLevel))</span>"
         b += "<span>Generated \(esc(readableDate(generatedAt)))</span>"
         b += "<span>\(profile.resultCount) findings</span></div>\n</header>\n"
+        if let notice = ExecutiveSummary.unavailableNotice(unavailableSources, text: esc) {
+            b += "<p class=\"notice\" role=\"note\">\(notice)</p>\n"
+        }
 
         // Executive summary.
         b += "<section><h2>Executive summary</h2><p>\(summary(input: input, profile: profile, surface: surface))</p></section>\n"
@@ -169,6 +173,7 @@ enum ExecutiveReportHTML {
     table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
     th,td{text-align:left;padding:6px 10px;border:1px solid #e2e8f0;vertical-align:top;word-break:break-word}
     th{background:#f8fafc;font-weight:600}ul{margin:6px 0;padding-left:20px}.kv{margin:2px 0}.kv b{color:#334155}
+    .notice{margin:16px 0 0;padding:10px 14px;border:1px solid #fcd34d;background:#fffbeb;color:#78350f;border-radius:8px;font-size:13px}
     footer{margin-top:28px;padding-top:12px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px}
     @media print{body{background:#fff}.report{border:0;margin:0;max-width:none;padding:0}section,tr{break-inside:avoid}}
     """

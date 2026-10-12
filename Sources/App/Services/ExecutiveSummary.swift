@@ -34,4 +34,13 @@ enum ExecutiveSummary {
         if let first = profile.timeline.first { s.append("The earliest dated footprint is from \(text(first.date)).") }
         return s.joined(separator: " ")
     }
+
+    /// The note for sources a scan skipped because they were failing (see
+    /// `PluginHealth`), or nil when every source answered. Without it, a
+    /// report reads a skipped source as "checked, nothing found".
+    static func unavailableNotice(_ sources: [String], text: (String) -> String) -> String? {
+        guard !sources.isEmpty else { return nil }
+        return "Not checked — source temporarily unavailable: \(sources.map(text).joined(separator: ", ")). "
+            + "No result from these sources does not mean there is nothing there."
+    }
 }
