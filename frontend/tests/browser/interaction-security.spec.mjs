@@ -180,12 +180,18 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
             },
             riskScore: 25,
             riskLevel: 'Low',
+            riskFactors: [
+                { category: 'breach', label: malicious, points: 20, findings: 1 },
+                { category: 'account', label: 'Online accounts', points: 5, findings: 3 },
+            ],
         });
     }, fixture);
 
     const panel = page.locator('#identity-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toContainText(fixture.malicious);
+    await expect(panel.locator('.js-risk-factors')).toHaveText(
+        `Risk made of: ${fixture.malicious} 20 (1 finding) · Online accounts 5 (3 findings)`);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 

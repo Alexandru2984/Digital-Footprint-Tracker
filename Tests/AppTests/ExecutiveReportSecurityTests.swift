@@ -21,6 +21,7 @@ final class ExecutiveReportSecurityTests: XCTestCase {
             timeline: [.init(date: "2020-01-01", label: hostile, category: "breach")],
             riskScore: 50,
             riskLevel: "Medium",
+            riskFactors: [],
             resultCount: 1
         )
         let surface = ExposureDiff.Snapshot(

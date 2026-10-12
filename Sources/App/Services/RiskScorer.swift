@@ -45,6 +45,19 @@ enum RiskScorer {
     struct Score {
         let value: Int        // 0–100
         let level: Level
+        /// What the score is made of, largest contribution first. Empty for a
+        /// scan with no scoring findings.
+        var factors: [Factor] = []
+    }
+
+    /// One category's share of the score: the points it contributed (before
+    /// the 100 cap, so the factors of a capped score add up to more than 100)
+    /// and how many distinct findings fed it.
+    struct Factor: Codable, Sendable, Equatable {
+        let category: String
+        let label: String
+        let points: Int
+        let findings: Int
     }
 
     /// Risk categories, ordered roughly by severity. `base` is the maximum
@@ -60,6 +73,32 @@ enum RiskScorer {
         case account     // account / avatar / social presence
         case infra       // DNS, subdomains, WHOIS technical records
         case noise       // negative / clean / error signals — no exposure
+
+        /// Stable machine name, for API consumers.
+        var key: String {
+            switch self {
+            case .breach:   return "breach"
+            case .threat:   return "threat"
+            case .identity: return "identity"
+            case .contact:  return "contact"
+            case .account:  return "account"
+            case .infra:    return "infra"
+            case .noise:    return "noise"
+            }
+        }
+
+        /// Label shown to the person reading the score.
+        var label: String {
+            switch self {
+            case .breach:   return "Breaches and leaks"
+            case .threat:   return "Exposed services and bad reputation"
+            case .identity: return "Linked identities"
+            case .contact:  return "Contact details and location"
+            case .account:  return "Online accounts"
+            case .infra:    return "Technical records"
+            case .noise:    return "No exposure"
+            }
+        }
 
         var base: Double {
             switch self {
@@ -112,19 +151,26 @@ enum RiskScorer {
 
         // Sum confidence (evidence) per category.
         var evidence: [Category: Double] = [:]
+        var findings: [Category: Int] = [:]
         for (category, confidence) in contributions {
             evidence[category, default: 0] += max(0.0, min(1.0, confidence))
+            findings[category, default: 0] += 1
         }
 
         // Saturating contribution per category, summed and capped.
         var total = 0.0
+        var factors: [(factor: Factor, exact: Double)] = []
         for category in Category.allCases {
             guard let ev = evidence[category], ev > 0, category.base > 0 else { continue }
-            total += category.base * (1 - exp(-ev / category.k))
+            let points = category.base * (1 - exp(-ev / category.k))
+            total += points
+            factors.append((Factor(category: category.key, label: category.label,
+                                   points: Int(points.rounded()), findings: findings[category] ?? 0), points))
         }
 
         let value = Int(min(100.0, total).rounded())
-        return Score(value: value, level: level(for: value))
+        return Score(value: value, level: level(for: value),
+                     factors: factors.sorted { $0.exact > $1.exact }.map(\.factor).filter { $0.points > 0 })
     }
 
     private static func level(for value: Int) -> Level {

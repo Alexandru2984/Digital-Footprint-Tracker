@@ -969,6 +969,9 @@ paths:
         Collapses a scan's findings into one identity (likely name, emails, handles,
         confirmed accounts, breaches, exposed data classes, and exposed hosts with
         their open ports/CVEs) plus an overall risk and evidence-aware timeline events.
+        `riskFactors` lists what the risk score is made of, largest first: each
+        entry is `{category, label, points, findings}`, with points counted
+        before the 100 cap. The JSON export carries the same list.
         Capability access: owned scans are owner-only; anonymous scans are readable
         by anyone holding the scan ID.
       tags: [Scan]

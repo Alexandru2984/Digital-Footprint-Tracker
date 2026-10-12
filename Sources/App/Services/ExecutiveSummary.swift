@@ -43,4 +43,13 @@ enum ExecutiveSummary {
         return "Not checked — source temporarily unavailable: \(sources.map(text).joined(separator: ", ")). "
             + "No result from these sources does not mean there is nothing there."
     }
+
+    /// "Breaches and leaks 41 (2 findings) · Online accounts 9 (5 findings)",
+    /// or nil when nothing scored. Labels are ours; only the numbers vary.
+    static func riskFactors(_ factors: [RiskScorer.Factor], text: (String) -> String) -> String? {
+        guard !factors.isEmpty else { return nil }
+        return factors.map { factor in
+            "\(text(factor.label)) \(factor.points) (\(factor.findings) finding\(factor.findings == 1 ? "" : "s"))"
+        }.joined(separator: " · ")
+    }
 }

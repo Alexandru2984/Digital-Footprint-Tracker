@@ -19,6 +19,9 @@ enum ExecutiveReport {
         var out = "# Digital Footprint Report — \(line(input))\n\n"
         out += "- **Generated:** \(readableDate(generatedAt))\n"
         out += "- **Risk:** \(profile.riskLevel) (\(profile.riskScore)/100)\n"
+        if let factors = ExecutiveSummary.riskFactors(profile.riskFactors, text: line) {
+            out += "- **Risk made of:** \(factors)\n"
+        }
         out += "- **Findings analysed:** \(profile.resultCount)\n\n"
         if let notice = ExecutiveSummary.unavailableNotice(unavailableSources, text: line) {
             out += "> **\(notice)**\n\n"

@@ -26,6 +26,9 @@ struct ExportController: RouteCollection {
             "status": scan.status.rawValue,
             "riskScore": risk.value,
             "riskLevel": risk.level.rawValue,
+            "riskFactors": risk.factors.map {
+                ["category": $0.category, "label": $0.label, "points": $0.points, "findings": $0.findings] as [String: Any]
+            },
             "scannedAt": scan.createdAt.map { $0.timeIntervalSince1970 } as Any,
             "completedAt": scan.completedAt.map { $0.timeIntervalSince1970 } as Any,
             "unavailableSources": scan.unavailableSources,
@@ -114,7 +117,8 @@ struct ExportController: RouteCollection {
             IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
                                       metadata: try $0.metadataObject ?? [:], rawData: try $0.rawData)
         }
-        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue)
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue,
+                                                     riskFactors: risk.factors)
         return (profile, ExposureDiff.snapshot(from: inputs))
     }
 

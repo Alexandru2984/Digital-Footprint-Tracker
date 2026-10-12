@@ -56,6 +56,7 @@ enum ExportArtifactBuilder {
         let status: String
         let riskScore: Int
         let riskLevel: String
+        let riskFactors: [RiskScorer.Factor]
         let scannedAt: Double?
         let completedAt: Double?
         /// Sources the scan skipped because they were failing.
@@ -164,7 +165,8 @@ enum ExportArtifactBuilder {
         let profile = IdentitySynthesizer.synthesize(
             from: inputs,
             riskScore: risk.value,
-            riskLevel: risk.level.rawValue
+            riskLevel: risk.level.rawValue,
+            riskFactors: risk.factors
         )
         let surface = ExposureDiff.snapshot(from: inputs)
         let payload = try await makePayload(
@@ -232,6 +234,7 @@ enum ExportArtifactBuilder {
             status: scan.status.rawValue,
             riskScore: risk.value,
             riskLevel: risk.level.rawValue,
+            riskFactors: risk.factors,
             scannedAt: scan.createdAt?.timeIntervalSince1970,
             completedAt: scan.completedAt?.timeIntervalSince1970,
             unavailableSources: scan.unavailableSources,

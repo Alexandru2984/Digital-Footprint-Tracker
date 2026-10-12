@@ -5116,6 +5116,7 @@ final class AppTests: XCTestCase {
             timeline: [],
             riskScore: 0,
             riskLevel: "Low",
+            riskFactors: [],
             resultCount: 1
         )
 
@@ -5911,6 +5912,7 @@ final class AppTests: XCTestCase {
             timeline: [],
             riskScore: 40,
             riskLevel: "Medium",
+            riskFactors: [],
             resultCount: 6
         )
         let xml = IdentityGraph.graphml(from: profile, target: "alice@example.test")
@@ -6252,6 +6254,48 @@ final class AppTests: XCTestCase {
 
     private func mkResult(_ type: String, _ confidence: Double, source: String = "src", raw: String = "data") -> App.Result {
         App.Result(scanID: UUID(), source: source, type: type, confidenceScore: confidence, rawData: raw)
+    }
+
+    func testRiskScoreSaysWhatItIsMadeOf() throws {
+        let s = try RiskScorer.compute(results: [
+            mkResult("data_breach", 1.0, raw: "Adobe"),
+            mkResult("account_presence", 1.0, raw: "a"),
+            mkResult("account_presence", 1.0, raw: "b"),
+            mkResult("account_presence", 1.0, raw: "c"),
+            mkResult("breach_check", 1.0, raw: "No breaches found."),
+        ])
+        // 45·(1−e^−1) = 28.4 and 15·(1−e^−1) = 9.5: the formula is unchanged,
+        // the factors only show its terms.
+        XCTAssertEqual(s.value, 38)
+        XCTAssertEqual(s.factors, [
+            RiskScorer.Factor(category: "breach", label: "Breaches and leaks", points: 28, findings: 1),
+            RiskScorer.Factor(category: "account", label: "Online accounts", points: 9, findings: 3),
+        ], "largest first; the clean breach check scores nothing and is not listed")
+
+        XCTAssertEqual(try RiskScorer.compute(results: []).factors, [])
+        let md = ExecutiveReport.markdown(
+            input: "alice",
+            profile: IdentitySynthesizer.synthesize(from: [], riskScore: s.value, riskLevel: s.level.rawValue,
+                                                    riskFactors: s.factors),
+            surface: ExposureDiff.snapshot(from: []), generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(md.contains("- **Risk made of:** Breaches and leaks 28 (1 finding) · Online accounts 9 (3 findings)\n"), md)
+    }
+
+    func testIdentityCarriesTheRiskFactors() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "risk-factors-target", status: .completed)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        try await Result(scanID: scanID, source: "HIBP", type: "data_breach", confidenceScore: 1.0,
+                         rawData: "Adobe", metadata: nil).save(on: app.db)
+
+        try await app.test(.GET, "/identity/\(scanID.uuidString)") { res in
+            XCTAssertEqual(res.status, .ok)
+            let profile = try res.content.decode(IdentitySynthesizer.IdentityProfile.self)
+            XCTAssertEqual(profile.riskFactors.map(\.category), ["breach"])
+            XCTAssertEqual(profile.riskFactors.first?.findings, 1)
+        }
     }
 
     func testRiskScorerEmptyIsLow() throws {

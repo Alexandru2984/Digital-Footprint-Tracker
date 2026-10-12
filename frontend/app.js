@@ -544,6 +544,19 @@
             }
             panel.appendChild(head);
 
+            // What the score is made of, so "High 62" is not a bare number.
+            const factors = Array.isArray(p.riskFactors) ? p.riskFactors : [];
+            if (factors.length) {
+                const why = document.createElement('div');
+                why.className = 'js-risk-factors';
+                why.style.cssText = 'font-size:12px;color:#94a3b8;margin:-6px 0 12px;';
+                why.textContent = 'Risk made of: ' + factors.map(f => {
+                    const n = Number(f.findings) || 0;
+                    return `${String(f.label ?? '')} ${Number(f.points) || 0} (${n} finding${n === 1 ? '' : 's'})`;
+                }).join(' · ');
+                panel.appendChild(why);
+            }
+
             const grid = document.createElement('div');
             grid.style.cssText = 'display:grid;grid-template-columns:1fr;gap:6px 24px;font-size:14px;';
             if (window.matchMedia && window.matchMedia('(min-width:768px)').matches) grid.style.gridTemplateColumns = '1fr 1fr';

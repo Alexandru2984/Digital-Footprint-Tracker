@@ -25,7 +25,11 @@ enum ExecutiveReportHTML {
         b += "<div class=\"target\">\(esc(input))</div>\n<div class=\"meta\">"
         b += "<span class=\"risk risk-\(riskClass(profile.riskLevel))\">Risk \(profile.riskScore)/100 · \(esc(profile.riskLevel))</span>"
         b += "<span>Generated \(esc(readableDate(generatedAt)))</span>"
-        b += "<span>\(profile.resultCount) findings</span></div>\n</header>\n"
+        b += "<span>\(profile.resultCount) findings</span></div>\n"
+        if let factors = ExecutiveSummary.riskFactors(profile.riskFactors, text: esc) {
+            b += "<div class=\"factors\">Risk made of: \(factors)</div>\n"
+        }
+        b += "</header>\n"
         if let notice = ExecutiveSummary.unavailableNotice(unavailableSources, text: esc) {
             b += "<p class=\"notice\" role=\"note\">\(notice)</p>\n"
         }
@@ -173,6 +177,7 @@ enum ExecutiveReportHTML {
     table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
     th,td{text-align:left;padding:6px 10px;border:1px solid #e2e8f0;vertical-align:top;word-break:break-word}
     th{background:#f8fafc;font-weight:600}ul{margin:6px 0;padding-left:20px}.kv{margin:2px 0}.kv b{color:#334155}
+    .factors{margin-top:8px;font-size:12px;color:#475569}
     .notice{margin:16px 0 0;padding:10px 14px;border:1px solid #fcd34d;background:#fffbeb;color:#78350f;border-radius:8px;font-size:13px}
     footer{margin-top:28px;padding-top:12px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px}
     @media print{body{background:#fff}.report{border:0;margin:0;max-width:none;padding:0}section,tr{break-inside:avoid}}
