@@ -202,8 +202,10 @@
             const count = status => reports.filter(r => r.status === status).length;
             const failing = count('failing');
             const degraded = count('degraded');
-            summary.className = 'mb-3 text-[11px] ' + (failing ? 'text-red-400' : degraded ? 'text-yellow-400' : 'text-green-400');
-            summary.textContent = `${failing} failing · ${degraded} degraded · ${count('healthy')} healthy · ${count('idle')} not run since restart`;
+            const canaryFailing = reports.filter(r => r.canary && r.canary.passed === false && r.canary.alerts !== false).length;
+            summary.className = 'mb-3 text-[11px] ' + (failing || canaryFailing ? 'text-red-400' : degraded ? 'text-yellow-400' : 'text-green-400');
+            summary.textContent = `${failing} failing · ${degraded} degraded · ${count('healthy')} healthy · ${count('idle')} not run since restart`
+                + ` · ${canaryFailing} canar${canaryFailing === 1 ? 'y' : 'ies'} failing`;
 
             const statusClass = {
                 failing: 'text-red-400', degraded: 'text-yellow-400', healthy: 'text-green-400', idle: 'text-slate-500',
@@ -216,7 +218,7 @@
             const secondary = ' hidden sm:table-cell';
             const columns = [
                 ['Plugin', ''], ['Status', ''], ['Failed / runs', ''],
-                ['Avg', secondary], ['Last success', secondary], ['Last failure', ''],
+                ['Avg', secondary], ['Last success', secondary], ['Last failure', ''], ['Canary', ''],
             ];
             const head = table.createTHead().insertRow();
             head.className = 'border-b border-dark-700 text-slate-400';
@@ -244,6 +246,13 @@
                     [r.averageMilliseconds == null ? '—' : `${(r.averageMilliseconds / 1000).toFixed(1)}s`, 'text-slate-400'],
                     [when(r.lastSuccessAt), 'text-slate-500'],
                     [r.lastFailureAt ? `${when(r.lastFailureAt)} · ${r.lastFailure ?? ''}` : '—', 'text-slate-500'],
+                    r.canary
+                        ? (r.canary.passed
+                            ? [`passed · ${when(r.canary.checkedAt)}`, 'text-green-400']
+                            : r.canary.alerts === false
+                                ? [`failed, flaky upstream, no alert (${r.canary.detail ?? 'no result'}) · ${when(r.canary.checkedAt)}`, 'text-yellow-400']
+                                : [`FAILED (${r.canary.detail ?? 'no result'}) · ${when(r.canary.checkedAt)}`, 'text-red-400'])
+                        : ['—', 'text-slate-500'],
                 ];
                 cells.forEach(([text, cls], index) => {
                     const td = row.insertCell();

@@ -58,9 +58,14 @@ struct CrtShPlugin: FootprintPlugin {
 
     private static func fetchEvidence(domain: String, limit: Int, app: Application) async -> [CertificateEvidence] {
         guard let url = URL(string: "https://crt.sh/?q=%25.\(domain)&output=json") else { return [] }
+        // crt.sh answers a domain it has not queried lately in ~25 s and the
+        // same query moments later in under one, from its own cache. The shared
+        // 15 s default gave up on the slow first answer every time.
         guard let resp = await PluginHTTP.request(
                 url,
                 headers: ["Accept": "application/json"],
+                timeout: 30,
+                maxRetries: 1,
                 bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024),
                 on: app
               ),

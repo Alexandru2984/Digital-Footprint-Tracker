@@ -82,8 +82,6 @@ struct ScanController: RouteCollection {
         EmailIntelPlugin(),
         UsernamePlugin(),
         GitLabPlugin(),
-        RedditPlugin(),
-        TwitterPlugin(),
         KeybasePlugin(),
         TelegramPlugin(),
         MastodonPlugin(),

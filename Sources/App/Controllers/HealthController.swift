@@ -105,9 +105,17 @@ struct HealthController: RouteCollection {
             dbOk = false
         }
 
+        // Sources whose daily canary no longer finds its known account. Kept
+        // out of `status`: deploy gates read that as "can serve traffic", and a
+        // broken third-party source does not stop the app serving. The host
+        // healthcheck reads this field and alerts on it separately.
+        let canaryFailing = await PluginCanaryStore.shared.failing()
+        let canaryLastRun = await PluginCanaryStore.shared.lastRun()
         let payload: [String: Any] = [
             "status": dbOk ? "ready" : "not_ready",
             "db": dbOk ? "ok" : "error",
+            "pluginCanaryFailing": canaryFailing,
+            "pluginCanaryLastRun": canaryLastRun.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
             "timestamp": ISO8601DateFormatter().string(from: Date())
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted)

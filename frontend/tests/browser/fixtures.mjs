@@ -54,10 +54,12 @@ export async function mockAPI(page, options = {}) {
                     lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: null,
                     lastFailureAt: '2026-08-24T00:00:00Z', lastFailure: malicious,
                     skipped: 2, nextProbeAt: '2026-08-24T00:05:00Z',
+                    canary: { plugin: 'x', input: 'x', passed: false, results: 0, detail: malicious, checkedAt: '2026-08-24T00:00:00Z' },
                 },
                 { plugin: 'Reddit', status: 'healthy', runs: 4, failures: 0, averageMilliseconds: 800,
                   lastRunAt: '2026-08-24T00:00:00Z', lastSuccessAt: '2026-08-24T00:00:00Z',
-                  lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null },
+                  lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null,
+                  canary: { plugin: 'Reddit', input: 'spez', passed: true, results: 1, detail: null, checkedAt: '2026-08-24T00:00:00Z' } },
                 { plugin: 'WHOIS', status: 'idle', runs: 0, failures: 0, averageMilliseconds: null,
                   lastRunAt: null, lastSuccessAt: null, lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null },
             ];

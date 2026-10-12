@@ -144,17 +144,50 @@ struct AdminController: RouteCollection {
     /// Live-run health of every registered plugin since the process started;
     /// see `PluginHealth`. Unhealthy plugins first so a broken source is the
     /// first thing on the page.
+    /// One plugin's live-run health with its last canary, flattened into a
+    /// single object so the health fields stay where clients read them.
+    struct PluginHealthEntry: Content, Equatable {
+        let health: PluginHealth.Report
+        let canary: PluginCanary.Report?
+
+        private enum CodingKeys: String, CodingKey { case canary }
+
+        init(health: PluginHealth.Report, canary: PluginCanary.Report?) {
+            self.health = health
+            self.canary = canary
+        }
+
+        init(from decoder: Decoder) throws {
+            health = try PluginHealth.Report(from: decoder)
+            canary = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(PluginCanary.Report.self, forKey: .canary)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            try health.encode(to: encoder)
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(canary, forKey: .canary)
+        }
+    }
+
     @Sendable
-    func pluginHealth(req: Request) async throws -> [PluginHealth.Report] {
+    func pluginHealth(req: Request) async throws -> [PluginHealthEntry] {
         let user = try await req.requireRecentSessionUser()
         guard user.isAdmin else {
             throw Abort(.forbidden, reason: "Admin access required.")
         }
         let names = ScanController.defaultPlugins.map(\.name)
         let rank: [PluginHealth.Status: Int] = [.failing: 0, .degraded: 1, .healthy: 2, .idle: 3]
-        return await PluginHealth.shared.reports(for: names)
-            .enumerated()
-            .sorted { (rank[$0.element.status]!, $0.offset) < (rank[$1.element.status]!, $1.offset) }
+        var entries: [PluginHealthEntry] = []
+        for report in await PluginHealth.shared.reports(for: names) {
+            entries.append(PluginHealthEntry(health: report, canary: await PluginCanaryStore.shared.report(for: report.plugin)))
+        }
+        // A failed canary is as broken as a failing status, whatever the live
+        // runs say: that is the case live runs cannot see.
+        func order(_ entry: PluginHealthEntry) -> Int {
+            entry.canary?.passed == false ? 0 : rank[entry.health.status]!
+        }
+        return entries.enumerated()
+            .sorted { (order($0.element), $0.offset) < (order($1.element), $1.offset) }
             .map(\.element)
     }
 

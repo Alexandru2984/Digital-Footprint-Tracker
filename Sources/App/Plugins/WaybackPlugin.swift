@@ -25,7 +25,11 @@ struct WaybackPlugin: FootprintPlugin {
             "https://web.archive.org/cdx/search/cdx?url=\(encoded)&output=json&fl=timestamp&collapse=timestamp:8&limit=10000"
         ) else { return [] }
 
-        guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200 else { return [] }
+        // The CDX server takes 7–30 s for a well-archived domain. At the shared
+        // 15 s default with two retries, a popular domain failed three times
+        // over (~47 s) and returned nothing; one patient attempt finishes.
+        guard let resp = await PluginHTTP.request(url, timeout: 45, maxRetries: 0, on: app),
+              resp.status == 200 else { return [] }
         let (count, first, last) = Self.parseCDX(resp.data)
         guard count > 0, let first, let last else { return [] }
 

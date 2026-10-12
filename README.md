@@ -105,7 +105,7 @@ Vapor 4
   │     ScheduledScanController, ShareController, TagController
   └── Plugin Pipeline — parallel TaskGroup, 120s timeout
         Email     → GravatarCheck, HaveIBeenPwned, Pastebin, BulkEmailOSINT (holehe)
-        Username  → GitHub, GitLab, Reddit, Twitter, Keybase, Telegram,
+        Username  → GitHub, GitLab, Keybase, Telegram,
                     Mastodon, Bluesky, HackerNews, Steam, Npm, PyPI, crates.io,
                     Docker Hub, Codeberg, BulkOSINT (Sherlock 481)
         Domain/IP → DomainOSINT (DNS+WHOIS+geo), CertificateTransparency (crt.sh),
@@ -134,9 +134,9 @@ PostgreSQL
 
 ## Features
 
-### OSINT Engine (37 plugins, 500+ sources)
+### OSINT Engine (35 plugins, 500+ sources)
 - **Email** — Gravatar, HaveIBeenPwned (breaches + pastes), Pastebin, holehe (400+ sites)
-- **Username** — GitHub (enriched: name/bio/location/Twitter), GitLab, Reddit, Twitter/X, Keybase, Telegram, Mastodon, Bluesky, Codeberg, Docker Hub, HackerNews, Steam, npm, PyPI, crates.io (publisher ↔ GitHub login), Sherlock (481 sites)
+- **Username** — GitHub (enriched: name/bio/location/Twitter), GitLab, Keybase, Telegram, Mastodon, Bluesky, Codeberg, Docker Hub, HackerNews, Steam, npm, PyPI, crates.io (publisher ↔ GitHub login), Sherlock (481 sites)
 - **Domain / IP** — DNS A/MX/TXT/SPF + reverse PTR + WHOIS + IP geolocation, **certificate transparency (crt.sh)**, **Bluesky domain handles** (a domain verified as someone's handle), **passive DNS**, **Shodan**, **VirusTotal**, **AbuseIPDB**
 - **Phone** — E.164 detection, carrier + country via AbstractAPI
 - **Parallel execution** — all plugins run concurrently in a Swift `TaskGroup` with a 120 s hard timeout

@@ -185,6 +185,17 @@ if [[ -n "$CONFIG_MANIFEST_CHECK" ]]; then
     fi
 fi
 
+# ── 10. Source canaries ─────────────────────────────────────────────────────
+# The application runs each source once a day on an account known to exist and
+# lists the ones that no longer find it in /ready. A source that changed its
+# format still answers 200 and looks healthy to everything else, so this is the
+# only place that breakage surfaces. Absent or empty means none failing (or no
+# run yet since the last restart).
+canary_failing="$(printf '%s' "$ready_compact" | sed -n 's/.*"pluginCanaryFailing":\[\([^]]*\)\].*/\1/p')"
+if [[ -n "$canary_failing" ]]; then
+    note "source canaries no longer find their known account: $(printf '%s' "$canary_failing" | tr -d '"' | sed 's/,/, /g' | cut -c1-300)."
+fi
+
 # ── Report ──────────────────────────────────────────────────────────────────
 if (( ${#problems[@]} == 0 )); then
     echo "healthcheck: all checks passed."

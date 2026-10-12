@@ -201,6 +201,16 @@ components:
         lastFailure: { type: string, nullable: true, example: "unreachable, HTTP 403" }
         skipped: { type: integer, description: Live runs skipped since the restart because the plugin was failing }
         nextProbeAt: { type: string, format: date-time, nullable: true, description: When a failing plugin may next make one live probe run }
+        canary:
+          type: object
+          nullable: true
+          description: The plugin's last daily canary run on a public account known to exist, or null when it has none or none has run since the restart
+          properties:
+            input: { type: string }
+            passed: { type: boolean }
+            results: { type: integer }
+            detail: { type: string, nullable: true, example: "no result" }
+            checkedAt: { type: string, format: date-time }
     AuditIntegrityVerification:
       type: object
       description: Metadata-only result of a bounded full verification of the signed audit ledger and retained display rows.

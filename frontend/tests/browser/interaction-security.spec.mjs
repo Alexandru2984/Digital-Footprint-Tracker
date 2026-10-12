@@ -116,13 +116,16 @@ test('admin shows plugin health and top plugins as text, and a populated chart d
     page.on('pageerror', error => errors.push(String(error)));
     await page.goto('/admin.html', { waitUntil: 'networkidle' });
 
-    await expect(page.locator('#plugin-health-summary')).toHaveText('1 failing · 0 degraded · 1 healthy · 1 not run since restart');
+    await expect(page.locator('#plugin-health-summary')).toHaveText('1 failing · 0 degraded · 1 healthy · 1 not run since restart · 1 canary failing');
     const rows = page.locator('#plugin-health-container tbody tr');
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText(fixture.malicious);
     await expect(rows.nth(0)).toContainText('3 / 3');
     await expect(rows.nth(0)).toContainText('failing · 2 skipped · next probe');
     await expect(rows.nth(1)).not.toContainText('skipped');
+    await expect(rows.nth(0)).toContainText('FAILED (');
+    await expect(rows.nth(1)).toContainText('passed ·');
+    await expect(rows.nth(2)).toContainText('—');
     await expect(rows.nth(1)).toContainText('healthy');
     await expect(page.locator('#top-plugins-chart svg text').first()).toHaveText(/^<img data-browser-/);
     await expect(page.locator('#audit-integrity-status')).toContainText('Valid signed ledger');

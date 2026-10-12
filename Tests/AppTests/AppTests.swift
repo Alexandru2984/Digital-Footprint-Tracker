@@ -4476,7 +4476,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(WhoisPlugin().cacheTTL, 14_400, "WHOIS should cache 4h")
         XCTAssertEqual(PhonePlugin().cacheTTL, 86_400, "Phone carrier data should cache 24h")
         // A plugin that doesn't override keeps the protocol default.
-        XCTAssertEqual(RedditPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
+        XCTAssertEqual(MastodonPlugin().cacheTTL, 3_600, "Un-tuned plugin keeps the 1h default")
     }
 
     // MARK: - ScanPluginRunner: per-plugin timeout and within-scan dedup
@@ -6256,6 +6256,175 @@ final class AppTests: XCTestCase {
         App.Result(scanID: UUID(), source: source, type: type, confidenceScore: confidence, rawData: raw)
     }
 
+    private final class CallCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        func next() -> Int { lock.lock(); defer { lock.unlock() }; count += 1; return count }
+    }
+
+    /// Answers with `results(call)` for each call, so a test can fail the
+    /// first attempt and pass the retry.
+    private struct ScriptedPlugin: FootprintPlugin {
+        let name: String
+        let counter = CallCounter()
+        let results: @Sendable (Int) throws -> [PluginResult]
+        var delay: Double = 0
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+            return try results(counter.next())
+        }
+    }
+
+    func testCanaryPassesOnlyWhenTheKnownAccountIsFound() {
+        let check = PluginCanary.Check(plugin: "P", input: "torvalds", username: "Torvalds")
+        let hit = PluginResult(source: "P", type: "t", confidenceScore: 1, rawData: "x", metadata: ["username": "torvalds"])
+        let other = PluginResult(source: "P", type: "t", confidenceScore: 1, rawData: "x", metadata: ["username": "someone"])
+        XCTAssertTrue(PluginCanary.passes([other, hit], check: check))
+        XCTAssertFalse(PluginCanary.passes([other], check: check), "a result for another account is still a miss")
+        XCTAssertFalse(PluginCanary.passes([], check: check))
+        let anyResult = PluginCanary.Check(plugin: "P", input: "example.com", username: nil)
+        XCTAssertTrue(PluginCanary.passes([other], check: anyResult))
+        XCTAssertFalse(PluginCanary.passes([], check: anyResult))
+    }
+
+    func testCanaryRetriesOnceAndRecordsEveryOutcome() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        await PluginCanaryStore.shared.reset()
+        addTeardownBlock { await PluginCanaryStore.shared.reset() }
+        struct Boom: Error {}
+        let found = PluginResult(source: "x", type: "t", confidenceScore: 1, rawData: "x", metadata: ["username": "known"])
+        let flaky = ScriptedPlugin(name: "CanaryFlaky") { $0 == 1 ? [] : [found] }
+        let dead = ScriptedPlugin(name: "CanaryDead") { _ in [] }
+        let broken = ScriptedPlugin(name: "CanaryThrows") { _ in throw Boom() }
+        let slow = ScriptedPlugin(name: "CanarySlow", results: { _ in [found] }, delay: 5)
+        let quiet = ScriptedPlugin(name: "CanaryQuiet") { _ in [] }
+        let checks = ["CanaryFlaky", "CanaryDead", "CanaryThrows", "CanarySlow"].map {
+            PluginCanary.Check(plugin: $0, input: "known", username: "known")
+        } + [PluginCanary.Check(plugin: "CanaryQuiet", input: "known", username: "known", alerts: false)]
+
+        await PluginCanary.runAll(plugins: [flaky, dead, broken, slow, quiet], app: app, checks: checks,
+                                  timeout: 0.5, retryDelays: [0, 0])
+
+        let flakyReport = await PluginCanaryStore.shared.report(for: "CanaryFlaky")
+        XCTAssertEqual(flakyReport?.passed, true, "one miss followed by a find is a pass")
+        XCTAssertEqual(flaky.counter.next(), 3, "no further attempt once one passes")
+        let deadReport = await PluginCanaryStore.shared.report(for: "CanaryDead")
+        XCTAssertEqual(deadReport?.detail, "no result")
+        XCTAssertEqual(dead.counter.next(), 4, "three attempts in all, then it counts")
+        let throwsReport = await PluginCanaryStore.shared.report(for: "CanaryThrows")
+        XCTAssertTrue(throwsReport?.detail?.hasPrefix("error:") == true)
+        let slowReport = await PluginCanaryStore.shared.report(for: "CanarySlow")
+        XCTAssertEqual(slowReport?.detail, "timed out after 0s")
+        let failing = await PluginCanaryStore.shared.failing()
+        XCTAssertEqual(failing, ["CanaryDead", "CanarySlow", "CanaryThrows"],
+                       "a source whose outages are routine is not paged on")
+        let quietReport = await PluginCanaryStore.shared.report(for: "CanaryQuiet")
+        XCTAssertEqual(quietReport?.passed, false, "it still shows as failed on the admin page")
+        XCTAssertEqual(quietReport?.alerts, false)
+    }
+
+    func testEveryCanaryNamesAShippingPluginThatNeedsNoKey() {
+        let shipping = Dictionary(uniqueKeysWithValues: ScanController.defaultPlugins.map { ($0.name, $0) })
+        for check in PluginCanary.checks {
+            let plugin = shipping[check.plugin]
+            XCTAssertNotNil(plugin, "\(check.plugin) is not a shipping plugin; its canary would never run")
+            XCTAssertFalse(plugin?.heavy ?? false, "\(check.plugin) is a heavy sweep")
+            XCTAssertFalse(ScanPluginRunner.applicableCandidates(
+                for: plugin!, from: [TargetDeriver.Candidate(value: check.input, origin: .primary)]).isEmpty,
+                "\(check.plugin) does not accept its canary input \(check.input)")
+        }
+        XCTAssertEqual(Set(PluginCanary.checks.map(\.plugin)).count, PluginCanary.checks.count)
+    }
+
+    func testReadyListsFailingCanariesWithoutChangingReadiness() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        await PluginCanaryStore.shared.reset()
+        addTeardownBlock { await PluginCanaryStore.shared.reset() }
+        try await app.test(.GET, "/ready") { res in
+            XCTAssertEqual(res.status, .ok)
+            // Compared without whitespace, as the host healthcheck reads it.
+            let body = res.body.string.filter { !$0.isWhitespace }
+            XCTAssertTrue(body.contains(#""pluginCanaryFailing":[]"#), body)
+        }
+        await PluginCanaryStore.shared.record(.init(plugin: "Reddit", input: "spez", passed: false, results: 0,
+                                                    detail: "no result", checkedAt: Date()))
+        try await app.test(.GET, "/ready") { res in
+            XCTAssertEqual(res.status, .ok, "a broken third-party source does not make the app unready")
+            let body = res.body.string.filter { !$0.isWhitespace }
+            XCTAssertTrue(body.contains(#""status":"ready""#), body)
+            XCTAssertTrue(body.contains(#""pluginCanaryFailing":["Reddit"]"#), body)
+        }
+    }
+
+    func testPluginHealthEntryStaysFlatWithItsCanary() throws {
+        let health = PluginHealth.Report(plugin: "Reddit", status: .healthy, runs: 1, failures: 0, averageMilliseconds: 10,
+                                         lastRunAt: nil, lastSuccessAt: nil, lastFailureAt: nil, lastFailure: nil,
+                                         skipped: 0, nextProbeAt: nil)
+        let canary = PluginCanary.Report(plugin: "Reddit", input: "spez", passed: false, results: 0,
+                                         detail: "no result", checkedAt: Date(timeIntervalSince1970: 0))
+        let entry = AdminController.PluginHealthEntry(health: health, canary: canary)
+        let data = try JSONEncoder().encode(entry)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["plugin"] as? String, "Reddit", "health fields stay at the top level")
+        XCTAssertEqual((object["canary"] as? [String: Any])?["passed"] as? Bool, false)
+        XCTAssertEqual(try JSONDecoder().decode(AdminController.PluginHealthEntry.self, from: data), entry)
+        let none = try JSONEncoder().encode(AdminController.PluginHealthEntry(health: health, canary: nil))
+        XCTAssertTrue(String(decoding: none, as: UTF8.self).contains(#""canary":null"#))
+    }
+
+    func testRDAPBootstrapPicksTheRegistryServerDirectly() throws {
+        let dns = try XCTUnwrap(RDAPBootstrap.parse(Data(#"""
+        {"services":[[["com","net"],["https://rdap.verisign.com/com/v1/","http://rdap.verisign.com/com/v1/"]],
+                     [["co.uk"],["https://rdap.example-uk/second"]],
+                     [["uk"],["https://rdap.nominet.uk/uk/"]],
+                     [["insecure"],["http://only-http.example/"]]]}
+        """#.utf8)))
+        XCTAssertEqual(RDAPBootstrap.baseURL(forDomain: "Example.COM", services: dns), "https://rdap.verisign.com/com/v1/")
+        XCTAssertEqual(RDAPBootstrap.baseURL(forDomain: "shop.example.co.uk", services: dns), "https://rdap.example-uk/second/",
+                       "the longest matching suffix wins, and a missing slash is added")
+        XCTAssertEqual(RDAPBootstrap.baseURL(forDomain: "example.uk", services: dns), "https://rdap.nominet.uk/uk/")
+        XCTAssertNil(RDAPBootstrap.baseURL(forDomain: "example.ro", services: dns), ".ro publishes no RDAP service")
+        XCTAssertNil(RDAPBootstrap.baseURL(forDomain: "x.insecure", services: dns), "plain-http servers are never used")
+
+        let ipv4 = try XCTUnwrap(RDAPBootstrap.parse(Data(#"""
+        {"services":[[["8.0.0.0/8"],["https://rdap.arin.net/registry/"]],
+                     [["8.8.0.0/16"],["https://rdap.more-specific.example/"]],
+                     [["41.0.0.0/8"],["https://rdap.afrinic.net/rdap/"]]]}
+        """#.utf8)))
+        XCTAssertEqual(RDAPBootstrap.baseURL(forIPv4: "8.8.8.8", services: ipv4), "https://rdap.more-specific.example/")
+        XCTAssertEqual(RDAPBootstrap.baseURL(forIPv4: "8.1.2.3", services: ipv4), "https://rdap.arin.net/registry/")
+        XCTAssertNil(RDAPBootstrap.baseURL(forIPv4: "203.0.113.9", services: ipv4))
+        XCTAssertNil(RDAPBootstrap.baseURL(forIPv4: "300.1.1.1", services: ipv4))
+    }
+
+    func testWhoisDescribesAnIPNetwork() throws {
+        let body = Data(#"{"objectClassName":"ip network","name":"GOGL","startAddress":"8.8.8.0","endAddress":"8.8.8.255","events":[{"eventAction":"registration","eventDate":"2023-12-28T17:24:33-05:00"}]}"#.utf8)
+        let result = try XCTUnwrap(WhoisPlugin.parseResponse(body, domain: "8.8.8.8"))
+        XCTAssertEqual(result.type, "whois_record")
+        XCTAssertTrue(result.rawData.hasPrefix("Network: GOGL"))
+        XCTAssertTrue(result.rawData.contains("Range: 8.8.8.0 – 8.8.8.255"))
+    }
+
+    /// Live: runs every canary against the real sources. Off by default (no
+    /// network in the suite); `LIVE_PLUGIN_CANARY=1 swift test --filter
+    /// LiveCanaries` checks the list from the production host.
+    func testLiveCanariesFindTheirAccounts() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["LIVE_PLUGIN_CANARY"] == "1")
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        await PluginCanaryStore.shared.reset()
+        await PluginCanary.runAll(plugins: ScanController.defaultPlugins, app: app)
+        var failed: [String] = []
+        for check in PluginCanary.checks {
+            let report = await PluginCanaryStore.shared.report(for: check.plugin)
+            print("CANARY \(check.plugin) \(check.input): \(report.map { $0.passed ? "PASS (\($0.results))" : "FAIL \($0.detail ?? "")" } ?? "missing")")
+            if report?.passed != true && check.alerts { failed.append(check.plugin) }
+        }
+        XCTAssertEqual(failed, [])
+    }
+
     func testRiskScoreSaysWhatItIsMadeOf() throws {
         let s = try RiskScorer.compute(results: [
             mkResult("data_breach", 1.0, raw: "Adobe"),
@@ -6941,24 +7110,6 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/ghost", "Sorry, User not found."))
         XCTAssertNotNil(eval(msg, "real", 200, "https://ex.com/real", "Welcome real"))
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
-    }
-
-    func testRedditEvaluateRejectsBlocksAndMismatches() throws {
-        let real = Data(#"{"kind":"t2","data":{"name":"spez","id":"abc","created_utc":1200000000}}"#.utf8)
-        let parsed = RedditPlugin.evaluate(username: "spez", status: 200, body: real)
-        XCTAssertEqual(parsed?.metadata?["since"], "2008-01-10")
-        XCTAssertNotNil(RedditPlugin.evaluate(username: "SPEZ", status: 200, body: real)) // case-insensitive
-        // 403 block (datacenter IP) must NOT be reported as "suspended" — the old bug.
-        XCTAssertNil(RedditPlugin.evaluate(username: "anyone", status: 403, body: Data()))
-        // 200 that isn't a real t2 account (block/soft page) → nil.
-        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 200, body: Data("<html>blocked</html>".utf8)))
-        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 404,
-                                           body: Data(#"{"message":"Not Found","error":404}"#.utf8)))
-        // Returned account is a different user → not a hit.
-        XCTAssertNil(RedditPlugin.evaluate(username: "ghost", status: 200, body: real))
-        // A suspended account is still a real account.
-        let suspended = Data(#"{"kind":"t2","data":{"name":"banned_user","is_suspended":true}}"#.utf8)
-        XCTAssertNotNil(RedditPlugin.evaluate(username: "banned_user", status: 200, body: suspended))
     }
 
     func testMastodonParseAccountExtractsNameAndBio() throws {
