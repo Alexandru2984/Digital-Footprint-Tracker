@@ -81,6 +81,7 @@ enum PluginCanary {
     static func runAll(plugins: [any FootprintPlugin], app: Application, checks: [Check] = checks,
                        timeout: Double = 90, retryDelays: [Double] = [60, 300]) async {
         var failing: [String] = []
+        var paging = false
         for check in checks {
             guard let plugin = plugins.first(where: { $0.name == check.plugin }) else { continue }
             var report = await run(check, plugin: plugin, app: app, timeout: timeout)
@@ -90,12 +91,18 @@ enum PluginCanary {
             }
             report.alerts = check.alerts
             await PluginCanaryStore.shared.record(report)
-            if !report.passed { failing.append("\(check.plugin) (\(report.detail ?? "no result"))") }
+            if !report.passed {
+                failing.append("\(check.plugin) (\(report.detail ?? "no result"))")
+                paging = paging || check.alerts
+            }
         }
         if failing.isEmpty {
             app.logger.notice("[PluginCanary] all \(checks.count) canaries found their account.")
-        } else {
+        } else if paging {
             app.logger.error("[PluginCanary] \(failing.count) canary check(s) failed: \(failing.joined(separator: ", ")).")
+        } else {
+            // Only sources whose outages are routine: worth a line, not an error.
+            app.logger.warning("[PluginCanary] \(failing.count) non-paging canary check(s) failed: \(failing.joined(separator: ", ")).")
         }
     }
 
