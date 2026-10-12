@@ -6936,6 +6936,52 @@ final class AppTests: XCTestCase {
         XCTAssertNil(MastodonPlugin.parseAccount(from: Data("not json".utf8), fallbackUsername: "x"))
     }
 
+    func testBlueskyHandleForUsernameAndDomainInputs() {
+        XCTAssertEqual(BlueskyPlugin.handle(for: "Alice"), "alice.bsky.social")
+        XCTAssertEqual(BlueskyPlugin.handle(for: "jay-b"), "jay-b.bsky.social")
+        XCTAssertEqual(BlueskyPlugin.handle(for: "Example.COM"), "example.com", "a domain is looked up as its own handle")
+        XCTAssertEqual(BlueskyPlugin.handle(for: "jay.bsky.team"), "jay.bsky.team")
+        XCTAssertNil(BlueskyPlugin.handle(for: "alice_doe"), "handles cannot contain underscores")
+        XCTAssertNil(BlueskyPlugin.handle(for: "alice@example.com"))
+        XCTAssertNil(BlueskyPlugin.handle(for: "0712345678"), "a phone number is not a handle")
+        XCTAssertNil(BlueskyPlugin.handle(for: "-alice"))
+        XCTAssertNil(BlueskyPlugin.handle(for: "1.2.3.4"), "an IP address is not a handle")
+        XCTAssertNil(BlueskyPlugin.handle(for: String(repeating: "a", count: 64)))
+    }
+
+    func testBlueskyReportsOnlyAProfileHoldingTheRequestedHandle() throws {
+        func profile(_ handle: String, extra: String = "") -> Data {
+            Data(#"{"did":"did:plc:abc123","handle":"\#(handle)","displayName":"  Alice  Doe ","description":"Builder.\nalice@example.com","followersCount":12,"postsCount":3,"createdAt":"2023-04-12T04:53:57.057Z","verification":{"verifiedStatus":"valid"}\#(extra)}"#.utf8)
+        }
+
+        let user = try XCTUnwrap(BlueskyPlugin.evaluate(
+            input: "alice", handle: "alice.bsky.social", status: 200, body: profile("alice.bsky.social")))
+        XCTAssertEqual(user.type, "social_media")
+        XCTAssertEqual(user.metadata?["username"], "alice.bsky.social")
+        XCTAssertEqual(user.metadata?["name"], "Alice  Doe")
+        XCTAssertEqual(user.metadata?["since"], "2023-04-12")
+        XCTAssertEqual(user.metadata?["did"], "did:plc:abc123")
+        XCTAssertNil(user.metadata?["domain"])
+        XCTAssertTrue(user.rawData.hasPrefix("Bluesky account found: https://bsky.app/profile/alice.bsky.social"))
+        XCTAssertTrue(user.rawData.contains("Verified by Bluesky"))
+        XCTAssertTrue(user.rawData.contains("Bio: Builder. alice@example.com"), "the bio stays on one line for pivot mining")
+
+        let domain = try XCTUnwrap(BlueskyPlugin.evaluate(
+            input: "example.com", handle: "example.com", status: 200, body: profile("Example.com")))
+        XCTAssertEqual(domain.metadata?["domain"], "example.com")
+        XCTAssertTrue(domain.rawData.hasPrefix("Bluesky account uses example.com as its verified domain handle"))
+
+        XCTAssertNil(BlueskyPlugin.evaluate(input: "example.com", handle: "example.com", status: 200,
+                                            body: profile("handle.invalid")),
+                     "an account whose domain proof lapsed no longer holds the handle")
+        XCTAssertNil(BlueskyPlugin.evaluate(input: "alice", handle: "alice.bsky.social", status: 400,
+                                            body: Data(#"{"error":"InvalidRequest","message":"Profile not found"}"#.utf8)))
+        XCTAssertNil(BlueskyPlugin.evaluate(input: "alice", handle: "alice.bsky.social", status: 200,
+                                            body: Data("<html>blocked</html>".utf8)))
+        XCTAssertNil(BlueskyPlugin.evaluate(input: "alice", handle: "alice.bsky.social", status: 200,
+                                            body: Data(#"{"handle":"alice.bsky.social"}"#.utf8)), "no DID, no account")
+    }
+
     func testTelegramOGContentParsing() throws {
         let html = #"""
         <meta property="og:title" content="Jane Doe">

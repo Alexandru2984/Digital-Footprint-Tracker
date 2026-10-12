@@ -87,6 +87,7 @@ struct ScanController: RouteCollection {
         KeybasePlugin(),
         TelegramPlugin(),
         MastodonPlugin(),
+        BlueskyPlugin(),
         HackerNewsPlugin(),
         SteamPlugin(),
         NpmPlugin(),
