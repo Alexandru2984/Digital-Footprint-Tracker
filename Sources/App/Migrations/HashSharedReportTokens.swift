@@ -7,7 +7,11 @@ import Foundation
 /// back-filling existing rows in Swift to avoid any pgcrypto extension dependency.
 struct HashSharedReportTokens: AsyncMigration {
     func prepare(on database: Database) async throws {
-        guard let sql = database as? SQLDatabase else { return }
+        // PostgreSQL-only DDL (ADD COLUMN IF NOT EXISTS, SET NOT NULL, ADD
+        // CONSTRAINT). Only a database from before the hash columns needs it;
+        // a fresh one, on any dialect, gets them from the create migration.
+        guard let sql = database as? SQLDatabase,
+              sql.dialect.name.lowercased().contains("postgres") else { return }
 
         // 1. Add nullable token_hash column (idempotent). Fresh databases
         // already have this final column from CreateSharedReports.
