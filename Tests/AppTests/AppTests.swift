@@ -6936,6 +6936,79 @@ final class AppTests: XCTestCase {
         XCTAssertNil(MastodonPlugin.parseAccount(from: Data("not json".utf8), fallbackUsername: "x"))
     }
 
+    func testDockerHubReadsTheNamespaceAndItsImages() throws {
+        XCTAssertEqual(DockerHubPlugin.namespace(for: "JessFraz"), "jessfraz")
+        XCTAssertNil(DockerHubPlugin.namespace(for: "a"), "namespaces are at least two characters")
+        XCTAssertNil(DockerHubPlugin.namespace(for: "alice.doe"))
+        XCTAssertNil(DockerHubPlugin.namespace(for: "0712345678"))
+
+        let body = Data(#"{"orgname":"JessFraz","full_name":"Jess F","location":"NYC","company":"","profile_url":"https://blog.example","date_joined":"2018-02-04T19:58:35.375061Z","badge":"verified_publisher"}"#.utf8)
+        let profile = try XCTUnwrap(DockerHubPlugin.parseProfile(status: 200, body: body, namespace: "jessfraz"))
+        XCTAssertNil(DockerHubPlugin.parseProfile(status: 200, body: body, namespace: "someoneelse"))
+        XCTAssertNil(DockerHubPlugin.parseProfile(status: 404, body: Data(#"{"orgname":["jessfraz"]}"#.utf8), namespace: "jessfraz"))
+
+        let images = try XCTUnwrap(DockerHubPlugin.parseImages(Data(#"{"count":269,"results":[{"name":"reg"},{"name":"sshb0t"}]}"#.utf8)))
+        let result = DockerHubPlugin.result(profile: profile, images: images)
+        XCTAssertEqual(result.metadata?["name"], "Jess F")
+        XCTAssertEqual(result.metadata?["location"], "NYC")
+        XCTAssertEqual(result.metadata?["blog"], "https://blog.example")
+        XCTAssertEqual(result.metadata?["since"], "2018-02-04")
+        XCTAssertNil(result.metadata?["company"], "an empty field is left out, not stored as blank")
+        XCTAssertTrue(result.rawData.contains("Verified publisher"))
+        XCTAssertTrue(result.rawData.contains("Public images: 269 (most pulled: reg, sshb0t)"))
+        XCTAssertFalse(DockerHubPlugin.result(profile: profile, images: nil).rawData.contains("Public images"))
+    }
+
+    func testCodebergKeepsOnlyARealPublicEmail() throws {
+        XCTAssertEqual(CodebergPlugin.username(for: "fnetX"), "fnetX")
+        XCTAssertEqual(CodebergPlugin.username(for: "a.b_c-d"), "a.b_c-d")
+        XCTAssertNil(CodebergPlugin.username(for: ".hidden"))
+        XCTAssertNil(CodebergPlugin.username(for: "a..b"))
+        XCTAssertNil(CodebergPlugin.username(for: "alice@example.com"))
+
+        func user(email: String) -> Data {
+            Data(#"{"login":"fnetX","full_name":"Otto","email":"\#(email)","location":"Potsdam","website":"","description":"Load: 5.6\r\n\r\nCodeberg board","followers_count":40,"created":"2018-11-17T17:23:22+01:00"}"#.utf8)
+        }
+        let alias = try XCTUnwrap(CodebergPlugin.evaluate(username: "fnetx", status: 200,
+                                                          body: user(email: "fnetx@noreply.codeberg.org")))
+        XCTAssertNil(alias.metadata?["email"], "the noreply alias is not the person's address")
+        XCTAssertEqual(alias.metadata?["name"], "Otto")
+        XCTAssertEqual(alias.metadata?["since"], "2018-11-17")
+        XCTAssertTrue(alias.rawData.contains("Bio: Load: 5.6 Codeberg board"))
+
+        let published = try XCTUnwrap(CodebergPlugin.evaluate(username: "fnetX", status: 200,
+                                                              body: user(email: "otto@example.org")))
+        XCTAssertEqual(published.metadata?["email"], "otto@example.org")
+
+        XCTAssertNil(CodebergPlugin.evaluate(username: "someoneelse", status: 200, body: user(email: "")))
+        XCTAssertNil(CodebergPlugin.evaluate(username: "fnetX", status: 404, body: Data("{}".utf8)))
+    }
+
+    func testCratesTiesThePublisherToItsGitHubLogin() throws {
+        XCTAssertEqual(CratesPlugin.login(for: "dtolnay"), "dtolnay")
+        XCTAssertNil(CratesPlugin.login(for: "a--b"))
+        XCTAssertNil(CratesPlugin.login(for: "under_score"), "GitHub logins have no underscores")
+        XCTAssertNil(CratesPlugin.login(for: String(repeating: "a", count: 40)))
+
+        let body = Data(#"{"user":{"id":3618,"login":"dtolnay","name":"David Tolnay","url":"https://github.com/dtolnay","github_username_matches":true,"created_at":"2012-07-09T03:55:40Z"}}"#.utf8)
+        let user = try XCTUnwrap(CratesPlugin.parseUser(status: 200, body: body, login: "DTolnay"))
+        XCTAssertEqual(user.id, 3618)
+        XCTAssertNil(CratesPlugin.parseUser(status: 200, body: body, login: "other"))
+        XCTAssertNil(CratesPlugin.parseUser(status: 404, body: Data(#"{"errors":[{"detail":"Not Found"}]}"#.utf8), login: "dtolnay"))
+
+        let crates = try XCTUnwrap(CratesPlugin.parseCrates(Data(#"{"crates":[{"name":"syn"},{"name":"quote"}],"meta":{"total":234}}"#.utf8)))
+        let result = CratesPlugin.result(user: user, crates: crates)
+        XCTAssertEqual(result.type, "developer_identity")
+        XCTAssertEqual(result.metadata?["github"], "https://github.com/dtolnay")
+        XCTAssertEqual(result.metadata?["since"], "2012-07-09")
+        XCTAssertTrue(result.rawData.contains("Crates owned: 234 (most downloaded: syn, quote)"))
+
+        let renamed = CratesPlugin.User(id: 1, login: "old", name: "", githubURL: "https://github.com/old",
+                                        githubMatches: false, joined: nil)
+        XCTAssertNil(CratesPlugin.result(user: renamed, crates: nil).metadata?["github"],
+                     "a GitHub account that no longer carries the login is not linked")
+    }
+
     func testBlueskyHandleForUsernameAndDomainInputs() {
         XCTAssertEqual(BlueskyPlugin.handle(for: "Alice"), "alice.bsky.social")
         XCTAssertEqual(BlueskyPlugin.handle(for: "jay-b"), "jay-b.bsky.social")

@@ -8,8 +8,8 @@ identity response for backward-compatible UI and report rendering.
 
 The builder consumes only allow-listed structured metadata:
 
-- account creation dates from GitHub, GitLab, Hacker News, Reddit, Mastodon,
-  Bluesky and Steam;
+- account creation dates from GitHub, GitLab, Codeberg, Hacker News, Reddit,
+  Mastodon, Bluesky, Docker Hub, crates.io and Steam;
 - breach disclosure dates from the HIBP-style `breachDates` field;
 - RDAP registration, last-change and expiration events;
 - earliest certificate `not_before` date per CT hostname, with the log entry
