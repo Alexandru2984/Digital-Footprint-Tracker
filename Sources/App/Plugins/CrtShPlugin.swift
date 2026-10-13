@@ -28,11 +28,12 @@ struct CrtShPlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"), !input.hasPrefix("http") else { return [] }
         let domain = Self.normalizeDomain(input)
-        return await Self.fetchEvidence(domain: domain, limit: 50, app: app).map { evidence in
+        let (evidence, provider) = await Self.fetchEvidenceWithProvider(domain: domain, limit: 50, app: app)
+        return evidence.map { evidence in
             var metadata = ["subdomain": evidence.hostname, "domain": domain]
             metadata["certificateNotBefore"] = evidence.firstSeen
             return PluginResult(
-                source: "crt.sh",
+                source: provider,
                 type: "subdomain",
                 confidenceScore: 0.9,
                 rawData: evidence.hostname,
@@ -53,11 +54,63 @@ struct CrtShPlugin: FootprintPlugin {
     /// Exposed so other infrastructure plugins (e.g. AttackSurface) reuse one
     /// enumerator instead of re-implementing the crt.sh call.
     static func enumerate(domain: String, limit: Int, app: Application) async -> [String] {
-        await fetchEvidence(domain: domain, limit: limit, app: app).map(\.hostname)
+        await fetchEvidenceWithProvider(domain: domain, limit: limit, app: app).evidence.map(\.hostname)
     }
 
-    private static func fetchEvidence(domain: String, limit: Int, app: Application) async -> [CertificateEvidence] {
-        guard let url = URL(string: "https://crt.sh/?q=%25.\(domain)&output=json") else { return [] }
+    /// crt.sh first; CertSpotter only when crt.sh fails to answer (it serves
+    /// 502s for minutes at a time). A crt.sh answer with no certificates is an
+    /// answer, not a failure, and is not second-guessed. CertSpotter's free
+    /// tier lists only unexpired certificates and allows ten queries an hour,
+    /// which is why it is the fallback rather than the source.
+    static func fetchEvidenceWithProvider(domain: String, limit: Int, app: Application)
+        async -> (evidence: [CertificateEvidence], provider: String) {
+        if let evidence = await fetchEvidence(domain: domain, limit: limit, app: app) {
+            return (evidence, "crt.sh")
+        }
+        var components = URLComponents(string: "https://api.certspotter.com/v1/issuances")
+        components?.queryItems = [
+            URLQueryItem(name: "domain", value: domain),
+            URLQueryItem(name: "include_subdomains", value: "true"),
+            URLQueryItem(name: "expand", value: "dns_names"),
+        ]
+        guard let url = components?.url,
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 20,
+                bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024), on: app
+              ),
+              response.status == 200
+        else { return ([], "crt.sh") }
+        return (parseCertSpotter(response.data, limit: limit, domain: domain), "CertSpotter")
+    }
+
+    /// CertSpotter issuances: `[{"dns_names": [...], "not_before": "..."}]`.
+    /// Same scoping and de-duplication as the crt.sh parser.
+    static func parseCertSpotter(_ data: Data, limit: Int, domain: String) -> [CertificateEvidence] {
+        guard limit > 0,
+              let issuances = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let scope = normalizedHostname(domain[...], scopedTo: nil) else { return [] }
+        var indexByHostname: [String: Int] = [:]
+        var out: [CertificateEvidence] = []
+        for issuance in issuances.prefix(maximumEntries) {
+            let firstSeen = (issuance["not_before"] as? String).flatMap(TimelineIntelligence.normalizedDate)?.value
+            for name in (issuance["dns_names"] as? [String] ?? []).prefix(maximumNamesPerEntry) {
+                guard let cleaned = normalizedHostname(name[...], scopedTo: scope) else { continue }
+                if let index = indexByHostname[cleaned] {
+                    if let firstSeen, out[index].firstSeen.map({ firstSeen < $0 }) ?? true {
+                        out[index] = CertificateEvidence(hostname: cleaned, firstSeen: firstSeen)
+                    }
+                } else if out.count < limit {
+                    indexByHostname[cleaned] = out.count
+                    out.append(CertificateEvidence(hostname: cleaned, firstSeen: firstSeen))
+                }
+            }
+        }
+        return out
+    }
+
+    /// nil when crt.sh did not answer; an empty list when it found nothing.
+    private static func fetchEvidence(domain: String, limit: Int, app: Application) async -> [CertificateEvidence]? {
+        guard let url = URL(string: "https://crt.sh/?q=%25.\(domain)&output=json") else { return nil }
         // crt.sh answers a domain it has not queried lately in ~25 s and the
         // same query moments later in under one, from its own cache. The shared
         // 15 s default gave up on the slow first answer every time.
@@ -69,7 +122,7 @@ struct CrtShPlugin: FootprintPlugin {
                 bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024),
                 on: app
               ),
-              resp.status == 200 else { return [] }
+              resp.status == 200 else { return nil }
         return parseEvidence(resp.data, limit: limit, domain: domain)
     }
 

@@ -7304,6 +7304,21 @@ final class AppTests: XCTestCase {
         XCTAssertNil(OpenPGPKey.parse(packets: Data([0xFF, 0xFF, 0xFF])))
     }
 
+    func testCertSpotterFallbackKeepsTheSameScope() {
+        let body = Data(#"""
+        [{"dns_names":["*.example.com","example.com","example.edu","www.example.org"],"not_before":"2025-11-20T00:00:00Z"},
+         {"dns_names":["dev.example.com","WWW.example.com"],"not_before":"2024-01-02T00:00:00Z"},
+         {"dns_names":["dev.example.com"],"not_before":"2023-05-06T00:00:00Z"}]
+        """#.utf8)
+        let evidence = CrtShPlugin.parseCertSpotter(body, limit: 50, domain: "example.com")
+        XCTAssertEqual(evidence.map(\.hostname), ["example.com", "dev.example.com", "www.example.com"],
+                       "other domains on a shared certificate are out of scope")
+        XCTAssertEqual(evidence.first { $0.hostname == "dev.example.com" }?.firstSeen, "2023-05-06",
+                       "the earliest certificate wins")
+        XCTAssertEqual(CrtShPlugin.parseCertSpotter(body, limit: 1, domain: "example.com").count, 1)
+        XCTAssertTrue(CrtShPlugin.parseCertSpotter(Data("{}".utf8), limit: 50, domain: "example.com").isEmpty)
+    }
+
     func testRIPEStatNamesTheNetworkWithoutCallingItTheTargetsEmployer() throws {
         let body = Data(#"{"data":{"resource":"8.8.8.0/24","announced":true,"asns":[{"asn":15169,"holder":"GOOGLE - Google LLC"}],"block":{"desc":"Administered by ARIN"}}}"#.utf8)
         let result = try XCTUnwrap(RIPEStatPlugin.evaluate(ip: "8.8.8.8", body: body))

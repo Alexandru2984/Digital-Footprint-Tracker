@@ -96,13 +96,15 @@ struct GreyNoisePlugin: FootprintPlugin {
             if let named = meta["actor"] { parts.append("Actor: \(named)") }
             if let lastSeen { parts.append("Last seen: \(lastSeen)"); meta["lastSeen"] = lastSeen }
             parts.append("https://viz.greynoise.io/ip/\(ip)")
-            return PluginResult(source: "GreyNoise", type: classification == "malicious" ? "ip_scanner" : "ip_scanner_benign",
+            let type = classification == "malicious" ? "ip_scanner" : "ip_scanner_benign"
+            return PluginResult(source: "GreyNoise", type: type,
                                 confidenceScore: classification == "malicious" ? 0.95 : 0.8,
                                 rawData: parts.joined(separator: " | "), metadata: meta)
         }
         if riot {
+            let service = meta["actor"].map { ": \($0)" } ?? ""
             return PluginResult(source: "GreyNoise", type: "known_service", confidenceScore: 0.9,
-                                rawData: "\(ip) belongs to a known business service\(meta["actor"].map { ": \($0)" } ?? "") (GreyNoise RIOT)",
+                                rawData: "\(ip) belongs to a known business service\(service) (GreyNoise RIOT)",
                                 metadata: meta)
         }
         return nil
