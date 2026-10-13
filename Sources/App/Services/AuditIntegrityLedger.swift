@@ -96,7 +96,7 @@ enum AuditIntegrityLedger {
                 ip: ip
             )
             try await log.create(on: transaction)
-            guard let timestamp = log.createdAt else { throw LedgerError.timestampMissing }
+            let timestamp = try await storedTimestamp(of: log, on: transaction)
             let logID = try log.requireID()
             try await append(
                 kind: .entry,
@@ -126,7 +126,7 @@ enum AuditIntegrityLedger {
     ) async throws {
         try await database.transaction { transaction in
             try await log.create(on: transaction)
-            guard let timestamp = log.createdAt else { throw LedgerError.timestampMissing }
+            let timestamp = try await storedTimestamp(of: log, on: transaction)
             try await append(
                 kind: .entry,
                 auditLogID: try log.requireID(),
@@ -546,6 +546,22 @@ enum AuditIntegrityLedger {
 
     private static func normalizedTimestamp(_ date: Date) -> Date {
         Date(timeIntervalSince1970: Double(timestampMilliseconds(date)) / 1_000)
+    }
+
+    /// The creation time as the database returns it, which is what the
+    /// verifier reads. The in-memory `createdAt` Fluent set is not: Postgres
+    /// keeps microseconds, and SQLite stores seconds since 1970 while `Date`
+    /// holds seconds since 2001, so the value read back can differ from the
+    /// one written by a fraction of a microsecond. Near a half millisecond
+    /// that moves the rounded millisecond, and an entry signed over the
+    /// in-memory value fails verification forever (it failed CI once on
+    /// 2026-10-13): a forged-looking event nobody forged. Hashing the decoded
+    /// value makes writer and verifier compute over the same bytes.
+    private static func storedTimestamp(of log: AuditLog, on database: Database) async throws -> Date {
+        guard let id = log.id,
+              let stored = try await AuditLog.find(id, on: database),
+              let timestamp = stored.createdAt else { throw LedgerError.timestampMissing }
+        return timestamp
     }
 
     private static func timestampMilliseconds(_ date: Date) -> Int64 {
