@@ -141,27 +141,29 @@ private func finishScheduledScan(
 
     let allResults = (try? await App.Result.query(on: db)
         .filter(\.$scan.$id == scanID).all()) ?? []
-    let previousScan = try? await Scan.query(on: db)
+    // The last few completed runs, not just the last: a source that missed one
+    // run (skipped while failing, or timed out) still has its findings in an
+    // earlier one, so they do not come back as "new" when it recovers.
+    let recentScans = (try? await Scan.query(on: db)
         .filterInput(input)
         .filter(\.$user.$id == userID)
         .filter(\.$statusRaw == "completed")
         .filter(\.$id != scanID)
         .sort(\.$createdAt, .descending)
-        .first()
+        .limit(MonitorFingerprint.baselineRuns)
+        .all()) ?? []
+    let previousScan = recentScans.first
     var firedDiffAlert = false
 
     do {
         if let prev = previousScan, let prevID = prev.id {
             let prevResults = (try? await App.Result.query(on: db)
                 .filter(\.$scan.$id == prevID).all()) ?? []
-            let prevFingerprints = Set(try prevResults.map {
-                "\($0.source):\($0.type):\(String(try $0.rawData.prefix(200)))"
-            })
-            let newResults = try allResults.filter { result in
-                !prevFingerprints.contains(
-                    "\(result.source):\(result.type):\(String(try result.rawData.prefix(200)))"
-                )
-            }
+            let baselineIDs = recentScans.compactMap(\.id)
+            let baselineResults = (try? await App.Result.query(on: db)
+                .filter(\.$scan.$id ~~ baselineIDs).all()) ?? prevResults
+            let seenBefore = Set(try baselineResults.map(MonitorFingerprint.of))
+            let newResults = try allResults.filter { !seenBefore.contains(try MonitorFingerprint.of($0)) }
             let toInput: (App.Result) throws -> IdentitySynthesizer.Input = {
                 IdentitySynthesizer.Input(
                     source: $0.source,
@@ -243,3 +245,36 @@ private func finishScheduledScan(
         app.logger.error("[ScheduledScanRunner] Schedule \(scheduleID): diff processing failed.")
     }
 }
+
+/// What makes a monitored finding "the same" from one scheduled run to the
+/// next. The raw text is the wrong key for an account: plugins write live
+/// counters into it ("Followers: 594636 | Posts: 4172"), so the same account
+/// read as new on every run. Accounts are keyed by their profile, subdomains
+/// by name, and everything else, where a changed text is a real change (a new
+/// breach in the list, a new open port), by its text as before.
+enum MonitorFingerprint {
+    /// How many earlier completed runs a finding is compared against.
+    static let baselineRuns = 3
+
+    static let accountTypes: Set<String> = [
+        "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity"
+    ]
+
+    static func of(_ result: App.Result) throws -> String {
+        try of(source: result.source, type: result.type, metadata: result.metadataObject ?? [:],
+               rawData: result.rawData)
+    }
+
+    static func of(source: String, type: String, metadata: [String: String], rawData: String) -> String {
+        let identity: String?
+        if accountTypes.contains(type) {
+            identity = (metadata["profileURL"] ?? metadata["username"]).map { $0.lowercased() }
+        } else if type == "subdomain" {
+            identity = metadata["subdomain"]?.lowercased()
+        } else {
+            identity = nil
+        }
+        return "\(source):\(type):" + (identity.map { "id=\($0)" } ?? String(rawData.prefix(200)))
+    }
+}
+

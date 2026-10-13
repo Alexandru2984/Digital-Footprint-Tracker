@@ -6425,6 +6425,35 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(failed, [])
     }
 
+    func testMonitorTreatsAnAccountWithNewCountersAsTheSameFinding() {
+        let meta = ["platform": "bluesky", "username": "jay.bsky.team", "profileURL": "https://bsky.app/profile/jay.bsky.team"]
+        let monday = MonitorFingerprint.of(source: "Bluesky", type: "social_media", metadata: meta,
+                                           rawData: "Bluesky account found | Followers: 594636 | Posts: 4172")
+        let tuesday = MonitorFingerprint.of(source: "Bluesky", type: "social_media", metadata: meta,
+                                            rawData: "Bluesky account found | Followers: 594701 | Posts: 4175")
+        XCTAssertEqual(monday, tuesday, "new follower counts are not a new account")
+
+        var other = meta
+        other["profileURL"] = "https://bsky.app/profile/someone.else"
+        XCTAssertNotEqual(monday, MonitorFingerprint.of(source: "Bluesky", type: "social_media", metadata: other,
+                                                        rawData: "Bluesky account found | Followers: 594636 | Posts: 4172"))
+
+        let sub = { (name: String) in
+            MonitorFingerprint.of(source: "crt.sh", type: "subdomain", metadata: ["subdomain": name], rawData: name)
+        }
+        XCTAssertEqual(sub("Dev.Example.com"), sub("dev.example.com"))
+        XCTAssertNotEqual(sub("dev.example.com"), sub("vpn.example.com"))
+
+        let breaches = { (text: String) in
+            MonitorFingerprint.of(source: "HIBP", type: "data_breach", metadata: [:], rawData: text)
+        }
+        XCTAssertNotEqual(breaches("Breaches: Adobe"), breaches("Breaches: Adobe, LinkedIn"),
+                          "a finding without an identity is compared by its text, so a new breach is news")
+        XCTAssertEqual(MonitorFingerprint.of(source: "X", type: "account_presence", metadata: [:], rawData: "a"),
+                       MonitorFingerprint.of(source: "X", type: "account_presence", metadata: [:], rawData: "a"),
+                       "an account without a profile falls back to its text")
+    }
+
     func testRiskScoreSaysWhatItIsMadeOf() throws {
         let s = try RiskScorer.compute(results: [
             mkResult("data_breach", 1.0, raw: "Adobe"),
