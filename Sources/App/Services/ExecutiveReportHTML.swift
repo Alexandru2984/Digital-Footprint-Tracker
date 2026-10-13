@@ -66,7 +66,8 @@ enum ExecutiveReportHTML {
         let owned = profile.attributions.filter { $0.node.contains(": ") || $0.node.contains("@") }
         if !owned.isEmpty {
             let rows = owned.prefix(40).map { [$0.node, "\($0.score)%", $0.path.joined(separator: " → ")] }
-            b += "<section><h2>Whose accounts these are</h2>\(table(["Account", "Likely the target's", "Strongest chain"], Array(rows)))</section>\n"
+            let headers = ["Account", "Likely the target's", "Strongest chain"]
+            b += "<section><h2>Whose accounts these are</h2>\(table(headers, Array(rows)))</section>\n"
         }
 
         // Connections, strongest first.
