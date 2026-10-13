@@ -18,6 +18,8 @@ struct PhonePlugin: FootprintPlugin {
     /// E.164 / bare-digit numbers only.
     let accepts: Set<TargetShape> = [.phone]
     let cacheTTL: TimeInterval = 86_400 // carrier/region data is very stable
+    /// v2: phone intelligence API (line status, owner, breaches).
+    let cacheVersion = 2
 
     // Matches E.164 (+…) or raw digit strings, 7–15 digits total.
     private static let phoneRegex = try? NSRegularExpression(

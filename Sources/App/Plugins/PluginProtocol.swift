@@ -35,6 +35,12 @@ protocol FootprintPlugin: Sendable {
     /// ports) when nothing was checked at all.
     var requiredSecret: String? { get }
 
+    /// Bumped whenever the shape or meaning of this plugin's results changes.
+    /// It is part of the cache key, so results cached by an older release are
+    /// not served after a deploy (otherwise a fix to, say, how a clean verdict
+    /// is typed shows up only once the old entries expire, up to a day later).
+    var cacheVersion: Int { get }
+
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
@@ -45,6 +51,10 @@ extension FootprintPlugin {
     var heavy: Bool { false }
     var accepts: Set<TargetShape> { TargetShape.all }
     var requiredSecret: String? { nil }
+    var cacheVersion: Int { 1 }
+
+    /// The plugin cache key: the name, plus the version once it has moved.
+    var cacheKey: String { cacheVersion == 1 ? name : "\(name)#v\(cacheVersion)" }
 
     /// False when `requiredSecret` is set and not configured (or configured
     /// wrongly: an unreadable secret is not a usable one).

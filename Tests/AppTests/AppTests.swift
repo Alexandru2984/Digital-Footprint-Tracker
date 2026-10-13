@@ -4751,6 +4751,47 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(PluginHealth.probeDelay(afterStreak: 50), 3_600, "capped at an hour")
     }
 
+    private struct VersionedTestPlugin: FootprintPlugin {
+        let name = "Versioned"
+        let cacheVersion: Int
+        let recorder: ScanRecorder
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            await recorder.record(input)
+            return [PluginResult(source: name, type: "t", confidenceScore: 1.0, rawData: "fresh v\(cacheVersion)")]
+        }
+    }
+
+    func testABumpedCacheVersionIgnoresResultsCachedByTheOldOne() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        // Cached by a release whose plugin wrote results the old way.
+        await PluginCacheStore.store(pluginName: "Versioned", input: "versioned-target",
+                                     results: [PluginResult(source: "Versioned", type: "t", confidenceScore: 1.0, rawData: "stale")],
+                                     ttl: 600, on: app.db, logger: app.logger)
+        XCTAssertEqual(VersionedTestPlugin(cacheVersion: 1, recorder: ScanRecorder()).cacheKey, "Versioned")
+
+        func run(_ plugin: VersionedTestPlugin) async throws -> [String] {
+            let scan = Scan(input: "versioned-target")
+            try await scan.save(on: app.db)
+            return await ScanPluginRunner.runRound(
+                plugins: [plugin], candidates: [TargetDeriver.Candidate(value: "versioned-target", origin: .primary)],
+                scanID: try XCTUnwrap(scan.id), deadline: 20, perPluginTimeout: 10, reportProgress: false,
+                app: app, db: app.db, useCache: true, dedup: ScanPluginRunner.ResultDedupStore()
+            ).collected.map(\.rawData)
+        }
+        let unchanged = ScanRecorder()
+        let sameVersion = try await run(VersionedTestPlugin(cacheVersion: 1, recorder: unchanged))
+        XCTAssertEqual(sameVersion, ["stale"], "same version: the cache is served")
+        let calledUnchanged = await unchanged.inputs
+        XCTAssertEqual(calledUnchanged, [])
+
+        let bumped = ScanRecorder()
+        let newVersion = try await run(VersionedTestPlugin(cacheVersion: 2, recorder: bumped))
+        XCTAssertEqual(newVersion, ["fresh v2"], "a new version never sees the old entry")
+        let calledBumped = await bumped.inputs
+        XCTAssertEqual(calledBumped, ["versioned-target"])
+    }
+
     func testRunnerSkipsAFailingPluginsLiveRunButStillServesItsCache() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

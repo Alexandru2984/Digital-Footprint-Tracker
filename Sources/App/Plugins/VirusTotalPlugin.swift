@@ -7,6 +7,8 @@ import FoundationNetworking
 struct VirusTotalPlugin: FootprintPlugin {
     let name = "VirusTotal"
     let requiredSecret: String? = "VIRUS_TOTAL_API_KEY"
+    /// v2: clean verdicts typed apart, network operator out of `org`.
+    let cacheVersion = 2
     let description = "Malware/reputation check for domains and IPs (requires API key)"
     /// Separate domain and IP report endpoints.
     let accepts: Set<TargetShape> = [.domain, .ipv4]

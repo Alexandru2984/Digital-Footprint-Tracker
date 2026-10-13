@@ -12,6 +12,8 @@ import Vapor
 struct ShodanPlugin: FootprintPlugin {
     let name = "Shodan"
     let requiredSecret: String? = "SHODAN_API_KEY"
+    /// v2: host lookup, one finding per service, operator out of `org`.
+    let cacheVersion = 2
     let description = "Exposed ports, services and CVEs of an IP (requires API key)"
     let accepts: Set<TargetShape> = [.ipv4]
 

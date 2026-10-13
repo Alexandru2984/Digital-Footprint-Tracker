@@ -7,6 +7,8 @@ struct WhoisPlugin: FootprintPlugin {
     /// WHOIS answers for registrations and for RIR IP allocations alike.
     let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 14_400 // 4 h
+    /// v2: registry found through the IANA bootstrap; IP networks typed apart.
+    let cacheVersion = 2
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"),
