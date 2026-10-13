@@ -6549,7 +6549,13 @@ final class AppTests: XCTestCase {
         ]
         let links = IdentityLinks.build(from: inputs, target: "dtolnay@gmail.com")
         let pairs = links.map { "\($0.from) → \($0.to) [\($0.kind.rawValue)]" }
-        XCTAssertEqual(links.count, 6, "\(pairs)")
+        XCTAssertTrue(pairs.contains("dtolnay@gmail.com → dtolnay [inferred]"), "the derived name hangs off the email")
+        XCTAssertTrue(pairs.contains("github: dtolnay → dtolnay [verified]"), "and GitHub confirms it is that account's name")
+        XCTAssertFalse(pairs.contains("steam: dtolnay → dtolnay [verified]"),
+                       "an account found by looking the name up does not confirm the name")
+        XCTAssertFalse(pairs.contains("keybase: dtolnay → dtolnay [verified]"),
+                       "nor does one whose own tie to the target is only a name")
+        XCTAssertEqual(links.count, 8, "\(pairs)")
         XCTAssertEqual(links.prefix(3).map(\.kind), [.verified, .verified, .verified], "confirmed links come first")
         XCTAssertTrue(pairs.contains("dtolnay@gmail.com → github: dtolnay [verified]"))
         XCTAssertTrue(pairs.contains("crates.io: dtolnay → github: dtolnay [verified]"))
@@ -6575,6 +6581,43 @@ final class AppTests: XCTestCase {
         let html = ExecutiveReportHTML.html(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
         XCTAssertTrue(html.contains("<td>github: x|&lt;b&gt;</td><td>verified</td><td>why &lt;i&gt; (GitHub)</td>"), html)
         XCTAssertFalse(html.contains("<b>"))
+    }
+
+    func testEveryLookedUpNameIsConnectedToHowTheScanReachedIt() {
+        typealias I = IdentitySynthesizer.Input
+        // An email whose GitHub login differs from its local part: the login
+        // is a pivot, and the accounts found under it must hang off GitHub.
+        let inputs = [
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "asmith42", "email": "alice.smith@mail.test",
+                         "queriedAs": "alice.smith@mail.test", "via": "input", "matchKind": "verified",
+                         "matchReason": "verified email"], rawData: "x"),
+            I(source: "Steam", type: "account_presence", confidence: 0.6,
+              metadata: ["platform": "steam", "username": "asmith42", "queriedAs": "asmith42", "via": "pivot"], rawData: "x"),
+            I(source: "Reddit", type: "account_presence", confidence: 0.75,
+              metadata: ["platform": "reddit", "username": "alice.smith", "queriedAs": "alice.smith", "via": "emailLocalPart"], rawData: "x"),
+        ]
+        let pairs = Set(IdentityLinks.build(from: inputs, target: "alice.smith@mail.test")
+            .map { "\($0.from) → \($0.to) [\($0.kind.rawValue)]" })
+        XCTAssertEqual(pairs, [
+            "alice.smith@mail.test → github: asmith42 [verified]",
+            "github: asmith42 → asmith42 [verified]",
+            "asmith42 → steam: asmith42 [inferred]",
+            "alice.smith@mail.test → alice.smith [inferred]",
+            "alice.smith → reddit: alice.smith [inferred]",
+        ])
+    }
+
+    func testPivotsFromVerifiedLinksAreScannedFirst() {
+        var results = (1...6).map { index in
+            PluginResult(source: "Sweep", type: "account_presence", confidenceScore: 0.95, rawData: "x\(index)",
+                         metadata: ["username": "lookalike\(index)"])
+        }
+        results.append(PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 0.85, rawData: "v",
+                                    metadata: ["username": "asmith42", "matchKind": "verified"]))
+        let pivots = PivotExtractor.candidates(from: results, alreadyScanned: [])
+        XCTAssertEqual(pivots.count, PivotExtractor.maxPivots)
+        XCTAssertEqual(pivots.first, "asmith42", "a platform-confirmed login wins the limited pivot budget")
     }
 
     func testRunnerRecordsWhatEachFindingWasLookedUpAs() async throws {

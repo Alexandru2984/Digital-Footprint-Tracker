@@ -65,9 +65,12 @@ enum PivotExtractor {
                       validated == value,
                       seen.insert(value).inserted
                 else { continue }
-                // Emails are a far stronger identity anchor than a bare handle on
-                // some platform — rank them above handles, then by confidence.
-                let priority = (value.contains("@") ? 1.0 : 0.0) + result.confidenceScore
+                // A value a platform confirmed belongs to the target (a login
+                // GitHub tied to a verified email, a second address on the same
+                // OpenPGP key) outranks everything; then emails, a far stronger
+                // anchor than a bare handle; then confidence.
+                let verified = meta["matchKind"] == "verified" || meta["linkKind"] == "verified"
+                let priority = (verified ? 2.0 : 0.0) + (value.contains("@") ? 1.0 : 0.0) + result.confidenceScore
                 scored.append((value, priority))
             }
         }

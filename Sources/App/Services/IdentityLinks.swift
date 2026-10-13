@@ -78,6 +78,45 @@ enum IdentityLinks {
             }
         }
 
+        // Connect the identifiers the scan looked things up as. Without these
+        // edges a derived name ("dtolnay" from dtolnay@gmail.com) or a pivot
+        // floats unattached: its accounts are drawn, but not how the scan got
+        // to it.
+        let anchor = (target ?? "target").lowercased()
+        var queried: [String: String] = [:]
+        for input in inputs {
+            guard let value = nonEmpty(input.metadata["queriedAs"])?.lowercased(), value != anchor else { continue }
+            queried[value] = queried[value] ?? nonEmpty(input.metadata["via"]) ?? "input"
+        }
+        for (value, via) in queried.sorted(by: { $0.key < $1.key }) {
+            switch via {
+            case "emailLocalPart":
+                add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
+                         reason: "the local part of the email address"))
+            case "variant":
+                add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
+                         reason: "a spelling variant of the name"))
+            default:
+                break
+            }
+            // An account whose own tie to the target is confirmed, and whose
+            // username this is: the strongest reason the name belongs here, and
+            // how a pivot was reached. An account tied only by its name (found
+            // by looking this very name up, or with no recorded provenance)
+            // confirms nothing; counting it would dress a guess as a fact.
+            for input in inputs where identityTypes.contains(input.type) {
+                let meta = input.metadata
+                guard let matchKind = nonEmpty(meta["matchKind"]).flatMap(Kind.init(rawValue:)),
+                      matchKind != .inferred,
+                      nonEmpty(meta["queriedAs"])?.lowercased() != value,
+                      nonEmpty(meta["username"])?.lowercased() == value,
+                      let owner = node(for: meta, from: nonEmpty(meta["queriedAs"])?.lowercased() ?? anchor, type: input.type),
+                      owner != value else { continue }
+                add(Link(from: owner, to: value, kind: .verified, source: input.source,
+                         reason: "the username of this account"))
+            }
+        }
+
         return order.compactMap { best[$0] }
             .enumerated()
             .sorted { ($0.element.kind, -$0.offset) > ($1.element.kind, -$1.offset) }
