@@ -35,7 +35,7 @@ enum IdentityLinks {
             case .inferred: return 0
             }
         }
-        static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rank < rhs.rank }
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rank < rhs.rank }
     }
 
     struct Link: Codable, Sendable, Equatable {
