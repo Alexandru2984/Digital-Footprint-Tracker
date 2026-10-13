@@ -6350,15 +6350,16 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(quietReport?.alerts, false)
     }
 
-    func testEveryCanaryNamesAShippingPluginThatNeedsNoKey() {
+    func testEveryCanaryNamesAShippingPluginThatCanTakeItsInput() {
         let shipping = Dictionary(uniqueKeysWithValues: ScanController.defaultPlugins.map { ($0.name, $0) })
         for check in PluginCanary.checks {
             let plugin = shipping[check.plugin]
             XCTAssertNotNil(plugin, "\(check.plugin) is not a shipping plugin; its canary would never run")
             XCTAssertFalse(plugin?.heavy ?? false, "\(check.plugin) is a heavy sweep")
-            XCTAssertFalse(ScanPluginRunner.applicableCandidates(
-                for: plugin!, from: [TargetDeriver.Candidate(value: check.input, origin: .primary)]).isEmpty,
-                "\(check.plugin) does not accept its canary input \(check.input)")
+            // Shape only: whether a keyed plugin is configured depends on the
+            // host, and the runner skips an unconfigured one.
+            XCTAssertFalse(plugin!.accepts.isDisjoint(with: TargetShape.shapes(of: check.input)),
+                           "\(check.plugin) does not accept its canary input \(check.input)")
         }
         XCTAssertEqual(Set(PluginCanary.checks.map(\.plugin)).count, PluginCanary.checks.count)
     }
@@ -6597,6 +6598,14 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(profile.riskFactors.map(\.category), ["breach"])
             XCTAssertEqual(profile.riskFactors.first?.findings, 1)
         }
+    }
+
+    func testCleanReputationVerdictsCarryNoRisk() throws {
+        let clean = try RiskScorer.compute(raw: [(0.1, "ip_abuse_clean"), (0.3, "ip_reputation_clean"),
+                                                 (0.3, "domain_reputation_clean")])
+        XCTAssertEqual(clean.value, 0, "0% abuse and no engine flags are not exposure")
+        let flagged = try RiskScorer.compute(raw: [(0.9, "ip_abuse"), (0.95, "ip_reputation")])
+        XCTAssertGreaterThan(flagged.value, 0)
     }
 
     func testRiskScorerEmptyIsLow() throws {

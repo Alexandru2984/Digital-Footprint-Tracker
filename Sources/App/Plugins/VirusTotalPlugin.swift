@@ -45,7 +45,9 @@ struct VirusTotalPlugin: FootprintPlugin {
         let rawData = "VirusTotal domain: \(domain) | malicious: \(malicious), suspicious: \(suspicious), harmless: \(harmless) | reputation: \(reputation) | categories: \(catList)"
 
         let confidence: Double = malicious > 0 ? 0.95 : suspicious > 0 ? 0.7 : 0.3
-        return [PluginResult(source: "VirusTotal", type: "domain_reputation", confidenceScore: confidence, rawData: rawData,
+        // No engine flags it: a clean verdict, which carries no risk.
+        let type = malicious + suspicious > 0 ? "domain_reputation" : "domain_reputation_clean"
+        return [PluginResult(source: "VirusTotal", type: type, confidenceScore: confidence, rawData: rawData,
                              metadata: ["domain": domain, "malicious": String(malicious)])]
     }
 
@@ -67,7 +69,8 @@ struct VirusTotalPlugin: FootprintPlugin {
         let rawData = "VirusTotal IP: \(ip) | malicious: \(malicious) | reputation: \(reputation) | AS: \(asOwner) | country: \(country)"
 
         let confidence: Double = malicious > 0 ? 0.95 : suspicious > 0 ? 0.7 : 0.3
-        return [PluginResult(source: "VirusTotal", type: "ip_reputation", confidenceScore: confidence, rawData: rawData,
+        let type = malicious + suspicious > 0 ? "ip_reputation" : "ip_reputation_clean"
+        return [PluginResult(source: "VirusTotal", type: type, confidenceScore: confidence, rawData: rawData,
                              metadata: ["ip": ip, "country": country, "networkOrg": asOwner])]
     }
 }

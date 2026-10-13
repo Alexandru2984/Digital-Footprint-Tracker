@@ -224,6 +224,11 @@ enum RiskScorer {
         // An address that belongs to a well-known business service (GreyNoise
         // RIOT): context about the address, not exposure of anyone.
         "known_service": .noise,
+        // Reputation services' clean verdicts (0% abuse, no engine flags).
+        // Like `breach_check`, the answer "nothing bad" is not exposure.
+        "ip_abuse_clean": .noise,
+        "ip_reputation_clean": .noise,
+        "domain_reputation_clean": .noise,
 
         // ── Confirmed leak / paste exposure ──────────────────────────────────
         "data_breach": .breach,

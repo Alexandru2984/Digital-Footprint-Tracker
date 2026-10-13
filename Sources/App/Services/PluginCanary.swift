@@ -52,6 +52,12 @@ enum PluginCanary {
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),
         Check(plugin: "InternetDB", input: "8.8.8.8", username: nil),
         Check(plugin: "RIPEstat", input: "8.8.8.8", username: nil),
+        // Keyed sources: a canary also catches a key that expired or was
+        // revoked. One request a day each; skipped while not configured.
+        Check(plugin: "Shodan", input: "8.8.8.8", username: nil),
+        Check(plugin: "VirusTotal", input: "8.8.8.8", username: nil),
+        Check(plugin: "AbuseIPDB", input: "8.8.8.8", username: nil),
+        Check(plugin: "PhoneOSINT", input: "+14152007986", username: nil),
         // Shodan's own long-lived scanner: GreyNoise has classified it for years.
         Check(plugin: "GreyNoise", input: "71.6.135.131", username: nil),
         Check(plugin: "MailSecurity", input: "google.com", username: nil),
@@ -88,7 +94,9 @@ enum PluginCanary {
         var failing: [String] = []
         var paging = false
         for check in checks {
-            guard let plugin = plugins.first(where: { $0.name == check.plugin }) else { continue }
+            // An unconfigured plugin never runs in a scan either; its missing
+            // key is shown on the admin page, not paged on.
+            guard let plugin = plugins.first(where: { $0.name == check.plugin }), plugin.isConfigured else { continue }
             var report = await run(check, plugin: plugin, app: app, timeout: timeout)
             for delay in retryDelays where !report.passed {
                 try? await Task.sleep(for: .seconds(delay))
