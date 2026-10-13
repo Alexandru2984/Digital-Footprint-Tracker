@@ -48,7 +48,8 @@ enum IdentityLinks {
 
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
-        "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email"
+        "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
+        "pgp_key_uid"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {
@@ -131,7 +132,7 @@ enum IdentityLinks {
         if type == "email", let email = nonEmpty(meta["email"])?.lowercased(), email.contains("@"), email != from {
             return email
         }
-        if let platform = nonEmpty(meta["platform"]), let username = nonEmpty(meta["username"]) {
+        if let platform = nonEmpty(meta["platform"]), let username = nonEmpty(meta["username"]) ?? nonEmpty(meta["account"]) {
             return "\(platform.lowercased()): \(username.lowercased())"
         }
         if let email = nonEmpty(meta["email"])?.lowercased(), email.contains("@"), email != from {

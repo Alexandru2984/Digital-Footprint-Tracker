@@ -7605,6 +7605,74 @@ final class AppTests: XCTestCase {
         XCTAssertNil(IPv4Text.normalized("8.8.8.-1"))
     }
 
+    func testKeybaseReadsTheProvenHandleFromNametag() {
+        let proofs: [[String: Any]] = [
+            ["proof_type": "github", "nametag": "malgorithms", "state": 1, "service_url": "https://github.com/malgorithms"],
+            ["proof_type": "Twitter", "nametxt": "legacy", "state": 1],
+            ["proof_type": "reddit", "nametag": "revoked", "state": 2],
+            ["proof_type": "dns", "nametag": "", "state": 1],
+        ]
+        let live = KeybasePlugin.liveProofs(proofs)
+        XCTAssertEqual(live.map(\.type), ["github", "twitter"], "revoked and empty proofs prove nothing")
+        XCTAssertEqual(live.map(\.handle), ["malgorithms", "legacy"])
+    }
+
+    func testKeybaseProofLookupReportsOnlyUsersHoldingTheProof() throws {
+        let body = Data(#"""
+        {"them":[
+          {"basics":{"username":"chris"},"proofs_summary":{"all":[
+             {"proof_type":"dns","nametag":"chriscoyne.com","state":1},
+             {"proof_type":"github","nametag":"malgorithms","state":1}]}},
+          {"basics":{"username":"bystander"},"proofs_summary":{"all":[
+             {"proof_type":"github","nametag":"someoneelse","state":1}]}},
+          {"basics":{"username":"lapsed"},"proofs_summary":{"all":[
+             {"proof_type":"dns","nametag":"chriscoyne.com","state":2}]}}]}
+        """#.utf8)
+        let results = KeybaseProofPlugin.evaluate(body: body, handle: "chriscoyne.com", services: ["dns", "generic_web_site"], isDomain: true)
+        XCTAssertEqual(results.map { $0.metadata?["username"] }, ["chris"], "a user without a live proof for exactly this domain is not reported")
+        let hit = try XCTUnwrap(results.first)
+        XCTAssertEqual(hit.metadata?["matchKind"], "verified", "proving the domain ties its owner to the account")
+        XCTAssertEqual(hit.metadata?["linked"], "dns:chriscoyne.com,github:malgorithms")
+        XCTAssertEqual(hit.metadata?["linkKind"], "verified")
+
+        let byName = KeybaseProofPlugin.evaluate(body: body, handle: "malgorithms", services: ["github"], isDomain: false)
+        XCTAssertNil(byName.first?.metadata?["matchKind"], "a bare name proves nothing about the target by itself")
+    }
+
+    func testGitHubProfileEmailMustMatchExactly() {
+        let shown = Data(#"{"login":"asmith42","name":"Alice Smith","email":"Alice.Smith@mail.test"}"#.utf8)
+        let hit = GitHubCommitEmailPlugin.profileResult(email: "alice.smith@mail.test", body: shown)
+        XCTAssertEqual(hit?.metadata?["username"], "asmith42")
+        XCTAssertEqual(hit?.metadata?["matchKind"], "verified")
+        XCTAssertEqual(hit?.metadata?["name"], "Alice Smith")
+        // User search also matches addresses an account does not show; only a
+        // public email equal to the one asked about counts.
+        XCTAssertNil(GitHubCommitEmailPlugin.profileResult(email: "alice.smith@mail.test",
+                                                          body: Data(#"{"login":"dtolnay","email":null}"#.utf8)))
+        XCTAssertNil(GitHubCommitEmailPlugin.profileResult(email: "alice.smith@mail.test",
+                                                          body: Data(#"{"login":"x","email":"other@mail.test"}"#.utf8)))
+    }
+
+    func testKeyserverNamesStayUnverifiedLeads() throws {
+        let index = """
+        info:1:2
+        pub:D477040C70C2156A5C298549BB7E9101495E6BF7:22:263:1701906891::
+        uid:Daniel Kahn Gillmor%20%3Cdkg%40fifthhorseman.net%3E:1705467792::
+        uid:%3Cdkg%40debian.org%3E:1705467792::
+        pub:AAAA000000000000000000000000000000000000:22:263:1609086175::
+        uid:Someone Else %3Cother%40example.org%3E:1609086175::
+        """
+        let results = PGPKeyserverPlugin.evaluate(email: "dkg@fifthhorseman.net", index: index)
+        XCTAssertEqual(results.count, 1, "only keys that name the address")
+        let hit = try XCTUnwrap(results.first)
+        XCTAssertEqual(hit.metadata?["name"], "Daniel Kahn Gillmor")
+        XCTAssertEqual(hit.metadata?["account"], "bb7e9101495e6bf7")
+        XCTAssertNil(hit.metadata?["username"], "a key ID is not a handle")
+        XCTAssertEqual(hit.metadata?["matchKind"], "inferred")
+        XCTAssertLessThan(hit.confidenceScore, PivotExtractor.minPivotConfidence,
+                          "a planted key must never steer the pivot round")
+    }
+
     func testBlueskyHandleForUsernameAndDomainInputs() {
         XCTAssertEqual(BlueskyPlugin.handle(for: "Alice"), "alice.bsky.social")
         XCTAssertEqual(BlueskyPlugin.handle(for: "jay-b"), "jay-b.bsky.social")

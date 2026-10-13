@@ -32,13 +32,62 @@ struct GitHubCommitEmailPlugin: FootprintPlugin {
         if let token = try RuntimeSecret.value("GITHUB_TOKEN"), !token.isEmpty {
             headers["Authorization"] = "Bearer \(token)"
         }
-        guard let url = components.url,
-              let response = await PluginHTTP.request(
-                url, headers: headers, timeout: 15,
-                bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024), on: app
-              ),
-              response.status == 200 else { return [] }
-        return Self.evaluate(email: email, body: response.data)
+        var results: [PluginResult] = []
+        if let url = components.url,
+           let response = await PluginHTTP.request(
+            url, headers: headers, timeout: 15,
+            bodyMode: .complete(maxBytes: 2 * 1_024 * 1_024), on: app
+           ),
+           response.status == 200 {
+            results = Self.evaluate(email: email, body: response.data)
+        }
+        // No commit ties the address to an account: look for an account that
+        // shows it as its public profile email instead.
+        if !results.contains(where: { $0.metadata?["username"] != nil }),
+           let profile = await Self.profileWithEmail(email, headers: headers, app: app) {
+            results.removeAll { $0.metadata?["username"] == nil && $0.confidenceScore < 1 }
+            results.insert(profile, at: 0)
+        }
+        return results
+    }
+
+    /// An account whose public profile email is exactly `email`. GitHub only
+    /// lets a verified address be public, so a match is as strong as a
+    /// verified commit email. User search matches loosely, so each candidate's
+    /// profile is fetched and its email compared exactly.
+    static func profileWithEmail(_ email: String, headers: [String: String], app: Application) async -> PluginResult? {
+        var search = URLComponents(string: "https://api.github.com/search/users")
+        search?.queryItems = [URLQueryItem(name: "q", value: "\(email) in:email"), URLQueryItem(name: "per_page", value: "3")]
+        guard let url = search?.url,
+              let response = await PluginHTTP.request(url, headers: headers, timeout: 15,
+                                                      bodyMode: .complete(maxBytes: 256 * 1_024), on: app),
+              response.status == 200,
+              let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any],
+              let items = json["items"] as? [[String: Any]] else { return nil }
+        for login in items.compactMap({ $0["login"] as? String }).prefix(2) {
+            guard let profileURL = URL(string: "https://api.github.com/users/\(login)"),
+                  let profile = await PluginHTTP.request(profileURL, headers: headers, timeout: 15,
+                                                         bodyMode: .complete(maxBytes: 256 * 1_024), on: app),
+                  profile.status == 200,
+                  let result = profileResult(email: email, body: profile.data) else { continue }
+            return result
+        }
+        return nil
+    }
+
+    static func profileResult(email: String, body: Data) -> PluginResult? {
+        guard let user = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let login = user["login"] as? String,
+              (user["email"] as? String)?.lowercased() == email else { return nil }
+        let name = (user["name"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        var parts = ["\(email) is the public profile email of GitHub account \(login): https://github.com/\(login)"]
+        if !name.isEmpty { parts.append("Name: \(name)") }
+        var meta = ["platform": "github", "username": login, "profileURL": "https://github.com/\(login)", "email": email,
+                    "matchKind": "verified",
+                    "matchReason": "the account's public profile email (GitHub only allows a verified address there)"]
+        if !name.isEmpty { meta["name"] = name }
+        return PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 1.0,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
     }
 
     struct Authorship: Equatable {

@@ -86,10 +86,10 @@ struct KeybasePlugin: FootprintPlugin {
             // Map each proof type (github, twitter, reddit, …) to the proven
             // handle — these become precise cross-platform correlation anchors.
             var proofMeta: [String: String] = ["platform": "keybase", "username": username.lowercased()]
-            for proof in allProofs {
-                let proofType    = proof["proof_type"] as? String ?? "unknown"
-                let nametxt      = proof["nametxt"]    as? String ?? ""
-                let serviceURL   = proof["service_url"] as? String ?? ""
+            for proof in Self.liveProofs(allProofs) {
+                let proofType    = proof.type
+                let nametxt      = proof.handle
+                let serviceURL   = proof.url
                 if !nametxt.isEmpty {
                     let line = serviceURL.isEmpty
                         ? "\(proofType): \(nametxt)"
@@ -144,5 +144,19 @@ struct KeybasePlugin: FootprintPlugin {
         }
 
         return results
+    }
+
+    /// The handles a Keybase user holds live, signed proofs for. Keybase
+    /// names the proven handle `nametag`; this plugin read `nametxt`, a field
+    /// the API does not send, so no proof was ever extracted. A proof whose
+    /// `state` is not 1 is broken or revoked and proves nothing.
+    static func liveProofs(_ proofs: [[String: Any]]) -> [(type: String, handle: String, url: String)] {
+        proofs.compactMap { proof in
+            guard (proof["state"] as? Int ?? 1) == 1,
+                  let handle = ((proof["nametag"] as? String) ?? (proof["nametxt"] as? String))?
+                      .trimmingCharacters(in: .whitespaces), !handle.isEmpty else { return nil }
+            return ((proof["proof_type"] as? String ?? "unknown").lowercased(), handle,
+                    proof["service_url"] as? String ?? "")
+        }
     }
 }

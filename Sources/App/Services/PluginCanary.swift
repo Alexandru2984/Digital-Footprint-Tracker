@@ -36,6 +36,9 @@ enum PluginCanary {
         Check(plugin: "GitHubAccountCheck", input: "torvalds", username: "torvalds"),
         Check(plugin: "GitHubCommitEmail", input: "dtolnay@gmail.com", username: "dtolnay"),
         Check(plugin: "OpenPGPKeys", input: "dkg@fifthhorseman.net", username: nil),
+        Check(plugin: "PGPKeyserver", input: "dkg@fifthhorseman.net", username: nil),
+        // Keybase's co-founder proves twitter:malgorithms from user "chris".
+        Check(plugin: "KeybaseProofs", input: "malgorithms", username: "chris"),
         Check(plugin: "GitLabAccountCheck", input: "sytses", username: "sytses"),
         Check(plugin: "KeybaseOSINT", input: "chris", username: "chris"),
         Check(plugin: "TelegramOSINT", input: "durov", username: "durov"),
