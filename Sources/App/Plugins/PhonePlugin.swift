@@ -50,42 +50,84 @@ struct PhonePlugin: FootprintPlugin {
             )]
         }
 
-        guard let url = URL(string: "https://phonevalidation.abstractapi.com/v1/?api_key=\(apiKey)&phone=\(e164)") else {
-            return []
+        // Abstract retired phonevalidation.abstractapi.com; keys are only
+        // accepted by the phone intelligence API now, which also reports line
+        // status, risk, breaches and sometimes the registered name.
+        var components = URLComponents(string: "https://phoneintelligence.abstractapi.com/v1/")
+        components?.queryItems = [URLQueryItem(name: "api_key", value: apiKey), URLQueryItem(name: "phone", value: digits)]
+        guard let url = components?.url,
+              let response = await PluginHTTP.request(
+                url,
+                headers: ["Accept": "application/json"],
+                timeout: 10,
+                bodyMode: .complete(maxBytes: 256 * 1_024),
+                on: app
+              ),
+              response.status == 200 else { return [] }
+        return Self.evaluate(body: response.data, fallback: e164)
+    }
+
+    /// Pure parser for the phone intelligence response.
+    static func evaluate(body: Data, fallback e164: String) -> [PluginResult] {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return [] }
+        func section(_ key: String) -> [String: Any] { json[key] as? [String: Any] ?? [:] }
+        func text(_ dict: [String: Any], _ key: String) -> String? {
+            guard let value = (dict[key] as? String)?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+            return value
         }
-        guard let response = await PluginHTTP.request(
-            url,
-            headers: ["Accept": "application/json"],
-            timeout: 10,
-            bodyMode: .complete(maxBytes: 256 * 1_024),
-            on: app
-        ), response.status == 200 else { return [] }
-        let data = response.data
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        let format = section("phone_format"), carrier = section("phone_carrier"), location = section("phone_location")
+        let validation = section("phone_validation"), risk = section("phone_risk")
+        let registration = section("phone_registration"), breaches = section("phone_breaches")
+        let intl = text(format, "international") ?? e164
 
-        let valid   = json["valid"]   as? Bool   ?? false
-        let country = (json["country"] as? [String: Any])?["name"] as? String ?? "Unknown"
-        let carrier = json["carrier"] as? String ?? "Unknown"
-        let type    = json["type"]    as? String ?? "Unknown"
-        let format  = json["format"]  as? [String: Any]
-        let intl    = format?["international"] as? String ?? e164
-
-        guard valid else {
-            return [PluginResult(
-                source: "PhoneOSINT",
-                type: "phone_number",
-                confidenceScore: 0.3,
-                rawData: "Phone number \(intl) appears invalid or unassigned.",
-                metadata: ["phone": intl]
-            )]
+        guard validation["is_valid"] as? Bool == true else {
+            return [PluginResult(source: "PhoneOSINT", type: "phone_number", confidenceScore: 0.3,
+                                 rawData: "Phone number \(intl) appears invalid or unassigned.", metadata: ["phone": intl])]
         }
 
-        return [PluginResult(
-            source: "PhoneOSINT",
-            type: "phone_number",
-            confidenceScore: 0.95,
-            rawData: "Phone \(intl) — Country: \(country), Carrier: \(carrier), Type: \(type)",
-            metadata: ["phone": intl, "country": country, "carrier": carrier]
-        )]
+        let country = text(location, "country_name")
+        // Where the number was allocated, not where its owner lives: kept out
+        // of `location`, which identity synthesis reads as the latter.
+        let region = [text(location, "city"), text(location, "region")].compactMap { $0 }.joined(separator: ", ")
+        var parts = ["Phone \(intl)"]
+        if let country { parts.append(region.isEmpty ? country : "\(country) (\(region))") }
+        if let name = text(carrier, "name") { parts.append("Carrier: \(name)") }
+        if let line = text(carrier, "line_type") { parts.append("Line: \(line)") }
+        if let status = text(validation, "line_status") { parts.append("Status: \(status)") }
+        if validation["is_voip"] as? Bool == true { parts.append("VoIP") }
+        if risk["is_disposable"] as? Bool == true { parts.append("Disposable number") }
+        if let level = text(risk, "risk_level") { parts.append("Risk: \(level)") }
+
+        var meta = ["phone": intl]
+        if let country { meta["country"] = country }
+        if !region.isEmpty { meta["numberRegion"] = region }
+        if let name = text(carrier, "name") { meta["carrier"] = name }
+        if let line = text(carrier, "line_type") { meta["lineType"] = line }
+
+        var results = [PluginResult(source: "PhoneOSINT", type: "phone_number", confidenceScore: 0.95,
+                                    rawData: parts.joined(separator: " | "), metadata: meta)]
+
+        // Caller-ID registration: who the line is registered to, when known.
+        if let owner = text(registration, "name") {
+            let kind = text(registration, "type").map { " (\($0))" } ?? ""
+            results.append(PluginResult(
+                source: "PhoneOSINT", type: "phone_owner", confidenceScore: 0.7,
+                rawData: "\(intl) is registered to \(owner)\(kind) (caller-ID record).",
+                metadata: ["phone": intl, "name": owner]))
+        }
+
+        let domains = (breaches["breached_domains"] as? [Any] ?? []).compactMap { entry -> String? in
+            (entry as? String) ?? ((entry as? [String: Any])?["domain"] as? String)
+        }
+        let total = breaches["total_breaches"] as? Int ?? domains.count
+        if total > 0 {
+            var line = "\(intl) appears in \(total) known breach(es)"
+            if !domains.isEmpty { line += ": \(domains.prefix(10).joined(separator: ", "))" }
+            if let first = text(breaches, "date_first_breached") { line += " | First: \(first)" }
+            results.append(PluginResult(
+                source: "PhoneOSINT", type: "data_breach", confidenceScore: 0.9, rawData: line,
+                metadata: ["phone": intl, "breaches": domains.prefix(30).joined(separator: ", ")]))
+        }
+        return results
     }
 }

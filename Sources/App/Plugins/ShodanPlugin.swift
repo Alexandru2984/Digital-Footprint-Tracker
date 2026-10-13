@@ -1,59 +1,72 @@
 import Foundation
 import Vapor
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
+/// Open ports, services and known CVEs of an IPv4 address from Shodan's host
+/// record.
+///
+/// Uses the host lookup (`/shodan/host/{ip}`), which every API plan includes.
+/// It used host *search* before, which spends query credits; a free key has
+/// none, so every call was refused and the plugin always said "nothing
+/// exposed". Domains reach this plugin through their resolved addresses (the
+/// pivot round scans the `ip` a DNS finding reports), so it takes IPs only.
 struct ShodanPlugin: FootprintPlugin {
     let name = "Shodan"
     let requiredSecret: String? = "SHODAN_API_KEY"
-    let description = "Exposed ports and services (requires API key)"
-    /// Host search. Previously ungated: it spent API quota on emails and handles.
-    let accepts: Set<TargetShape> = [.domain, .ipv4]
+    let description = "Exposed ports, services and CVEs of an IP (requires API key)"
+    let accepts: Set<TargetShape> = [.ipv4]
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
-        // Host targets only. Shodan indexes internet-facing infrastructure, so a
-        // handle or an email address can only ever return noise — and every such
-        // query still costs a call from a metered plan. This guard was missing:
-        // the plugin queried whatever it was handed.
-        let target = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !target.contains("@"), target.contains(".") else { return [] }
+        guard let ip = IPv4Text.normalized(input),
+              let apiKey = try RuntimeSecret.value("SHODAN_API_KEY"), !apiKey.isEmpty,
+              let url = URL(string: "https://api.shodan.io/shodan/host/\(ip)?key=\(apiKey)"),
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 15,
+                bodyMode: .complete(maxBytes: 4 * 1_024 * 1_024), on: app
+              ),
+              // 404 is "Shodan has no record of this address", not a failure.
+              response.status == 200 else { return [] }
+        return Self.evaluate(ip: ip, body: response.data)
+    }
 
-        guard let apiKey = try RuntimeSecret.value("SHODAN_API_KEY"), !apiKey.isEmpty else { return [] }
+    /// One result per exposed service (at most 10), carrying the host's CVEs
+    /// and hostnames so identity synthesis can rebuild the host view.
+    static func evaluate(ip: String, body: Data) -> [PluginResult] {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              (json["ip_str"] as? String) == ip else { return [] }
+        let services = json["data"] as? [[String: Any]] ?? []
+        let hostCVEs = (json["vulns"] as? [String]) ?? []
+        let hostnames = (json["hostnames"] as? [String] ?? []).prefix(5)
+        let networkOrg = (json["org"] as? String) ?? (json["isp"] as? String)
+        let country = json["country_name"] as? String
 
-        let query = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
-        guard let url = URL(string: "https://api.shodan.io/shodan/host/search?key=\(apiKey)&query=\(query)&minify=true") else { return [] }
-
-        guard let resp = await PluginHTTP.request(url, on: app), resp.status == 200,
-              let json = try? JSONSerialization.jsonObject(with: resp.data) as? [String: Any],
-              let matches = json["matches"] as? [[String: Any]],
-              !matches.isEmpty else { return [] }
-
+        var seenPorts: Set<String> = []
         var results: [PluginResult] = []
-        for match in matches.prefix(10) {
-            var parts: [String] = []
-            var meta: [String: String] = [:]
-            if let ip = match["ip_str"] as? String { parts.append("IP: \(ip)"); meta["ip"] = ip }
-            if let port = match["port"] as? Int { parts.append("Port: \(port)"); meta["port"] = String(port) }
-            if let transport = match["transport"] as? String { parts.append(transport.uppercased()); meta["transport"] = transport }
-            if let org = match["org"] as? String { parts.append("Org: \(org)"); meta["org"] = org }
-            if let country = (match["location"] as? [String: Any])?["country_name"] as? String {
-                parts.append("Country: \(country)"); meta["country"] = country
-            }
-            if let vulns = match["vulns"] as? [String: Any], !vulns.isEmpty {
-                let cves = vulns.keys.prefix(3).joined(separator: ", ")
-                parts.append("CVEs: \(cves)"); meta["cves"] = cves
-            }
-            if let product = match["product"] as? String { parts.append("Product: \(product)"); meta["product"] = product }
-            if !parts.isEmpty {
-                results.append(PluginResult(
-                    source: "Shodan",
-                    type: "exposed_service",
-                    confidenceScore: 0.9,
-                    rawData: parts.joined(separator: " | "),
-                    metadata: meta
-                ))
-            }
+        for service in services {
+            guard let port = service["port"] as? Int, results.count < 10 else { continue }
+            let transport = (service["transport"] as? String ?? "tcp").lowercased()
+            guard seenPorts.insert("\(port)/\(transport)").inserted else { continue }
+            let module = (service["_shodan"] as? [String: Any])?["module"] as? String
+            let product = [service["product"] as? String, service["version"] as? String]
+                .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " ")
+            let serviceCVEs = ((service["vulns"] as? [String: Any])?.keys).map(Array.init) ?? []
+            let cves = Array(Set(hostCVEs + serviceCVEs)).sorted()
+
+            var parts = ["\(ip):\(port)/\(transport) open"]
+            if !product.isEmpty { parts.append(product) } else if let module { parts.append(module) }
+            if let networkOrg { parts.append("Network: \(networkOrg)") }
+            if let country { parts.append(country) }
+            if !hostnames.isEmpty { parts.append("Hostnames: \(hostnames.joined(separator: ", "))") }
+            if !cves.isEmpty { parts.append("CVEs: \(cves.prefix(5).joined(separator: ", "))") }
+
+            var meta = ["ip": ip, "port": String(port), "transport": transport]
+            // Not `org`: identity synthesis reads that as the person's
+            // organisation, and the operator of an address is not that.
+            if let networkOrg { meta["networkOrg"] = networkOrg }
+            if !product.isEmpty { meta["product"] = product }
+            if !cves.isEmpty { meta["cves"] = cves.prefix(20).joined(separator: ",") }
+            if !hostnames.isEmpty { meta["hostnames"] = hostnames.joined(separator: ",") }
+            results.append(PluginResult(source: "Shodan", type: cves.isEmpty ? "exposed_service" : "vulnerability",
+                                        confidenceScore: 0.9, rawData: parts.joined(separator: " | "), metadata: meta))
         }
         return results
     }

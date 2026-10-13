@@ -252,6 +252,8 @@ enum RiskScorer {
 
         // ── Direct PII ───────────────────────────────────────────────────────
         "phone_number": .contact,
+        // The name a line is registered to: direct PII.
+        "phone_owner": .contact,
         "ip_geolocation": .contact,
         "crypto_wallet": .contact,
         // An address harvested from public commit metadata. It landed here

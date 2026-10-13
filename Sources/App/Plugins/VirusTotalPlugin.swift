@@ -68,6 +68,6 @@ struct VirusTotalPlugin: FootprintPlugin {
 
         let confidence: Double = malicious > 0 ? 0.95 : suspicious > 0 ? 0.7 : 0.3
         return [PluginResult(source: "VirusTotal", type: "ip_reputation", confidenceScore: confidence, rawData: rawData,
-                             metadata: ["ip": ip, "country": country, "org": asOwner])]
+                             metadata: ["ip": ip, "country": country, "networkOrg": asOwner])]
     }
 }

@@ -6283,11 +6283,11 @@ final class AppTests: XCTestCase {
         unsetenv("SHODAN_API_KEY")
         unsetenv("SHODAN_API_KEY_FILE")
         let shodan = ShodanPlugin()
-        let candidates = [TargetDeriver.Candidate(value: "example.com", origin: .primary)]
+        let candidates = [TargetDeriver.Candidate(value: "8.8.8.8", origin: .primary)]
         XCTAssertFalse(shodan.isConfigured)
         XCTAssertTrue(ScanPluginRunner.applicableCandidates(for: shodan, from: candidates).isEmpty,
                       "without a key it could only say 'no open ports', which nobody checked")
-        XCTAssertFalse(ScanPluginRunner.applicablePlugins([shodan], for: "example.com").contains { $0.name == "Shodan" },
+        XCTAssertFalse(ScanPluginRunner.applicablePlugins([shodan], for: "8.8.8.8").contains { $0.name == "Shodan" },
                        "and it is not counted in the progress total")
 
         setenv("SHODAN_API_KEY", "test-key", 1)
@@ -7418,6 +7418,52 @@ final class AppTests: XCTestCase {
                        "the earliest certificate wins")
         XCTAssertEqual(CrtShPlugin.parseCertSpotter(body, limit: 1, domain: "example.com").count, 1)
         XCTAssertTrue(CrtShPlugin.parseCertSpotter(Data("{}".utf8), limit: 50, domain: "example.com").isEmpty)
+    }
+
+    func testShodanHostRecordBecomesOneFindingPerService() throws {
+        let body = Data(#"""
+        {"ip_str":"8.8.8.8","org":"Google LLC","country_name":"United States","hostnames":["dns.google"],
+         "vulns":["CVE-2099-0001"],
+         "data":[{"port":53,"transport":"tcp","_shodan":{"module":"dns-tcp"}},
+                 {"port":53,"transport":"udp","_shodan":{"module":"dns-udp"}},
+                 {"port":53,"transport":"tcp","_shodan":{"module":"dns-tcp"}},
+                 {"port":443,"transport":"tcp","product":"nginx","version":"1.25","vulns":{"CVE-2099-0002":{}}}]}
+        """#.utf8)
+        let results = ShodanPlugin.evaluate(ip: "8.8.8.8", body: body)
+        XCTAssertEqual(results.count, 3, "one per port and transport; the repeated 53/tcp banner is not a new service")
+        let https = try XCTUnwrap(results.first { $0.metadata?["port"] == "443" })
+        XCTAssertEqual(https.type, "vulnerability")
+        XCTAssertEqual(https.metadata?["cves"], "CVE-2099-0001,CVE-2099-0002")
+        XCTAssertTrue(https.rawData.hasPrefix("8.8.8.8:443/tcp open | nginx 1.25 | Network: Google LLC"))
+        XCTAssertEqual(https.metadata?["networkOrg"], "Google LLC")
+        XCTAssertNil(https.metadata?["org"], "the network operator is not the target's organisation")
+        XCTAssertEqual(https.metadata?["hostnames"], "dns.google")
+        XCTAssertTrue(ShodanPlugin.evaluate(ip: "1.1.1.1", body: body).isEmpty, "a record for another address is ignored")
+        XCTAssertEqual(ShodanPlugin().accepts, [.ipv4])
+    }
+
+    func testPhoneIntelligenceReportsLineRiskOwnerAndBreaches() throws {
+        let body = Data(#"""
+        {"phone_number":"14152007986","phone_format":{"international":"+1 415-200-7986"},
+         "phone_carrier":{"name":"T-Mobile USA Inc.","line_type":"mobile"},
+         "phone_location":{"country_name":"United States","region":"California","city":"San Francisco"},
+         "phone_validation":{"is_valid":true,"line_status":"active","is_voip":false},
+         "phone_registration":{"name":"Jane Roe","type":"consumer"},
+         "phone_risk":{"risk_level":"low","is_disposable":false},
+         "phone_breaches":{"total_breaches":2,"date_first_breached":"2019-01-01","breached_domains":["example.com",{"domain":"other.example"}]}}
+        """#.utf8)
+        let results = PhonePlugin.evaluate(body: body, fallback: "+14152007986")
+        XCTAssertEqual(results.map(\.type), ["phone_number", "phone_owner", "data_breach"])
+        XCTAssertEqual(results[0].rawData,
+                       "Phone +1 415-200-7986 | United States (San Francisco, California) | Carrier: T-Mobile USA Inc. | Line: mobile | Status: active | Risk: low")
+        XCTAssertEqual(results[0].metadata?["numberRegion"], "San Francisco, California")
+        XCTAssertNil(results[0].metadata?["location"], "where a number was allocated is not where its owner lives")
+        XCTAssertEqual(results[1].metadata?["name"], "Jane Roe")
+        XCTAssertEqual(results[2].metadata?["breaches"], "example.com, other.example")
+
+        let invalid = PhonePlugin.evaluate(body: Data(#"{"phone_validation":{"is_valid":false}}"#.utf8), fallback: "+1999")
+        XCTAssertEqual(invalid.first?.confidenceScore, 0.3)
+        XCTAssertTrue(PhonePlugin.evaluate(body: Data("nope".utf8), fallback: "+1").isEmpty)
     }
 
     func testRIPEStatNamesTheNetworkWithoutCallingItTheTargetsEmployer() throws {

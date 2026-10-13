@@ -39,6 +39,6 @@ struct AbuseIPDBPlugin: FootprintPlugin {
 
         let confidence = max(0.1, min(1.0, Double(abuseScore) / 100.0))
         return [PluginResult(source: "AbuseIPDB", type: "ip_abuse", confidenceScore: confidence, rawData: rawData,
-                             metadata: ["ip": input, "country": countryCode, "org": isp, "abuseScore": String(abuseScore)])]
+                             metadata: ["ip": input, "country": countryCode, "networkOrg": isp, "abuseScore": String(abuseScore)])]
     }
 }
