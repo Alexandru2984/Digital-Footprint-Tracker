@@ -204,8 +204,10 @@
             const degraded = count('degraded');
             const canaryFailing = reports.filter(r => r.canary && r.canary.passed === false && r.canary.alerts !== false).length;
             summary.className = 'mb-3 text-[11px] ' + (failing || canaryFailing ? 'text-red-400' : degraded ? 'text-yellow-400' : 'text-green-400');
+            const unconfigured = reports.filter(r => r.configured === false).length;
             summary.textContent = `${failing} failing · ${degraded} degraded · ${count('healthy')} healthy · ${count('idle')} not run since restart`
-                + ` · ${canaryFailing} canar${canaryFailing === 1 ? 'y' : 'ies'} failing`;
+                + ` · ${canaryFailing} canar${canaryFailing === 1 ? 'y' : 'ies'} failing`
+                + (unconfigured ? ` · ${unconfigured} not configured (missing API key)` : '');
 
             const statusClass = {
                 failing: 'text-red-400', degraded: 'text-yellow-400', healthy: 'text-green-400', idle: 'text-slate-500',
@@ -236,7 +238,7 @@
                     [r.plugin, 'text-slate-200'],
                     [
                         [
-                            r.status,
+                            r.configured === false ? 'not configured' : r.status,
                             Number(r.skipped) ? `${Number(r.skipped)} skipped` : '',
                             r.nextProbeAt ? `next probe ${new Date(r.nextProbeAt).toLocaleTimeString()}` : '',
                         ].filter(Boolean).join(' · '),

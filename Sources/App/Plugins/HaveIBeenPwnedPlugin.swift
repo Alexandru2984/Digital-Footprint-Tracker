@@ -7,6 +7,7 @@ import FoundationNetworking
 /// Uses the shared size-bounded outbound client.
 struct HaveIBeenPwnedPlugin: FootprintPlugin {
     let name = "HaveIBeenPwned"
+    let requiredSecret: String? = "HIBP_API_KEY"
     let description = "Email breach database check (HIBP)"
     /// HIBP's breach API is queried by email address.
     let accepts: Set<TargetShape> = [.email]

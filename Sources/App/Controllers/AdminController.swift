@@ -149,23 +149,29 @@ struct AdminController: RouteCollection {
     struct PluginHealthEntry: Content, Equatable {
         let health: PluginHealth.Report
         let canary: PluginCanary.Report?
+        /// False when the plugin needs a secret this server lacks; it never runs.
+        var configured = true
 
-        private enum CodingKeys: String, CodingKey { case canary }
+        private enum CodingKeys: String, CodingKey { case canary, configured }
 
-        init(health: PluginHealth.Report, canary: PluginCanary.Report?) {
+        init(health: PluginHealth.Report, canary: PluginCanary.Report?, configured: Bool = true) {
             self.health = health
             self.canary = canary
+            self.configured = configured
         }
 
         init(from decoder: Decoder) throws {
             health = try PluginHealth.Report(from: decoder)
-            canary = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(PluginCanary.Report.self, forKey: .canary)
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            canary = try container.decodeIfPresent(PluginCanary.Report.self, forKey: .canary)
+            configured = try container.decodeIfPresent(Bool.self, forKey: .configured) ?? true
         }
 
         func encode(to encoder: Encoder) throws {
             try health.encode(to: encoder)
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(canary, forKey: .canary)
+            try container.encode(configured, forKey: .configured)
         }
     }
 
@@ -177,9 +183,12 @@ struct AdminController: RouteCollection {
         }
         let names = ScanController.defaultPlugins.map(\.name)
         let rank: [PluginHealth.Status: Int] = [.failing: 0, .degraded: 1, .healthy: 2, .idle: 3]
+        let configured = Dictionary(ScanController.defaultPlugins.map { ($0.name, $0.isConfigured) },
+                                    uniquingKeysWith: { first, _ in first })
         var entries: [PluginHealthEntry] = []
         for report in await PluginHealth.shared.reports(for: names) {
-            entries.append(PluginHealthEntry(health: report, canary: await PluginCanaryStore.shared.report(for: report.plugin)))
+            entries.append(PluginHealthEntry(health: report, canary: await PluginCanaryStore.shared.report(for: report.plugin),
+                                             configured: configured[report.plugin] ?? true))
         }
         // A failed canary is as broken as a failing status, whatever the live
         // runs say: that is the case live runs cannot see.

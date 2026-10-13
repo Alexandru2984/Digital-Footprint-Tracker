@@ -189,6 +189,8 @@ enum ScanPluginRunner {
         for plugin: any FootprintPlugin,
         from candidates: [TargetDeriver.Candidate]
     ) -> [TargetDeriver.Candidate] {
+        // Not configured: never run, never counted in the progress total.
+        guard plugin.isConfigured else { return [] }
         let accepts = plugin.accepts
         return candidates.filter { candidate in
             guard !plugin.heavy || candidate.origin.heavyEligible else { return false }

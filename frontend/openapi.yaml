@@ -201,6 +201,9 @@ components:
         lastFailure: { type: string, nullable: true, example: "unreachable, HTTP 403" }
         skipped: { type: integer, description: Live runs skipped since the restart because the plugin was failing }
         nextProbeAt: { type: string, format: date-time, nullable: true, description: When a failing plugin may next make one live probe run }
+        configured:
+          type: boolean
+          description: False when the plugin needs an API key this server lacks; such a plugin is never run
         canary:
           type: object
           nullable: true

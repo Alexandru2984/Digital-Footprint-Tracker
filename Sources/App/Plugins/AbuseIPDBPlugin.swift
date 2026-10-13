@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct AbuseIPDBPlugin: FootprintPlugin {
     let name = "AbuseIPDB"
+    let requiredSecret: String? = "ABUSEIPDB_API_KEY"
     let description = "IP abuse reputation score (requires API key)"
     /// Reputation is scored per IP address.
     let accepts: Set<TargetShape> = [.ipv4]

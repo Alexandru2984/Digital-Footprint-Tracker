@@ -6,6 +6,7 @@ import FoundationNetworking
 
 struct ShodanPlugin: FootprintPlugin {
     let name = "Shodan"
+    let requiredSecret: String? = "SHODAN_API_KEY"
     let description = "Exposed ports and services (requires API key)"
     /// Host search. Previously ungated: it spent API quota on emails and handles.
     let accepts: Set<TargetShape> = [.domain, .ipv4]

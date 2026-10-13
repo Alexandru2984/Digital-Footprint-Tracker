@@ -6275,6 +6275,28 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testAPluginWithoutItsKeyNeverRuns() throws {
+        let environment = EnvironmentSnapshot(["SHODAN_API_KEY", "SHODAN_API_KEY_FILE"])
+        defer { environment.restore() }
+        unsetenv("SHODAN_API_KEY")
+        unsetenv("SHODAN_API_KEY_FILE")
+        let shodan = ShodanPlugin()
+        let candidates = [TargetDeriver.Candidate(value: "example.com", origin: .primary)]
+        XCTAssertFalse(shodan.isConfigured)
+        XCTAssertTrue(ScanPluginRunner.applicableCandidates(for: shodan, from: candidates).isEmpty,
+                      "without a key it could only say 'no open ports', which nobody checked")
+        XCTAssertFalse(ScanPluginRunner.applicablePlugins([shodan], for: "example.com").contains { $0.name == "Shodan" },
+                       "and it is not counted in the progress total")
+
+        setenv("SHODAN_API_KEY", "test-key", 1)
+        XCTAssertTrue(shodan.isConfigured)
+        XCTAssertFalse(ScanPluginRunner.applicableCandidates(for: shodan, from: candidates).isEmpty)
+
+        XCTAssertTrue(PhonePlugin().isConfigured, "the phone plugin still formats a number offline without its key")
+        XCTAssertEqual(Set(ScanController.defaultPlugins.compactMap(\.requiredSecret)),
+                       ["HIBP_API_KEY", "SHODAN_API_KEY", "VIRUS_TOTAL_API_KEY", "ABUSEIPDB_API_KEY"])
+    }
+
     func testCanaryPassesOnlyWhenTheKnownAccountIsFound() {
         let check = PluginCanary.Check(plugin: "P", input: "torvalds", username: "Torvalds")
         let hit = PluginResult(source: "P", type: "t", confidenceScore: 1, rawData: "x", metadata: ["username": "torvalds"])

@@ -29,6 +29,12 @@ protocol FootprintPlugin: Sendable {
     /// existed; a test asserts every shipping plugin narrows it.
     var accepts: Set<TargetShape> { get }
 
+    /// The runtime secret this plugin cannot work without, or nil. A plugin
+    /// whose secret is not configured is never run: it could only answer
+    /// "nothing found", which reads as a clean result (no breaches, no open
+    /// ports) when nothing was checked at all.
+    var requiredSecret: String? { get }
+
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
@@ -38,6 +44,15 @@ extension FootprintPlugin {
     var cacheTTL: TimeInterval { 3600 } // 1 hour
     var heavy: Bool { false }
     var accepts: Set<TargetShape> { TargetShape.all }
+    var requiredSecret: String? { nil }
+
+    /// False when `requiredSecret` is set and not configured (or configured
+    /// wrongly: an unreadable secret is not a usable one).
+    var isConfigured: Bool {
+        guard let secret = requiredSecret else { return true }
+        guard let value = try? RuntimeSecret.value(secret) else { return false }
+        return !value.isEmpty
+    }
 }
 
 struct PluginResult: Sendable, Codable {

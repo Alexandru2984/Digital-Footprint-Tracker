@@ -1367,9 +1367,11 @@
                 container.innerHTML = '';
                 availablePlugins.forEach(p => {
                     const label = document.createElement('label');
-                    label.className = 'flex items-center gap-1 text-[10px] text-slate-400 cursor-pointer hover:text-slate-200 select-none';
-                    label.title = p.description || '';
-                    label.innerHTML = `<input type="checkbox" class="plugin-checkbox" value="${escapeHtml(p.name)}" style="accent-color:#10b981"> ${escapeHtml(p.name)}`;
+                    const off = p.available === false;
+                    label.className = 'flex items-center gap-1 text-[10px] select-none '
+                        + (off ? 'text-slate-600 cursor-not-allowed' : 'text-slate-400 cursor-pointer hover:text-slate-200');
+                    label.title = off ? `${p.description || ''} (not configured on this server)` : (p.description || '');
+                    label.innerHTML = `<input type="checkbox" class="plugin-checkbox" value="${escapeHtml(p.name)}" style="accent-color:#10b981"${off ? ' disabled' : ''}> ${escapeHtml(p.name)}${off ? ' · not configured' : ''}`;
                     container.appendChild(label);
                 });
             } catch(e) {}

@@ -15,6 +15,9 @@ struct ScanRequest: Content {
 struct PluginInfo: Content {
     let name: String
     let description: String
+    /// False when the plugin needs a secret this server does not have; such
+    /// a plugin is never run.
+    let available: Bool
 }
 
 struct ScanResponse: Content {
@@ -142,7 +145,7 @@ struct ScanController: RouteCollection {
         // Description now lives on each plugin (FootprintPlugin.description). The
         // old central switch keyed off `.name`, but most names had drifted from
         // its cases, so ~17 of 24 plugins silently fell back to "OSINT plugin".
-        return self.plugins.map { PluginInfo(name: $0.name, description: $0.description) }
+        return self.plugins.map { PluginInfo(name: $0.name, description: $0.description, available: $0.isConfigured) }
     }
 
     @Sendable
