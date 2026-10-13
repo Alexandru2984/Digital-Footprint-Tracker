@@ -6638,6 +6638,38 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(IdentityLinks.attribute([island], target: "x").isEmpty, "nothing reachable from the target")
     }
 
+    func testAStrangerSharingTheUsernameDoesNotBecomeTheTarget() throws {
+        typealias I = IdentitySynthesizer.Input
+        func lookalike(_ platform: String) -> I {
+            I(source: platform, type: "account_presence", confidence: 1.0,
+              metadata: ["platform": platform, "username": "dtolnay", "name": "Dave Impostor", "location": "Elsewhere",
+                         "queriedAs": "dtolnay", "via": "emailLocalPart"], rawData: platform)
+        }
+        let inputs = [
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "dtolnay", "email": "dtolnay@gmail.com", "name": "David Tolnay",
+                         "location": "Home", "queriedAs": "dtolnay@gmail.com", "via": "input", "matchKind": "verified"], rawData: "gh"),
+            lookalike("codeberg"), lookalike("steam"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "dtolnay@gmail.com")
+        XCTAssertEqual(profile.likelyName, "David Tolnay",
+                       "two same-name accounts must not outvote the one GitHub tied to the address")
+        XCTAssertEqual(profile.locations, ["Home"], "a lookalike's location is not the target's")
+        let github = try XCTUnwrap(profile.confirmedAccounts.first { $0.platform == "github" })
+        let steam = try XCTUnwrap(profile.confirmedAccounts.first { $0.platform == "steam" })
+        XCTAssertEqual(github.confidence, 0.98, accuracy: 0.001)
+        XCTAssertLessThan(steam.confidence, 0.5, "listed, but at how likely it is to be theirs")
+
+        // A scan from before provenance was recorded keeps its old profile.
+        let legacy = inputs.map { input -> I in
+            var meta = input.metadata
+            meta["queriedAs"] = nil
+            return I(source: input.source, type: input.type, confidence: input.confidence, metadata: meta, rawData: input.rawData)
+        }
+        let old = IdentitySynthesizer.synthesize(from: legacy, riskScore: 0, riskLevel: "Low", target: "dtolnay@gmail.com")
+        XCTAssertEqual(old.likelyName, "Dave Impostor", "unchanged: without provenance there is nothing to weigh by")
+    }
+
     func testPivotsFromVerifiedLinksAreScannedFirst() {
         var results = (1...6).map { index in
             PluginResult(source: "Sweep", type: "account_presence", confidenceScore: 0.95, rawData: "x\(index)",

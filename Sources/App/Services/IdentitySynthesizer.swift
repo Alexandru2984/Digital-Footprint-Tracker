@@ -91,8 +91,26 @@ enum IdentitySynthesizer {
         var svcHosts: [String: Set<String>] = [:]
         var allCves = Set<String>()
 
+        // How much each finding speaks for the target. A name, place or
+        // employer read off an account that only shares the target's username
+        // (38% likely theirs) must not shape the profile like one from an
+        // account a platform verified (98%): that is how a stranger with the
+        // same handle ends up in someone's dossier. Applied only where the
+        // scan recorded provenance; older scans keep their previous profile.
+        let attributions = IdentityLinks.attribute(links, target: target ?? "target")
+        let attributed = target != nil && inputs.contains { $0.metadata["queriedAs"] != nil }
+        let attributionByNode = Dictionary(attributions.map { ($0.node, Double($0.score) / 100) },
+                                           uniquingKeysWith: { first, _ in first })
+        func belonging(_ inp: Input) -> Double {
+            guard attributed, IdentityLinks.identityTypes.contains(inp.type) else { return 1 }
+            let from = (nonEmpty(inp.metadata["queriedAs"]) ?? target ?? "target").lowercased()
+            guard let node = IdentityLinks.node(for: inp.metadata, from: from, type: inp.type) else { return 1 }
+            return attributionByNode[node] ?? 0.3
+        }
+
         for inp in inputs {
             let m = inp.metadata
+            let weight = belonging(inp)
             if let rawName = nonEmpty(m["name"]) {
                 let display = collapseWhitespace(rawName)
                 let key = display.lowercased()
@@ -100,11 +118,11 @@ enum IdentitySynthesizer {
                 // account outranks a one-off mention from a weak source, and
                 // corroboration across sources accumulates. Case/spacing variants
                 // ("John Smith" / "john  smith") merge into one identity.
-                nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence))
+                nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence)) * weight
                 nameForms[key, default: [:]][display, default: 0] += 1
             }
-            if let l = nonEmpty(m["location"]) { record(collapseWhitespace(l), into: &locationForms) }
-            if let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { record(collapseWhitespace(o), into: &orgForms) }
+            if weight >= 0.5, let l = nonEmpty(m["location"]) { record(collapseWhitespace(l), into: &locationForms) }
+            if weight >= 0.5, let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { record(collapseWhitespace(o), into: &orgForms) }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
             if let p = nonEmpty(m["phone"]) {
                 let display = collapseWhitespace(p)
@@ -129,8 +147,8 @@ enum IdentitySynthesizer {
                 let reference = nonEmpty(m["profileURL"]) ?? nonEmpty(m["url"]) ?? nonEmpty(m["username"]) ?? String(inp.rawData.prefix(160))
                 let key = "\(platform.lowercased())|\(canonicalRef(reference))"
                 // Keep the highest-confidence sighting of each (platform, reference).
-                if (accountsByKey[key]?.confidence ?? -1) < inp.confidence {
-                    accountsByKey[key] = Account(platform: platform, reference: String(reference.prefix(200)), confidence: inp.confidence)
+                if (accountsByKey[key]?.confidence ?? -1) < inp.confidence * weight {
+                    accountsByKey[key] = Account(platform: platform, reference: String(reference.prefix(200)), confidence: inp.confidence * weight)
                 }
             }
 
@@ -202,7 +220,7 @@ enum IdentitySynthesizer {
             riskLevel: riskLevel,
             riskFactors: riskFactors,
             links: links,
-            attributions: IdentityLinks.attribute(links, target: target ?? "target"),
+            attributions: attributions,
             resultCount: inputs.count
         )
     }
