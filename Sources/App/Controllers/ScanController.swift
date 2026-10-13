@@ -78,6 +78,8 @@ private func requestedSSECursor(_ req: Request) throws -> Int64 {
 struct ScanController: RouteCollection {
     static let defaultPlugins: [any FootprintPlugin] = [
         GravatarPlugin(),
+        GitHubCommitEmailPlugin(),
+        OpenPGPKeyPlugin(),
         HaveIBeenPwnedPlugin(),
         EmailIntelPlugin(),
         UsernamePlugin(),

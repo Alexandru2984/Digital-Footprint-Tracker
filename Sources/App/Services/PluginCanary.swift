@@ -34,6 +34,8 @@ enum PluginCanary {
 
     static let checks: [Check] = [
         Check(plugin: "GitHubAccountCheck", input: "torvalds", username: "torvalds"),
+        Check(plugin: "GitHubCommitEmail", input: "dtolnay@gmail.com", username: "dtolnay"),
+        Check(plugin: "OpenPGPKeys", input: "dkg@fifthhorseman.net", username: nil),
         Check(plugin: "GitLabAccountCheck", input: "sytses", username: "sytses"),
         Check(plugin: "KeybaseOSINT", input: "chris", username: "chris"),
         Check(plugin: "TelegramOSINT", input: "durov", username: "durov"),

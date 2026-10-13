@@ -7233,6 +7233,77 @@ final class AppTests: XCTestCase {
                      "a GitHub account that no longer carries the login is not linked")
     }
 
+    func testGitHubCommitEmailTrustsOnlyAVerifiedLogin() throws {
+        func item(_ email: String, login: String?, name: String, repo: String) -> String {
+            let author = login.map { #""author":{"login":"\#($0)"},"# } ?? #""author":null,"#
+            return #"{\#(author)"commit":{"author":{"email":"\#(email)","name":"\#(name)","date":"1992-02-25T12:00:00Z"}},"repository":{"full_name":"\#(repo)"}}"#
+        }
+        let body = Data(("{\"total_count\":3,\"items\":[" + [
+            item("DTolnay@gmail.com", login: "dtolnay", name: "David Tolnay", repo: "serde-rs/serde"),
+            item("dtolnay@gmail.com", login: "dtolnay", name: "David", repo: "dtolnay/syn"),
+            item("someone@else.com", login: "intruder", name: "Mallory", repo: "x/y"),
+        ].joined(separator: ",") + "]}").utf8)
+        let results = GitHubCommitEmailPlugin.evaluate(email: "dtolnay@gmail.com", body: body)
+        XCTAssertEqual(results.count, 1)
+        let hit = try XCTUnwrap(results.first)
+        XCTAssertEqual(hit.confidenceScore, 1.0, "GitHub only links a login to a verified email")
+        XCTAssertEqual(hit.metadata?["username"], "dtolnay", "the login is what the pivot round scans next")
+        XCTAssertEqual(hit.metadata?["name"], "David Tolnay")
+        XCTAssertTrue(hit.rawData.contains("Seen in: serde-rs/serde, dtolnay/syn"))
+        XCTAssertFalse(hit.rawData.contains("intruder"), "the loose search qualifier must not leak other authors")
+        XCTAssertFalse(hit.rawData.contains("1992"), "commit dates are whatever the author typed")
+
+        let unlinked = Data(("{\"items\":[" + item("ghost@example.com", login: nil, name: "Ghost", repo: "a/b") + "]}").utf8)
+        let weak = try XCTUnwrap(GitHubCommitEmailPlugin.evaluate(email: "ghost@example.com", body: unlinked).first)
+        XCTAssertEqual(weak.confidenceScore, 0.5)
+        XCTAssertNil(weak.metadata?["username"], "no verified account, nothing to pivot on")
+        XCTAssertEqual(GitHubCommitEmailPlugin.evaluate(email: "x@y.com", body: Data(#"{"items":[]}"#.utf8)).count, 0)
+        XCTAssertEqual(GitHubCommitEmailPlugin.evaluate(email: "x@y.com", body: Data("rate limited".utf8)).count, 0)
+    }
+
+    /// A throwaway ed25519 key with the user IDs "Alice Test <alice@example.org>"
+    /// and "<alice@work.example>", generated with gpg for this test.
+    private static let aliceKey = """
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+    mDMEas4TehYJKwYBBAHaRw8BAQdAy/MI7kkmk16IjFZ2QeHZewY8ULZurIbbEP9F
+    IUdfJam0HkFsaWNlIFRlc3QgPGFsaWNlQGV4YW1wbGUub3JnPoiQBBMWCgA4FiEE
+    NSMLgXVccaxuCOpOzF7ZGqHPs0oFAmrOE3oCGwEFCwkIBwIGFQoJCAsCBBYCAwEC
+    HgECF4AACgkQzF7ZGqHPs0qKHAEAq+j0alJ0Hbe0t24iR+LLVBAlXRaCG5/9j0PW
+    eOBy/iYBAJawCflmDPLY0YHYHq0SSlCHETr8dyzoaw/P8RAgh3sItBQ8YWxpY2VA
+    d29yay5leGFtcGxlPoiQBBMWCgA4FiEENSMLgXVccaxuCOpOzF7ZGqHPs0oFAmrO
+    E3oCGwEFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AACgkQzF7ZGqHPs0rh5AD/WBNi
+    4Ht3l9pfQTSaArlwu2VpUP0ID1ZuFjjVXS58CD0BAMJYl3C4+CDQP/XnmXcH8oKR
+    AKAzal8zIibwLtyQ2iYJ
+    =HrJf
+    -----END PGP PUBLIC KEY BLOCK-----
+    """
+
+    func testOpenPGPKeyLinksTheOtherVerifiedAddresses() throws {
+        let key = try XCTUnwrap(OpenPGPKey.parse(armored: Self.aliceKey))
+        XCTAssertEqual(key.emails, ["alice@example.org", "alice@work.example"])
+        XCTAssertEqual(key.createdAt.map { Int($0.timeIntervalSince1970) }, 1_791_890_298)
+
+        let linked = OpenPGPKeyPlugin.results(email: "alice@example.org", key: key)
+        XCTAssertEqual(linked.count, 1)
+        XCTAssertEqual(linked.first?.metadata?["email"], "alice@work.example", "the other address is the pivot")
+        XCTAssertEqual(linked.first?.metadata?["linkedEmail"], "alice@example.org")
+        XCTAssertEqual(linked.first?.type, "identity_proof")
+
+        XCTAssertTrue(OpenPGPKeyPlugin.results(email: "bob@example.org", key: key).isEmpty,
+                      "a key that does not carry the address asked about is not reported")
+        let single = OpenPGPKey(userIDs: ["<solo@example.org>"], createdAt: nil)
+        XCTAssertEqual(OpenPGPKeyPlugin.results(email: "solo@example.org", key: single).first?.confidenceScore, 0.9)
+
+        // Remote input: truncation and garbage must fail closed, never crash.
+        let packets = try XCTUnwrap(OpenPGPKey.dearmor(Self.aliceKey))
+        for cut in stride(from: 1, to: packets.count, by: 7) {
+            _ = OpenPGPKey.parse(packets: packets.prefix(cut))
+        }
+        XCTAssertNil(OpenPGPKey.parse(armored: "not a key"))
+        XCTAssertNil(OpenPGPKey.parse(packets: Data([0xFF, 0xFF, 0xFF])))
+    }
+
     func testBlueskyHandleForUsernameAndDomainInputs() {
         XCTAssertEqual(BlueskyPlugin.handle(for: "Alice"), "alice.bsky.social")
         XCTAssertEqual(BlueskyPlugin.handle(for: "jay-b"), "jay-b.bsky.social")
