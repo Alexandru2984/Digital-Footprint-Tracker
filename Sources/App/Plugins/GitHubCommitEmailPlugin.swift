@@ -83,7 +83,8 @@ struct GitHubCommitEmailPlugin: FootprintPlugin {
             if !names.isEmpty { parts.append("Commit author name: \(names)") }
             if !repos.isEmpty { parts.append("Seen in: \(repos)") }
             var meta = ["platform": "github", "username": login, "profileURL": "https://github.com/\(login)",
-                        "email": email]
+                        "email": email, "matchKind": "verified",
+                        "matchReason": "GitHub links a commit to an account only through a verified email"]
             if let name = found.names.first { meta["name"] = name }
             return PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 1.0,
                                 rawData: parts.joined(separator: " | "), metadata: meta)

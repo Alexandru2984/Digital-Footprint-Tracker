@@ -71,7 +71,12 @@ struct UsernamePlugin: FootprintPlugin {
             if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
-            if let tw = user?.twitter_username, !tw.isEmpty { meta["twitter"] = tw }
+            if let tw = user?.twitter_username, !tw.isEmpty {
+                meta["twitter"] = tw
+                meta["linked"] = IdentityLinks.linked([("twitter", tw)])
+                meta["linkKind"] = "declared"
+                meta["linkReason"] = "listed on the GitHub profile"
+            }
             if let joinedDate { meta["since"] = joinedDate }
 
             var results = [PluginResult(
@@ -94,7 +99,9 @@ struct UsernamePlugin: FootprintPlugin {
                         type: "email",
                         confidenceScore: 0.9,
                         rawData: "Email exposed in public commits: \(email)",
-                        metadata: ["email": email, "platform": "github", "username": cleanedUsername]
+                        metadata: ["email": email, "platform": "github", "username": cleanedUsername,
+                                   "matchKind": "observed",
+                                   "matchReason": "author address on the account's own public commits"]
                     ))
                 }
             }

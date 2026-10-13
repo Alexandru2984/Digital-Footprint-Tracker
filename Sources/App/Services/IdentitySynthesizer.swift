@@ -60,6 +60,8 @@ enum IdentitySynthesizer {
         let riskLevel: String
         /// What the risk score is made of, largest contribution first.
         let riskFactors: [RiskScorer.Factor]
+        /// How the identifiers connect, strongest first; see `IdentityLinks`.
+        let links: [IdentityLinks.Link]
         let resultCount: Int
     }
 
@@ -68,7 +70,7 @@ enum IdentitySynthesizer {
     ]
 
     static func synthesize(from inputs: [Input], riskScore: Int, riskLevel: String,
-                           riskFactors: [RiskScorer.Factor] = []) -> IdentityProfile {
+                           riskFactors: [RiskScorer.Factor] = [], target: String? = nil) -> IdentityProfile {
         var nameScore: [String: Double] = [:]            // normalized key → summed confidence (weight)
         var nameForms: [String: [String: Int]] = [:]     // normalized key → seen display forms + counts
         var locationForms: [String: [String: Int]] = [:] // same case/spacing merge for places…
@@ -196,6 +198,7 @@ enum IdentitySynthesizer {
             riskScore: riskScore,
             riskLevel: riskLevel,
             riskFactors: riskFactors,
+            links: IdentityLinks.build(from: inputs, target: target),
             resultCount: inputs.count
         )
     }
@@ -304,7 +307,7 @@ extension Scan {
         let risk = try RiskScorer.compute(results: results)
         let inputs = try identityInputs()
         return IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue,
-                                              riskFactors: risk.factors)
+                                              riskFactors: risk.factors, target: try input)
     }
 
     func timelineIntelligence() throws -> TimelineIntelligence.Report {

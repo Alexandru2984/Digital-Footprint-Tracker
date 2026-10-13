@@ -523,7 +523,7 @@
             const hasData = p.likelyName || (p.emails || []).length || (p.handles || []).length ||
                             (p.confirmedAccounts || []).length || (p.breaches || []).length || (p.phones || []).length ||
                             (p.exposedIPs || []).length || (p.exposedServices || []).length || (p.vulnerabilities || []).length ||
-                            (p.exposedDataClasses || []).length || (p.timeline || []).length;
+                            (p.exposedDataClasses || []).length || (p.timeline || []).length || (p.links || []).length;
             if (!hasData) { panel.classList.add('hidden'); return; }
             panel.innerHTML = '';
             panel.style.cssText = 'background:#111827;border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:16px;';
@@ -614,6 +614,51 @@
             }
 
             panel.appendChild(grid);
+
+            // How the identifiers connect, strongest first. A verified link is a
+            // platform's own statement; an inferred one is only a shared name.
+            const links = Array.isArray(p.links) ? p.links : [];
+            if (links.length) {
+                const kindStyle = {
+                    verified: ['#4ade80', 'verified'], declared: ['#60a5fa', 'declared'],
+                    observed: ['#facc15', 'observed'], inferred: ['#94a3b8', 'inferred'],
+                };
+                const sec = document.createElement('div');
+                sec.className = 'js-identity-links';
+                sec.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid #1f2937;';
+                const heading = document.createElement('div');
+                heading.style.cssText = 'color:#cbd5e1;font-size:13px;font-weight:700;margin-bottom:6px;';
+                const strong = links.filter(l => l.kind === 'verified' || l.kind === 'declared').length;
+                heading.textContent = `🔗 How these are connected · ${strong} confirmed, ${links.length - strong} unconfirmed`;
+                sec.appendChild(heading);
+                const list = document.createElement('div');
+                list.style.cssText = 'display:grid;gap:4px;';
+                const shown = 15;
+                links.slice(0, shown).forEach(link => {
+                    const [colour, label] = kindStyle[link.kind] || kindStyle.inferred;
+                    const item = document.createElement('div');
+                    item.style.cssText = 'font-size:12px;line-height:1.4;overflow-wrap:anywhere;';
+                    const path = document.createElement('span');
+                    path.style.cssText = 'color:#e2e8f0;';
+                    path.textContent = `${String(link.from ?? '')} → ${String(link.to ?? '')} `;
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'font-size:10px;padding:0 6px;border-radius:4px;border:1px solid ' + colour + '66;color:' + colour + ';';
+                    badge.textContent = label;
+                    const why = document.createElement('div');
+                    why.style.cssText = 'color:#64748b;font-size:11px;';
+                    why.textContent = `${String(link.reason ?? '')} · ${String(link.source ?? '')}`;
+                    item.appendChild(path); item.appendChild(badge); item.appendChild(why);
+                    list.appendChild(item);
+                });
+                sec.appendChild(list);
+                if (links.length > shown) {
+                    const more = document.createElement('div');
+                    more.style.cssText = 'color:#64748b;font-size:11px;margin-top:4px;';
+                    more.textContent = `+${links.length - shown} more connection(s) in the exported report.`;
+                    sec.appendChild(more);
+                }
+                panel.appendChild(sec);
+            }
 
             // Evidence-aware chronology. Values are always inserted through
             // textContent: provider-controlled labels/sources never become HTML.

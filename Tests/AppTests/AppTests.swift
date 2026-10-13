@@ -5117,6 +5117,7 @@ final class AppTests: XCTestCase {
             riskScore: 0,
             riskLevel: "Low",
             riskFactors: [],
+            links: [],
             resultCount: 1
         )
 
@@ -5913,6 +5914,7 @@ final class AppTests: XCTestCase {
             riskScore: 40,
             riskLevel: "Medium",
             riskFactors: [],
+            links: [],
             resultCount: 6
         )
         let xml = IdentityGraph.graphml(from: profile, target: "alice@example.test")
@@ -6474,6 +6476,83 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(MonitorFingerprint.of(source: "X", type: "account_presence", metadata: [:], rawData: "a"),
                        MonitorFingerprint.of(source: "X", type: "account_presence", metadata: [:], rawData: "a"),
                        "an account without a profile falls back to its text")
+    }
+
+    func testIdentityLinksRankWhatAPlatformConfirmedAboveASharedName() throws {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "Steam", type: "account_presence", confidence: 0.75,
+              metadata: ["platform": "steam", "username": "dtolnay", "queriedAs": "dtolnay", "via": "emailLocalPart"], rawData: "x"),
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "dtolnay", "email": "dtolnay@gmail.com",
+                         "queriedAs": "dtolnay@gmail.com", "via": "input", "matchKind": "verified",
+                         "matchReason": "GitHub links a commit to an account only through a verified email"], rawData: "x"),
+            I(source: "crates.io", type: "developer_identity", confidence: 0.6,
+              metadata: ["platform": "crates.io", "username": "dtolnay", "queriedAs": "dtolnay", "via": "pivot",
+                         "linked": "github:dtolnay", "linkKind": "verified",
+                         "linkReason": "crates.io accounts sign in through GitHub"], rawData: "x"),
+            I(source: "OpenPGP", type: "identity_proof", confidence: 1.0,
+              metadata: ["platform": "openpgp", "email": "david@work.example", "queriedAs": "dtolnay@gmail.com",
+                         "matchKind": "verified", "matchReason": "same key"], rawData: "x"),
+            // The same Steam link found again more weakly must not replace it.
+            I(source: "Steam", type: "account_presence", confidence: 0.6,
+              metadata: ["platform": "steam", "username": "dtolnay", "queriedAs": "dtolnay", "via": "variant"], rawData: "y"),
+            // Not an identity finding: no edge.
+            I(source: "crt.sh", type: "subdomain", confidence: 0.9, metadata: ["subdomain": "a.example.com"], rawData: "z"),
+            // Older finding without provenance: anchored on the scan target.
+            I(source: "Keybase", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "keybase", "username": "dtolnay"], rawData: "k"),
+        ]
+        let links = IdentityLinks.build(from: inputs, target: "dtolnay@gmail.com")
+        let pairs = links.map { "\($0.from) → \($0.to) [\($0.kind.rawValue)]" }
+        XCTAssertEqual(links.count, 6, "\(pairs)")
+        XCTAssertEqual(links.prefix(3).map(\.kind), [.verified, .verified, .verified], "confirmed links come first")
+        XCTAssertTrue(pairs.contains("dtolnay@gmail.com → github: dtolnay [verified]"))
+        XCTAssertTrue(pairs.contains("crates.io: dtolnay → github: dtolnay [verified]"))
+        XCTAssertTrue(pairs.contains("dtolnay@gmail.com → keybase: dtolnay [inferred]"), "no provenance: anchored on the target")
+        XCTAssertEqual(links.filter { $0.to == "steam: dtolnay" }.count, 1)
+        XCTAssertEqual(links.first { $0.to == "steam: dtolnay" }?.reason,
+                       "same name as the email's local part, on steam", "the first, stronger sighting is kept")
+        XCTAssertFalse(pairs.contains { $0.contains("a.example.com") })
+        XCTAssertEqual(IdentityLinks.parseLinked("github:DTolnay, twitter:@x, bad, :y"), ["github: dtolnay", "twitter: x"])
+        XCTAssertNil(IdentityLinks.linked([("github", nil), ("twitter", "  ")]))
+    }
+
+    func testReportsListTheConnectionsEscaped() {
+        let inputs = [IdentitySynthesizer.Input(
+            source: "GitHub", type: "developer_identity", confidence: 1.0,
+            metadata: ["platform": "github", "username": "x|<b>", "queriedAs": "a@b.com",
+                       "matchKind": "verified", "matchReason": "why <i>"], rawData: "x")]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "a@b.com")
+        let surface = ExposureDiff.snapshot(from: inputs)
+        let md = ExecutiveReport.markdown(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(md.contains("## How these are connected"), md)
+        XCTAssertTrue(md.contains("| a@b.com | github: x\\|&lt;b&gt; | verified |"), md)
+        let html = ExecutiveReportHTML.html(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(html.contains("<td>github: x|&lt;b&gt;</td><td>verified</td><td>why &lt;i&gt; (GitHub)</td>"), html)
+        XCTAssertFalse(html.contains("<b>"))
+    }
+
+    func testRunnerRecordsWhatEachFindingWasLookedUpAs() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "provenance@example.com")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let plugin = FixedResultTestPlugin(name: "Provenance",
+            results: [PluginResult(source: "P", type: "account_presence", confidenceScore: 1.0, rawData: "found",
+                                   metadata: ["platform": "p", "username": "provenance"])])
+        _ = await ScanPluginRunner.runRound(
+            plugins: [plugin],
+            candidates: [TargetDeriver.Candidate(value: "provenance", origin: .emailLocalPart)],
+            scanID: scanID, deadline: 20, perPluginTimeout: 10, reportProgress: false,
+            app: app, db: app.db, useCache: false, dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        let stored = try await App.Result.query(on: app.db).filter(\.$scan.$id == scanID).first()
+        let meta = try XCTUnwrap(try stored?.metadataObject)
+        XCTAssertEqual(meta["queriedAs"], "provenance")
+        XCTAssertEqual(meta["via"], "emailLocalPart")
+        XCTAssertEqual(meta["username"], "provenance", "the plugin's own metadata is kept")
     }
 
     func testRiskScoreSaysWhatItIsMadeOf() throws {

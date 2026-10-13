@@ -57,6 +57,15 @@ enum ExecutiveReport {
             }
         }
 
+        // ── Connections ───────────────────────────────────────────────────────────
+        if !profile.links.isEmpty {
+            out += "## How these are connected\n\n| From | To | Strength | Why |\n|---|---|---|---|\n"
+            for link in profile.links.prefix(60) {
+                out += "| \(cell(link.from)) | \(cell(link.to)) | \(link.kind.rawValue) | \(cell("\(link.reason) (\(link.source))")) |\n"
+            }
+            out += "\n"
+        }
+
         // ── Breaches ──────────────────────────────────────────────────────────────
         if !profile.breaches.isEmpty || !profile.exposedDataClasses.isEmpty {
             out += "## Breaches\n\n"

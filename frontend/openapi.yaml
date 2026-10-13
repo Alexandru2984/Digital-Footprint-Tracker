@@ -982,6 +982,10 @@ paths:
         Collapses a scan's findings into one identity (likely name, emails, handles,
         confirmed accounts, breaches, exposed data classes, and exposed hosts with
         their open ports/CVEs) plus an overall risk and evidence-aware timeline events.
+        `links` lists how the identifiers connect, strongest first: each entry is
+        `{from, to, kind, source, reason}` where kind is verified (a platform
+        confirmed it), declared (the person published it), observed (seen in the
+        account's own activity) or inferred (a shared or derived name only).
         `riskFactors` lists what the risk score is made of, largest first: each
         entry is `{category, label, points, findings}`, with points counted
         before the 100 cap. The JSON export carries the same list.

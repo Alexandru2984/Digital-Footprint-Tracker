@@ -51,7 +51,8 @@ struct OpenPGPKeyPlugin: FootprintPlugin {
                 metadata: meta)]
         }
         return others.prefix(5).map { other in
-            var meta = ["platform": "openpgp", "email": other, "linkedEmail": email]
+            var meta = ["platform": "openpgp", "email": other, "linkedEmail": email, "matchKind": "verified",
+                        "matchReason": "both addresses were confirmed by mail on the same OpenPGP key"]
             if let created { meta["since"] = created }
             return PluginResult(
                 source: "OpenPGP", type: "identity_proof", confidenceScore: 1.0,

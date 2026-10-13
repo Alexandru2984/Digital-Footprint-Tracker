@@ -187,12 +187,20 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
                 { category: 'breach', label: malicious, points: 20, findings: 1 },
                 { category: 'account', label: 'Online accounts', points: 5, findings: 3 },
             ],
+            links: [
+                { from: 'alice@example.com', to: 'github: alice', kind: 'verified', source: 'GitHub', reason: 'verified email' },
+                { from: malicious, to: 'steam: alice', kind: 'inferred', source: malicious, reason: malicious },
+            ],
         });
     }, fixture);
 
     const panel = page.locator('#identity-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toContainText(fixture.malicious);
+    const connections = panel.locator('.js-identity-links');
+    await expect(connections).toContainText('How these are connected · 1 confirmed, 1 unconfirmed');
+    await expect(connections).toContainText('alice@example.com → github: alice verified');
+    await expect(connections).toContainText(`${fixture.malicious} → steam: alice inferred`);
     await expect(panel.locator('.js-risk-factors')).toHaveText(
         `Risk made of: ${fixture.malicious} 20 (1 finding) · Online accounts 5 (3 findings)`);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);

@@ -58,7 +58,9 @@ struct GravatarPlugin: FootprintPlugin {
         let profileUrl  = (entry["profileUrl"] as? String) ?? avatarURL
         let location    = (entry["currentLocation"] as? String) ?? ""
 
-        var meta: [String: String] = ["email": email, "profileURL": profileUrl]
+        var meta: [String: String] = ["email": email, "profileURL": profileUrl, "platform": "gravatar",
+                                      "matchKind": "verified",
+                                      "matchReason": "the Gravatar profile is registered to this address"]
         if !displayName.isEmpty { meta["name"] = displayName }
         if !username.isEmpty    { meta["username"] = username }
         if !location.isEmpty    { meta["location"] = location }
@@ -85,7 +87,12 @@ struct GravatarPlugin: FootprintPlugin {
                 let verified = (acct["verified"] as? String) == "true" || (acct["verified"] as? Bool) == true
                 guard !handle.isEmpty || !url.isEmpty else { continue }
 
-                var am: [String: String] = ["platform": service]
+                var am: [String: String] = [
+                    "platform": service,
+                    "matchKind": verified ? "verified" : "declared",
+                    "matchReason": verified ? "listed on the address's Gravatar profile and verified by Gravatar"
+                                            : "listed on the address's Gravatar profile",
+                ]
                 if !handle.isEmpty { am["username"] = handle }
                 if !url.isEmpty    { am["url"] = url }
 

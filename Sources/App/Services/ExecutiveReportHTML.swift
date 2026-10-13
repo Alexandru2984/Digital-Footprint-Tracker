@@ -62,6 +62,12 @@ enum ExecutiveReportHTML {
             b += "<section><h2>Identity</h2>\(s)</section>\n"
         }
 
+        // Connections, strongest first.
+        if !profile.links.isEmpty {
+            let rows = profile.links.prefix(60).map { [$0.from, $0.to, $0.kind.rawValue, "\($0.reason) (\($0.source))"] }
+            b += "<section><h2>How these are connected</h2>\(table(["From", "To", "Strength", "Why"], Array(rows)))</section>\n"
+        }
+
         // Breaches + leaked data classes.
         if !profile.breaches.isEmpty || !profile.exposedDataClasses.isEmpty {
             var s = ""

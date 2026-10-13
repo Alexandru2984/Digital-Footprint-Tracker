@@ -22,6 +22,7 @@ final class ExecutiveReportSecurityTests: XCTestCase {
             riskScore: 50,
             riskLevel: "Medium",
             riskFactors: [],
+            links: [],
             resultCount: 1
         )
         let surface = ExposureDiff.Snapshot(

@@ -82,6 +82,7 @@ struct KeybasePlugin: FootprintPlugin {
            let allProofs = proofsSummary["all"] as? [[String: Any]], !allProofs.isEmpty {
 
             var proofLines: [String] = []
+            var proven: [(String, String?)] = []
             // Map each proof type (github, twitter, reddit, …) to the proven
             // handle — these become precise cross-platform correlation anchors.
             var proofMeta: [String: String] = ["platform": "keybase", "username": username.lowercased()]
@@ -96,10 +97,14 @@ struct KeybasePlugin: FootprintPlugin {
                     proofLines.append(line)
                     let key = proofType.lowercased()
                     if proofMeta[key] == nil { proofMeta[key] = nametxt }
+                    proven.append((key, nametxt))
                 }
             }
 
             if !proofLines.isEmpty {
+                proofMeta["linked"] = IdentityLinks.linked(proven)
+                proofMeta["linkKind"] = "verified"
+                proofMeta["linkReason"] = "Keybase holds a signed proof for this account"
                 results.append(PluginResult(
                     source: "Keybase",
                     type: "identity_proof",

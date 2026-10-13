@@ -102,7 +102,12 @@ struct CratesPlugin: FootprintPlugin {
         var meta = ["platform": "crates.io", "username": user.login, "profileURL": url]
         if !user.name.isEmpty { meta["name"] = user.name }
         if let joined = user.joined { meta["since"] = joined }
-        if user.githubMatches, !user.githubURL.isEmpty { meta["github"] = user.githubURL }
+        if user.githubMatches, !user.githubURL.isEmpty {
+            meta["github"] = user.githubURL
+            meta["linked"] = IdentityLinks.linked([("github", user.login)])
+            meta["linkKind"] = "verified"
+            meta["linkReason"] = "crates.io accounts sign in through GitHub"
+        }
 
         return PluginResult(source: "crates.io", type: "developer_identity", confidenceScore: 1.0,
                             rawData: parts.joined(separator: " | "), metadata: meta)

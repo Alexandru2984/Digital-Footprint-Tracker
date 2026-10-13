@@ -23,6 +23,17 @@ enum TargetDeriver {
 
         var derived: Bool { self != .primary }
 
+        /// Stable name stored with each finding (`via`), so connections can say
+        /// how the identifier that found it was reached.
+        var key: String {
+            switch self {
+            case .primary:        return "input"
+            case .emailLocalPart: return "emailLocalPart"
+            case .variant:        return "variant"
+            case .pivoted:        return "pivot"
+            }
+        }
+
         /// Heavy plugins (e.g. the Sherlock sweep) run only on these origins, so
         /// fan-out can't multiply an expensive run across speculative variants or
         /// the second-round pivot set.

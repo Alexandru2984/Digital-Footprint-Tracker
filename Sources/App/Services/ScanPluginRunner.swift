@@ -311,7 +311,7 @@ enum ScanPluginRunner {
                                 }
                                 raw = bounded
                             }
-                            for pr in raw where try await persist(pr, origin: candidate.origin, scanID: scanID, dedup: dedup, on: db) {
+                            for pr in raw where try await persist(pr, candidate: candidate, scanID: scanID, dedup: dedup, on: db) {
                                 produced.append(pr)
                             }
                         }
@@ -459,7 +459,8 @@ enum ScanPluginRunner {
     /// to the original target is an inference, not a proven fact — the strength
     /// of which depends on the candidate's `origin`.
     @discardableResult
-    private static func persist(_ pr: PluginResult, origin: TargetDeriver.Origin, scanID: UUID, dedup: ResultDedupStore, on db: Database) async throws -> Bool {
+    private static func persist(_ pr: PluginResult, candidate: TargetDeriver.Candidate, scanID: UUID, dedup: ResultDedupStore, on db: Database) async throws -> Bool {
+        let origin = candidate.origin
         guard await dedup.markSeen(source: pr.source, type: pr.type, rawData: pr.rawData) else {
             return false
         }
@@ -472,7 +473,15 @@ enum ScanPluginRunner {
 
         var metaDict = pr.metadata ?? [:]
         if origin.derived { metaDict["derivedFrom"] = origin.note ?? "derived" }
-        let metadataJSON = PluginResultLimits.encodeMetadata(metaDict)
+        // Provenance for IdentityLinks: the identifier this finding was looked
+        // up as, and how that identifier was reached. Added only while the
+        // metadata stays within its cap, so it can never cost a finding the
+        // metadata it already had.
+        var withProvenance = metaDict
+        withProvenance["queriedAs"] = String(candidate.value.prefix(200))
+        withProvenance["via"] = origin.key
+        let metadataJSON = PluginResultLimits.encodeMetadata(withProvenance)
+            ?? PluginResultLimits.encodeMetadata(metaDict)
 
         let confidence = max(0.0, min(1.0, pr.confidenceScore)) * origin.confidenceFactor
         let result = Result(

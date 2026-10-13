@@ -88,7 +88,11 @@ struct BlueskyPlugin: FootprintPlugin {
         var meta = ["platform": "bluesky", "username": returned, "profileURL": profileURL, "did": did]
         if !displayName.isEmpty { meta["name"] = displayName }
         if let joined { meta["since"] = joined }
-        if domainHandle { meta["domain"] = returned }
+        if domainHandle {
+            meta["domain"] = returned
+            meta["matchKind"] = "verified"
+            meta["matchReason"] = "the domain's owner proved it as this Bluesky handle"
+        }
 
         return PluginResult(
             source: "Bluesky",

@@ -118,7 +118,7 @@ struct ExportController: RouteCollection {
                                       metadata: try $0.metadataObject ?? [:], rawData: try $0.rawData)
         }
         let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: risk.value, riskLevel: risk.level.rawValue,
-                                                     riskFactors: risk.factors)
+                                                     riskFactors: risk.factors, target: try scan.input)
         return (profile, ExposureDiff.snapshot(from: inputs))
     }
 

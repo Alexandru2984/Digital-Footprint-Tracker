@@ -166,7 +166,8 @@ enum ExportArtifactBuilder {
             from: inputs,
             riskScore: risk.value,
             riskLevel: risk.level.rawValue,
-            riskFactors: risk.factors
+            riskFactors: risk.factors,
+            target: input
         )
         let surface = ExposureDiff.snapshot(from: inputs)
         let payload = try await makePayload(
