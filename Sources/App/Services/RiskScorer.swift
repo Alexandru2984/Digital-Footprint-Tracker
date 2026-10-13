@@ -221,6 +221,9 @@ enum RiskScorer {
         // Publishing security.txt is a responsible-disclosure signal. Scoring it
         // as risk penalises the sites doing the right thing.
         "security_txt": .noise,
+        // An address that belongs to a well-known business service (GreyNoise
+        // RIOT): context about the address, not exposure of anyone.
+        "known_service": .noise,
 
         // ── Confirmed leak / paste exposure ──────────────────────────────────
         "data_breach": .breach,
@@ -238,6 +241,10 @@ enum RiskScorer {
         // A host served over plain HTTP is a real weakness, not a neutral
         // infrastructure fact.
         "insecure_transport": .threat,
+        // Seen attacking or probing the internet, or a Tor exit relay whose
+        // traffic is anonymous by design.
+        "ip_scanner": .threat,
+        "tor_exit": .threat,
 
         // ── Cross-platform identity linkage ──────────────────────────────────
         "identity_proof": .identity,
@@ -274,7 +281,11 @@ enum RiskScorer {
         // Deliberately `infra`, not `threat`: this reports a *grade*, covering
         // both a well-configured site and a bare one, so weighting it as a
         // weakness would penalise the former. The grade itself is in metadata.
-        "security_headers": .infra
+        "security_headers": .infra,
+        // Who routes an address, and research scanners (Shodan, Censys) seen
+        // probing: facts about the network, not a weakness of the target.
+        "ip_network": .infra,
+        "ip_scanner_benign": .infra
     ]
 
     /// Maps a result `type` to a risk category: the explicit table above, then

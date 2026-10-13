@@ -7304,6 +7304,50 @@ final class AppTests: XCTestCase {
         XCTAssertNil(OpenPGPKey.parse(packets: Data([0xFF, 0xFF, 0xFF])))
     }
 
+    func testRIPEStatNamesTheNetworkWithoutCallingItTheTargetsEmployer() throws {
+        let body = Data(#"{"data":{"resource":"8.8.8.0/24","announced":true,"asns":[{"asn":15169,"holder":"GOOGLE - Google LLC"}],"block":{"desc":"Administered by ARIN"}}}"#.utf8)
+        let result = try XCTUnwrap(RIPEStatPlugin.evaluate(ip: "8.8.8.8", body: body))
+        XCTAssertEqual(result.type, "ip_network")
+        XCTAssertEqual(result.rawData, "8.8.8.8 is routed in 8.8.8.0/24 by AS15169 (GOOGLE - Google LLC) | Administered by ARIN")
+        XCTAssertEqual(result.metadata?["asn"], "AS15169")
+        XCTAssertEqual(result.metadata?["asnHolder"], "GOOGLE - Google LLC")
+        XCTAssertNil(result.metadata?["org"], "identity synthesis reads org as the person's organisation")
+
+        let dark = Data(#"{"data":{"resource":"203.0.113.0/24","announced":false,"asns":[]}}"#.utf8)
+        XCTAssertTrue(try XCTUnwrap(RIPEStatPlugin.evaluate(ip: "203.0.113.9", body: dark)).rawData.contains("no network currently announces"))
+        XCTAssertNil(RIPEStatPlugin.evaluate(ip: "8.8.8.8", body: Data("<html>".utf8)))
+    }
+
+    func testGreyNoiseSeparatesAttackersFromResearchScannersAndServices() throws {
+        func body(_ fields: String) -> Data { Data(#"{"ip":"71.6.135.131",\#(fields)}"#.utf8) }
+        let bad = try XCTUnwrap(GreyNoisePlugin.evaluate(ip: "71.6.135.131", body: body(#""noise":true,"riot":false,"classification":"malicious","name":"unknown","last_seen":"2026-10-13""#)))
+        XCTAssertEqual(bad.type, "ip_scanner")
+        XCTAssertNil(bad.metadata?["actor"], "GreyNoise's 'unknown' is not an actor name")
+        XCTAssertEqual(bad.metadata?["lastSeen"], "2026-10-13")
+
+        let research = try XCTUnwrap(GreyNoisePlugin.evaluate(ip: "71.6.135.131", body: body(#""noise":true,"riot":false,"classification":"benign","name":"Shodan.io""#)))
+        XCTAssertEqual(research.type, "ip_scanner_benign")
+        XCTAssertTrue(research.rawData.contains("Actor: Shodan.io"))
+
+        let service = try XCTUnwrap(GreyNoisePlugin.evaluate(ip: "71.6.135.131", body: body(#""noise":false,"riot":true,"name":"Google Public DNS""#)))
+        XCTAssertEqual(service.type, "known_service")
+        XCTAssertEqual(try RiskScorer.compute(raw: [(1.0, "known_service")]).value, 0)
+
+        XCTAssertNil(GreyNoisePlugin.evaluate(ip: "71.6.135.131", body: body(#""noise":false,"riot":false"#)))
+        XCTAssertNil(GreyNoisePlugin.evaluate(ip: "8.8.8.8", body: body(#""noise":true"#)), "an answer about another address is ignored")
+    }
+
+    func testTorExitListMatchesLocallyAndValidatesAddresses() {
+        let list = TorExitList.parse("171.25.193.25\n80.67.167.81\n\n# comment\n999.1.1.1\n10.0.0.01x\n")
+        XCTAssertEqual(list, ["171.25.193.25", "80.67.167.81"])
+        XCTAssertEqual(IPv4Text.normalized(" 8.8.8.8 "), "8.8.8.8")
+        XCTAssertEqual(IPv4Text.normalized("008.8.8.8"), "8.8.8.8", "leading zeros are folded, not compared as text")
+        XCTAssertNil(IPv4Text.normalized("8.8.8"))
+        XCTAssertNil(IPv4Text.normalized("8.8.8.256"))
+        XCTAssertNil(IPv4Text.normalized("8.8.8.8.8"))
+        XCTAssertNil(IPv4Text.normalized("8.8.8.-1"))
+    }
+
     func testBlueskyHandleForUsernameAndDomainInputs() {
         XCTAssertEqual(BlueskyPlugin.handle(for: "Alice"), "alice.bsky.social")
         XCTAssertEqual(BlueskyPlugin.handle(for: "jay-b"), "jay-b.bsky.social")

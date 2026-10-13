@@ -51,6 +51,9 @@ enum PluginCanary {
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),
         Check(plugin: "InternetDB", input: "8.8.8.8", username: nil),
+        Check(plugin: "RIPEstat", input: "8.8.8.8", username: nil),
+        // Shodan's own long-lived scanner: GreyNoise has classified it for years.
+        Check(plugin: "GreyNoise", input: "71.6.135.131", username: nil),
         Check(plugin: "MailSecurity", input: "google.com", username: nil),
         Check(plugin: "SiteMeta", input: "github.com", username: nil),
         Check(plugin: "Wayback", input: "rfc-editor.org", username: nil),

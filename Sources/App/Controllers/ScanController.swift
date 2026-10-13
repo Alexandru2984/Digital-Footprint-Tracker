@@ -111,6 +111,9 @@ struct ScanController: RouteCollection {
         WaybackPlugin(),
         ShodanPlugin(),
         InternetDBPlugin(),
+        RIPEStatPlugin(),
+        GreyNoisePlugin(),
+        TorExitPlugin(),
         VirusTotalPlugin(),
         AbuseIPDBPlugin(),
         PassiveDNSPlugin()
