@@ -19,6 +19,9 @@
 
         // Stores the most recently displayed scan data for export/share.
         let lastScanData = null;
+        // The synthesized identity of the scan on screen; its `links` drive the
+        // Connections view of the graph tab.
+        let lastIdentityProfile = null;
         // Symbol token — each new scan/load gets a fresh token; stale poll callbacks check
         // this and abort if they no longer own the UI.
         let activeScanToken = null;
@@ -237,6 +240,7 @@
                 activeEventSource = null;
             }
             lastScanData = null;
+            lastIdentityProfile = null;
             activeTypeFilter = null;
             activeSortMode = 'default';
             const label = document.getElementById('type-filter-label');
@@ -512,7 +516,9 @@
                         p.timeline = timeline.events;
                         p.timelineSummary = timeline.summary || null;
                     }
+                    lastIdentityProfile = p;
                     renderIdentity(panel, p);
+                    if (activeResultsTab === 'graph' && lastScanData) renderD3Graph(lastScanData);
                 })
                 .catch(() => panel.classList.add('hidden'));
         }
@@ -1478,6 +1484,138 @@
 
         // ─── D3 FORCE-DIRECTED GRAPH TAB ─────────────────────────────────────────
         let graphSimulation = null;
+        let graphMode = 'connections';
+        document.querySelectorAll('#graph-mode [data-graph-mode]').forEach(button => {
+            button.addEventListener('click', () => {
+                graphMode = button.dataset.graphMode;
+                if (lastScanData) renderD3Graph(lastScanData);
+            });
+        });
+
+        function setGraphLegend(items) {
+            const legend = document.getElementById('graph-legend');
+            if (!legend) return;
+            legend.replaceChildren(...items.map(([colour, label, dashed]) => {
+                const item = document.createElement('span');
+                item.className = 'flex items-center gap-1';
+                const swatch = document.createElement('span');
+                swatch.style.cssText = dashed
+                    ? `display:inline-block;width:14px;border-top:2px dashed ${colour};`
+                    : `display:inline-block;width:8px;height:8px;border-radius:9999px;background:${colour};`;
+                item.append(swatch, document.createTextNode(label));
+                return item;
+            }));
+            document.querySelectorAll('#graph-mode [data-graph-mode]').forEach(button => {
+                const active = button.dataset.graphMode === graphMode;
+                button.setAttribute('aria-pressed', String(active));
+                button.style.color = active ? '#e2e8f0' : '#64748b';
+                button.style.borderColor = active ? '#10b981' : '';
+            });
+        }
+
+        const linkStyle = {
+            verified: { colour: '#4ade80', dash: null, width: 2.5 },
+            declared: { colour: '#60a5fa', dash: null, width: 2 },
+            observed: { colour: '#facc15', dash: '6,3', width: 1.5 },
+            inferred: { colour: '#64748b', dash: '3,4', width: 1 },
+        };
+
+        // How the identifiers connect: one node per identifier, one edge per
+        // link, coloured by how strong the link is. Values only ever reach the
+        // page as SVG text or textContent.
+        function renderConnectionsGraph(scanData, links) {
+            const d3 = window.d3;
+            const svgEl = document.getElementById('social-graph-svg');
+            const W = svgEl.parentElement.clientWidth || 700;
+            const H = 520;
+            const svg = d3.select(svgEl);
+            svg.selectAll('*').remove();
+            if (graphSimulation) { graphSimulation.stop(); graphSimulation = null; }
+            setGraphLegend([
+                ['#10b981', 'Target'], ['#4ade80', 'verified', true], ['#60a5fa', 'declared', true],
+                ['#facc15', 'observed', true], ['#64748b', 'inferred', true],
+            ]);
+
+            const target = String(scanData.input || '').toLowerCase();
+            const byId = new Map();
+            const node = id => {
+                if (!byId.has(id)) {
+                    const kind = id === target ? 'target' : id.includes('@') && !id.includes(': ') ? 'email' : 'account';
+                    byId.set(id, { id, label: id, ntype: kind, links: [] });
+                }
+                return byId.get(id);
+            };
+            const edges = links.slice(0, 80).map(l => {
+                const from = node(String(l.from ?? '')), to = node(String(l.to ?? ''));
+                const edge = { source: from.id, target: to.id, kind: l.kind, reason: String(l.reason ?? ''), via: String(l.source ?? '') };
+                from.links.push(edge); to.links.push(edge);
+                return edge;
+            });
+            const nodes = [...byId.values()];
+
+            svg.append('rect').attr('width', W).attr('height', H).attr('fill', '#0f172a');
+            const g = svg.append('g');
+            svg.call(d3.zoom().scaleExtent([0.1, 6]).on('zoom', ev => g.attr('transform', ev.transform)))
+               .on('dblclick.zoom', null);
+            const tooltip = document.getElementById('graph-tooltip');
+            const showTip = (ev, text) => {
+                tooltip.textContent = text;
+                tooltip.style.display = 'block';
+                const r = svgEl.getBoundingClientRect();
+                tooltip.style.left = (ev.clientX - r.left + 12) + 'px';
+                tooltip.style.top = (ev.clientY - r.top - 8) + 'px';
+            };
+
+            const edgeEl = g.append('g').selectAll('line').data(edges).enter().append('line')
+                .attr('class', d => 'js-link js-link-' + d.kind)
+                .attr('stroke', d => (linkStyle[d.kind] || linkStyle.inferred).colour)
+                .attr('stroke-width', d => (linkStyle[d.kind] || linkStyle.inferred).width)
+                .attr('stroke-dasharray', d => (linkStyle[d.kind] || linkStyle.inferred).dash)
+                .attr('stroke-opacity', 0.9)
+                .on('mouseover', (ev, d) => showTip(ev, `${d.kind}: ${d.reason} (${d.via})`))
+                .on('mouseout', () => { tooltip.style.display = 'none'; });
+
+            const nodeColour = d => d.ntype === 'target' ? '#10b981' : d.ntype === 'email' ? '#f472b6' : '#93c5fd';
+            const nodeR = d => d.ntype === 'target' ? 18 : 9;
+            const nodeEl = g.append('g').selectAll('g').data(nodes).enter().append('g')
+                .attr('class', 'js-node').attr('cursor', 'pointer')
+                .call(d3.drag()
+                    .on('start', (ev, d) => { if (!ev.active) graphSimulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                    .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+                    .on('end', (ev, d) => { if (!ev.active) graphSimulation.alphaTarget(0); d.fx = null; d.fy = null; }))
+                .on('mouseover', (ev, d) => showTip(ev, d.label))
+                .on('mouseout', () => { tooltip.style.display = 'none'; })
+                .on('click', (ev, d) => {
+                    ev.stopPropagation();
+                    const panel = document.getElementById('graph-detail-panel');
+                    document.getElementById('graph-detail-title').textContent = d.label;
+                    document.getElementById('graph-detail-body').textContent = d.links.map(e => {
+                        const other = e.source === d.id || e.source.id === d.id ? (e.target.id || e.target) : (e.source.id || e.source);
+                        return `${e.kind.toUpperCase()} · ${other}\n  ${e.reason} (${e.via})`;
+                    }).join('\n\n');
+                    panel.classList.remove('hidden');
+                });
+            nodeEl.append('circle').attr('r', nodeR)
+                .attr('fill', '#0f172a').attr('stroke', nodeColour).attr('stroke-width', d => d.ntype === 'target' ? 3 : 2);
+            nodeEl.append('text')
+                .attr('text-anchor', 'middle').attr('dy', d => d.ntype === 'target' ? 32 : -14)
+                .attr('fill', nodeColour).attr('font-size', '9px').attr('font-family', 'monospace')
+                .attr('pointer-events', 'none')
+                .text(d => d.label.length > 28 ? d.label.slice(0, 27) + '…' : d.label);
+
+            graphSimulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(edges).id(d => d.id)
+                    .distance(d => d.kind === 'verified' ? 90 : d.kind === 'inferred' ? 170 : 120))
+                .force('charge', d3.forceManyBody().strength(-260))
+                .force('center', d3.forceCenter(W / 2, H / 2))
+                .force('collision', d3.forceCollide(d => nodeR(d) + 18))
+                .on('tick', () => {
+                    edgeEl.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                    nodeEl.attr('transform', d => `translate(${d.x},${d.y})`);
+                });
+            svg.on('click', () => document.getElementById('graph-detail-panel').classList.add('hidden'));
+        }
 
         function switchResultsTab(tab) {
             activeResultsTab = tab;
@@ -1694,6 +1832,15 @@
             noData.classList.add('hidden');
             canvasWrap.classList.remove('hidden');
             canvasWrap.classList.add('flex');
+
+            const identityLinks = lastIdentityProfile && Array.isArray(lastIdentityProfile.links)
+                ? lastIdentityProfile.links : [];
+            if (graphMode === 'connections' && identityLinks.length) {
+                renderConnectionsGraph(scanData, identityLinks);
+                return;
+            }
+            setGraphLegend([['#10b981', 'Target'], ['#3b82f6', 'Source'], ['#10b981', 'High conf (≥80%)'],
+                            ['#f59e0b', 'Med conf (50–79%)'], ['#ef4444', 'Low conf (<50%)']]);
 
             const svgEl = document.getElementById('social-graph-svg');
             const cont  = svgEl.parentElement;

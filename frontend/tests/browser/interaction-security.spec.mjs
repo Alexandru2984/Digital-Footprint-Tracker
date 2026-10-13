@@ -155,6 +155,33 @@ test('a shared report shows its results and names the sources that were not chec
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });
 
+test('the graph tab draws how identifiers connect, coloured by strength', async ({ page }) => {
+    const fixture = await mockAPI(page);
+    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+    await page.locator('#tab-graph').click();
+
+    const svg = page.locator('#social-graph-svg');
+    await expect(svg.locator('.js-node')).toHaveCount(6);
+    await expect(svg.locator('.js-link-verified')).toHaveCount(2);
+    await expect(svg.locator('.js-link-inferred')).toHaveCount(1);
+    await expect(svg.locator('.js-link-declared')).toHaveCount(1);
+    await expect(page.locator('#graph-legend')).toContainText('verified');
+
+    await svg.locator('.js-node', { hasText: 'github: alice' }).click();
+    const detail = page.locator('#graph-detail-body');
+    await expect(detail).toContainText('VERIFIED · alice@example.com');
+    await expect(detail).toContainText('signs in through GitHub (crates.io)');
+
+    await page.locator('#graph-mode [data-graph-mode="sources"]').click();
+    await expect(page.locator('#graph-legend')).toContainText('Source');
+    await expect(svg.locator('.js-node')).toHaveCount(0);
+    await page.locator('#graph-mode [data-graph-mode="connections"]').click();
+    await expect(svg.locator('.js-node')).toHaveCount(6);
+
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+});
+
 test('timeline evidence is responsive, filterable and rendered only as text', async ({ page }) => {
     const fixture = await mockAPI(page);
     await page.goto('/', { waitUntil: 'networkidle' });

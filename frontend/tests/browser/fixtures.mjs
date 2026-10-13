@@ -38,6 +38,28 @@ export async function mockAPI(page, options = {}) {
                       rawData: malicious, metadata: null },
                 ],
             };
+        } else if (pathname === '/api/results/00000000-0000-4000-8000-0000000000bb') {
+            body = {
+                scanID: '00000000-0000-4000-8000-0000000000bb', input: 'alice@example.com', status: 'completed',
+                completedAt: 1787000000, scannedAt: 1787000000, unavailableSources: [],
+                results: [
+                    { id: null, source: 'GitHub', type: 'developer_identity', confidenceScore: 1, rawData: 'verified', metadata: null },
+                    { id: null, source: 'Steam', type: 'account_presence', confidenceScore: 0.75, rawData: 'same name', metadata: null },
+                ],
+            };
+        } else if (pathname === '/api/identity/00000000-0000-4000-8000-0000000000bb') {
+            body = {
+                likelyName: null, emails: ['alice@example.com'], handles: [], confirmedAccounts: [], breaches: [], phones: [],
+                exposedIPs: [], exposedServices: [], vulnerabilities: [], exposedDataClasses: [], timeline: [],
+                riskScore: 10, riskLevel: 'Low', riskFactors: [],
+                links: [
+                    { from: 'alice@example.com', to: 'github: alice', kind: 'verified', source: 'GitHub', reason: 'verified email' },
+                    { from: 'crates.io: alice', to: 'github: alice', kind: 'verified', source: 'crates.io', reason: 'signs in through GitHub' },
+                    { from: 'alice', to: 'steam: alice', kind: 'inferred', source: 'Steam', reason: malicious },
+                    { from: 'alice@example.com', to: malicious, kind: 'declared', source: malicious, reason: 'profile link' },
+                ],
+                resultCount: 2,
+            };
         } else if (pathname === '/api/stats') {
             body = { totalScans: 0, scansLast24h: 0, scansLast7d: 0, totalResults: 0, topSources: [] };
         } else if (pathname === '/api/plugins') {
