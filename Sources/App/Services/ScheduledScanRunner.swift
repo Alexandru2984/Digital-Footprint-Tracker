@@ -277,4 +277,3 @@ enum MonitorFingerprint {
         return "\(source):\(type):" + (identity.map { "id=\($0)" } ?? String(rawData.prefix(200)))
     }
 }
-
