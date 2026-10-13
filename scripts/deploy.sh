@@ -136,11 +136,17 @@ verify_release "$PREVIOUS" "$RELEASE_ROOT" || {
     echo "[deploy] current release failed integrity verification: $PREVIOUS" >&2
     exit 1
 }
-systemctl cat swift-vapor.service | grep -qF "$CURRENT_LINK/Run" || {
+# Read each unit whole before matching. `systemctl cat | grep -q` fails under
+# pipefail whenever grep matches and exits while systemctl is still writing:
+# the writer takes SIGPIPE and the pipeline reports failure. That stayed
+# hidden until a drop-in made the unit longer than one write (2026-10-13).
+app_unit="$(systemctl cat swift-vapor.service 2>/dev/null || true)"
+migrate_unit="$(systemctl cat swift-vapor-migrate.service 2>/dev/null || true)"
+grep -qF "$CURRENT_LINK/Run" <<< "$app_unit" || {
     echo "[deploy] installed application unit does not use the atomic release link" >&2
     exit 1
 }
-systemctl cat swift-vapor-migrate.service | grep -qF "$NEXT_LINK/Run" || {
+grep -qF "$NEXT_LINK/Run" <<< "$migrate_unit" || {
     echo "[deploy] explicit migration unit is not installed" >&2
     exit 1
 }
