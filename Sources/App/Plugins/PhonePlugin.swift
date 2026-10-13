@@ -27,7 +27,7 @@ struct PhonePlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let phoneRegex = PhonePlugin.phoneRegex,
+        guard let phoneRegex = Self.phoneRegex,
               phoneRegex.firstMatch(
                 in: trimmed,
                 range: NSRange(trimmed.startIndex..., in: trimmed)

@@ -5413,7 +5413,9 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(forEmail.contains("Shodan"), "host search cannot act on an email or a handle")
 
         let forIP = ScanPluginRunner.applicablePlugins(all, for: "203.0.113.7").map(\.name)
-        XCTAssertTrue(forIP.contains("AbuseIPDB"))
+        // A keyless IP plugin: whether a keyed one applies depends on this
+        // host's secrets, which a test must not.
+        XCTAssertTrue(forIP.contains("RIPEstat"))
         XCTAssertFalse(forIP.contains("CertificateTransparency"), "certificate transparency is indexed by name, not by IP")
 
         XCTAssertLessThan(forDomain.count, all.count)
