@@ -44,6 +44,17 @@ enum IdentityLinks {
         let kind: Kind
         let source: String
         let reason: String
+        /// 0–1: how much the link is worth as evidence; see `strength(_:via:)`.
+        var strength: Double
+
+        init(from: String, to: String, kind: Kind, source: String, reason: String, via: String? = nil) {
+            self.from = from
+            self.to = to
+            self.kind = kind
+            self.source = source
+            self.reason = reason
+            self.strength = IdentityLinks.strength(kind, via: via)
+        }
     }
 
     static let maxLinks = 80
@@ -70,6 +81,9 @@ enum IdentityLinks {
             let kind = nonEmpty(meta["matchKind"]).flatMap(Kind.init(rawValue:)) ?? .inferred
             let reason = nonEmpty(meta["matchReason"])
                 ?? inferredReason(via: meta["via"], platform: nonEmpty(meta["platform"]) ?? input.source)
+            // A same-name edge is worth the same however the name was reached:
+            // the derivation has its own edge, and counting it here too would
+            // charge for it twice along one chain.
             add(Link(from: from, to: node, kind: kind, source: input.source, reason: reason))
 
             let linkKind = nonEmpty(meta["linkKind"]).flatMap(Kind.init(rawValue:)) ?? .declared
@@ -93,10 +107,10 @@ enum IdentityLinks {
             switch via {
             case "emailLocalPart":
                 add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
-                         reason: "the local part of the email address"))
+                         reason: "the local part of the email address", via: via))
             case "variant":
                 add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
-                         reason: "a spelling variant of the name"))
+                         reason: "a spelling variant of the name", via: via))
             default:
                 break
             }
@@ -174,5 +188,69 @@ enum IdentityLinks {
     private static func nonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return trimmed
+    }
+
+    // MARK: - Attribution
+
+    /// How likely an identifier is to belong to the target, and the chain of
+    /// links that says so.
+    struct Attribution: Codable, Sendable, Equatable {
+        let node: String
+        /// 0–100: the product of the link strengths along the strongest chain.
+        let score: Int
+        /// The chain from the target to `node`, both ends included.
+        let path: [String]
+    }
+
+    /// How much one link is worth. A shared name is weak evidence on its own,
+    /// and how the name was reached matters: the local part of an email is a
+    /// better guess than a spelling variant.
+    static func strength(_ kind: Kind, via: String?) -> Double {
+        switch kind {
+        case .verified: return 0.98
+        case .declared: return 0.9
+        case .observed: return 0.8
+        case .inferred:
+            switch via {
+            case "emailLocalPart": return 0.55
+            case "variant": return 0.35
+            default: return 0.4
+            }
+        }
+    }
+
+    /// The strongest chain from `target` to every identifier the links reach.
+    /// "Same person" is symmetric, so links are walked both ways; the best
+    /// chain maximises the product of strengths (Dijkstra over −log).
+    static func attribute(_ links: [Link], target: String) -> [Attribution] {
+        let origin = target.lowercased()
+        var adjacency: [String: [(String, Double)]] = [:]
+        for link in links {
+            let weight = link.strength
+            adjacency[link.from, default: []].append((link.to, weight))
+            adjacency[link.to, default: []].append((link.from, weight))
+        }
+        guard adjacency[origin] != nil else { return [] }
+
+        var best: [String: Double] = [origin: 1]
+        var previous: [String: String] = [:]
+        var settled: Set<String> = []
+        while let (current, score) = best.filter({ !settled.contains($0.key) }).max(by: { $0.value < $1.value }) {
+            settled.insert(current)
+            for (next, weight) in adjacency[current] ?? [] where !settled.contains(next) {
+                let candidate = score * weight
+                if candidate > (best[next] ?? 0) {
+                    best[next] = candidate
+                    previous[next] = current
+                }
+            }
+        }
+
+        return best.filter { $0.key != origin }.map { node, score in
+            var path = [node]
+            while let step = previous[path[0]] { path.insert(step, at: 0) }
+            return Attribution(node: node, score: Int((score * 100).rounded()), path: path)
+        }
+        .sorted { ($0.score, $1.node) > ($1.score, $0.node) }
     }
 }

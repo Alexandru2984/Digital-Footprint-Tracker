@@ -57,6 +57,16 @@ enum ExecutiveReport {
             }
         }
 
+        // ── Attribution ───────────────────────────────────────────────────────────
+        let owned = profile.attributions.filter { $0.node.contains(": ") || $0.node.contains("@") }
+        if !owned.isEmpty {
+            out += "## Whose accounts these are\n\n| Account | Likely the target's | Strongest chain |\n|---|---|---|\n"
+            for attribution in owned.prefix(40) {
+                out += "| \(cell(attribution.node)) | \(attribution.score)% | \(cell(attribution.path.joined(separator: " → "))) |\n"
+            }
+            out += "\n"
+        }
+
         // ── Connections ───────────────────────────────────────────────────────────
         if !profile.links.isEmpty {
             out += "## How these are connected\n\n| From | To | Strength | Why |\n|---|---|---|---|\n"

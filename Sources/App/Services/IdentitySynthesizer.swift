@@ -62,6 +62,8 @@ enum IdentitySynthesizer {
         let riskFactors: [RiskScorer.Factor]
         /// How the identifiers connect, strongest first; see `IdentityLinks`.
         let links: [IdentityLinks.Link]
+        /// How likely each identifier is to be the target's, strongest first.
+        let attributions: [IdentityLinks.Attribution]
         let resultCount: Int
     }
 
@@ -71,6 +73,7 @@ enum IdentitySynthesizer {
 
     static func synthesize(from inputs: [Input], riskScore: Int, riskLevel: String,
                            riskFactors: [RiskScorer.Factor] = [], target: String? = nil) -> IdentityProfile {
+        let links = IdentityLinks.build(from: inputs, target: target)
         var nameScore: [String: Double] = [:]            // normalized key → summed confidence (weight)
         var nameForms: [String: [String: Int]] = [:]     // normalized key → seen display forms + counts
         var locationForms: [String: [String: Int]] = [:] // same case/spacing merge for places…
@@ -198,7 +201,8 @@ enum IdentitySynthesizer {
             riskScore: riskScore,
             riskLevel: riskLevel,
             riskFactors: riskFactors,
-            links: IdentityLinks.build(from: inputs, target: target),
+            links: links,
+            attributions: IdentityLinks.attribute(links, target: target ?? "target"),
             resultCount: inputs.count
         )
     }

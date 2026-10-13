@@ -62,6 +62,13 @@ enum ExecutiveReportHTML {
             b += "<section><h2>Identity</h2>\(s)</section>\n"
         }
 
+        // Attribution: how likely each account is the target's.
+        let owned = profile.attributions.filter { $0.node.contains(": ") || $0.node.contains("@") }
+        if !owned.isEmpty {
+            let rows = owned.prefix(40).map { [$0.node, "\($0.score)%", $0.path.joined(separator: " → ")] }
+            b += "<section><h2>Whose accounts these are</h2>\(table(["Account", "Likely the target's", "Strongest chain"], Array(rows)))</section>\n"
+        }
+
         // Connections, strongest first.
         if !profile.links.isEmpty {
             let rows = profile.links.prefix(60).map { [$0.from, $0.to, $0.kind.rawValue, "\($0.reason) (\($0.source))"] }

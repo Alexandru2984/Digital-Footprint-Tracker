@@ -58,6 +58,11 @@ export async function mockAPI(page, options = {}) {
                     { from: 'alice', to: 'steam: alice', kind: 'inferred', source: 'Steam', reason: malicious },
                     { from: 'alice@example.com', to: malicious, kind: 'declared', source: malicious, reason: 'profile link' },
                 ],
+                attributions: [
+                    { node: 'github: alice', score: 98, path: ['alice@example.com', 'github: alice'] },
+                    { node: 'steam: alice', score: 22, path: ['alice@example.com', 'alice', 'steam: alice'] },
+                    { node: 'twitter: ' + malicious, score: 90, path: ['alice@example.com', 'twitter: ' + malicious] },
+                ],
                 resultCount: 2,
             };
         } else if (pathname === '/api/stats') {

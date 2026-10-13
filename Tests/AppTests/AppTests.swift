@@ -5159,6 +5159,7 @@ final class AppTests: XCTestCase {
             riskLevel: "Low",
             riskFactors: [],
             links: [],
+            attributions: [],
             resultCount: 1
         )
 
@@ -5958,6 +5959,7 @@ final class AppTests: XCTestCase {
             riskLevel: "Medium",
             riskFactors: [],
             links: [],
+            attributions: [],
             resultCount: 6
         )
         let xml = IdentityGraph.graphml(from: profile, target: "alice@example.test")
@@ -6608,6 +6610,34 @@ final class AppTests: XCTestCase {
         ])
     }
 
+    func testAttributionFollowsTheStrongestChainBothWays() throws {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "dtolnay", "email": "dtolnay@gmail.com",
+                         "queriedAs": "dtolnay@gmail.com", "via": "input", "matchKind": "verified"], rawData: "x"),
+            I(source: "crates.io", type: "developer_identity", confidence: 0.75,
+              metadata: ["platform": "crates.io", "username": "dtolnay", "queriedAs": "dtolnay", "via": "emailLocalPart",
+                         "linked": "github:dtolnay", "linkKind": "verified"], rawData: "x"),
+            I(source: "Codeberg", type: "account_presence", confidence: 0.75,
+              metadata: ["platform": "codeberg", "username": "dtolnay", "queriedAs": "dtolnay", "via": "emailLocalPart"], rawData: "x"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "dtolnay@gmail.com")
+        let score = Dictionary(uniqueKeysWithValues: profile.attributions.map { ($0.node, $0.score) })
+        XCTAssertEqual(score["github: dtolnay"], 98, "one verified link")
+        XCTAssertEqual(score["dtolnay"], 96, "reached through GitHub's username (0.98²), not the weaker local-part guess")
+        XCTAssertEqual(score["crates.io: dtolnay"], 96,
+                       "crates.io links *to* GitHub, but same-person is symmetric: 0.98 · 0.98")
+        XCTAssertEqual(score["codeberg: dtolnay"], 38, "only a shared name after the confirmed one: 0.98² · 0.4")
+        XCTAssertEqual(profile.attributions.first { $0.node == "codeberg: dtolnay" }?.path,
+                       ["dtolnay@gmail.com", "github: dtolnay", "dtolnay", "codeberg: dtolnay"])
+        XCTAssertEqual(profile.attributions.first?.node, "github: dtolnay", "strongest first")
+
+        XCTAssertTrue(IdentityLinks.attribute([], target: "x").isEmpty)
+        let island = IdentityLinks.Link(from: "a", to: "b", kind: .verified, source: "s", reason: "r")
+        XCTAssertTrue(IdentityLinks.attribute([island], target: "x").isEmpty, "nothing reachable from the target")
+    }
+
     func testPivotsFromVerifiedLinksAreScannedFirst() {
         var results = (1...6).map { index in
             PluginResult(source: "Sweep", type: "account_presence", confidenceScore: 0.95, rawData: "x\(index)",
@@ -6618,6 +6648,19 @@ final class AppTests: XCTestCase {
         let pivots = PivotExtractor.candidates(from: results, alreadyScanned: [])
         XCTAssertEqual(pivots.count, PivotExtractor.maxPivots)
         XCTAssertEqual(pivots.first, "asmith42", "a platform-confirmed login wins the limited pivot budget")
+    }
+
+    func testReportsSayWhoseAccountsTheseAre() {
+        let inputs = [IdentitySynthesizer.Input(
+            source: "GitHub", type: "developer_identity", confidence: 1.0,
+            metadata: ["platform": "github", "username": "x|y", "queriedAs": "a@b.com", "matchKind": "verified"], rawData: "x")]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "a@b.com")
+        let surface = ExposureDiff.snapshot(from: inputs)
+        let md = ExecutiveReport.markdown(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(md.contains("## Whose accounts these are"), md)
+        XCTAssertTrue(md.contains("| github: x\\|y | 98% | a@b.com → github: x\\|y |"), md)
+        let html = ExecutiveReportHTML.html(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(html.contains("<td>github: x|y</td><td>98%</td>"), html)
     }
 
     func testRunnerRecordsWhatEachFindingWasLookedUpAs() async throws {

@@ -637,6 +637,25 @@
                 const strong = links.filter(l => l.kind === 'verified' || l.kind === 'declared').length;
                 heading.textContent = `🔗 How these are connected · ${strong} confirmed, ${links.length - strong} unconfirmed`;
                 sec.appendChild(heading);
+                // How likely each account is to be the target's, from the
+                // strongest chain of links reaching it.
+                const attributions = (Array.isArray(p.attributions) ? p.attributions : [])
+                    .filter(a => String(a.node ?? '').includes(': ') || String(a.node ?? '').includes('@'));
+                if (attributions.length) {
+                    const who = document.createElement('div');
+                    who.className = 'js-attributions';
+                    who.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;';
+                    attributions.slice(0, 20).forEach(a => {
+                        const score = Math.max(0, Math.min(100, Number(a.score) || 0));
+                        const colour = score >= 80 ? '#4ade80' : score >= 50 ? '#facc15' : '#94a3b8';
+                        const chip = document.createElement('span');
+                        chip.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid ' + colour + '55;color:' + colour + ';';
+                        chip.textContent = `${String(a.node)} ${score}%`;
+                        chip.title = 'Strongest chain: ' + (Array.isArray(a.path) ? a.path.map(String).join(' → ') : '');
+                        who.appendChild(chip);
+                    });
+                    sec.appendChild(who);
+                }
                 const list = document.createElement('div');
                 list.style.cssText = 'display:grid;gap:4px;';
                 const shown = 15;
@@ -1537,6 +1556,8 @@
             ]);
 
             const target = String(scanData.input || '').toLowerCase();
+            const attribution = new Map(((lastIdentityProfile && lastIdentityProfile.attributions) || [])
+                .map(a => [String(a.node), a]));
             const byId = new Map();
             const node = id => {
                 if (!byId.has(id)) {
@@ -1589,12 +1610,20 @@
                     ev.stopPropagation();
                     const panel = document.getElementById('graph-detail-panel');
                     document.getElementById('graph-detail-title').textContent = d.label;
-                    document.getElementById('graph-detail-body').textContent = d.links.map(e => {
+                    const owned = attribution.get(d.id);
+                    const header = d.ntype === 'target' ? 'The scan target.\n\n'
+                        : owned ? `Belongs to the target: ${Number(owned.score) || 0}%\nVia: ${(owned.path || []).map(String).join(' → ')}\n\n`
+                        : 'Not connected to the target.\n\n';
+                    document.getElementById('graph-detail-body').textContent = header + d.links.map(e => {
                         const other = e.source === d.id || e.source.id === d.id ? (e.target.id || e.target) : (e.source.id || e.source);
                         return `${e.kind.toUpperCase()} · ${other}\n  ${e.reason} (${e.via})`;
                     }).join('\n\n');
                     panel.classList.remove('hidden');
                 });
+            // Faint when the chain to the target is weak: a same-name guess
+            // should not look as solid as a verified account.
+            nodeEl.attr('opacity', d => d.ntype === 'target' ? 1
+                : Math.max(0.35, (Number((attribution.get(d.id) || {}).score) || 0) / 100));
             nodeEl.append('circle').attr('r', nodeR)
                 .attr('fill', '#0f172a').attr('stroke', nodeColour).attr('stroke-width', d => d.ntype === 'target' ? 3 : 2);
             nodeEl.append('text')

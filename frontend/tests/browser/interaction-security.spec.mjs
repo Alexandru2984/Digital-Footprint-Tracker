@@ -169,8 +169,15 @@ test('the graph tab draws how identifiers connect, coloured by strength', async 
 
     await svg.locator('.js-node', { hasText: 'github: alice' }).click();
     const detail = page.locator('#graph-detail-body');
+    await expect(detail).toContainText('Belongs to the target: 98%');
+    await expect(detail).toContainText('Via: alice@example.com → github: alice');
     await expect(detail).toContainText('VERIFIED · alice@example.com');
     await expect(detail).toContainText('signs in through GitHub (crates.io)');
+
+    const chips = page.locator('#identity-panel .js-attributions');
+    await expect(chips).toContainText('github: alice 98%');
+    await expect(chips).toContainText('steam: alice 22%');
+    await expect(chips).toContainText(`twitter: ${fixture.malicious} 90%`);
 
     await page.locator('#graph-mode [data-graph-mode="sources"]').click();
     await expect(page.locator('#graph-legend')).toContainText('Source');

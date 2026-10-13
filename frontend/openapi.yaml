@@ -986,6 +986,9 @@ paths:
         `{from, to, kind, source, reason}` where kind is verified (a platform
         confirmed it), declared (the person published it), observed (seen in the
         account's own activity) or inferred (a shared or derived name only).
+        `attributions` gives, for each identifier the links reach, how likely
+        it is the target's (0–100, the product of link strengths along the
+        strongest chain; links are walked both ways) and that chain.
         `riskFactors` lists what the risk score is made of, largest first: each
         entry is `{category, label, points, findings}`, with points counted
         before the 100 cap. The JSON export carries the same list.
