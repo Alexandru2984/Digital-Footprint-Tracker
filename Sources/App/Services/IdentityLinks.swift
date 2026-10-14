@@ -60,7 +60,7 @@ enum IdentityLinks {
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
-        "pgp_key_uid", "domain_registrant"
+        "pgp_key_uid", "domain_registrant", "ssh_key_match"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {

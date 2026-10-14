@@ -50,6 +50,7 @@ enum PluginCanary {
         Check(plugin: "BlueskyOSINT", input: "jay.bsky.team", username: "jay.bsky.team"),
         Check(plugin: "DockerHub", input: "jessfraz", username: "jessfraz"),
         Check(plugin: "Codeberg", input: "fnetX", username: "fnetX"),
+        Check(plugin: "SSHKeys", input: "fnetX", username: "fnetX"),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),
@@ -62,7 +63,9 @@ enum PluginCanary {
         Check(plugin: "AbuseIPDB", input: "8.8.8.8", username: nil),
         Check(plugin: "PhoneOSINT", input: "+14152007986", username: nil),
         // Shodan's own long-lived scanner: GreyNoise has classified it for years.
-        Check(plugin: "GreyNoise", input: "71.6.135.131", username: nil),
+        // Shown, never alerted on: the keyless API allows a few dozen lookups
+        // a week per address, so a daily check with retries can exhaust it.
+        Check(plugin: "GreyNoise", input: "71.6.135.131", username: nil, alerts: false),
         Check(plugin: "MailSecurity", input: "google.com", username: nil),
         Check(plugin: "SiteMeta", input: "github.com", username: nil),
         Check(plugin: "Wayback", input: "rfc-editor.org", username: nil),

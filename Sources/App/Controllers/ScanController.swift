@@ -100,6 +100,7 @@ struct ScanController: RouteCollection {
         CratesPlugin(),
         DockerHubPlugin(),
         CodebergPlugin(),
+        SSHKeyPlugin(),
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),

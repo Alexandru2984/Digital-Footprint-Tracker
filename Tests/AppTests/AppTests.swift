@@ -7534,6 +7534,24 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
     }
 
+    func testTheSameSSHKeyTiesTwoAccounts() {
+        let shared = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+        let other = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQDCsTcryUl51Q2VSEHqDRNmceUFo55ZtcIwxl2QITbN1RREti5ml/VTytC0yeBOvnZA4x4CFpdw/lCDPk0yrH9Ei5vVkXmOrExdTlT3qI7YaAzj1tUVlBd4S6LX1F7y6VLActvdHuDDuXZXzCDd/97420jrDfWZqJMlUK/EmCE5ZQ=="
+        let github = SSHKeyPlugin.fingerprints(in: "\(shared)\n\(other)\n")
+        XCTAssertEqual(github.count, 2)
+        XCTAssertTrue(github.allSatisfy { $0.hasPrefix("SHA256:") && !$0.hasSuffix("=") }, "ssh-keygen's form")
+        XCTAssertTrue(SSHKeyPlugin.fingerprints(in: "<html><body>You are being redirected</body></html>").isEmpty)
+
+        let results = SSHKeyPlugin.evaluate(username: "ana", keys: [
+            "github": github, "codeberg": SSHKeyPlugin.fingerprints(in: shared), "gitlab": [],
+        ])
+        XCTAssertEqual(results.map { $0.metadata?["platform"] }, ["github", "codeberg"],
+                       "GitLab shares nothing and gets no result")
+        XCTAssertEqual(results.first?.metadata?["linked"], "codeberg:ana")
+        XCTAssertEqual(results.first?.metadata?["linkKind"], "observed", "a public key can be copied: seen, not proven")
+        XCTAssertTrue(SSHKeyPlugin.evaluate(username: "ana", keys: ["github": github, "gitlab": []]).isEmpty)
+    }
+
     func testMastodonKeepsOnlyTheLinksItVerified() throws {
         let json = Data(#"""
         {"acct":"ana","fields":[
