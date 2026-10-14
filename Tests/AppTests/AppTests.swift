@@ -6729,6 +6729,61 @@ final class AppTests: XCTestCase {
                        ["dtolnay@gmail.com", "keybase: dtolnay", "dns: rewrite.in.rs", "rewrite.in.rs", "bluesky: rewrite.in.rs"])
     }
 
+    func testWhoisNamesTheRegistrantWhenTheRecordDoes() throws {
+        let registry = Data(#"""
+        {"objectClassName":"domain","ldhName":"EXAMPLE.COM","links":[
+          {"rel":"self","href":"https://rdap.registry.test/domain/example.com","type":"application/rdap+json"},
+          {"rel":"related","href":"http://plain.registrar.test/domain/example.com","type":"application/rdap+json"},
+          {"rel":"related","href":"https://rdap.registrar.test/domain/EXAMPLE.COM","type":"application/rdap+json"}],
+         "entities":[{"roles":["registrar"],"vcardArray":["vcard",[["fn",{},"text","Registrar Inc."]]]}]}
+        """#.utf8)
+        XCTAssertNil(WhoisPlugin.registrant(in: registry, domain: "example.com"), "a thin registry names no holder")
+        XCTAssertEqual(WhoisPlugin.registrarLink(in: registry)?.absoluteString,
+                       "https://rdap.registrar.test/domain/EXAMPLE.COM", "the https RDAP link, never plain http")
+
+        let organisation = Data(#"""
+        {"entities":[{"roles":["registrant"],"vcardArray":["vcard",[["version",{},"text","4.0"],
+          ["fn",{},"text","REDACTED REGISTRANT"],["org",{"type":"work"},"text","Example Holdings LLC"],
+          ["adr",{"cc":"US"},"text",["","","REDACTED FOR PRIVACY","REDACTED FOR PRIVACY","","REDACTED FOR PRIVACY",""]],
+          ["email",{},"text","Please query the RDDS service of the Registrar of Record"]]]},
+          {"roles":["registrar"],"vcardArray":["vcard",[["fn",{},"text","Registrar Inc."]]]}]}
+        """#.utf8)
+        let org = try XCTUnwrap(WhoisPlugin.registrant(in: organisation, domain: "example.com"))
+        XCTAssertEqual(org.type, "domain_registrant")
+        XCTAssertEqual(org.metadata?["org"], "Example Holdings LLC")
+        XCTAssertEqual(org.metadata?["location"], "US")
+        XCTAssertNil(org.metadata?["name"], "a redacted name is not a name")
+        XCTAssertNil(org.metadata?["email"], "nor is a redaction notice an address")
+
+        let person = Data(#"""
+        {"entities":[{"roles":["registrar"],"vcardArray":["vcard",[["fn",{},"text","R"]]],
+          "entities":[{"roles":["registrant"],"vcardArray":["vcard",[["fn",{},"text","Ana Popescu"],
+            ["email",{},"text","Ana@Example.ro"],["adr",{},"text",["","","Str. X","Cluj","","","Romania"]]]]}]}]}
+        """#.utf8)
+        let holder = try XCTUnwrap(WhoisPlugin.registrant(in: person, domain: "example.ro"))
+        XCTAssertEqual(holder.metadata?["name"], "Ana Popescu")
+        XCTAssertEqual(holder.metadata?["email"], "ana@example.ro")
+        XCTAssertEqual(holder.metadata?["location"], "Romania")
+        XCTAssertEqual(PivotExtractor.candidates(from: [holder], alreadyScanned: ["example.ro"]), ["ana@example.ro"],
+                       "the holder's address is the next lead")
+
+        let redacted = Data(#"""
+        {"entities":[{"roles":["registrant"],"vcardArray":["vcard",[["fn",{},"text","Domain Privacy Service FBO Registrant"],
+          ["org",{},"text","Contact Privacy Inc. Customer 0123"],["email",{},"text","x@contactprivacy.com"]]]}]}
+        """#.utf8)
+        XCTAssertNil(WhoisPlugin.registrant(in: redacted, domain: "example.com"), "a privacy service is not the holder")
+
+        typealias I = IdentitySynthesizer.Input
+        let profile = IdentitySynthesizer.synthesize(
+            from: [I(source: holder.source, type: holder.type, confidence: holder.confidenceScore,
+                     metadata: (holder.metadata ?? [:]).merging(["queriedAs": "example.ro", "via": "input"]) { $1 },
+                     rawData: holder.rawData)],
+            riskScore: 0, riskLevel: "Low", target: "example.ro")
+        XCTAssertEqual(profile.likelyName, "Ana Popescu")
+        XCTAssertEqual(profile.attributions.first { $0.node == "ana@example.ro" }?.score, 88,
+                       "the domain (0.98) → the address its record gives (declared, 0.9)")
+    }
+
     func testReportsSayWhoseAccountsTheseAre() {
         let inputs = [IdentitySynthesizer.Input(
             source: "GitHub", type: "developer_identity", confidence: 1.0,

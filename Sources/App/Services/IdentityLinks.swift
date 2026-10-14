@@ -60,7 +60,7 @@ enum IdentityLinks {
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
-        "pgp_key_uid"
+        "pgp_key_uid", "domain_registrant"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {
@@ -179,7 +179,7 @@ enum IdentityLinks {
     /// platform people reuse names across. Nil for anything else.
     static func identifier(of node: String) -> String? {
         let parts = node.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-        guard parts.count == 2 else { return nil }
+        guard parts.count == 2 else { return node.contains("@") ? node : nil }
         if domainPlatforms.contains(parts[0]) { return websiteDomain(parts[1]) }
         return handlePlatforms.contains(parts[0]) && !parts[1].contains("@") ? parts[1] : nil
     }
@@ -224,6 +224,8 @@ enum IdentityLinks {
             guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             var value = parts[1].lowercased()
             if value.hasPrefix("@") { value.removeFirst() }
+            // An address is its own node, however it was found.
+            if parts[0].lowercased() == "email" { return value.contains("@") ? value : nil }
             return "\(parts[0].lowercased()): \(value)"
         }.prefix(20).map { $0 }
     }

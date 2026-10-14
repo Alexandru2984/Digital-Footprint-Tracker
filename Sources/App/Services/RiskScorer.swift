@@ -255,6 +255,7 @@ enum RiskScorer {
         "identity_proof": .identity,
         // A keyserver uid naming the address: an identity lead, unverified.
         "pgp_key_uid": .identity,
+        "domain_registrant": .identity,
         "developer_identity": .identity,
 
         // ── Direct PII ───────────────────────────────────────────────────────
