@@ -7570,8 +7570,8 @@ final class AppTests: XCTestCase {
         let results = SSHKeyPlugin.evaluate(username: "ana", keys: [
             "github": github, "codeberg": SSHKeyPlugin.fingerprints(in: shared), "gitlab": [],
         ])
-        XCTAssertEqual(results.map { $0.metadata?["platform"] }, ["github", "codeberg"],
-                       "GitLab shares nothing and gets no result")
+        XCTAssertEqual(results.map { $0.metadata?["platform"] }, ["github"],
+                       "one finding per tied pair; GitLab shares nothing")
         XCTAssertEqual(results.first?.metadata?["linked"], "codeberg:ana")
         XCTAssertEqual(results.first?.metadata?["linkKind"], "observed", "a public key can be copied: seen, not proven")
         XCTAssertTrue(SSHKeyPlugin.evaluate(username: "ana", keys: ["github": github, "gitlab": []]).isEmpty)

@@ -16,6 +16,8 @@ struct SSHKeyPlugin: FootprintPlugin {
     let description = "Same SSH public key on GitHub, GitLab and Codeberg accounts of this name"
     let accepts: Set<TargetShape> = [.username]
     let cacheTTL: TimeInterval = 86_400
+    /// v2: one finding per tied pair, not one from each side.
+    let cacheVersion = 2
 
     static let hosts: [(platform: String, host: String)] = [
         ("github", "github.com"), ("gitlab", "gitlab.com"), ("codeberg", "codeberg.org"),
@@ -57,13 +59,14 @@ struct SSHKeyPlugin: FootprintPlugin {
         }
     }
 
-    /// One result per account that shares a key with another platform's
-    /// account of the same name.
+    /// One result per account that shares a key with a later platform's
+    /// account of the same name. The tie is mutual, so each pair is reported
+    /// once, from the first platform in `hosts`.
     static func evaluate(username: String, keys: [String: [String]]) -> [PluginResult] {
         let order = hosts.map(\.platform).filter { keys[$0] != nil }
-        return order.compactMap { platform -> PluginResult? in
+        return order.enumerated().compactMap { index, platform -> PluginResult? in
             let own = Set(keys[platform] ?? [])
-            let sharing = order.filter { $0 != platform && !own.isDisjoint(with: keys[$0] ?? []) }
+            let sharing = order.dropFirst(index + 1).filter { !own.isDisjoint(with: keys[$0] ?? []) }
             guard !sharing.isEmpty else { return nil }
             let shared = own.intersection(sharing.flatMap { keys[$0] ?? [] }).sorted()
             let host = hosts.first { $0.platform == platform }?.host ?? platform
