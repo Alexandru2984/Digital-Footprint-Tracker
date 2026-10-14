@@ -77,7 +77,7 @@ struct EmailIntelPlugin: FootprintPlugin {
         disposableDomains.contains(domain.lowercased())
     }
 
-    private static let disposableDomains: Set<String> = [
+    static let disposableDomains: Set<String> = [
         "mailinator.com", "guerrillamail.com", "guerrillamail.net", "10minutemail.com",
         "temp-mail.org", "tempmail.com", "tempmailo.com", "throwawaymail.com",
         "yopmail.com", "getnada.com", "trashmail.com", "trashmail.de", "sharklasers.com",

@@ -115,6 +115,9 @@ enum IdentityLinks {
             case "variant":
                 add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
                          reason: "a spelling variant of the name", via: via))
+            case "emailDomain":
+                add(Link(from: anchor, to: value, kind: .inferred, source: "derived",
+                         reason: "the domain of the email address: theirs, or where they work", via: via))
             default:
                 break
             }
@@ -276,6 +279,8 @@ enum IdentityLinks {
         case .inferred:
             switch via {
             case "emailLocalPart": return 0.55
+            // A mailbox there shows a tie to the domain, not who holds it.
+            case "emailDomain": return 0.55
             case "variant": return 0.35
             default: return 0.4
             }

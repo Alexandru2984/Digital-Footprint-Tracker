@@ -18,6 +18,7 @@ enum TargetDeriver {
     enum Origin: Sendable, Equatable {
         case primary          // the original input
         case emailLocalPart   // the local-part of an email — a strong inference
+        case emailDomain      // the email's own domain, when it is not a mail provider's
         case variant          // a separator/dot variant — a weaker guess
         case pivoted          // an entity discovered by a first-round finding
 
@@ -29,6 +30,7 @@ enum TargetDeriver {
             switch self {
             case .primary:        return "input"
             case .emailLocalPart: return "emailLocalPart"
+            case .emailDomain:    return "emailDomain"
             case .variant:        return "variant"
             case .pivoted:        return "pivot"
             }
@@ -45,6 +47,7 @@ enum TargetDeriver {
             switch self {
             case .primary:        return 1.0
             case .emailLocalPart: return 0.75
+            case .emailDomain:    return 0.75
             case .variant:        return 0.6
             case .pivoted:        return 0.6
             }
@@ -55,6 +58,7 @@ enum TargetDeriver {
             switch self {
             case .primary:        return nil
             case .emailLocalPart: return "[via email local-part]"
+            case .emailDomain:    return "[via email domain]"
             case .variant:        return "[via derived variant]"
             case .pivoted:        return "[via pivot]"
             }
@@ -94,6 +98,11 @@ enum TargetDeriver {
             let local = String(trimmed[..<at]).lowercased()
             let base = local.split(separator: "+", maxSplits: 1).first.map(String.init) ?? local
             add(base, .emailLocalPart)
+            // A mailbox on a domain of its own (ana@popescu.ro, or an
+            // employer's): the domain's records, registrant and site are about
+            // the person or where they work. A mail provider's are not.
+            let domain = String(trimmed[trimmed.index(after: at)...]).lowercased()
+            if domain.contains("."), !isMailProvider(domain) { add(domain, .emailDomain) }
             // Dot-stripped variant (Gmail ignores dots): john.doe ↔ johndoe.
             add(base.replacingOccurrences(of: ".", with: ""), .variant)
         } else if !trimmed.contains("."), trimmed.contains("_") || trimmed.contains("-") {
@@ -108,4 +117,32 @@ enum TargetDeriver {
 
         return out
     }
+
+    /// Free mail, ISP and disposable domains: their records describe the
+    /// provider, never the person with a mailbox there.
+    static func isMailProvider(_ domain: String) -> Bool {
+        let host = domain.lowercased()
+        if EmailIntelPlugin.disposableDomains.contains(host) { return true }
+        if mailProviders.contains(host) { return true }
+        // Regional variants: yahoo.co.uk, hotmail.fr, gmx.at, yandex.kz …
+        let label = host.split(separator: ".").first.map(String.init) ?? host
+        return ["yahoo", "hotmail", "outlook", "live", "gmx", "yandex", "aol", "msn", "libero", "orange", "virgilio"]
+            .contains(label)
+    }
+
+    private static let mailProviders: Set<String> = [
+        "gmail.com", "googlemail.com", "ymail.com", "rocketmail.com", "icloud.com", "me.com", "mac.com",
+        "proton.me", "protonmail.com", "protonmail.ch", "pm.me", "tutanota.com", "tutanota.de", "tuta.io",
+        "tuta.com", "fastmail.com", "fastmail.fm", "hey.com", "zoho.com", "zohomail.com", "mail.com",
+        "email.com", "web.de", "t-online.de", "freenet.de", "posteo.de", "mailbox.org", "ya.ru",
+        "mail.ru", "bk.ru", "inbox.ru", "list.ru", "rambler.ru", "qq.com", "163.com", "126.com",
+        "sina.com", "naver.com", "daum.net", "rediffmail.com", "free.fr", "laposte.net", "sfr.fr",
+        "wanadoo.fr", "seznam.cz", "wp.pl", "o2.pl", "onet.pl", "interia.pl", "btinternet.com",
+        "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "cox.net", "charter.net",
+        "earthlink.net", "juno.com", "gmx.net", "gmx.com", "skynet.be", "telenet.be", "bluewin.ch",
+        "rdslink.ro", "digi.ro", "clicknet.ro", "upcmail.ro", "xnet.ro", "mail.bg", "abv.bg",
+        "aim.com", "lycos.com", "inbox.com", "hushmail.com", "disroot.org", "riseup.net",
+        "cock.li", "duck.com", "simplelogin.com", "simplelogin.co", "anonaddy.com", "anonaddy.me",
+        "privaterelay.appleid.com", "users.noreply.github.com",
+    ]
 }

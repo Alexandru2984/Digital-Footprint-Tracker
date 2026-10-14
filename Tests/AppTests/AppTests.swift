@@ -5510,9 +5510,29 @@ final class AppTests: XCTestCase {
     }
 
     func testTargetDeriverSkipsShortLocalPart() {
-        XCTAssertEqual(TargetDeriver.candidates(for: "ab@x.com"),
-                       [TargetDeriver.Candidate(value: "ab@x.com", origin: .primary)],
+        XCTAssertEqual(TargetDeriver.candidates(for: "ab@gmail.com"),
+                       [TargetDeriver.Candidate(value: "ab@gmail.com", origin: .primary)],
                        "A too-short local-part yields no username candidate")
+    }
+
+    func testTargetDeriverScansAnEmailsOwnDomainButNotAMailProvider() {
+        XCTAssertTrue(TargetDeriver.candidates(for: "ana@popescu.ro")
+            .contains(TargetDeriver.Candidate(value: "popescu.ro", origin: .emailDomain)))
+        for provider in ["ana@gmail.com", "ana@yahoo.co.uk", "ana@hotmail.fr", "ana@mailinator.com", "ana@proton.me"] {
+            XCTAssertFalse(TargetDeriver.candidates(for: provider).contains { $0.origin == .emailDomain },
+                           "\(provider): a provider's records say nothing about the person")
+        }
+        XCTAssertFalse(TargetDeriver.Origin.emailDomain.heavyEligible, "the username sweep never runs on a domain")
+
+        typealias I = IdentitySynthesizer.Input
+        let profile = IdentitySynthesizer.synthesize(
+            from: [I(source: "RDAP/WHOIS", type: "domain_registrant", confidence: 0.9,
+                     metadata: ["platform": "domain", "account": "popescu.ro", "name": "Ana Popescu", "org": "Popescu SRL",
+                                "matchKind": "verified", "queriedAs": "popescu.ro", "via": "emailDomain"], rawData: "r")],
+            riskScore: 0, riskLevel: "Low", target: "ana@popescu.ro")
+        XCTAssertEqual(profile.attributions.first { $0.node == "domain: popescu.ro" }?.score, 54,
+                       "a mailbox on the domain (0.55) → its registrant (0.98)")
+        XCTAssertEqual(profile.organizations, ["Popescu SRL"])
     }
 
     func testTargetDeriverDomainHasNoDerivation() {
