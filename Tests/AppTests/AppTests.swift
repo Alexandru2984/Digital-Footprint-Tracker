@@ -7566,6 +7566,17 @@ final class AppTests: XCTestCase {
         for (link, expected) in cases {
             XCTAssertEqual(IdentityLinks.account(at: link).flatMap { IdentityLinks.linked([$0]) }, expected, link)
         }
+        let keys = Data(#"""
+        [{"revoked":false,"emails":[{"email":"Ana@Popescu.dev","verified":true},{"email":"old@x.test","verified":false},
+          {"email":"1+ana@users.noreply.github.com","verified":true}]},
+         {"revoked":true,"emails":[{"email":"gone@x.test","verified":true}]}]
+        """#.utf8)
+        XCTAssertEqual(UsernamePlugin.verifiedKeyEmails(from: keys), ["ana@popescu.dev"],
+                       "only verified addresses on live keys, never GitHub's noreply")
+        XCTAssertEqual(IdentityLinks.linked([("twitter", "Ana"), ("twitter", "ana")]), "twitter:Ana",
+                       "the profile's Twitter field and its social account are one link")
+        XCTAssertEqual(UsernamePlugin.organizations(from: Data(#"[{"login":"rust-lang"},{"login":"serde-rs"}]"#.utf8)),
+                       ["rust-lang", "serde-rs"])
         let social = Data(#"[{"provider":"twitter","url":"https://twitter.com/ana"},{"provider":"generic","url":"https://ana.dev"}]"#.utf8)
         XCTAssertEqual(UsernamePlugin.socialAccounts(from: social), ["https://twitter.com/ana", "https://ana.dev"])
     }

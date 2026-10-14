@@ -87,6 +87,30 @@ struct UsernamePlugin: FootprintPlugin {
                 if !links.isEmpty { parts.append("Social accounts: " + links.prefix(6).joined(separator: ", ")) }
                 linked += links.compactMap(IdentityLinks.account(at:))
             }
+            // Public organisation memberships: the member chose to show them.
+            var keyResults: [PluginResult] = []
+            if headers["Authorization"] != nil {
+                if let orgsURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/orgs"),
+                   let orgs = await PluginHTTP.request(orgsURL, headers: headers, on: app), orgs.status == 200 {
+                    let names = Self.organizations(from: orgs.data)
+                    if !names.isEmpty {
+                        parts.append("Organizations: " + names.joined(separator: ", "))
+                        meta["orgs"] = names.joined(separator: ",")
+                    }
+                }
+                // Addresses on the account's GPG keys that GitHub verified
+                // belong to the account: from a name alone, a confirmed email.
+                if let keysURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/gpg_keys"),
+                   let keys = await PluginHTTP.request(keysURL, headers: headers, on: app), keys.status == 200 {
+                    keyResults = Self.verifiedKeyEmails(from: keys.data).prefix(5).map { email in
+                        PluginResult(source: "GitHub:gpg", type: "pgp_key_uid", confidenceScore: 0.95,
+                                     rawData: "GitHub verified \(email) on a GPG key of https://github.com/\(cleanedUsername)",
+                                     metadata: ["platform": "github", "username": cleanedUsername, "email": email,
+                                                "linked": "email:\(email)", "linkKind": "verified",
+                                                "linkReason": "GitHub verified this address on the account's GPG key"])
+                    }
+                }
+            }
             if let joined = IdentityLinks.linked(linked) {
                 meta["linked"] = joined
                 meta["linkKind"] = "declared"
@@ -100,7 +124,7 @@ struct UsernamePlugin: FootprintPlugin {
                 confidenceScore: 1.0,
                 rawData: parts.joined(separator: " | "),
                 metadata: meta
-            )]
+            )] + keyResults
 
             // Pivot: harvest emails from the user's public push events — commit
             // author addresses are exposed there. Best-effort; skipped on a
@@ -141,6 +165,28 @@ struct UsernamePlugin: FootprintPlugin {
             headers["Authorization"] = "Bearer \(token)"
         }
         return headers
+    }
+
+    /// Logins from `/users/{name}/orgs`.
+    static func organizations(from data: Data) -> [String] {
+        guard let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return items.prefix(15).compactMap { $0["login"] as? String }
+    }
+
+    /// Addresses GitHub marked verified on the account's live GPG keys.
+    static func verifiedKeyEmails(from data: Data) -> [String] {
+        guard let keys = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        var emails: [String] = []
+        for key in keys where (key["revoked"] as? Bool) != true {
+            for entry in key["emails"] as? [[String: Any]] ?? [] where (entry["verified"] as? Bool) == true {
+                guard let email = (entry["email"] as? String)?.lowercased(),
+                      !email.hasSuffix("@users.noreply.github.com"),
+                      email.range(of: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$", options: .regularExpression) != nil,
+                      !emails.contains(email) else { continue }
+                emails.append(email)
+            }
+        }
+        return emails
     }
 
     /// Profile URLs from `/users/{name}/social_accounts`.

@@ -295,7 +295,9 @@ enum IdentityLinks {
             guard let value = nonEmpty(value)?.replacingOccurrences(of: ",", with: " ") else { return nil }
             return "\(platform):\(value)"
         }
-        return entries.isEmpty ? nil : entries.joined(separator: ",")
+        var seen: Set<String> = []
+        let unique = entries.filter { seen.insert($0.lowercased()).inserted }
+        return unique.isEmpty ? nil : unique.joined(separator: ",")
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
