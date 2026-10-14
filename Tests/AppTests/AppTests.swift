@@ -7544,9 +7544,30 @@ final class AppTests: XCTestCase {
         let acct = try XCTUnwrap(MastodonPlugin.parseAccount(from: json, fallbackUsername: "ana"))
         XCTAssertEqual(acct.verifiedLinks, ["https://www.popescu.dev/", "https://github.com/anapop"],
                        "a link Mastodon did not verify is only a claim")
-        XCTAssertEqual(IdentityLinks.linked(acct.verifiedLinks.compactMap(MastodonPlugin.account(at:))),
+        XCTAssertEqual(IdentityLinks.linked(acct.verifiedLinks.compactMap(IdentityLinks.account(at:))),
                        "web:popescu.dev,github:anapop")
-        XCTAssertNil(MastodonPlugin.account(at: "https://medium.com/@ana"), "a page on a shared platform")
+    }
+
+    func testAProfileLinkNamesTheAccountItPointsTo() {
+        let cases: [(String, String?)] = [
+            ("https://x.com/AnaPop", "twitter:AnaPop"),
+            ("https://www.linkedin.com/in/ana-popescu/", "linkedin:ana-popescu"),
+            ("https://bsky.app/profile/ana.dev", "bluesky:ana.dev"),
+            ("https://www.reddit.com/user/anapop", "reddit:anapop"),
+            ("https://www.youtube.com/@anapop", "youtube:anapop"),
+            ("https://hachyderm.io/@ana", "mastodon:ana@hachyderm.io"),
+            ("https://mastodon.social/@ana", "mastodon:ana"),
+            ("https://m.facebook.com/ana.popescu", "facebook:ana.popescu"),
+            ("https://github.com/sponsors/ana", nil),
+            ("https://medium.com/@ana", nil),
+            ("http://plain.example", nil),
+            ("https://blog.popescu.dev/about", "web:blog.popescu.dev"),
+        ]
+        for (link, expected) in cases {
+            XCTAssertEqual(IdentityLinks.account(at: link).flatMap { IdentityLinks.linked([$0]) }, expected, link)
+        }
+        let social = Data(#"[{"provider":"twitter","url":"https://twitter.com/ana"},{"provider":"generic","url":"https://ana.dev"}]"#.utf8)
+        XCTAssertEqual(UsernamePlugin.socialAccounts(from: social), ["https://twitter.com/ana", "https://ana.dev"])
     }
 
     func testMastodonParseAccountExtractsNameAndBio() throws {

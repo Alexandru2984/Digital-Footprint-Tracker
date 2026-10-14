@@ -207,6 +207,53 @@ enum IdentityLinks {
         "docker.com", "sourceforge.net", "wikipedia.org", "carrd.co", "wixsite.com", "squarespace.com",
     ]
 
+    /// The account or site a profile link stands for: `github.com/ana` is
+    /// the GitHub account `ana`, `bsky.app/profile/ana.dev` the Bluesky handle,
+    /// `social.example/@ana` a Mastodon account; any other page, its domain.
+    /// Nil for a link that is neither (a post, a search, plain http).
+    static func account(at link: String) -> (String, String?)? {
+        guard let url = URLComponents(string: link.trimmingCharacters(in: .whitespaces)), url.scheme == "https",
+              let host = url.host?.lowercased() else { return nil }
+        let bare = host.hasPrefix("www.") || host.hasPrefix("m.") ? String(host.split(separator: ".", maxSplits: 1)[1]) : host
+        let path = url.path.split(separator: "/").map(String.init)
+        func name(_ index: Int, dropping prefix: String = "") -> String? {
+            guard path.count > index else { return nil }
+            var value = path[index]
+            if !prefix.isEmpty {
+                guard value.hasPrefix(prefix) else { return nil }
+                value.removeFirst(prefix.count)
+            }
+            return value.range(of: #"^[A-Za-z0-9_.-]{1,64}$"#, options: .regularExpression) != nil ? value : nil
+        }
+        let firstSegment: [String: String] = [
+            "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg", "twitter.com": "twitter",
+            "x.com": "twitter", "keybase.io": "keybase", "instagram.com": "instagram", "facebook.com": "facebook",
+            "twitch.tv": "twitch", "news.ycombinator.com": "hackernews", "t.me": "telegram", "tiktok.com": "tiktok",
+        ]
+        switch bare {
+        case _ where firstSegment[bare] != nil:
+            let reserved: Set<String> = ["orgs", "sponsors", "settings", "search", "explore", "topics", "home",
+                                         "intent", "share", "i", "hashtag", "p", "reel", "watch", "groups"]
+            guard let first = path.first, !reserved.contains(first.lowercased()) else { return nil }
+            let handle = name(0).map { $0.hasPrefix("@") ? String($0.dropFirst()) : $0 } ?? name(0, dropping: "@")
+            return handle.map { (firstSegment[bare] ?? bare, $0) }
+        case "linkedin.com": return path.first == "in" ? name(1).map { ("linkedin", $0) } : nil
+        case "reddit.com": return ["user", "u"].contains(path.first ?? "") ? name(1).map { ("reddit", $0) } : nil
+        case "bsky.app": return path.first == "profile" ? name(1).map { ("bluesky", $0) } : nil
+        case "youtube.com": return name(0, dropping: "@").map { ("youtube", $0) }
+        case "npmjs.com": return name(0, dropping: "~").map { ("npm", $0) }
+        default:
+            // A Mastodon-style profile on any instance: https://instance/@name.
+            // Medium, Substack and the like use the same shape for their own users.
+            let shared = bare != "mastodon.social" && sharedHosts.contains { bare == $0 || bare.hasSuffix(".\($0)") }
+            if path.count == 1, !shared, let user = name(0, dropping: "@") {
+                // The instance this app looks people up on names them without it.
+                return ("mastodon", bare == "mastodon.social" ? user : "\(user)@\(bare)")
+            }
+            return websiteDomain(link).map { ("web", $0) }
+        }
+    }
+
     /// The domain a profile's website lives on, without `www.`; nil when it
     /// is not a domain or sits on a shared platform.
     static func websiteDomain(_ raw: String?) -> String? {

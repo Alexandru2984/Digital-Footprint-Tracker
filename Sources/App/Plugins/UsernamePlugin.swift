@@ -28,7 +28,8 @@ struct UsernamePlugin: FootprintPlugin {
 
         // Shared client: consistent UA + retry/backoff on GitHub's 429 (its
         // unauthenticated limit is only 60/h, so a transient 429 is common).
-        guard let resp = await PluginHTTP.request(url, headers: ["Accept": "application/vnd.github+json"], on: app) else { return [] }
+        let headers = Self.apiHeaders()
+        guard let resp = await PluginHTTP.request(url, headers: headers, on: app) else { return [] }
         let data = resp.data
 
         if resp.status == 200 {
@@ -71,9 +72,23 @@ struct UsernamePlugin: FootprintPlugin {
             if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
+            var linked: [(String, String?)] = []
             if let tw = user?.twitter_username, !tw.isEmpty {
                 meta["twitter"] = tw
-                meta["linked"] = IdentityLinks.linked([("twitter", tw)])
+                linked.append(("twitter", tw))
+            }
+            // The social accounts the owner added to the profile. One more
+            // request, so only with a token: anonymously GitHub allows 60 an
+            // hour, and the profile itself matters more.
+            if headers["Authorization"] != nil,
+               let socialURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/social_accounts"),
+               let social = await PluginHTTP.request(socialURL, headers: headers, on: app), social.status == 200 {
+                let links = Self.socialAccounts(from: social.data)
+                if !links.isEmpty { parts.append("Social accounts: " + links.prefix(6).joined(separator: ", ")) }
+                linked += links.compactMap(IdentityLinks.account(at:))
+            }
+            if let joined = IdentityLinks.linked(linked) {
+                meta["linked"] = joined
                 meta["linkKind"] = "declared"
                 meta["linkReason"] = "listed on the GitHub profile"
             }
@@ -91,7 +106,7 @@ struct UsernamePlugin: FootprintPlugin {
             // author addresses are exposed there. Best-effort; skipped on a
             // rate-limit or parse failure so it never breaks the profile result.
             if let evURL = URL(string: "https://api.github.com/users/\(cleanedUsername)/events/public"),
-               let evResp = await PluginHTTP.request(evURL, headers: ["Accept": "application/vnd.github+json"], on: app),
+               let evResp = await PluginHTTP.request(evURL, headers: headers, on: app),
                evResp.status == 200 {
                 for email in Self.extractCommitEmails(from: evResp.data).prefix(5) {
                     results.append(PluginResult(
@@ -116,6 +131,22 @@ struct UsernamePlugin: FootprintPlugin {
                 rawData: "GitHub API limit reached or returned status: \(resp.status)"
             )]
         }
+    }
+
+    /// GitHub API headers, with `GITHUB_TOKEN` when configured: a token with
+    /// no scopes at all lifts the limit from 60 requests an hour to 5,000.
+    static func apiHeaders() -> [String: String] {
+        var headers = ["Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
+        if let token = try? RuntimeSecret.value("GITHUB_TOKEN"), !token.isEmpty {
+            headers["Authorization"] = "Bearer \(token)"
+        }
+        return headers
+    }
+
+    /// Profile URLs from `/users/{name}/social_accounts`.
+    static func socialAccounts(from data: Data) -> [String] {
+        guard let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return items.prefix(10).compactMap { $0["url"] as? String }
     }
 
     /// Extracts distinct real commit-author emails from a GitHub public-events

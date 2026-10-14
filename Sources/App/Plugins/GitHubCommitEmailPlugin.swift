@@ -28,10 +28,7 @@ struct GitHubCommitEmailPlugin: FootprintPlugin {
             URLQueryItem(name: "q", value: "author-email:\(email)"),
             URLQueryItem(name: "per_page", value: "30"),
         ]
-        var headers = ["Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"]
-        if let token = try RuntimeSecret.value("GITHUB_TOKEN"), !token.isEmpty {
-            headers["Authorization"] = "Bearer \(token)"
-        }
+        let headers = UsernamePlugin.apiHeaders()
         var results: [PluginResult] = []
         if let url = components.url,
            let response = await PluginHTTP.request(
