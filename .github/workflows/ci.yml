@@ -303,6 +303,8 @@ jobs:
         # The root-owned authorized_keys entry on the VPS forces the root-owned
         # installed deploy orchestrator regardless of what we send —
         # the trailing "deploy" word is just a harmless placeholder.
+        # Keepalives: the build compiles the app module for minutes without
+        # output, and the path drops a TCP connection idle for about four.
         run: |
           set -euo pipefail
           : "${DEPLOY_HOST:?missing DEPLOY_HOST}"
@@ -314,4 +316,6 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts \
             -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             "$DEPLOY_USER@$DEPLOY_HOST" deploy
