@@ -7534,6 +7534,21 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
     }
 
+    func testMastodonKeepsOnlyTheLinksItVerified() throws {
+        let json = Data(#"""
+        {"acct":"ana","fields":[
+          {"name":"Site","value":"<a href=\"https://www.popescu.dev/\" rel=\"me nofollow\">popescu.dev</a>","verified_at":"2024-01-01T00:00:00.000Z"},
+          {"name":"Code","value":"<a href=\"https://github.com/anapop\" rel=\"me\">github.com/anapop</a>","verified_at":"2024-01-01T00:00:00.000Z"},
+          {"name":"Claimed","value":"<a href=\"https://claimed.example/\">claimed.example</a>","verified_at":null}]}
+        """#.utf8)
+        let acct = try XCTUnwrap(MastodonPlugin.parseAccount(from: json, fallbackUsername: "ana"))
+        XCTAssertEqual(acct.verifiedLinks, ["https://www.popescu.dev/", "https://github.com/anapop"],
+                       "a link Mastodon did not verify is only a claim")
+        XCTAssertEqual(IdentityLinks.linked(acct.verifiedLinks.compactMap(MastodonPlugin.account(at:))),
+                       "web:popescu.dev,github:anapop")
+        XCTAssertNil(MastodonPlugin.account(at: "https://medium.com/@ana"), "a page on a shared platform")
+    }
+
     func testMastodonParseAccountExtractsNameAndBio() throws {
         let json = Data(#"""
         {"acct":"alice","display_name":"Alice Example ","url":"https://mastodon.social/@alice",

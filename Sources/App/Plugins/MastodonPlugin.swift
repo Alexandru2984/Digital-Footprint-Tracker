@@ -57,6 +57,12 @@ struct MastodonPlugin: FootprintPlugin {
         // Mastodon is still identity signal, weighted and corroborated there.
         if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
         if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
+        if let linked = IdentityLinks.linked(acct.verifiedLinks.compactMap(Self.account(at:))) {
+            parts.append("Verified links: " + acct.verifiedLinks.prefix(5).joined(separator: ", "))
+            meta["linked"] = linked
+            meta["linkKind"] = "verified"
+            meta["linkReason"] = "the linked page links back to this Mastodon profile (rel=me, checked by Mastodon)"
+        }
 
         return [PluginResult(
             source: "Mastodon",
@@ -77,6 +83,24 @@ struct MastodonPlugin: FootprintPlugin {
         let statuses: Int?
         let locked: Bool
         let joinedDate: String?
+        /// Profile links Mastodon checked: the page links back with `rel="me"`.
+        var verifiedLinks: [String] = []
+    }
+
+    /// The account or site a verified profile link stands for.
+    static func account(at link: String) -> (String, String?)? {
+        guard let url = URLComponents(string: link), url.scheme == "https",
+              let host = url.host?.lowercased() else { return nil }
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let first = url.path.split(separator: "/").first.map(String.init)
+        let platforms = ["github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg",
+                         "twitter.com": "twitter", "x.com": "twitter", "keybase.io": "keybase"]
+        if let platform = platforms[bare] {
+            guard let name = first, name.range(of: #"^@?[A-Za-z0-9_.-]{1,64}$"#, options: .regularExpression) != nil
+            else { return nil }
+            return (platform, name)
+        }
+        return IdentityLinks.websiteDomain(link).map { ("web", $0) }
     }
 
     /// Decodes a `/accounts/lookup` JSON body. Pure + internal so the field
@@ -98,7 +122,13 @@ struct MastodonPlugin: FootprintPlugin {
             statuses: json["statuses_count"] as? Int,
             locked: json["locked"] as? Bool ?? false,
             joinedDate: (json["created_at"] as? String)
-                .flatMap { TimelineIntelligence.normalizedDate($0)?.value }
+                .flatMap { TimelineIntelligence.normalizedDate($0)?.value },
+            verifiedLinks: (json["fields"] as? [[String: Any]] ?? []).prefix(8).compactMap { field -> String? in
+                guard field["verified_at"] is String, let value = field["value"] as? String,
+                      let range = value.range(of: #"href="https://[^"]{1,300}""#, options: .regularExpression)
+                else { return nil }
+                return String(value[range].dropFirst(6).dropLast())
+            }
         )
     }
 }
