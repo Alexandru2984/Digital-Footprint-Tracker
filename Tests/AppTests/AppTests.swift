@@ -7534,6 +7534,31 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
     }
 
+    func testAHomepageSaysWhoRunsIt() throws {
+        let html = """
+        <html><head><meta name="author" content="Ana Popescu"><link rel="me" href="https://hachyderm.io/@ana"></head>
+        <body><a href="https://twitter.com/intent/tweet?url=x">share</a>
+        <a class=x href='https://github.com/anapop' rel="me noopener">code</a>
+        <a href="https://www.linkedin.com/in/ana-popescu/">cv</a>
+        <a href="mailto:Ana@Popescu.dev?subject=hi">mail</a></body></html>
+        """
+        let found = try XCTUnwrap(SiteMeta.homepageIdentity(html: html, domain: "popescu.dev"))
+        XCTAssertEqual(found.metadata?["name"], "Ana Popescu")
+        XCTAssertEqual(found.metadata?["email"], "ana@popescu.dev")
+        XCTAssertEqual(found.metadata?["linked"], "mastodon:ana@hachyderm.io,github:anapop",
+                       "rel=me names the owner's profiles; other links and share buttons are not theirs")
+        XCTAssertEqual(found.metadata?["linkKind"], "verified")
+
+        let plain = try XCTUnwrap(SiteMeta.homepageIdentity(
+            html: #"<a href="https://www.facebook.com/sharer.php?u=x">f</a><a href="https://x.com/AcmeCo">x</a>"#,
+            domain: "acme.example"))
+        XCTAssertEqual(plain.metadata?["linked"], "twitter:AcmeCo")
+        XCTAssertEqual(plain.metadata?["linkKind"], "declared")
+        XCTAssertTrue(PivotExtractor.candidates(from: [plain], alreadyScanned: ["acme.example"]).isEmpty,
+                      "an employer's homepage must not steer the scan to the company's accounts")
+        XCTAssertNil(SiteMeta.homepageIdentity(html: "<p>nothing here</p>", domain: "x.example"))
+    }
+
     func testTheSameSSHKeyTiesTwoAccounts() {
         let shared = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
         let other = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQDCsTcryUl51Q2VSEHqDRNmceUFo55ZtcIwxl2QITbN1RREti5ml/VTytC0yeBOvnZA4x4CFpdw/lCDPk0yrH9Ei5vVkXmOrExdTlT3qI7YaAzj1tUVlBd4S6LX1F7y6VLActvdHuDDuXZXzCDd/97420jrDfWZqJMlUK/EmCE5ZQ=="

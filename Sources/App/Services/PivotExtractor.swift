@@ -81,7 +81,10 @@ enum PivotExtractor {
             // domains, the website it lists. Only from an account whose own
             // tie to the target is confirmed: a same-name stranger's website
             // would send the scan into someone else's life.
-            guard let owner = meta["matchKind"].flatMap(IdentityLinks.Kind.init(rawValue:)), owner >= .declared else { continue }
+            // A homepage's links are left out: on an employer's site (reached
+            // through the address's domain) they are the company's accounts.
+            guard let owner = meta["matchKind"].flatMap(IdentityLinks.Kind.init(rawValue:)), owner >= .declared,
+                  result.type != "site_identity" else { continue }
             for value in IdentityLinks.pivotableLinks(meta) {
                 consider(value, priority: (meta["linkKind"] == "verified" ? 2.0 : 1.0) + result.confidenceScore)
             }

@@ -64,6 +64,73 @@ enum SiteMeta {
         paths.filter { $0.range(of: sensitivePattern, options: .regularExpression) != nil }
     }
 
+    /// Who a homepage says runs it: its `rel="me"` links (the IndieWeb way
+    /// a site names its owner's accounts), the other profiles it links to,
+    /// its contact address and the author it names. A site's own words, so
+    /// `declared`; nil when the page says none of it.
+    static func homepageIdentity(html: String, domain: String) -> PluginResult? {
+        func attribute(_ name: String, in tag: Substring) -> String? {
+            guard let range = tag.range(of: #"\#(name)\s*=\s*("[^"]*"|'[^']*')"#, options: [.regularExpression, .caseInsensitive])
+            else { return nil }
+            let value = tag[range].drop { $0 != "\"" && $0 != "'" }.dropFirst().dropLast()
+            return String(value).replacingOccurrences(of: "&amp;", with: "&").trimmingCharacters(in: .whitespaces)
+        }
+        var tags: [Substring] = []
+        var cursor = html.startIndex
+        while tags.count < 2_000,
+              let range = html.range(of: #"<(a|link|meta)\s[^>]{1,2000}>"#, options: [.regularExpression, .caseInsensitive],
+                                     range: cursor..<html.endIndex) {
+            tags.append(html[range])
+            cursor = range.upperBound
+        }
+
+        var proven: [(String, String?)] = []
+        var profiles: [(String, String?)] = []
+        var email: String?
+        var author: String?
+        for tag in tags {
+            if tag.lowercased().hasPrefix("<meta") {
+                if attribute("name", in: tag)?.lowercased() == "author",
+                   let content = attribute("content", in: tag), content.count <= 80, !content.contains("@") {
+                    author = author ?? content
+                }
+                continue
+            }
+            guard let href = attribute("href", in: tag) else { continue }
+            if href.lowercased().hasPrefix("mailto:") {
+                let address = String(href.dropFirst(7).split(separator: "?").first ?? "").lowercased()
+                if email == nil, address.range(of: #"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"#, options: .regularExpression) != nil {
+                    email = address
+                }
+                continue
+            }
+            guard let account = IdentityLinks.account(at: href), account.0 != "web" else { continue }
+            let rel = attribute("rel", in: tag)?.lowercased().split(separator: " ") ?? []
+            if rel.contains("me") { proven.append(account) } else { profiles.append(account) }
+        }
+        // A page that marks its owner's profiles with rel=me has said which
+        // links are its owner's; the rest are anything else it links to.
+        let linked = IdentityLinks.linked(Array((proven.isEmpty ? profiles : proven).prefix(12)))
+        guard linked != nil || email != nil || author != nil else { return nil }
+
+        var parts = ["Homepage of \(domain)"]
+        if let author { parts.append("Author: \(author)") }
+        if let email { parts.append("Contact: \(email)") }
+        if let linked { parts.append("Profiles: " + linked.replacingOccurrences(of: ",", with: ", ")) }
+        var meta = ["platform": "web", "account": domain, "domain": domain, "matchKind": "verified",
+                    "matchReason": "the website served at this domain"]
+        if let author { meta["name"] = author }
+        if let email { meta["email"] = email }
+        if let linked {
+            meta["linked"] = linked
+            meta["linkKind"] = proven.isEmpty ? "declared" : "verified"
+            meta["linkReason"] = proven.isEmpty ? "linked from the site's homepage"
+                : "linked from the site's homepage, marked rel=me as its owner's"
+        }
+        return PluginResult(source: "SiteMeta", type: "site_identity", confidenceScore: 0.85,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
+    }
+
     /// Pull a bare email out of a security.txt Contact value (`mailto:x` or `x`).
     static func contactEmail(_ contacts: [String]) -> String? {
         for c in contacts {
@@ -114,6 +181,15 @@ struct SiteMetaPlugin: FootprintPlugin {
                 rawData: "security.txt for \(domain): contact \(sec.contacts.prefix(2).joined(separator: ", "))"
                     + (sec.expires.map { " (expires \($0))" } ?? ""),
                 metadata: meta))
+        }
+
+        // The homepage, whole enough to reach the footer where profiles sit.
+        if let url = URL(string: base + "/"),
+           let page = try? await OutboundHTTP.request(url, timeout: 8, bodyMode: .prefix(maxBytes: 512 * 1_024),
+                                                      maxRedirects: 3, hostPreChecked: true, on: app),
+           page.status == 200,
+           let identity = SiteMeta.homepageIdentity(html: String(decoding: page.data, as: UTF8.self), domain: domain) {
+            out.append(identity)
         }
 
         // robots.txt

@@ -60,7 +60,7 @@ enum IdentityLinks {
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
-        "pgp_key_uid", "domain_registrant", "ssh_key_match"
+        "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {
@@ -233,7 +233,9 @@ enum IdentityLinks {
         switch bare {
         case _ where firstSegment[bare] != nil:
             let reserved: Set<String> = ["orgs", "sponsors", "settings", "search", "explore", "topics", "home",
-                                         "intent", "share", "i", "hashtag", "p", "reel", "watch", "groups"]
+                                         "intent", "share", "i", "hashtag", "p", "reel", "watch", "groups",
+                                         "sharer", "sharer.php", "dialog", "plugins", "login", "signup", "about",
+                                         "features", "pricing", "join", "tos", "privacy", "policies", "legal"]
             guard let first = path.first, !reserved.contains(first.lowercased()) else { return nil }
             let handle = name(0).map { $0.hasPrefix("@") ? String($0.dropFirst()) : $0 } ?? name(0, dropping: "@")
             return handle.map { (firstSegment[bare] ?? bare, $0) }
