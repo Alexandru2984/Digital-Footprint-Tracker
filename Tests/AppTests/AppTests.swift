@@ -6682,6 +6682,53 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(pivots.first, "asmith42", "a platform-confirmed login wins the limited pivot budget")
     }
 
+    func testPivotsFollowWhatAConfirmedAccountPointsTo() {
+        let keybase = PluginResult(source: "Keybase", type: "identity_proof", confidenceScore: 0.95, rawData: "k",
+                                   metadata: ["platform": "keybase", "username": "kb", "matchKind": "verified",
+                                              "linked": "dns:Rewrite.in.rs,twitter:@tw_handle,generic_web_site:https://www.site.example/x",
+                                              "linkKind": "verified"])
+        let github = PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 0.9, rawData: "g",
+                                  metadata: ["platform": "github", "username": "gh", "matchKind": "verified",
+                                             "blog": "https://alice.github.io"])
+        let stranger = PluginResult(source: "Codeberg", type: "account_presence", confidenceScore: 0.95, rawData: "c",
+                                    metadata: ["platform": "codeberg", "username": "gh", "blog": "stranger.example",
+                                               "linked": "dns:stranger-proof.example"])
+        let pivots = PivotExtractor.candidates(from: [keybase, github, stranger], alreadyScanned: ["kb", "gh"])
+        XCTAssertTrue(pivots.contains("rewrite.in.rs"), "a proven domain is followed: \(pivots)")
+        XCTAssertTrue(pivots.contains("site.example"), "a proven website is followed by its domain: \(pivots)")
+        XCTAssertTrue(pivots.contains("tw_handle"), "\(pivots)")
+        XCTAssertFalse(pivots.contains("alice.github.io"), "a page on a shared platform says nothing about its owner")
+        XCTAssertFalse(pivots.contains("stranger.example"), "a same-name account's website is not the target's")
+        XCTAssertFalse(pivots.contains("stranger-proof.example"))
+
+        XCTAssertEqual(IdentityLinks.websiteDomain("WWW.Example.org/about"), "example.org")
+        XCTAssertNil(IdentityLinks.websiteDomain("https://x.com/someone"))
+        XCTAssertNil(IdentityLinks.websiteDomain("not a url"))
+        XCTAssertNil(IdentityLinks.websiteDomain("http://192.168.0.1"))
+    }
+
+    func testAFollowedDomainHangsOffTheAccountThatProvedIt() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "dtolnay", "queriedAs": "dtolnay@gmail.com", "via": "input",
+                         "matchKind": "verified", "blog": "https://blog.example"], rawData: "gh"),
+            I(source: "Keybase", type: "identity_proof", confidence: 0.95,
+              metadata: ["platform": "keybase", "username": "dtolnay", "queriedAs": "dtolnay@gmail.com", "via": "input",
+                         "matchKind": "verified", "linked": "github:dtolnay,dns:rewrite.in.rs", "linkKind": "verified"],
+              rawData: "kb"),
+            I(source: "Bluesky", type: "account_presence", confidence: 0.9,
+              metadata: ["platform": "bluesky", "username": "rewrite.in.rs", "queriedAs": "rewrite.in.rs", "via": "pivot"],
+              rawData: "bs"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "dtolnay@gmail.com")
+        let score = Dictionary(uniqueKeysWithValues: profile.attributions.map { ($0.node, $0.score) })
+        XCTAssertEqual(score["web: blog.example"], 88, "GitHub (0.98) → the website it lists (declared, 0.9)")
+        XCTAssertEqual(score["rewrite.in.rs"], 94, "keybase (0.98) → proven domain (0.98) → followed as a lead (0.98)")
+        XCTAssertEqual(profile.attributions.first { $0.node == "bluesky: rewrite.in.rs" }?.path,
+                       ["dtolnay@gmail.com", "keybase: dtolnay", "dns: rewrite.in.rs", "rewrite.in.rs", "bluesky: rewrite.in.rs"])
+    }
+
     func testReportsSayWhoseAccountsTheseAre() {
         let inputs = [IdentitySynthesizer.Input(
             source: "GitHub", type: "developer_identity", confidence: 1.0,

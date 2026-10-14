@@ -91,6 +91,10 @@ enum IdentityLinks {
             for linked in parseLinked(meta["linked"]) {
                 add(Link(from: node, to: linked, kind: linkKind, source: input.source, reason: linkReason))
             }
+            if let site = websiteDomain(meta["blog"]) {
+                add(Link(from: node, to: "web: \(site)", kind: .declared, source: input.source,
+                         reason: "the website listed on this profile"))
+            }
         }
 
         // Connect the identifiers the scan looked things up as. Without these
@@ -132,6 +136,16 @@ enum IdentityLinks {
             }
         }
 
+        // A pivot the scan followed from a linked account or domain is that
+        // account's name or that domain: tie the two, or everything found by
+        // the pivot floats unattached.
+        for (value, via) in queried.sorted(by: { $0.key < $1.key }) where via == "pivot" {
+            for link in order.compactMap({ best[$0] }) where identifier(of: link.to) == value {
+                add(Link(from: link.to, to: value, kind: .verified, source: "derived",
+                         reason: "the same identifier, followed as a lead"))
+            }
+        }
+
         return order.compactMap { best[$0] }
             .enumerated()
             .sorted { ($0.element.kind, -$0.offset) > ($1.element.kind, -$1.offset) }
@@ -153,6 +167,53 @@ enum IdentityLinks {
             return email
         }
         return nil
+    }
+
+    /// Platforms whose linked value is a domain, and those whose value is a
+    /// handle worth scanning by name.
+    static let domainPlatforms: Set<String> = ["dns", "generic_web_site", "web"]
+    static let handlePlatforms: Set<String> = ["github", "twitter", "reddit", "hackernews", "gitlab"]
+
+    /// The scannable identifier behind a `platform: value` node: the domain
+    /// for a website or proven domain, the handle for an account on a
+    /// platform people reuse names across. Nil for anything else.
+    static func identifier(of node: String) -> String? {
+        let parts = node.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2 else { return nil }
+        if domainPlatforms.contains(parts[0]) { return websiteDomain(parts[1]) }
+        return handlePlatforms.contains(parts[0]) && !parts[1].contains("@") ? parts[1] : nil
+    }
+
+    /// What an account points to that is worth scanning next: proven accounts
+    /// and domains from `linked`, and the domain of the website it lists.
+    static func pivotableLinks(_ meta: [String: String]) -> [String] {
+        var values = parseLinked(meta["linked"]).compactMap(identifier(of:))
+        if let site = websiteDomain(meta["blog"]) { values.append(site) }
+        return values
+    }
+
+    /// Hosts where a website is a page on someone else's platform: scanning
+    /// the domain would describe the platform, not the person.
+    static let sharedHosts: [String] = [
+        "github.com", "github.io", "gitlab.com", "gitlab.io", "codeberg.org", "codeberg.page", "bitbucket.org",
+        "twitter.com", "x.com", "linkedin.com", "facebook.com", "instagram.com", "youtube.com", "youtu.be",
+        "tiktok.com", "twitch.tv", "reddit.com", "medium.com", "substack.com", "dev.to", "hashnode.dev",
+        "t.me", "bsky.app", "bsky.social", "mastodon.social", "keybase.io", "google.com", "blogspot.com",
+        "wordpress.com", "tumblr.com", "linktr.ee", "about.me", "notion.site", "vercel.app", "netlify.app",
+        "pages.dev", "herokuapp.com", "stackoverflow.com", "npmjs.com", "pypi.org", "crates.io", "docs.rs",
+        "docker.com", "sourceforge.net", "wikipedia.org", "carrd.co", "wixsite.com", "squarespace.com",
+    ]
+
+    /// The domain a profile's website lives on, without `www.`; nil when it
+    /// is not a domain or sits on a shared platform.
+    static func websiteDomain(_ raw: String?) -> String? {
+        guard let raw = nonEmpty(raw), raw.count <= 512 else { return nil }
+        let url = raw.contains("://") ? raw : "https://\(raw)"
+        guard var host = URLComponents(string: url)?.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+              host.range(of: #"^[a-z0-9.-]+\.[a-z]{2,}$"#, options: .regularExpression) != nil else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        guard host.contains("."), !sharedHosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) else { return nil }
+        return host
     }
 
     /// `"github:dtolnay, twitter:@dtolnay"` → `["github: dtolnay", "twitter: dtolnay"]`.

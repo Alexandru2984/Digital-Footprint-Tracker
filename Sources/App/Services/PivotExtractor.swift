@@ -45,33 +45,45 @@ enum PivotExtractor {
         var scored: [(value: String, priority: Double)] = []
         var seen = alreadyScanned
 
+        func consider(_ rawValue: String, priority: Double) {
+            var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if value.hasPrefix("@") { value.removeFirst() }
+            // A pivot value is a scan target that no user typed: it comes
+            // from a third party's page, API response or commit metadata, so
+            // it is attacker-controlled in exactly the way `/scan` input is.
+            // It therefore goes through the same validator, which enforces
+            // the character whitelist, the length cap and the SSRF gate —
+            // and, critically, the leading-hyphen rule that exists so a
+            // target can never be read as a flag by an argv-based tool.
+            // `isScannable` alone permitted `-x@evil.test`, which reached
+            // holehe's argv as an option.
+            guard value.count >= 3,
+                  isScannable(value),
+                  let validated = try? InputValidator.validateScanInput(value),
+                  validated == value,
+                  seen.insert(value).inserted
+            else { return }
+            scored.append((value, priority))
+        }
+
         for result in results {
             guard result.confidenceScore >= minPivotConfidence, let meta = result.metadata else { continue }
+            // A value a platform confirmed belongs to the target (a login
+            // GitHub tied to a verified email, a second address on the same
+            // OpenPGP key) outranks everything; then emails, a far stronger
+            // anchor than a bare handle; then confidence.
+            let verified = meta["matchKind"] == "verified" || meta["linkKind"] == "verified"
             for (key, rawValue) in meta where pivotKeys.contains(key.lowercased()) {
-                var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if value.hasPrefix("@") { value.removeFirst() }
-                // A pivot value is a scan target that no user typed: it comes
-                // from a third party's page, API response or commit metadata, so
-                // it is attacker-controlled in exactly the way `/scan` input is.
-                // It therefore goes through the same validator, which enforces
-                // the character whitelist, the length cap and the SSRF gate —
-                // and, critically, the leading-hyphen rule that exists so a
-                // target can never be read as a flag by an argv-based tool.
-                // `isScannable` alone permitted `-x@evil.test`, which reached
-                // holehe's argv as an option.
-                guard value.count >= 3,
-                      isScannable(value),
-                      let validated = try? InputValidator.validateScanInput(value),
-                      validated == value,
-                      seen.insert(value).inserted
-                else { continue }
-                // A value a platform confirmed belongs to the target (a login
-                // GitHub tied to a verified email, a second address on the same
-                // OpenPGP key) outranks everything; then emails, a far stronger
-                // anchor than a bare handle; then confidence.
-                let verified = meta["matchKind"] == "verified" || meta["linkKind"] == "verified"
-                let priority = (verified ? 2.0 : 0.0) + (value.contains("@") ? 1.0 : 0.0) + result.confidenceScore
-                scored.append((value, priority))
+                let email = rawValue.trimmingCharacters(in: .whitespaces).dropFirst().contains("@")
+                consider(rawValue, priority: (verified ? 2.0 : 0.0) + (email ? 1.0 : 0.0) + result.confidenceScore)
+            }
+            // What a confirmed account points to: its proven accounts and
+            // domains, the website it lists. Only from an account whose own
+            // tie to the target is confirmed: a same-name stranger's website
+            // would send the scan into someone else's life.
+            guard let owner = meta["matchKind"].flatMap(IdentityLinks.Kind.init(rawValue:)), owner >= .declared else { continue }
+            for value in IdentityLinks.pivotableLinks(meta) {
+                consider(value, priority: (meta["linkKind"] == "verified" ? 2.0 : 1.0) + result.confidenceScore)
             }
         }
         return scored.sorted { $0.priority > $1.priority }.prefix(maxPivots).map { $0.value }
