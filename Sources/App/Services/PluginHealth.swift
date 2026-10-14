@@ -231,8 +231,11 @@ actor PluginHealth {
     func reports(for plugins: [String]) -> [Report] {
         plugins.map { name in
             let runs = history[name] ?? []
-            let average = runs.isEmpty ? nil
-                : Int((runs.map(\.duration).reduce(0, +) / Double(runs.count) * 1_000).rounded())
+            // Typed step by step: as one expression this took the compiler
+            // seconds to type-check.
+            let total: Double = runs.reduce(0) { $0 + $1.duration }
+            let milliseconds: Double = total * 1_000 / Double(max(runs.count, 1))
+            let average: Int? = runs.isEmpty ? nil : Int(milliseconds.rounded())
             return Report(
                 plugin: name,
                 status: Self.status(of: runs),
