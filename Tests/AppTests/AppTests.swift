@@ -4564,6 +4564,16 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testDNSSaysWhichServicesADomainUses() {
+        let found = DomainServices.detect(
+            txt: ["\"v=spf1 include:_spf.google.com include:sendgrid.net ~all\"", "MS=ms12345678",
+                  "atlassian-domain-verification=abc", "google-site-verification=xyz", "unrelated"],
+            mx: ["aspmx.l.google.com", "alt1.aspmx.l.google.com"])
+        XCTAssertEqual(found.map(\.service), ["Google Workspace", "SendGrid", "Microsoft 365", "Atlassian", "Google"])
+        XCTAssertEqual(found.first?.evidence, "SPF sender")
+        XCTAssertTrue(DomainServices.detect(txt: ["v=spf1 -all"], mx: []).isEmpty)
+    }
+
     func testOnePlaceSpelledTwoWaysAndAKeyIDAsCompany() {
         typealias I = IdentitySynthesizer.Input
         let inputs = [

@@ -297,6 +297,7 @@ enum RiskScorer {
         // Who routes an address, and research scanners (Shodan, Censys) seen
         // probing: facts about the network, not a weakness of the target.
         "ip_network": .infra,
+        "domain_services": .infra,
         "ip_scanner_benign": .infra
     ]
 

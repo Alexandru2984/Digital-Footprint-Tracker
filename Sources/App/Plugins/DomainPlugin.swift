@@ -14,6 +14,8 @@ struct DomainPlugin: FootprintPlugin {
     /// DNS + WHOIS for a hostname, reverse DNS + geo for a bare IP.
     let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 14_400 // 4 h
+    /// v2: the services the owner uses, from TXT, SPF and MX.
+    let cacheVersion = 2
 
     // Basic domain/IP regex. Intentionally loose — input has already been
     // sanitised by ScanController's character whitelist.
@@ -60,8 +62,8 @@ struct DomainPlugin: FootprintPlugin {
         }
 
         // ── TXT / SPF records ───────────────────────────────────────────────────
-        let spf = await DoHResolver.resolve(target, type: "TXT", on: app)
-            .filter { $0.lowercased().hasPrefix("v=spf") || $0.lowercased().contains("dmarc") }
+        let txt = await DoHResolver.resolve(target, type: "TXT", on: app)
+        let spf = txt.filter { $0.lowercased().hasPrefix("v=spf") || $0.lowercased().contains("dmarc") }
         if !spf.isEmpty {
             results.append(PluginResult(
                 source: "DomainDNS",
@@ -69,6 +71,19 @@ struct DomainPlugin: FootprintPlugin {
                 confidenceScore: 0.9,
                 rawData: "Email security records for \(target): \(spf.joined(separator: " | "))",
                 metadata: ["domain": target]
+            ))
+        }
+
+        // ── Services the owner uses (TXT tokens, SPF senders, MX) ───────────────
+        let services = DomainServices.detect(txt: txt, mx: mxHosts)
+        if !services.isEmpty {
+            results.append(PluginResult(
+                source: "DomainDNS",
+                type: "domain_services",
+                confidenceScore: 0.9,
+                rawData: "Services \(target) uses: "
+                    + services.map { "\($0.service) (\($0.evidence))" }.joined(separator: ", "),
+                metadata: ["domain": target, "services": services.map(\.service).joined(separator: ",")]
             ))
         }
 
