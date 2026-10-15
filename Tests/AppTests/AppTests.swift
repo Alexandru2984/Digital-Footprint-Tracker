@@ -4564,6 +4564,26 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testCommunityProfilesDeclareTheOtherAccounts() throws {
+        let dev = try XCTUnwrap(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"""
+        {"username":"ben","name":"Ben Halpern","twitter_username":"bendhalpern","github_username":"benhalpern",
+         "website_url":"http://benhalpern.com","location":"NY","joined_at":"Dec 27, 2015"}
+        """#.utf8)))
+        XCTAssertEqual(dev.metadata?["linked"], "github:benhalpern,twitter:bendhalpern")
+        XCTAssertEqual(dev.metadata?["linkKind"], "declared")
+        XCTAssertEqual(dev.metadata?["blog"], "http://benhalpern.com")
+        XCTAssertNil(DevToPlugin.evaluate(username: "ben", status: 404, body: Data()))
+        XCTAssertNil(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"{"username":"other"}"#.utf8)))
+
+        let lob = try XCTUnwrap(LobstersPlugin.evaluate(username: "pushcx", status: 200, body: Data(#"""
+        {"username":"pushcx","created_at":"2012-08-14T20:25:08.000-05:00","github_username":"pushcx",
+         "mastodon_username":"lobsters","invited_by_user":"jcs"}
+        """#.utf8)))
+        XCTAssertEqual(lob.metadata?["linked"], "github:pushcx", "a Mastodon name without its instance is no account")
+        XCTAssertEqual(lob.metadata?["since"], "2012-08-15", "normalised to UTC")
+        XCTAssertNil(CommunityHandle.validated("12345"))
+    }
+
     func testPhonesFoundOnTheWayBecomeLeads() throws {
         XCTAssertEqual(IdentityLinks.internationalPhone("tel:+40 721-234.567"), "+40721234567")
         XCTAssertEqual(IdentityLinks.internationalPhone("0040721234567"), "+40721234567")

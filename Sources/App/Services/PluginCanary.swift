@@ -51,6 +51,8 @@ enum PluginCanary {
         Check(plugin: "DockerHub", input: "jessfraz", username: "jessfraz"),
         Check(plugin: "Codeberg", input: "fnetX", username: "fnetX"),
         Check(plugin: "SSHKeys", input: "fnetX", username: "fnetX"),
+        Check(plugin: "DevTo", input: "ben", username: "ben"),
+        Check(plugin: "Lobsters", input: "pushcx", username: "pushcx"),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),

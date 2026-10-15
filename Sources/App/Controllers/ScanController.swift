@@ -101,6 +101,8 @@ struct ScanController: RouteCollection {
         DockerHubPlugin(),
         CodebergPlugin(),
         SSHKeyPlugin(),
+        DevToPlugin(),
+        LobstersPlugin(),
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),
