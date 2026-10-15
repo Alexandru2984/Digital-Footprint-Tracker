@@ -129,7 +129,9 @@ enum IdentitySynthesizer {
                 record(collapseWhitespace(o), into: &orgForms)
             }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
-            if let p = nonEmpty(m["phone"]) {
+            // A number read off an account that only shares the name is a
+            // stranger's, like its location.
+            if weight >= 0.5, let p = nonEmpty(m["phone"]) {
                 let display = collapseWhitespace(p)
                 record(display, key: canonicalPhone(display), into: &phoneForms)
             }

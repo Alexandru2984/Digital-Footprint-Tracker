@@ -195,6 +195,21 @@ enum IdentityLinks {
         return values
     }
 
+    /// A phone number in international form (`+` and digits), or nil when it
+    /// is not one: a national number cannot be scanned without guessing its
+    /// country. `00` is the international prefix written out.
+    static func internationalPhone(_ raw: String?) -> String? {
+        guard var text = nonEmpty(raw) else { return nil }
+        if text.lowercased().hasPrefix("tel:") { text.removeFirst(4) }
+        text = text.trimmingCharacters(in: .whitespaces)
+        let international = text.hasPrefix("+") || text.hasPrefix("00")
+        var digits = text.filter(\.isNumber)
+        if text.hasPrefix("00") { digits.removeFirst(2) }
+        guard international, (8...15).contains(digits.count), !digits.hasPrefix("0"),
+              text.allSatisfy({ $0.isNumber || " +-.()/".contains($0) }) else { return nil }
+        return "+" + digits
+    }
+
     /// Hosts where a website is a page on someone else's platform: scanning
     /// the domain would describe the platform, not the person.
     static let sharedHosts: [String] = [

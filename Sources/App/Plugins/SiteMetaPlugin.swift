@@ -87,6 +87,7 @@ enum SiteMeta {
         var proven: [(String, String?)] = []
         var profiles: [(String, String?)] = []
         var email: String?
+        var phone: String?
         var author: String?
         for tag in tags {
             if tag.lowercased().hasPrefix("<meta") {
@@ -97,6 +98,10 @@ enum SiteMeta {
                 continue
             }
             guard let href = attribute("href", in: tag) else { continue }
+            if href.lowercased().hasPrefix("tel:") {
+                phone = phone ?? IdentityLinks.internationalPhone(href)
+                continue
+            }
             if href.lowercased().hasPrefix("mailto:") {
                 let address = String(href.dropFirst(7).split(separator: "?").first ?? "").lowercased()
                 if email == nil, address.range(of: #"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"#, options: .regularExpression) != nil {
@@ -111,16 +116,18 @@ enum SiteMeta {
         // A page that marks its owner's profiles with rel=me has said which
         // links are its owner's; the rest are anything else it links to.
         let linked = IdentityLinks.linked(Array((proven.isEmpty ? profiles : proven).prefix(12)))
-        guard linked != nil || email != nil || author != nil else { return nil }
+        guard linked != nil || email != nil || phone != nil || author != nil else { return nil }
 
         var parts = ["Homepage of \(domain)"]
         if let author { parts.append("Author: \(author)") }
         if let email { parts.append("Contact: \(email)") }
+        if let phone { parts.append("Phone: \(phone)") }
         if let linked { parts.append("Profiles: " + linked.replacingOccurrences(of: ",", with: ", ")) }
         var meta = ["platform": "web", "account": domain, "domain": domain, "matchKind": "verified",
                     "matchReason": "the website served at this domain"]
         if let author { meta["name"] = author }
         if let email { meta["email"] = email }
+        if let phone { meta["phone"] = phone }
         if let linked {
             meta["linked"] = linked
             meta["linkKind"] = proven.isEmpty ? "declared" : "verified"
@@ -147,6 +154,8 @@ struct SiteMetaPlugin: FootprintPlugin {
     /// Fetches a hostname's homepage metadata.
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
+    /// v2: the homepage's phone (`tel:` links).
+    let cacheVersion = 2
 
     private static let ipv4Pattern = #"^\d{1,3}(\.\d{1,3}){3}$"#
 

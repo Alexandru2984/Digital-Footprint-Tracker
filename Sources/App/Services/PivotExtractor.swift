@@ -22,7 +22,7 @@ enum PivotExtractor {
     /// reputation plugins — AbuseIPDB, VirusTotal, Shodan — never saw where the
     /// domain actually points.
     private static let pivotKeys: Set<String> = [
-        "email", "username", "twitter", "ip"
+        "email", "username", "twitter", "ip", "phone"
     ]
 
     /// Read-only view for the coverage test above; the set itself stays private.
@@ -74,6 +74,14 @@ enum PivotExtractor {
             // anchor than a bare handle; then confidence.
             let verified = meta["matchKind"] == "verified" || meta["linkKind"] == "verified"
             for (key, rawValue) in meta where pivotKeys.contains(key.lowercased()) {
+                // A phone only in international form, and only one not already
+                // scanned in another spelling.
+                if key.lowercased() == "phone" {
+                    guard let phone = IdentityLinks.internationalPhone(rawValue),
+                          !seen.contains(where: { $0.filter(\.isNumber) == phone.filter(\.isNumber) }) else { continue }
+                    consider(phone, priority: (verified ? 2.0 : 0.0) + result.confidenceScore)
+                    continue
+                }
                 let email = rawValue.trimmingCharacters(in: .whitespaces).dropFirst().contains("@")
                 consider(rawValue, priority: (verified ? 2.0 : 0.0) + (email ? 1.0 : 0.0) + result.confidenceScore)
             }

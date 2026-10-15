@@ -9,7 +9,8 @@ struct WhoisPlugin: FootprintPlugin {
     let cacheTTL: TimeInterval = 14_400 // 4 h
     /// v2: registry found through the IANA bootstrap; IP networks typed apart.
     /// v3: the registrant, from the registry or the registrar's RDAP server.
-    let cacheVersion = 3
+    /// v4: the registrant's phone.
+    let cacheVersion = 4
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"),
@@ -109,6 +110,7 @@ struct WhoisPlugin: FootprintPlugin {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .first { !$0.isEmpty && !isRedacted($0) }
         }
+        let phone = IdentityLinks.internationalPhone(text("tel"))
         guard name != nil || org != nil || email != nil else { return nil }
 
         var parts = ["Registrant of \(domain)"]
@@ -124,6 +126,7 @@ struct WhoisPlugin: FootprintPlugin {
             meta["linkReason"] = "the registration record gives this contact address"
         }
         if let country { parts.append("Country: \(country)"); meta["location"] = country }
+        if let phone { parts.append("Phone: \(phone)"); meta["phone"] = phone }
         return PluginResult(source: "RDAP/WHOIS", type: "domain_registrant", confidenceScore: 0.9,
                             rawData: parts.joined(separator: " | "), metadata: meta)
     }

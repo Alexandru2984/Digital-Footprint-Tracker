@@ -4564,6 +4564,20 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testPhonesFoundOnTheWayBecomeLeads() throws {
+        XCTAssertEqual(IdentityLinks.internationalPhone("tel:+40 721-234.567"), "+40721234567")
+        XCTAssertEqual(IdentityLinks.internationalPhone("0040721234567"), "+40721234567")
+        XCTAssertNil(IdentityLinks.internationalPhone("0721 234 567"), "a national number needs a guessed country")
+        XCTAssertNil(IdentityLinks.internationalPhone("+1 call me"))
+
+        let page = try XCTUnwrap(SiteMeta.homepageIdentity(
+            html: #"<a href="tel:+40 721 234 567">call</a>"#, domain: "popescu.ro"))
+        XCTAssertEqual(page.metadata?["phone"], "+40721234567")
+        XCTAssertEqual(PivotExtractor.candidates(from: [page], alreadyScanned: ["popescu.ro"]), ["+40721234567"])
+        XCTAssertTrue(PivotExtractor.candidates(from: [page], alreadyScanned: ["+40 721 234 567"]).isEmpty,
+                      "the number already scanned, spelled differently")
+    }
+
     func testDNSSaysWhichServicesADomainUses() {
         let found = DomainServices.detect(
             txt: ["\"v=spf1 include:_spf.google.com include:sendgrid.net ~all\"", "MS=ms12345678",
@@ -6803,6 +6817,12 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(profile.likelyName, "David Tolnay",
                        "two same-name accounts must not outvote the one GitHub tied to the address")
         XCTAssertEqual(profile.locations, ["Home"], "a lookalike's location is not the target's")
+        let withPhone = IdentitySynthesizer.synthesize(
+            from: inputs + [I(source: "steam", type: "account_presence", confidence: 1.0,
+                              metadata: ["platform": "steam", "username": "dtolnay", "phone": "+15550100",
+                                         "queriedAs": "dtolnay", "via": "emailLocalPart"], rawData: "p")],
+            riskScore: 0, riskLevel: "Low", target: "dtolnay@gmail.com")
+        XCTAssertTrue(withPhone.phones.isEmpty, "nor its phone number")
         let github = try XCTUnwrap(profile.confirmedAccounts.first { $0.platform == "github" })
         let steam = try XCTUnwrap(profile.confirmedAccounts.first { $0.platform == "steam" })
         XCTAssertEqual(github.confidence, 0.98, accuracy: 0.001)
