@@ -4564,6 +4564,19 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testHoleheDetailIsNotPartOfTheSiteName() {
+        let output = """
+        [+] Email used, [-] Email not used, [x] Rate limit
+        [+] spotify.com
+        [+] en.gravatar.com / FullName dtolnay / https://gravatar.com/dtolnay
+        [-] instagram.com
+        [+] spotify.com
+        """
+        let results = BulkEmailPlugin.parse(output: output, email: "a@b.test")
+        XCTAssertEqual(results.map(\.source), ["spotify.com", "en.gravatar.com"])
+        XCTAssertTrue(results[1].rawData.hasSuffix("| FullName dtolnay | https://gravatar.com/dtolnay"))
+    }
+
     func testAScanInterruptedByARestartIsMarkedFailed() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

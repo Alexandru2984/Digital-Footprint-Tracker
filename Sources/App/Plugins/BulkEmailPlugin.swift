@@ -7,6 +7,8 @@ struct BulkEmailPlugin: FootprintPlugin {
     /// holehe enumerates account registrations for an email.
     let accepts: Set<TargetShape> = [.email]
     let cacheTTL: TimeInterval = 86_400 // 24 h
+    /// v2: a module's extra detail is no longer read as part of the site name.
+    let cacheVersion = 2
     
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] }
@@ -42,38 +44,35 @@ struct BulkEmailPlugin: FootprintPlugin {
             guard execution.succeeded,
                   let output = String(data: execution.stdout, encoding: .utf8) else { return [] }
             
-            var results: [PluginResult] = []
-            let lines = output.components(separatedBy: .newlines)
-            for line in lines {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("[+] ") {
-                    let rawSite = String(trimmed.dropFirst(4))
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    
-                    // Skip the legend line printed by holehe
-                    if rawSite.contains("Email used,") || rawSite.contains("Email not used,") { continue }
-                    guard !rawSite.isEmpty, rawSite.utf8.count <= 120,
-                          rawSite.unicodeScalars.allSatisfy({
-                            !CharacterSet.controlCharacters.contains($0)
-                          }) else { continue }
-                    let site = String(rawSite.prefix(100))
-                    
-                    results.append(
-                        PluginResult(
-                            source: site,
-                            type: "account_presence",
-                            confidenceScore: 1.0,
-                            rawData: "Account registered with email on \(site) (detected via recovery flow)",
-                            metadata: ["email": cleanedEmail, "platform": site]
-                        )
-                    )
-                }
-            }
-            
-            return results
+            return Self.parse(output: output, email: cleanedEmail)
         } catch {
             app.logger.error("Holehe execution could not be started.")
             return []
         }
+    }
+
+    /// One result per `[+] site` line of holehe's output. Some modules add
+    /// what they read after the site (`[+] en.gravatar.com / FullName x / url`):
+    /// the site is the first part, the rest is detail.
+    static func parse(output: String, email: String) -> [PluginResult] {
+        var results: [PluginResult] = []
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("[+] ") else { continue }
+            let rest = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Skip the legend line printed by holehe
+            if rest.contains("Email used,") || rest.contains("Email not used,") { continue }
+            guard rest.utf8.count <= 300,
+                  rest.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { continue }
+            let parts = rest.components(separatedBy: " / ").map { $0.trimmingCharacters(in: .whitespaces) }
+            let site = parts[0].lowercased()
+            guard site.range(of: #"^[a-z0-9][a-z0-9.-]{0,98}[a-z0-9]$"#, options: .regularExpression) != nil,
+                  !results.contains(where: { $0.source == site }) else { continue }
+            var raw = "Account registered with email on \(site) (detected via recovery flow)"
+            if parts.count > 1 { raw += " | " + parts.dropFirst().prefix(4).joined(separator: " | ") }
+            results.append(PluginResult(source: site, type: "account_presence", confidenceScore: 1.0, rawData: raw,
+                                        metadata: ["email": email, "platform": site]))
+        }
+        return results
     }
 }
