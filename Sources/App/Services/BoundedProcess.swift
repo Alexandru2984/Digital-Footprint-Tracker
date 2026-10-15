@@ -126,9 +126,12 @@ enum BoundedProcess {
 
         try process.run()
         let state = CaptureState(maxBytes: maxOutputBytes)
+        let processID = process.processIdentifier
+        let exit = ExitState()
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
+                let finish = ResumeOnce(continuation)
                 let work = DispatchGroup()
 
                 work.enter()
@@ -137,14 +140,22 @@ enum BoundedProcess {
                         try? outputPipe.fileHandleForReading.close()
                         work.leave()
                     }
-                    do {
-                        while let chunk = try outputPipe.fileHandleForReading.read(upToCount: 64 * 1_024),
-                              !chunk.isEmpty {
-                            if state.append(chunk) { stop(process) }
+                    // POSIX read, not `read(upToCount:)`: that one holds what
+                    // arrived until the count fills or the pipe closes, so a
+                    // pipe a leftover grandchild keeps open would hide output
+                    // the child already wrote.
+                    let descriptor = outputPipe.fileHandleForReading.fileDescriptor
+                    var buffer = [UInt8](repeating: 0, count: 64 * 1_024)
+                    while true {
+                        let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
+                        if count == 0 { break }
+                        if count < 0 {
+                            if errno == EINTR { continue }
+                            state.markReadFailed()
+                            stop(process, unless: exit)
+                            break
                         }
-                    } catch {
-                        state.markReadFailed()
-                        stop(process)
+                        if state.append(Data(buffer[0..<count])) { stop(process, unless: exit) }
                     }
                 }
 
@@ -159,30 +170,119 @@ enum BoundedProcess {
                     }
                 }
 
+                // Not `waitUntilExit()`: Foundation on Linux has missed a
+                // child's exit in production, leaving it a zombie and the
+                // wait (and the scan behind it) stuck for good. Watch the
+                // child here instead: reap a zombie ourselves, kill one that
+                // outlives the deadline, and give up waiting soon after.
                 work.enter()
                 DispatchQueue.global(qos: .utility).async {
-                    process.waitUntilExit()
-                    work.leave()
+                    defer { work.leave() }
+                    let deadline = Date().addingTimeInterval(timeout)
+                    var killedAt: Date?
+                    var zombieSince: Date?
+                    while process.isRunning {
+                        // Foundation normally reaps within milliseconds; only a
+                        // zombie it has left for a second is ours to collect.
+                        if isZombie(processID) {
+                            let since = zombieSince ?? Date()
+                            zombieSince = since
+                            if Date().timeIntervalSince(since) > 1, let status = reap(processID) {
+                                exit.record(status)
+                                break
+                            }
+                        } else {
+                            zombieSince = nil
+                        }
+                        if killedAt == nil, Date() >= deadline {
+                            state.markTimedOut()
+                            stop(process, unless: exit)
+                            killedAt = Date()
+                        }
+                        if let killedAt, Date().timeIntervalSince(killedAt) > 5 { break }
+                        usleep(50_000)
+                    }
+                    // The child is gone (or abandoned). A grandchild still
+                    // holding the output pipe must not hold the caller too.
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+                        finish.resume(state.snapshot(exitStatus: exit.status(of: process)))
+                    }
                 }
-
-                let timeoutWork = DispatchWorkItem {
-                    guard process.isRunning else { return }
-                    state.markTimedOut()
-                    stop(process)
-                }
-                DispatchQueue.global(qos: .utility).asyncAfter(
-                    deadline: .now() + timeout,
-                    execute: timeoutWork
-                )
 
                 work.notify(queue: .global(qos: .utility)) {
-                    timeoutWork.cancel()
-                    continuation.resume(returning: state.snapshot(exitStatus: process.terminationStatus))
+                    finish.resume(state.snapshot(exitStatus: exit.status(of: process)))
                 }
             }
         } onCancel: {
-            stop(process)
+            stop(process, unless: exit)
         }
+    }
+
+    /// Signals the child unless we reaped it ourselves: Foundation still
+    /// thinks it runs, and its PID may already belong to another process.
+    private static func stop(_ process: Process, unless exit: ExitState) {
+        guard !exit.wasReaped else { return }
+        stop(process)
+    }
+
+    /// The exit status, from Foundation when it saw the exit, or from our own
+    /// reap when it did not; -1 when neither (a child abandoned after a kill).
+    private final class ExitState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var reaped: Int32?
+
+        func record(_ status: Int32) {
+            lock.lock()
+            reaped = status
+            lock.unlock()
+        }
+
+        var wasReaped: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return reaped != nil
+        }
+
+        func status(of process: Process) -> Int32 {
+            lock.lock()
+            defer { lock.unlock() }
+            if let reaped { return reaped }
+            return process.isRunning ? -1 : process.terminationStatus
+        }
+    }
+
+    /// Resumes a continuation exactly once, whichever path gets there first.
+    private final class ResumeOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Result, Never>?
+
+        init(_ continuation: CheckedContinuation<Result, Never>) {
+            self.continuation = continuation
+        }
+
+        func resume(_ result: Result) {
+            lock.lock()
+            let pending = continuation
+            continuation = nil
+            lock.unlock()
+            pending?.resume(returning: result)
+        }
+    }
+
+    /// Whether `pid` has exited but not been waited for.
+    private static func isZombie(_ pid: Int32) -> Bool {
+        guard let stat = try? String(contentsOfFile: "/proc/\(pid)/stat", encoding: .utf8),
+              let close = stat.lastIndex(of: ")") else { return false }
+        return stat[stat.index(after: close)...].trimmingCharacters(in: .whitespaces).hasPrefix("Z")
+    }
+
+    /// Waits for an exited `pid`, returning its exit code; nil if someone
+    /// else got there first.
+    private static func reap(_ pid: Int32) -> Int32? {
+        var status: Int32 = 0
+        guard waitpid(pid, &status, WNOHANG) == pid else { return nil }
+        // WIFEXITED / WEXITSTATUS, spelled out: the C macros are not imported.
+        return status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
     }
 
     private static func stop(_ process: Process) {

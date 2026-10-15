@@ -1776,6 +1776,20 @@ final class AppTests: XCTestCase {
         ), "Deployment-documentation placeholders must never become credentials")
     }
 
+    func testBoundedProcessDoesNotWaitForAGrandchildHoldingItsOutput() async throws {
+        let shell = try XCTUnwrap(["/usr/bin/sh", "/bin/sh"].first(where: FileManager.default.isExecutableFile(atPath:)))
+        let started = Date()
+        // The shell exits at once; the backgrounded sleep keeps stdout open.
+        let result = try await BoundedProcess.run(
+            executable: shell, arguments: ["-c", "sleep 30 & echo hi"],
+            environment: ["PATH": "/usr/bin:/bin"], timeout: 20, maxOutputBytes: 64
+        )
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8,
+                          "a child's leftover process must not hold the caller until it exits")
+        XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), "hi\n")
+        XCTAssertEqual(result.exitStatus, 0)
+    }
+
     func testBoundedProcessCapturesCapsAndTimesOut() async throws {
         func executable(_ candidates: [String]) throws -> String {
             try XCTUnwrap(candidates.first(where: FileManager.default.isExecutableFile(atPath:)))
@@ -4536,6 +4550,74 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(round.failure, 1, "the timed-out plugin should count as a failure")
         XCTAssertTrue(round.collected.contains { $0.source == "Fast" })
         XCTAssertFalse(round.collected.contains { $0.source == "Slow" })
+    }
+
+    /// Ignores cancellation, as a wait on a subprocess whose exit is never
+    /// seen does.
+    private struct StuckTestPlugin: FootprintPlugin {
+        let name = "Stuck"
+        func scan(input: String, on app: Application) async throws -> [PluginResult] {
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 6) { done.resume() }
+            }
+            return []
+        }
+    }
+
+    func testAScanInterruptedByARestartIsMarkedFailed() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let interrupted = Scan(input: "interrupted")
+        try await interrupted.save(on: app.db)
+        let done = Scan(input: "finished")
+        done.status = .completed
+        try await done.save(on: app.db)
+
+        let swept = try await InterruptedScanSweep.sweep(on: app.db, startedBefore: Date().addingTimeInterval(1))
+        XCTAssertEqual(swept, 1)
+        let reloaded = try await Scan.find(interrupted.id, on: app.db)
+        XCTAssertEqual(reloaded?.status, .failed)
+        XCTAssertNotNil(reloaded?.completedAt)
+        let untouched = try await Scan.find(done.id, on: app.db)
+        XCTAssertEqual(untouched?.status, .completed, "a finished scan is left alone")
+
+        let fresh = Scan(input: "started after boot")
+        try await fresh.save(on: app.db)
+        let none = try await InterruptedScanSweep.sweep(on: app.db, startedBefore: Date().addingTimeInterval(-60))
+        XCTAssertEqual(none, 0, "a scan this process started is running, not interrupted")
+    }
+
+    func testAPluginThatIgnoresCancellationDoesNotHoldTheScan() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "stuck-target")
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        let fast = FixedResultTestPlugin(name: "Fast",
+            results: [PluginResult(source: "Fast", type: "account_presence", confidenceScore: 1.0, rawData: "fast hit")])
+
+        let start = Date()
+        let round = await ScanPluginRunner.runRound(
+            plugins: [StuckTestPlugin(), fast],
+            candidates: [TargetDeriver.Candidate(value: "stuck-target", origin: .primary)],
+            scanID: scanID, deadline: 20, perPluginTimeout: 1,
+            reportProgress: false, app: app, db: app.db, useCache: false,
+            dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        XCTAssertLessThan(Date().timeIntervalSince(start), 4,
+            "the timeout moves on; it must not wait for a plugin that cannot be cancelled")
+        XCTAssertEqual(round.success, 1)
+        XCTAssertEqual(round.failure, 1)
+
+        let deadlineStart = Date()
+        _ = await ScanPluginRunner.runRound(
+            plugins: [StuckTestPlugin()],
+            candidates: [TargetDeriver.Candidate(value: "stuck-target-2", origin: .primary)],
+            scanID: scanID, deadline: 1, perPluginTimeout: 30,
+            reportProgress: false, app: app, db: app.db, useCache: false,
+            dedup: ScanPluginRunner.ResultDedupStore()
+        )
+        XCTAssertLessThan(Date().timeIntervalSince(deadlineStart), 4, "nor may the round's own deadline")
     }
 
     func testRunRoundDeduplicatesIdenticalFindingsWithinAScan() async throws {

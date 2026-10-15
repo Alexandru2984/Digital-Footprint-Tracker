@@ -276,66 +276,77 @@ enum ScanPluginRunner {
         let probe = PluginHealth.RunProbe()
         let started = Date()
         var timedOut = false
-        let outcome = await withTaskGroup(of: Outcome?.self) { inner -> Outcome in
-            inner.addTask {
-                await PluginHealth.$probe.withValue(probe) {
-                    do {
-                        var produced: [PluginResult] = []
-                        // Asked once, at the first cache miss: a failing plugin
-                        // gets at most one probe per window, not one per candidate.
-                        var admitted: Bool?
-                        var skippedLive = false
-                        for candidate in pCandidates {
-                            guard !Task.isCancelled else { break }
-                            let cInput = candidate.value
-                            let raw: [PluginResult]
-                            if useCache, let cached = await PluginCacheStore.lookup(
-                                pluginName: plugin.cacheKey,
-                                input: cInput,
-                                on: db,
-                                logger: app.logger
-                            ) {
-                                raw = PluginResultLimits.sanitize(cached)
-                            } else {
-                                if admitted == nil { admitted = await PluginHealth.shared.admit(pName) }
-                                guard admitted == true else {
-                                    skippedLive = true
-                                    app.logger.debug("Plugin \(pName) is failing; skipped its live run for this candidate.")
-                                    continue
+        // A race that does not wait for its loser. `withTaskGroup` awaits
+        // every child before it returns, so a plugin stuck past its timeout
+        // (in production: a subprocess whose exit was never seen) held the
+        // whole scan with it, however early this function "moved on".
+        let race = PluginRace()
+        let outcome: Outcome = await withTaskCancellationHandler {
+            let finished = await withCheckedContinuation { (continuation: CheckedContinuation<Outcome?, Never>) in
+                race.start(continuation)
+                let work = Task { () -> Outcome in
+                    await PluginHealth.$probe.withValue(probe) { () async -> Outcome in
+                        do {
+                            var produced: [PluginResult] = []
+                            // Asked once, at the first cache miss: a failing plugin
+                            // gets at most one probe per window, not one per candidate.
+                            var admitted: Bool?
+                            var skippedLive = false
+                            for candidate in pCandidates {
+                                guard !Task.isCancelled else { break }
+                                let cInput = candidate.value
+                                let raw: [PluginResult]
+                                if useCache, let cached = await PluginCacheStore.lookup(
+                                    pluginName: plugin.cacheKey,
+                                    input: cInput,
+                                    on: db,
+                                    logger: app.logger
+                                ) {
+                                    raw = PluginResultLimits.sanitize(cached)
+                                } else {
+                                    if admitted == nil { admitted = await PluginHealth.shared.admit(pName) }
+                                    guard admitted == true else {
+                                        skippedLive = true
+                                        app.logger.debug("Plugin \(pName) is failing; skipped its live run for this candidate.")
+                                        continue
+                                    }
+                                    probe.markLive()
+                                    let fresh = try await plugin.scan(input: cInput, on: app)
+                                    let bounded = PluginResultLimits.sanitize(fresh)
+                                    if useCache {
+                                        await PluginCacheStore.store(pluginName: plugin.cacheKey, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
+                                    }
+                                    raw = bounded
                                 }
-                                probe.markLive()
-                                let fresh = try await plugin.scan(input: cInput, on: app)
-                                let bounded = PluginResultLimits.sanitize(fresh)
-                                if useCache {
-                                    await PluginCacheStore.store(pluginName: plugin.cacheKey, input: cInput, results: bounded, ttl: pTTL, on: db, logger: app.logger)
+                                for pr in raw where try await persist(pr, candidate: candidate, scanID: scanID, dedup: dedup, on: db) {
+                                    produced.append(pr)
                                 }
-                                raw = bounded
                             }
-                            for pr in raw where try await persist(pr, candidate: candidate, scanID: scanID, dedup: dedup, on: db) {
-                                produced.append(pr)
-                            }
+                            return .done(name: pName, succeeded: true, results: produced, skipped: skippedLive)
+                        } catch {
+                            app.logger.error("Plugin \(pName) failed: \(error)")
+                            return .done(name: pName, succeeded: false, results: [])
                         }
-                        return .done(name: pName, succeeded: true, results: produced, skipped: skippedLive)
-                    } catch {
-                        app.logger.error("Plugin \(pName) failed: \(error)")
-                        return .done(name: pName, succeeded: false, results: [])
                     }
                 }
+                race.track(work)
+                let timer = Task {
+                    try? await Task.sleep(for: .seconds(timeout))
+                    race.finish(nil)
+                }
+                Task {
+                    race.finish(await work.value)
+                    timer.cancel()
+                }
             }
-            inner.addTask {
-                try? await Task.sleep(for: .seconds(timeout))
-                return nil
+            if let finished { return finished }
+            if !Task.isCancelled {
+                app.logger.warning("Plugin \(pName) exceeded its \(Int(timeout))s per-plugin timeout; moving on without waiting for it")
+                timedOut = true
             }
-            guard let firstElement = await inner.next() else {
-                return .done(name: pName, succeeded: false, results: [])
-            }
-            inner.cancelAll()
-            if let outcome = firstElement {
-                return outcome
-            }
-            app.logger.warning("Plugin \(pName) exceeded its \(Int(timeout))s per-plugin timeout; moving on without waiting for it")
-            timedOut = true
             return .done(name: pName, succeeded: false, results: [])
+        } onCancel: {
+            race.finish(nil)
         }
 
         // The round-wide deadline cancels this task from outside; the plugin
@@ -356,6 +367,49 @@ enum ScanPluginRunner {
             )
         }
         return outcome
+    }
+
+    /// The first of a plugin's work, its timeout and the round's cancellation
+    /// to arrive wins; the work is then cancelled, and never awaited.
+    final class PluginRace: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Outcome?, Never>?
+        private var early: Outcome??
+        private var work: Task<Outcome, Never>?
+        private var done = false
+
+        func start(_ continuation: CheckedContinuation<Outcome?, Never>) {
+            lock.lock()
+            if let early {
+                lock.unlock()
+                continuation.resume(returning: early)
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+        }
+
+        func track(_ work: Task<Outcome, Never>) {
+            lock.lock()
+            let alreadyDone = done
+            if !alreadyDone { self.work = work }
+            lock.unlock()
+            if alreadyDone { work.cancel() }
+        }
+
+        func finish(_ outcome: Outcome?) {
+            lock.lock()
+            guard !done else { lock.unlock(); return }
+            done = true
+            let pending = continuation
+            continuation = nil
+            if pending == nil { early = .some(outcome) }
+            let loser = work
+            work = nil
+            lock.unlock()
+            if outcome == nil { loser?.cancel() }
+            pending?.resume(returning: outcome)
+        }
     }
 
     /// What one round produced. `skipped` names the plugins that were failing

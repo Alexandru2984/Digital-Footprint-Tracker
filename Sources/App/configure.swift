@@ -191,6 +191,7 @@ public func configure(_ app: Application) async throws {
     if LifecyclePolicy.shouldStartWorkers(arguments: app.environment.arguments) {
         app.lifecycle.use(AuditIntegrityMonitor())
         app.lifecycle.use(ScanCleanupLifecycle())
+        app.lifecycle.use(InterruptedScanSweep())
         app.lifecycle.use(ScheduledScanRunner())
         app.lifecycle.use(InvestigationWatchRunner())
         app.lifecycle.use(PluginCanaryRunner())
