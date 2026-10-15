@@ -8,7 +8,8 @@ struct BulkEmailPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.email]
     let cacheTTL: TimeInterval = 86_400 // 24 h
     /// v2: a module's extra detail is no longer read as part of the site name.
-    let cacheVersion = 2
+    /// v3: each account is a node tied to the address.
+    let cacheVersion = 3
     
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] }
@@ -71,7 +72,11 @@ struct BulkEmailPlugin: FootprintPlugin {
             var raw = "Account registered with email on \(site) (detected via recovery flow)"
             if parts.count > 1 { raw += " | " + parts.dropFirst().prefix(4).joined(separator: " | ") }
             results.append(PluginResult(source: site, type: "account_presence", confidenceScore: 1.0, rawData: raw,
-                                        metadata: ["email": email, "platform": site]))
+                                        // `account`: the site's account for this address, so
+                                        // it is a node in the connections, tied to the address.
+                                        metadata: ["email": email, "platform": site, "account": email,
+                                                   "matchKind": "observed",
+                                                   "matchReason": "the site's account recovery recognises this address"]))
         }
         return results
     }

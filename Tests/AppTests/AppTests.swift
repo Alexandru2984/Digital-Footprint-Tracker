@@ -4589,6 +4589,15 @@ final class AppTests: XCTestCase {
         let results = BulkEmailPlugin.parse(output: output, email: "a@b.test")
         XCTAssertEqual(results.map(\.source), ["spotify.com", "en.gravatar.com"])
         XCTAssertTrue(results[1].rawData.hasSuffix("| FullName dtolnay | https://gravatar.com/dtolnay"))
+
+        typealias I = IdentitySynthesizer.Input
+        let profile = IdentitySynthesizer.synthesize(
+            from: results.map { I(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                  metadata: ($0.metadata ?? [:]).merging(["queriedAs": "a@b.test", "via": "input"]) { $1 },
+                                  rawData: $0.rawData) },
+            riskScore: 0, riskLevel: "Low", target: "a@b.test")
+        XCTAssertEqual(profile.attributions.first { $0.node == "spotify.com: a@b.test" }?.score, 80,
+                       "an account the site's recovery flow ties to the address: observed")
     }
 
     func testAScanInterruptedByARestartIsMarkedFailed() async throws {
