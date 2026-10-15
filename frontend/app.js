@@ -1733,6 +1733,7 @@
                 }
                 if (m.domain && r.type === 'insecure_transport') dom(m.domain).https = 'no';
                 if (m.domain && r.type === 'tech_stack' && m.server) dom(m.domain).server = m.server;
+                if (m.domain && r.type === 'domain_services' && m.services) dom(m.domain).services = m.services;
             });
 
             const ipList = Object.keys(hosts);
@@ -1795,6 +1796,8 @@
                     if (p.server) { const s = document.createElement('div'); s.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:6px;'; s.textContent = 'Server: ' + p.server; c.appendChild(s); }
                     const missing = splitCsv(p.missing);
                     if (missing.length) { c.appendChild(labelled('MISSING HEADERS')); const w = chipWrap(); missing.forEach(mi => w.appendChild(chip(mi, 'cve'))); c.appendChild(w); }
+                    const services = splitCsv(p.services);
+                    if (services.length) { c.appendChild(labelled('SERVICES IN USE')); const w = chipWrap(); services.forEach(sv => w.appendChild(chip(sv))); c.appendChild(w); }
                     root.appendChild(c);
                 });
             }
