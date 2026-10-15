@@ -4564,6 +4564,20 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testOnePlaceSpelledTwoWaysAndAKeyIDAsCompany() {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "account_presence", confidence: 1,
+              metadata: ["location": "Redwood City, California", "company": "0xF9BA143B95FF6D82"], rawData: "g"),
+            I(source: "GitLab", type: "account_presence", confidence: 1,
+              metadata: ["location": "Redwood City, CA", "company": "Acme"], rawData: "l"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low")
+        XCTAssertEqual(profile.locations.count, 1, "\(profile.locations)")
+        XCTAssertEqual(profile.organizations, ["Acme"], "a key ID is not an employer")
+        XCTAssertNotEqual(IdentitySynthesizer.canonicalPlace("Paris, France"), IdentitySynthesizer.canonicalPlace("Paris, TX"))
+    }
+
     func testHoleheDetailIsNotPartOfTheSiteName() {
         let output = """
         [+] Email used, [-] Email not used, [x] Rate limit

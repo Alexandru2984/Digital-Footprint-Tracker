@@ -121,8 +121,13 @@ enum IdentitySynthesizer {
                 nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence)) * weight
                 nameForms[key, default: [:]][display, default: 0] += 1
             }
-            if weight >= 0.5, let l = nonEmpty(m["location"]) { record(collapseWhitespace(l), into: &locationForms) }
-            if weight >= 0.5, let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]) { record(collapseWhitespace(o), into: &orgForms) }
+            if weight >= 0.5, let l = nonEmpty(m["location"]) {
+                let display = collapseWhitespace(l)
+                record(display, key: canonicalPlace(display), into: &locationForms)
+            }
+            if weight >= 0.5, let o = nonEmpty(m["company"]) ?? nonEmpty(m["org"]), !isIdentifierNoise(o) {
+                record(collapseWhitespace(o), into: &orgForms)
+            }
             if let e = nonEmpty(m["email"]), e.contains("@") { emails.insert(e.lowercased()) }
             if let p = nonEmpty(m["phone"]) {
                 let display = collapseWhitespace(p)
@@ -254,6 +259,35 @@ enum IdentitySynthesizer {
     /// merge rule isn't just case-folding (e.g. phone-number formatting).
     private static func record(_ display: String, key: String, into forms: inout [String: [String: Int]]) {
         forms[key, default: [:]][display, default: 0] += 1
+    }
+
+    /// "Redwood City, California" and "Redwood City, CA" are one place: US
+    /// state names fold to their postal codes for the merge key.
+    static func canonicalPlace(_ place: String) -> String {
+        place.lowercased().split(separator: ",").map { part -> String in
+            let trimmed = part.trimmingCharacters(in: .whitespaces)
+            return usStates[trimmed] ?? trimmed
+        }.joined(separator: ", ")
+    }
+
+    private static let usStates: [String: String] = [
+        "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca", "colorado": "co",
+        "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga", "hawaii": "hi", "idaho": "id",
+        "illinois": "il", "indiana": "in", "iowa": "ia", "kansas": "ks", "kentucky": "ky", "louisiana": "la",
+        "maine": "me", "maryland": "md", "massachusetts": "ma", "michigan": "mi", "minnesota": "mn",
+        "mississippi": "ms", "missouri": "mo", "montana": "mt", "nebraska": "ne", "nevada": "nv",
+        "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm", "new york": "ny", "north carolina": "nc",
+        "north dakota": "nd", "ohio": "oh", "oklahoma": "ok", "oregon": "or", "pennsylvania": "pa",
+        "rhode island": "ri", "south carolina": "sc", "south dakota": "sd", "tennessee": "tn", "texas": "tx",
+        "utah": "ut", "vermont": "vt", "virginia": "va", "washington": "wa", "west virginia": "wv",
+        "wisconsin": "wi", "wyoming": "wy", "district of columbia": "dc",
+    ]
+
+    /// A "company" that is a key ID or hash, not an organisation (people put
+    /// their GPG key ID in GitHub's company field).
+    static func isIdentifierNoise(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespaces)
+            .range(of: #"^(0x)?[0-9A-Fa-f]{8,}$"#, options: .regularExpression) != nil
     }
 
     /// Canonicalize a phone number for dedup: keep a leading "+", drop spaces,
