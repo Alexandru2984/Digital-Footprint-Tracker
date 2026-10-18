@@ -4564,6 +4564,32 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testXposedOrNotBreachesLookLikeHIBPs() throws {
+        let body = Data(#"""
+        {"ExposedBreaches":{"breaches_details":[
+          {"breach":"Canva","xposed_date":"2019","xposed_records":137272116,"password_risk":"hardtocrack",
+           "xposed_data":"Email addresses;Names;Passwords"},
+          {"breach":"Dailymotion","xposed_date":"2016","xposed_records":85176234,"password_risk":"plaintext",
+           "xposed_data":"Email addresses;Passwords;Usernames"}]}}
+        """#.utf8)
+        let found = try XCTUnwrap(XposedOrNotPlugin.evaluate(email: "a@b.test", body: body).first)
+        XCTAssertEqual(found.type, "data_breach")
+        XCTAssertEqual(found.metadata?["breaches"], "Canva, Dailymotion", "newest first")
+        XCTAssertEqual(found.metadata?["dataClasses"], "Email addresses, Names, Passwords, Usernames")
+        XCTAssertEqual(found.metadata?["breachDates"], "Canva|2019; Dailymotion|2016")
+        XCTAssertEqual(found.metadata?["weakPasswordBreaches"], "Dailymotion")
+
+        let clean = XposedOrNotPlugin.evaluate(email: "a@b.test", body: Data(#"{"ExposedBreaches":null,"BreachMetrics":null}"#.utf8))
+        XCTAssertEqual(clean.first?.type, "breach_check", "checked and clean is not exposure")
+        XCTAssertTrue(XposedOrNotPlugin.evaluate(email: "a@b.test", body: Data(#"{"Error":"x"}"#.utf8)).isEmpty,
+                      "an unexpected answer says nothing either way")
+        let profile = IdentitySynthesizer.synthesize(
+            from: [IdentitySynthesizer.Input(source: found.source, type: found.type, confidence: 1,
+                                              metadata: found.metadata ?? [:], rawData: found.rawData)],
+            riskScore: 0, riskLevel: "Low")
+        XCTAssertEqual(profile.breaches, ["Canva", "Dailymotion"])
+    }
+
     func testCommunityProfilesDeclareTheOtherAccounts() throws {
         let dev = try XCTUnwrap(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"""
         {"username":"ben","name":"Ben Halpern","twitter_username":"bendhalpern","github_username":"benhalpern",

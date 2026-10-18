@@ -52,6 +52,8 @@ enum PluginCanary {
         Check(plugin: "Codeberg", input: "fnetX", username: "fnetX"),
         Check(plugin: "SSHKeys", input: "fnetX", username: "fnetX"),
         Check(plugin: "DevTo", input: "ben", username: "ben"),
+        // A sample address that sits in hundreds of breach lists.
+        Check(plugin: "XposedOrNot", input: "test@example.com", username: nil),
         Check(plugin: "Lobsters", input: "pushcx", username: "pushcx"),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
