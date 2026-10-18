@@ -14,6 +14,8 @@ struct PastebinPlugin: FootprintPlugin {
     let description = "Pastebin / paste-site content search"
     /// Separate email (HIBP pastes) and username (paste-site search) branches.
     let accepts: Set<TargetShape> = [.email, .username]
+    /// v2: no placeholder finding without a key; a profile is an account.
+    let cacheVersion = 2
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -28,14 +30,10 @@ struct PastebinPlugin: FootprintPlugin {
     // MARK: - Email branch (HIBP paste API)
 
     private func scanEmail(_ email: String, app: Application) async throws -> [PluginResult] {
-        guard let apiKey = try RuntimeSecret.value("HIBP_API_KEY"), !apiKey.isEmpty else {
-            return [PluginResult(
-                source: "PastebinOSINT",
-                type: "paste_exposure",
-                confidenceScore: 0.3,
-                rawData: "Configure the HIBP API credential to enable paste-site email search."
-            )]
-        }
+        // Without the key there is nothing to say. A "configure the key"
+        // notice typed as a paste exposure counted as a breach in the risk
+        // score of every email scanned.
+        guard let apiKey = try RuntimeSecret.value("HIBP_API_KEY"), !apiKey.isEmpty else { return [] }
 
         let encoded = email.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? email
         guard let url = URL(string: "https://haveibeenpwned.com/api/v3/pasteaccount/\(encoded)") else {
@@ -89,9 +87,12 @@ struct PastebinPlugin: FootprintPlugin {
 
         guard let url = URL(string: "https://pastebin.com/u/\(username)") else { return [] }
 
+        // One short try: Pastebin's bot wall makes slow answers the norm, and
+        // retrying them cost every scan close to twenty seconds.
         guard let response = await PluginHTTP.request(
             url,
-            timeout: 10,
+            timeout: 6,
+            maxRetries: 0,
             bodyMode: .prefix(maxBytes: 4_096),
             on: app
         ), response.status == 200 else { return [] }
@@ -102,9 +103,10 @@ struct PastebinPlugin: FootprintPlugin {
               body.lowercased().contains("\(username.lowercased())'s pastes")
         else { return [] }
 
+        // An account on a paste site, not a leak: what it posted is unknown.
         return [PluginResult(
             source: "PastebinOSINT",
-            type: "paste_exposure",
+            type: "account_presence",
             confidenceScore: 0.85,
             rawData: "Pastebin public profile found for \"\(username)\": https://pastebin.com/u/\(username)",
             metadata: ["platform": "pastebin", "username": username, "profileURL": "https://pastebin.com/u/\(username)"]

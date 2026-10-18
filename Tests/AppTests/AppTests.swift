@@ -4564,6 +4564,13 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testPastebinWithoutAKeyAddsNothingToTheRisk() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let results = try await PastebinPlugin().scan(input: "alice@example.com", on: app)
+        XCTAssertTrue(results.isEmpty, "a missing key is not a paste exposure")
+    }
+
     func testTheDossierSortsAccountsByHowSureWeAre() throws {
         typealias I = IdentitySynthesizer.Input
         let inputs = [
