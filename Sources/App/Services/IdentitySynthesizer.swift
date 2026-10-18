@@ -65,6 +65,8 @@ enum IdentitySynthesizer {
         /// How likely each identifier is to be the target's, strongest first.
         let attributions: [IdentityLinks.Attribution]
         let resultCount: Int
+        /// The profile at a glance; see `Dossier`.
+        var dossier: Dossier.Summary = .empty
     }
 
     private static let accountTypes: Set<String> = [
@@ -85,6 +87,8 @@ enum IdentitySynthesizer {
         var accountsByKey: [String: Account] = [:]
         var breaches = Set<String>()
         var dataClasses = Set<String>()
+        var breachTotal = 0
+        var breachYears = Set<String>()
         var ips = Set<String>()
         var svcPorts: [String: Set<String>] = [:]
         var svcCves: [String: Set<String>] = [:]
@@ -164,6 +168,13 @@ enum IdentitySynthesizer {
                 // Categories of data leaked (passwords, phone numbers, …) — what the
                 // breaches actually exposed, not just their names.
                 for dc in csv(m["dataClasses"]) { dataClasses.insert(dc) }
+                // Sources overlap, so the largest count, not their sum.
+                breachTotal = max(breachTotal, Int(m["breachCount"] ?? "") ?? 0)
+                for entry in (m["breachDates"] ?? "").split(separator: ";") {
+                    if let date = entry.split(separator: "|").last?.trimmingCharacters(in: .whitespaces), date.count >= 4 {
+                        breachYears.insert(String(date.prefix(4)))
+                    }
+                }
             }
         }
 
@@ -208,27 +219,39 @@ enum IdentitySynthesizer {
             )
         }
 
+        let locations = resolveForms(locationForms)
+        let organizations = resolveForms(orgForms)
+        let phones = resolveForms(phoneForms)
+        let accounts = accountsByKey.values.sorted { $0.confidence > $1.confidence }
+        let timeline = buildTimeline(from: inputs)
+        let dossier = Dossier.summarize(.init(
+            name: likelyName, attributions: attributed ? attributions : [], accounts: accounts,
+            emails: emails.sorted(), phones: phones, locations: locations, organizations: organizations,
+            breaches: breaches.sorted(), breachTotal: breachTotal, dataClasses: dataClasses.sorted(),
+            breachYears: breachYears.sorted(), timelineDates: timeline.map(\.date)))
+
         return IdentityProfile(
             likelyName: likelyName,
             names: resolvedNames,
-            locations: resolveForms(locationForms),
-            organizations: resolveForms(orgForms),
+            locations: locations,
+            organizations: organizations,
             emails: emails.sorted(),
-            phones: resolveForms(phoneForms),
+            phones: phones,
             handles: handles,
-            confirmedAccounts: accountsByKey.values.sorted { $0.confidence > $1.confidence },
+            confirmedAccounts: accounts,
             breaches: breaches.sorted(),
             exposedDataClasses: dataClasses.sorted(),
             exposedIPs: ips.sorted(),
             exposedServices: exposedServices,
             vulnerabilities: allCves.sorted(),
-            timeline: buildTimeline(from: inputs),
+            timeline: timeline,
             riskScore: riskScore,
             riskLevel: riskLevel,
             riskFactors: riskFactors,
             links: links,
             attributions: attributions,
-            resultCount: inputs.count
+            resultCount: inputs.count,
+            dossier: dossier
         )
     }
 

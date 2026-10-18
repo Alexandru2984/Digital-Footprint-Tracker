@@ -11,6 +11,31 @@ import Foundation
 /// so it unit-tests offline.
 enum ExecutiveReport {
 
+    /// The dossier lines: who, which accounts are theirs, what leaked, when.
+    static func glance(_ dossier: Dossier.Summary) -> String {
+        var out = "## At a glance\n\n**\(line(dossier.headline))**\n\n"
+        func entries(_ list: [Dossier.Entry]) -> String {
+            list.prefix(25).map { "\(line($0.label)) (\($0.score)%)" }.joined(separator: ", ")
+        }
+        if !dossier.confirmed.isEmpty { out += "- **Confirmed accounts (80%+):** \(entries(dossier.confirmed))\n" }
+        if !dossier.probable.isEmpty { out += "- **Probable accounts (50–79%):** \(entries(dossier.probable))\n" }
+        if dossier.unconfirmedCount > 0 {
+            out += "- **Unconfirmed:** \(dossier.unconfirmedCount) more found by name alone\n"
+        }
+        if !dossier.sites.isEmpty { out += "- **Sites and domains:** \(entries(dossier.sites))\n" }
+        if !dossier.emails.isEmpty { out += "- **Emails:** \(joined(dossier.emails))\n" }
+        if !dossier.phones.isEmpty { out += "- **Phones:** \(joined(dossier.phones))\n" }
+        if !dossier.locations.isEmpty { out += "- **Locations:** \(joined(dossier.locations))\n" }
+        if !dossier.organizations.isEmpty { out += "- **Organisations:** \(joined(dossier.organizations))\n" }
+        if dossier.breachCount > 0 {
+            var leak = "\(dossier.breachCount) breach\(dossier.breachCount == 1 ? "" : "es")"
+            if let latest = dossier.latestBreach { leak += ", latest \(latest)" }
+            if !dossier.sensitiveData.isEmpty { leak += "; leaked: \(joined(dossier.sensitiveData))" }
+            out += "- **Exposure:** \(line(leak))\n"
+        }
+        return out + "\n"
+    }
+
     static func markdown(input: String,
                          profile: IdentitySynthesizer.IdentityProfile,
                          surface: ExposureDiff.Snapshot,
@@ -27,6 +52,7 @@ enum ExecutiveReport {
             out += "> **\(notice)**\n\n"
         }
 
+        out += glance(profile.dossier)
         out += "## Executive summary\n\n\(summary(input: input, profile: profile, surface: surface))\n\n"
 
         // ── Identity ──────────────────────────────────────────────────────────────
@@ -49,7 +75,7 @@ enum ExecutiveReport {
                 out += "\n"
             }
             if !profile.confirmedAccounts.isEmpty {
-                out += "### Confirmed accounts\n\n| Platform | Reference | Confidence |\n|---|---|---|\n"
+                out += "### Accounts found\n\n| Platform | Reference | Confidence |\n|---|---|---|\n"
                 for a in profile.confirmedAccounts.prefix(40) {
                     out += "| \(cell(a.platform)) | \(cell(a.reference)) | \(pct(a.confidence)) |\n"
                 }

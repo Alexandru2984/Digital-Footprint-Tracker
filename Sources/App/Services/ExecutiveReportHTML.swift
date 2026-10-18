@@ -34,6 +34,9 @@ enum ExecutiveReportHTML {
             b += "<p class=\"notice\" role=\"note\">\(notice)</p>\n"
         }
 
+        // At a glance.
+        b += glance(profile.dossier)
+
         // Executive summary.
         b += "<section><h2>Executive summary</h2><p>\(summary(input: input, profile: profile, surface: surface))</p></section>\n"
 
@@ -54,7 +57,7 @@ enum ExecutiveReportHTML {
                 })
             }
             if !profile.confirmedAccounts.isEmpty {
-                s += "<h3>Confirmed accounts</h3>"
+                s += "<h3>Accounts found</h3>"
                 s += table(["Platform", "Reference", "Confidence"], profile.confirmedAccounts.prefix(40).map {
                     [$0.platform, $0.reference, pct($0.confidence)]
                 })
@@ -129,6 +132,29 @@ enum ExecutiveReportHTML {
     }
 
     // MARK: - Markup helpers
+
+    /// The dossier lines; every value escaped through `kv`.
+    static func glance(_ dossier: Dossier.Summary) -> String {
+        func entries(_ list: [Dossier.Entry]) -> String {
+            list.prefix(25).map { "\($0.label) (\($0.score)%)" }.joined(separator: ", ")
+        }
+        var s = "<p><strong>\(esc(dossier.headline))</strong></p>"
+        if !dossier.confirmed.isEmpty { s += kv("Confirmed accounts (80%+)", entries(dossier.confirmed)) }
+        if !dossier.probable.isEmpty { s += kv("Probable accounts (50–79%)", entries(dossier.probable)) }
+        if dossier.unconfirmedCount > 0 { s += kv("Unconfirmed", "\(dossier.unconfirmedCount) more found by name alone") }
+        if !dossier.sites.isEmpty { s += kv("Sites and domains", entries(dossier.sites)) }
+        if !dossier.emails.isEmpty { s += kv("Emails", dossier.emails.joined(separator: ", ")) }
+        if !dossier.phones.isEmpty { s += kv("Phones", dossier.phones.joined(separator: ", ")) }
+        if !dossier.locations.isEmpty { s += kv("Locations", dossier.locations.joined(separator: ", ")) }
+        if !dossier.organizations.isEmpty { s += kv("Organisations", dossier.organizations.joined(separator: ", ")) }
+        if dossier.breachCount > 0 {
+            var leak = "\(dossier.breachCount) breach\(dossier.breachCount == 1 ? "" : "es")"
+            if let latest = dossier.latestBreach { leak += ", latest \(latest)" }
+            if !dossier.sensitiveData.isEmpty { leak += "; leaked: " + dossier.sensitiveData.joined(separator: ", ") }
+            s += kv("Exposure", leak)
+        }
+        return "<section><h2>At a glance</h2>\(s)</section>\n"
+    }
 
     private static func kv(_ label: String, _ value: String) -> String {
         "<div class=\"kv\"><b>\(esc(label)):</b> \(esc(value))</div>"

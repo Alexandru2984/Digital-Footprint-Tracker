@@ -4564,6 +4564,47 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testTheDossierSortsAccountsByHowSureWeAre() throws {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+              metadata: ["platform": "github", "username": "dtolnay", "name": "David Tolnay", "matchKind": "verified",
+                         "blog": "https://blog.example", "queriedAs": "dtolnay@gmail.com", "via": "input"], rawData: "g"),
+            I(source: "Codeberg", type: "account_presence", confidence: 0.75,
+              metadata: ["platform": "codeberg", "username": "dtolnay", "queriedAs": "dtolnay", "via": "emailLocalPart"],
+              rawData: "c"),
+            I(source: "XposedOrNot", type: "data_breach", confidence: 1.0,
+              metadata: ["breachCount": "215", "breaches": "Canva, Dailymotion",
+                         "dataClasses": "Email addresses, Passwords, Credit card details",
+                         "breachDates": "Canva|2019; Dailymotion|2016"], rawData: "b"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 90, riskLevel: "Critical",
+                                                     target: "dtolnay@gmail.com")
+        let dossier = profile.dossier
+        XCTAssertEqual(dossier.confirmed.map(\.label), ["github: dtolnay"])
+        XCTAssertEqual(dossier.unconfirmedCount, 1, "Codeberg by name only")
+        XCTAssertEqual(dossier.sites.map(\.label), ["web: blog.example"])
+        XCTAssertEqual(dossier.breachCount, 215, "the source's count, not the 2 names it listed")
+        XCTAssertEqual(dossier.sensitiveData, ["Credit card details", "Passwords"])
+        XCTAssertEqual(dossier.latestBreach, "2019")
+        XCTAssertTrue(dossier.headline.hasPrefix("David Tolnay — 1 confirmed account; in 215 breaches (credit card details, passwords)"),
+                      dossier.headline)
+
+        let surface = ExposureDiff.snapshot(from: inputs)
+        let md = ExecutiveReport.markdown(input: "dtolnay@gmail.com", profile: profile, surface: surface,
+                                          generatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(md.contains("## At a glance\n\n**David Tolnay"), md)
+        XCTAssertTrue(md.contains("- **Confirmed accounts (80%+):** github: dtolnay (98%)"), md)
+        XCTAssertLessThan(try XCTUnwrap(md.range(of: "## At a glance")).lowerBound,
+                          try XCTUnwrap(md.range(of: "## Executive summary")).lowerBound, "the dossier comes first")
+
+        let hostile = Dossier.summarize(.init(name: "<script>x</script>", attributions: [], accounts: [], emails: [],
+                                               phones: [], locations: [], organizations: [], breaches: [], breachTotal: 0,
+                                               dataClasses: [], breachYears: [], timelineDates: []))
+        let html = ExecutiveReportHTML.glance(hostile)
+        XCTAssertFalse(html.contains("<script>"), html)
+    }
+
     func testABreachReportCountsForWhatItHolds() {
         let now = ISO8601DateFormatter().date(from: "2026-10-18T00:00:00Z")!
         let one = RiskScorer.evidence(type: "data_breach", confidence: 1,
@@ -6906,7 +6947,7 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(md.contains("| a@b.com | github: x\\|&lt;b&gt; | verified |"), md)
         let html = ExecutiveReportHTML.html(input: "a@b.com", profile: profile, surface: surface, generatedAt: Date(timeIntervalSince1970: 0))
         XCTAssertTrue(html.contains("<td>github: x|&lt;b&gt;</td><td>verified</td><td>why &lt;i&gt; (GitHub)</td>"), html)
-        XCTAssertFalse(html.contains("<b>"))
+        XCTAssertFalse(html.contains("x|<b>"), "the account name is never markup")
     }
 
     func testEveryLookedUpNameIsConnectedToHowTheScanReachedIt() {
