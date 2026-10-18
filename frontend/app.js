@@ -563,6 +563,52 @@
                 panel.appendChild(why);
             }
 
+            // The dossier at a glance: who, which accounts are theirs by how
+            // sure the links make us, what leaked. Everything as text.
+            const d = p.dossier;
+            if (d && d.headline) {
+                const box = document.createElement('div');
+                box.className = 'js-dossier';
+                box.style.cssText = 'background:#0b1220;border:1px solid #1e293b;border-radius:10px;padding:12px;margin-bottom:12px;';
+                const headline = document.createElement('div');
+                headline.style.cssText = 'font-weight:700;color:#e2e8f0;margin-bottom:6px;';
+                headline.textContent = String(d.headline);
+                box.appendChild(headline);
+                const tier = (label, entries, color) => {
+                    if (!Array.isArray(entries) || !entries.length) return;
+                    const line = document.createElement('div');
+                    line.className = 'js-dossier-tier';
+                    line.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px;';
+                    const l = document.createElement('span'); l.style.cssText = 'color:#64748b;min-width:120px;'; l.textContent = label;
+                    line.appendChild(l);
+                    entries.slice(0, 25).forEach(e => {
+                        const c = document.createElement('span');
+                        c.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;border:1px solid ' + color + '66;color:' + color + ';background:' + color + '1a;';
+                        c.textContent = String(e.label ?? '').slice(0, 80) + ' · ' + (Number(e.score) || 0) + '%';
+                        line.appendChild(c);
+                    });
+                    box.appendChild(line);
+                };
+                tier('Confirmed (80%+)', d.confirmed, '#4ade80');
+                tier('Probable (50–79%)', d.probable, '#facc15');
+                tier('Sites and domains', d.sites, '#7dd3fc');
+                const notes = [];
+                if (Number(d.unconfirmedCount) > 0) notes.push(Number(d.unconfirmedCount) + ' more found by name alone (unconfirmed)');
+                if (Number(d.breachCount) > 0) {
+                    let leak = Number(d.breachCount) + ' breach' + (Number(d.breachCount) === 1 ? '' : 'es');
+                    if (d.latestBreach) leak += ', latest ' + String(d.latestBreach);
+                    if (Array.isArray(d.sensitiveData) && d.sensitiveData.length) leak += '; leaked: ' + d.sensitiveData.slice(0, 6).map(String).join(', ');
+                    notes.push(leak);
+                }
+                notes.forEach(text => {
+                    const n = document.createElement('div');
+                    n.style.cssText = 'margin-top:6px;font-size:12px;color:#94a3b8;';
+                    n.textContent = text;
+                    box.appendChild(n);
+                });
+                panel.appendChild(box);
+            }
+
             const grid = document.createElement('div');
             grid.style.cssText = 'display:grid;grid-template-columns:1fr;gap:6px 24px;font-size:14px;';
             if (window.matchMedia && window.matchMedia('(min-width:768px)').matches) grid.style.gridTemplateColumns = '1fr 1fr';

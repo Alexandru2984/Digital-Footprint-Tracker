@@ -225,6 +225,13 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
                 { from: 'alice@example.com', to: 'github: alice', kind: 'verified', source: 'GitHub', reason: 'verified email' },
                 { from: malicious, to: 'steam: alice', kind: 'inferred', source: malicious, reason: malicious },
             ],
+            dossier: {
+                headline: `${malicious} — 1 confirmed account; in 215 breaches`,
+                confirmed: [{ label: 'github: alice', score: 98 }],
+                probable: [{ label: malicious, score: 60 }],
+                unconfirmedCount: 4, sites: [], breachCount: 215, latestBreach: '2026',
+                sensitiveData: ['Passwords', malicious],
+            },
         });
     }, fixture);
 
@@ -237,6 +244,12 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
     await expect(connections).toContainText(`${fixture.malicious} → steam: alice inferred`);
     await expect(panel.locator('.js-risk-factors')).toHaveText(
         `Risk made of: ${fixture.malicious} 20 (1 finding) · Online accounts 5 (3 findings)`);
+    const dossier = panel.locator('.js-dossier');
+    await expect(dossier).toContainText(`${fixture.malicious} — 1 confirmed account; in 215 breaches`);
+    await expect(dossier.locator('.js-dossier-tier').first()).toContainText('Confirmed (80%+)github: alice · 98%');
+    await expect(dossier).toContainText(`${fixture.malicious} · 60%`);
+    await expect(dossier).toContainText('4 more found by name alone (unconfirmed)');
+    await expect(dossier).toContainText(`215 breaches, latest 2026; leaked: Passwords, ${fixture.malicious}`);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 
