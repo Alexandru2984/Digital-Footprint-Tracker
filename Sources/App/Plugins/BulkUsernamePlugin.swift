@@ -65,12 +65,46 @@ struct SherlockData: Decodable {
     }
 }
 
+extension SherlockSite {
+    /// Whether `name` fits the site's own username rule, when it has one.
+    func accepts(_ name: String) -> Bool {
+        guard let rule = regexCheck, !rule.isEmpty else { return true }
+        return name.range(of: rule, options: .regularExpression) != nil
+    }
+}
+
+/// Which Sherlock sites can tell a real account from a missing one, learned by
+/// asking them about a name nobody has. Process-local; a day's verdict.
+actor SherlockReliability {
+    static let shared = SherlockReliability()
+    static let validity: TimeInterval = 86_400
+    private var verdicts: [String: (reliable: Bool, at: Date)] = [:]
+
+    func verdict(for site: String, now: Date = Date()) -> Bool? {
+        guard let entry = verdicts[site], now.timeIntervalSince(entry.at) < Self.validity else { return nil }
+        return entry.reliable
+    }
+
+    func record(_ site: String, reliable: Bool, at: Date = Date()) {
+        verdicts[site] = (reliable, at)
+    }
+
+    func reset() { verdicts.removeAll() }
+
+    /// Twelve random lowercase letters: valid almost everywhere, owned by no one.
+    static func controlName() -> String {
+        String((0..<12).map { _ in "abcdefghijklmnopqrstuvwxyz".randomElement()! })
+    }
+}
+
 struct BulkUsernamePlugin: FootprintPlugin {
     let name = "BulkOSINT"
     let description = "Username presence across 480+ platforms (Sherlock)"
     /// 480 handle probes — never worth firing at a domain or an IP.
     let accepts: Set<TargetShape> = [.username]
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
+    /// v2: hits from sites that also "find" a name nobody has are dropped.
+    let cacheVersion = 2
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
@@ -105,7 +139,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
         // window of in-flight requests (no head-of-line blocking on the slowest
         // site in a chunk) and stops starting new ones once the budget elapses,
         // returning whatever it has found so far.
-        let deadline = Date().addingTimeInterval(85)
+        let deadline = Date().addingTimeInterval(65)
         let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         var results: [PluginResult] = []
         var checked = 0
@@ -131,9 +165,50 @@ struct BulkUsernamePlugin: FootprintPlugin {
         }
 
         if checked < validSites.count {
-            pluginLogger.info("BulkUsername: checked \(checked)/\(validSites.count) sites before the 85s budget elapsed.")
+            pluginLogger.info("BulkUsername: checked \(checked)/\(validSites.count) sites before the 65s budget elapsed.")
         }
-        return results
+        return await Self.dropUnreliable(results, sites: sites, app: app, userAgent: userAgent)
+    }
+
+    /// Asks every site that reported a hit about a name nobody has. A site
+    /// that "finds" that one too answers yes to anything (a login wall, a
+    /// catch-all page served with 200), so its hit says nothing and is
+    /// dropped. Verdicts are kept for a day, so this costs a few dozen
+    /// requests on the first scan and almost none after.
+    static func dropUnreliable(
+        _ hits: [PluginResult], sites: [String: SherlockSite], app: Application, userAgent: String
+    ) async -> [PluginResult] {
+        let control = SherlockReliability.controlName()
+        var unchecked: [(String, SherlockSite)] = []
+        for hit in hits {
+            guard let site = sites[hit.source] else { continue }
+            if await SherlockReliability.shared.verdict(for: hit.source) == nil, site.accepts(control) {
+                unchecked.append((hit.source, site))
+            }
+        }
+        let budget = Date().addingTimeInterval(20)
+        await withTaskGroup(of: (String, Bool)?.self) { group in
+            var iterator = unchecked.makeIterator()
+            var running = 0
+            while running < 20, let (name, site) = iterator.next() {
+                group.addTask { await (name, checkSite(name, site, username: control, app: app, userAgent: userAgent) == nil) }
+                running += 1
+            }
+            for await outcome in group {
+                if let (name, reliable) = outcome { await SherlockReliability.shared.record(name, reliable: reliable) }
+                if Date() < budget, let (name, site) = iterator.next() {
+                    group.addTask { await (name, checkSite(name, site, username: control, app: app, userAgent: userAgent) == nil) }
+                }
+            }
+        }
+        var kept: [PluginResult] = []
+        for hit in hits where await SherlockReliability.shared.verdict(for: hit.source) != false {
+            kept.append(hit)
+        }
+        if kept.count < hits.count {
+            pluginLogger.info("BulkUsername: dropped \(hits.count - kept.count) hit(s) from sites that also 'found' a name nobody has.")
+        }
+        return kept
     }
 
     /// Checks a single Sherlock site for the username. Returns a hit or nil.

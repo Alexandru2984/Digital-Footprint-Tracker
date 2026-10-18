@@ -271,6 +271,13 @@ enum IdentityLinks {
         }
     }
 
+    /// Whether `host` is, or sits under, one of the shared platforms.
+    static func isOnSharedHost(_ host: String) -> Bool {
+        let lower = host.lowercased()
+        guard lower.contains("."), !lower.contains("@") else { return false }
+        return sharedHosts.contains { lower == $0 || lower.hasSuffix(".\($0)") }
+    }
+
     /// The domain a profile's website lives on, without `www.`; nil when it
     /// is not a domain or sits on a shared platform.
     static func websiteDomain(_ raw: String?) -> String? {

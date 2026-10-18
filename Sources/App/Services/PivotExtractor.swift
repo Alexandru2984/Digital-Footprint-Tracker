@@ -41,7 +41,38 @@ enum PivotExtractor {
     /// already in `alreadyScanned` (the first-round candidate set, lowercased).
     /// Only high-confidence findings contribute, and stronger anchors win the
     /// limited budget: emails first (a hard identity link), then by confidence.
-    static func candidates(from results: [PluginResult], alreadyScanned: Set<String>) -> [String] {
+    /// Attribution an account needs before the accounts and sites it points
+    /// to are followed, when the scan's links are known (`context`).
+    static let minOwnerAttribution = 80
+
+    /// - Parameters:
+    ///   - context: every finding of the scan so far, with provenance; when
+    ///     given, an account's links are followed if the account is likely
+    ///     the target's by its strongest chain, not only by its own match.
+    ///   - target: the scan's input, the origin of that chain.
+    static func candidates(
+        from results: [PluginResult], alreadyScanned: Set<String>,
+        context: [PluginResult] = [], target: String? = nil
+    ) -> [String] {
+        let attribution: [String: Int]
+        if let target, !context.isEmpty {
+            let inputs = context.map {
+                IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                          metadata: $0.metadata ?? [:], rawData: $0.rawData)
+            }
+            let links = IdentityLinks.build(from: inputs, target: target.lowercased())
+            attribution = Dictionary(IdentityLinks.attribute(links, target: target).map { ($0.node, $0.score) },
+                                     uniquingKeysWith: max)
+        } else {
+            attribution = [:]
+        }
+        func ownedByTarget(_ meta: [String: String], type: String) -> Bool {
+            if let kind = meta["matchKind"].flatMap(IdentityLinks.Kind.init(rawValue:)), kind >= .declared { return true }
+            let from = (meta["queriedAs"] ?? target ?? "").lowercased()
+            guard let node = IdentityLinks.node(for: meta, from: from, type: type) else { return false }
+            return (attribution[node] ?? 0) >= minOwnerAttribution
+        }
+
         var scored: [(value: String, priority: Double)] = []
         var seen = alreadyScanned
 
@@ -61,6 +92,10 @@ enum PivotExtractor {
                   isScannable(value),
                   let validated = try? InputValidator.validateScanInput(value),
                   validated == value,
+                  // A handle that is a name under a shared platform
+                  // (`ana.bsky.social`) reads as a domain, but scanning it
+                  // describes the platform's servers, not the person.
+                  !IdentityLinks.isOnSharedHost(value),
                   seen.insert(value).inserted
             else { return }
             scored.append((value, priority))
@@ -91,8 +126,7 @@ enum PivotExtractor {
             // would send the scan into someone else's life.
             // A homepage's links are left out: on an employer's site (reached
             // through the address's domain) they are the company's accounts.
-            guard let owner = meta["matchKind"].flatMap(IdentityLinks.Kind.init(rawValue:)), owner >= .declared,
-                  result.type != "site_identity" else { continue }
+            guard result.type != "site_identity", ownedByTarget(meta, type: result.type) else { continue }
             for value in IdentityLinks.pivotableLinks(meta) {
                 consider(value, priority: (meta["linkKind"] == "verified" ? 2.0 : 1.0) + result.confidenceScore)
             }

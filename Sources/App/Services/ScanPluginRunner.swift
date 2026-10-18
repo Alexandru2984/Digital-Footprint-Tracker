@@ -22,10 +22,15 @@ enum ScanPluginRunner {
     /// - Parameter pivotDepth: how many transitive pivot rounds to run after the
     ///   main round (default 1). Authenticated interactive scans pass 2 for a
     ///   deeper chain; anonymous and scheduled scans keep 1 to bound cost.
-    static func run(scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application, useCache: Bool = true, pivotDepth: Int = 1) async {
+    /// - Parameter allowInTests: run even in the test environment; only the
+    ///   opt-in live end-to-end test passes it.
+    static func run(
+        scanID: UUID, input: String, plugins: [any FootprintPlugin], app: Application,
+        useCache: Bool = true, pivotDepth: Int = 1, allowInTests: Bool = false
+    ) async {
         // In the test environment there are no external services to reach, and
         // background HTTP calls can race app shutdown. Skip execution entirely.
-        guard app.environment != .testing else { return }
+        guard app.environment != .testing || allowInTests else { return }
 
         guard await ScanExecutionGate.shared.acquire() else {
             app.logger.warning("Scan \(scanID) rejected: execution queue is full")
@@ -69,12 +74,14 @@ enum ScanPluginRunner {
         // `pivotDepth` rounds run at most.
         var alreadyScanned = Set(candidates.map { $0.value.lowercased() })
         var frontier = round1.collected
+        var everything = round1.collected
         let lightPlugins = plugins.filter { !$0.heavy }
         var pivotSuccess = 0
         var unavailable = round1.skipped
         var levelsLeft = max(0, pivotDepth)
         while levelsLeft > 0 {
-            let pivots = PivotExtractor.candidates(from: frontier, alreadyScanned: alreadyScanned)
+            let pivots = PivotExtractor.candidates(from: frontier, alreadyScanned: alreadyScanned,
+                                                   context: everything, target: input)
             guard !pivots.isEmpty else { break }
             alreadyScanned.formUnion(pivots)
             let pivotCandidates = pivots.map { TargetDeriver.Candidate(value: $0, origin: .pivoted) }
@@ -86,6 +93,7 @@ enum ScanPluginRunner {
             pivotSuccess += round.success
             unavailable.formUnion(round.skipped)
             frontier = round.collected
+            everything += round.collected
             levelsLeft -= 1
             app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies); \(levelsLeft) level(s) left")
         }
@@ -319,7 +327,13 @@ enum ScanPluginRunner {
                                     raw = bounded
                                 }
                                 for pr in raw where try await persist(pr, candidate: candidate, scanID: scanID, dedup: dedup, on: db) {
-                                    produced.append(pr)
+                                    // With the provenance the stored row carries, so
+                                    // pivot mining can weigh whose account it is.
+                                    produced.append(PluginResult(
+                                        source: pr.source, type: pr.type, confidenceScore: pr.confidenceScore,
+                                        rawData: pr.rawData,
+                                        metadata: (pr.metadata ?? [:]).merging(
+                                            ["queriedAs": String(cInput.prefix(200)), "via": candidate.origin.key]) { $1 }))
                                 }
                             }
                             return .done(name: pName, succeeded: true, results: produced, skipped: skippedLive)

@@ -4564,6 +4564,55 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testLinksOfAnAccountTiedToTheTargetByItsChainAreFollowed() {
+        let github = PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 1.0, rawData: "g",
+                                  metadata: ["platform": "github", "username": "dtolnay", "matchKind": "verified",
+                                             "queriedAs": "dtolnay@gmail.com", "via": "input"])
+        // Found by its name alone, but it proves the GitHub account above.
+        let keybase = PluginResult(source: "Keybase", type: "identity_proof", confidenceScore: 0.95, rawData: "k",
+                                   metadata: ["platform": "keybase", "username": "dtolnay",
+                                              "linked": "github:dtolnay,dns:rewrite.in.rs", "linkKind": "verified",
+                                              "queriedAs": "dtolnay", "via": "emailLocalPart"])
+        let scanned: Set<String> = ["dtolnay@gmail.com", "dtolnay"]
+        XCTAssertFalse(PivotExtractor.candidates(from: [keybase], alreadyScanned: scanned).contains("rewrite.in.rs"),
+                       "on its own match, a name-only account is not followed")
+        XCTAssertTrue(PivotExtractor.candidates(from: [keybase], alreadyScanned: scanned,
+                                                context: [github, keybase], target: "dtolnay@gmail.com")
+                        .contains("rewrite.in.rs"),
+                      "through GitHub's verified email the Keybase account is the target's (96%): follow its domain")
+
+        let stranger = PluginResult(source: "Codeberg", type: "account_presence", confidenceScore: 1.0, rawData: "c",
+                                    metadata: ["platform": "codeberg", "username": "dtolnay", "blog": "stranger.example",
+                                               "queriedAs": "dtolnay", "via": "emailLocalPart"])
+        XCTAssertFalse(PivotExtractor.candidates(from: [stranger], alreadyScanned: scanned,
+                                                 context: [github, stranger], target: "dtolnay@gmail.com")
+                        .contains("stranger.example"), "a same-name account (38%) is still not followed")
+    }
+
+    func testAHandleUnderASharedPlatformIsNotScannedAsADomain() {
+        let gravatar = PluginResult(source: "Gravatar:bluesky", type: "social_media", confidenceScore: 0.95, rawData: "g",
+                                    metadata: ["platform": "bluesky", "username": "dtolnay.bsky.social", "matchKind": "verified"])
+        XCTAssertTrue(PivotExtractor.candidates(from: [gravatar], alreadyScanned: []).isEmpty,
+                      "a Bluesky handle under bsky.social would only scan Bluesky's DNS")
+        XCTAssertTrue(IdentityLinks.isOnSharedHost("ana.github.io"))
+        XCTAssertFalse(IdentityLinks.isOnSharedHost("rewrite.in.rs"))
+        XCTAssertFalse(IdentityLinks.isOnSharedHost("a@bsky.social"))
+    }
+
+    func testSherlockDropsHitsFromSitesThatFindAnyone() async {
+        await SherlockReliability.shared.reset()
+        await SherlockReliability.shared.record("CatchAll", reliable: false)
+        await SherlockReliability.shared.record("Honest", reliable: true)
+        let verdictCatchAll = await SherlockReliability.shared.verdict(for: "CatchAll")
+        XCTAssertEqual(verdictCatchAll, false)
+        let stale = await SherlockReliability.shared.verdict(for: "Honest", now: Date().addingTimeInterval(90_000))
+        XCTAssertNil(stale, "a day's verdict, then asked again")
+        let control = SherlockReliability.controlName()
+        XCTAssertEqual(control.count, 12)
+        XCTAssertNotEqual(control, SherlockReliability.controlName())
+        await SherlockReliability.shared.reset()
+    }
+
     func testXposedOrNotBreachesLookLikeHIBPs() throws {
         let body = Data(#"""
         {"ExposedBreaches":{"breaches_details":[
@@ -6688,6 +6737,53 @@ final class AppTests: XCTestCase {
     /// Live: runs every canary against the real sources. Off by default (no
     /// network in the suite); `LIVE_PLUGIN_CANARY=1 swift test --filter
     /// LiveCanaries` checks the list from the production host.
+    /// A whole scan against the real sources, every plugin included (the
+    /// heavy ones too), through the real runner and pivot rounds:
+    /// `LIVE_E2E=1 LIVE_E2E_INPUT=<target>` prints what it found, how long
+    /// each part took and which sources failed, and asserts it finished.
+    func testLiveEndToEndScan() async throws {
+        let env = ProcessInfo.processInfo.environment
+        try XCTSkipUnless(env["LIVE_E2E"] == "1")
+        let input = env["LIVE_E2E_INPUT"] ?? "dtolnay@gmail.com"
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: input)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        await PluginHealth.shared.reset()
+
+        let started = Date()
+        await ScanPluginRunner.run(scanID: scanID, input: input, plugins: ScanController.defaultPlugins, app: app,
+                                   useCache: false, pivotDepth: 2, allowInTests: true)
+        let elapsed = Date().timeIntervalSince(started)
+
+        let finished = try await Scan.find(scanID, on: app.db)
+        let results = try await App.Result.query(on: app.db).filter(\.$scan.$id == scanID).all()
+        print("E2E input=\(input) status=\(finished?.status.rawValue ?? "?") results=\(results.count) seconds=\(Int(elapsed))")
+        for (source, count) in Dictionary(grouping: results, by: \.source).mapValues(\.count).sorted(by: { $0.key < $1.key }) {
+            print("E2E source \(source): \(count)")
+        }
+        let reports = await PluginHealth.shared.reports(for: ScanController.defaultPlugins.map(\.name))
+        for report in reports where report.runs > 0 {
+            print("E2E plugin \(report.plugin): \(report.status) avg=\(report.averageMilliseconds ?? 0)ms"
+                  + (report.lastFailure.map { " failure=\($0.prefix(120))" } ?? ""))
+        }
+        let inputs = try results.map {
+            IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                      metadata: try $0.metadataObject ?? [:], rawData: try $0.rawData)
+        }
+        let scored = RiskScorer.compute(raw: inputs.map { (confidence: $0.confidence, type: $0.type) })
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: scored.value, riskLevel: scored.level.rawValue,
+                                                     target: input)
+        print("E2E risk \(scored.value) \(scored.level.rawValue) \(scored.factors.map { "\($0.category)=\($0.points)/\($0.findings)" }) name=\(profile.likelyName ?? "-") accounts=\(profile.confirmedAccounts.count)")
+        for attribution in profile.attributions.prefix(25) { print("E2E attr \(attribution.score) \(attribution.node)") }
+        for result in inputs where ["VirusTotal", "Instagram", "Venmo", "PyPi"].contains(result.source) {
+            print("E2E sample \(result.source) \(result.type) \(result.confidence) \(result.rawData.prefix(160))")
+        }
+        XCTAssertNotEqual(finished?.status, .pending, "the scan must finish")
+        XCTAssertLessThan(elapsed, 400, "rounds are bounded: 120 s, then up to two 45 s pivot rounds")
+    }
+
     func testLiveCanariesFindTheirAccounts() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["LIVE_PLUGIN_CANARY"] == "1")
         let app = try await makeApp()
