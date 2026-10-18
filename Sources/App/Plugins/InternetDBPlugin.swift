@@ -19,6 +19,8 @@ struct InternetDBPlugin: FootprintPlugin {
     /// Resolves a host, then looks up each IP.
     let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 21_600 // 6 h
+    /// v2: a host on web ports only is a website, not an exposed service.
+    let cacheVersion = 2
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#
 
@@ -66,6 +68,8 @@ struct InternetDBPlugin: FootprintPlugin {
 
     /// Pure parser of an InternetDB JSON record into findings. Returns [] when the
     /// host has nothing of interest. Unit-testable without a network.
+    static let webPorts: Set<Int> = [80, 443, 8080, 8443]
+
     static func parse(_ data: Data, ip: String) -> [PluginResult] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         let ports     = (json["ports"] as? [Int]) ?? []
@@ -86,8 +90,11 @@ struct InternetDBPlugin: FootprintPlugin {
             var parts = ["IP \(ip): \(sorted.count) open port(s) — \(portList.prefix(20).joined(separator: ", "))"]
             if !tags.isEmpty { parts.append("tags: \(tags.joined(separator: ", "))") }
             if !hostnames.isEmpty { parts.append("hostnames: \(hostnames.prefix(5).joined(separator: ", "))") }
+            // A host answering only on web ports is a website, which is what
+            // a domain is for; exposure starts with anything else.
+            let webOnly = vulns.isEmpty && sorted.allSatisfy { webPorts.contains($0) }
             results.append(PluginResult(
-                source: "InternetDB", type: "exposed_service", confidenceScore: 0.9,
+                source: "InternetDB", type: webOnly ? "web_service" : "exposed_service", confidenceScore: 0.9,
                 rawData: parts.joined(separator: " | "), metadata: meta))
         }
 

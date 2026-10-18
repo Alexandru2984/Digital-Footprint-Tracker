@@ -133,15 +133,45 @@ enum RiskScorer {
         for r in results {
             let key = "\(r.source)\u{1}\(r.type)\u{1}\(try r.rawData)"
             guard seen.insert(key).inserted else { continue }
-            contributions.append((category(for: r.type), r.confidenceScore))
+            contributions.append((category(for: r.type),
+                                  evidence(type: r.type, confidence: r.confidenceScore, metadata: try r.metadataObject)))
         }
         return score(from: contributions)
+    }
+
+    /// How much one finding counts as evidence. A finding is worth its
+    /// confidence (0–1), except a breach report, which stands for every breach
+    /// it lists: 215 breaches that leaked passwords and card numbers are not
+    /// one leaked email address. It counts up to 4 for how many breaches,
+    /// plus 1 each for passwords, financial data and identity documents, and
+    /// half a point each for weakly stored passwords and a breach in the last
+    /// two years.
+    static func evidence(type: String, confidence: Double, metadata: [String: String]?,
+                         now: Date = Date()) -> Double {
+        let base = max(0.0, min(1.0, confidence))
+        guard type == "data_breach", let meta = metadata else { return base }
+        let count = max(1, Int(meta["breachCount"] ?? "") ?? 1)
+        var weight = min(4.0, 1 + log2(Double(count)))
+        let classes = (meta["dataClasses"] ?? "").lowercased()
+        func exposes(_ any: [String]) -> Bool { any.contains { classes.contains($0) } }
+        if exposes(["password"]) { weight += 1 }
+        if exposes(["credit card", "bank", "financial", "payment", "account balance"]) { weight += 1 }
+        if exposes(["passport", "social security", "government issued", "national id", "driver"]) { weight += 1 }
+        if !(meta["weakPasswordBreaches"] ?? "").isEmpty { weight += 0.5 }
+        let year = Calendar(identifier: .gregorian).component(.year, from: now)
+        let recent = (meta["breachDates"] ?? "").split(separator: ";").contains { entry in
+            guard let date = entry.split(separator: "|").last,
+                  let breachYear = Int(date.trimmingCharacters(in: .whitespaces).prefix(4)) else { return false }
+            return breachYear >= year - 2
+        }
+        if recent { weight += 0.5 }
+        return base * weight
     }
 
     /// Overload accepting raw `(confidence, type)` tuples — used when the full
     /// `Result` model isn't loaded. No dedup (no source/rawData to key on).
     static func compute(raw: [(confidence: Double, type: String)]) -> Score {
-        score(from: raw.map { (category(for: $0.type), $0.confidence) })
+        score(from: raw.map { (category(for: $0.type), max(0.0, min(1.0, $0.confidence))) })
     }
 
     // MARK: - Core
@@ -153,7 +183,7 @@ enum RiskScorer {
         var evidence: [Category: Double] = [:]
         var findings: [Category: Int] = [:]
         for (category, confidence) in contributions {
-            evidence[category, default: 0] += max(0.0, min(1.0, confidence))
+            evidence[category, default: 0] += max(0.0, confidence)
             findings[category, default: 0] += 1
         }
 
@@ -298,6 +328,7 @@ enum RiskScorer {
         // probing: facts about the network, not a weakness of the target.
         "ip_network": .infra,
         "domain_services": .infra,
+        "web_service": .infra,
         "ip_scanner_benign": .infra
     ]
 

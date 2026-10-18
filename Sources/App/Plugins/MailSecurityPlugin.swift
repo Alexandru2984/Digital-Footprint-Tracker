@@ -140,12 +140,19 @@ struct MailSecurityPlugin: FootprintPlugin {
     /// Grades a domain's mail posture, and strips an email's local-part to reach it.
     let accepts: Set<TargetShape> = [.email, .domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
+    /// v2: a mail provider's domain is not graded for one of its users.
+    let cacheVersion = 2
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         // Domain targets only. Strip an email local-part so scanning
         // "alice@example.com" still grades example.com.
         var domain = input.lowercased().trimmingCharacters(in: .whitespaces)
-        if let at = domain.firstIndex(of: "@") { domain = String(domain[domain.index(after: at)...]) }
+        if let at = domain.firstIndex(of: "@") {
+            domain = String(domain[domain.index(after: at)...])
+            // gmail.com's mail policy is Google's, not the person's with a
+            // mailbox there: grading it says nothing about them.
+            if TargetDeriver.isMailProvider(domain) { return [] }
+        }
         guard domain.contains("."), !domain.contains("@"),
               domain.range(of: #"^[a-z0-9.\-]+$"#, options: .regularExpression) != nil,
               domain.range(of: #"[a-z]"#, options: .regularExpression) != nil,

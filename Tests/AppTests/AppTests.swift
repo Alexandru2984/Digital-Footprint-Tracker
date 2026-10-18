@@ -4564,6 +4564,26 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testABreachReportCountsForWhatItHolds() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-18T00:00:00Z")!
+        let one = RiskScorer.evidence(type: "data_breach", confidence: 1,
+                                      metadata: ["breachCount": "1", "dataClasses": "Email addresses",
+                                                 "breachDates": "Old|2012"], now: now)
+        XCTAssertEqual(one, 1, "one old breach of an address: one finding's worth")
+        let many = RiskScorer.evidence(type: "data_breach", confidence: 1, metadata: [
+            "breachCount": "215", "dataClasses": "Credit card details, Email addresses, Passwords, Passport numbers",
+            "weakPasswordBreaches": "Dailymotion", "breachDates": "ZenBusiness|2026; Old|2012"], now: now)
+        XCTAssertEqual(many, 8, "4 for the count, 3 for passwords/cards/passports, 0.5 weak, 0.5 recent")
+        XCTAssertEqual(RiskScorer.evidence(type: "account_presence", confidence: 0.7, metadata: ["breachCount": "9"]), 0.7)
+    }
+
+    func testAHostOnWebPortsOnlyIsAWebsiteNotAnExposure() {
+        let web = InternetDBPlugin.parse(Data(#"{"ports":[443,80],"vulns":[],"hostnames":["x.example"]}"#.utf8), ip: "185.199.108.153")
+        XCTAssertEqual(web.first?.type, "web_service")
+        let ssh = InternetDBPlugin.parse(Data(#"{"ports":[22,443],"vulns":[]}"#.utf8), ip: "203.0.113.9")
+        XCTAssertEqual(ssh.first?.type, "exposed_service", "anything beyond the web is exposure")
+    }
+
     func testLinksOfAnAccountTiedToTheTargetByItsChainAreFollowed() {
         let github = PluginResult(source: "GitHub", type: "developer_identity", confidenceScore: 1.0, rawData: "g",
                                   metadata: ["platform": "github", "username": "dtolnay", "matchKind": "verified",
