@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Digital Footprint Tracker — Privacy-First OSINT Scanner</title>
-    <meta name="description" content="Privacy-first OSINT scanner: map a target's public footprint — emails, domains, usernames, breaches, attack surface — from 30+ sources. Self-hosted &amp; encrypted.">
+    <title>Free OSINT Tool: Email, Username, Domain &amp; IP Lookup — Digital Footprint Tracker</title>
+    <meta name="description" content="Free OSINT tool: find the accounts, breaches and person behind an email, username, domain, IP or phone number across 45+ sources — every link scored by how certain it is. No tracking.">
     <link rel="canonical" href="https://swift.micutu.com/">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="index, follow, max-image-preview:large">
     <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -16,8 +16,8 @@
     <!-- Open Graph (link previews) -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Digital Footprint Tracker">
-    <meta property="og:title" content="Digital Footprint Tracker — Privacy-First OSINT Scanner">
-    <meta property="og:description" content="Map a target's public digital footprint — emails, domains, usernames, breaches and attack surface — across 30+ sources. Self-hosted and encrypted.">
+    <meta property="og:title" content="Free OSINT Tool: Email, Username, Domain &amp; IP Lookup">
+    <meta property="og:description" content="Find the accounts, breaches and person behind an email, username, domain, IP or phone number across 45+ OSINT sources, each link scored by how certain it is.">
     <meta property="og:url" content="https://swift.micutu.com/">
     <meta property="og:locale" content="en_US">
     <meta property="og:image" content="https://swift.micutu.com/og-image.png">
@@ -27,27 +27,39 @@
     <meta property="og:image:alt" content="Digital Footprint Tracker — privacy-first OSINT scanner">
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Digital Footprint Tracker — Privacy-First OSINT Scanner">
-    <meta name="twitter:description" content="Map a target's public footprint across 30+ OSINT sources. Self-hosted, encrypted, privacy-first.">
+    <meta name="twitter:title" content="Free OSINT Tool: Email, Username, Domain &amp; IP Lookup">
+    <meta name="twitter:description" content="Accounts, breaches and the person behind an email, username, domain, IP or phone — 45+ sources, no tracking.">
     <meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
     <!-- Structured data: non-executable data block, exempt from script-src CSP -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "Digital Footprint Tracker",
-      "url": "https://swift.micutu.com/",
-      "applicationCategory": "SecurityApplication",
-      "operatingSystem": "Any (modern web browser)",
-      "browserRequirements": "Requires JavaScript. Requires HTML5.",
-      "description": "Privacy-first OSINT scanner that aggregates a target's public digital footprint — emails, domains, usernames, breaches and attack surface — across 30+ sources. Self-hosted and encrypted.",
-      "featureList": [
-        "OSINT aggregation across 30+ sources",
-        "Attack-surface and exposed-file discovery",
-        "Breach and paste correlation",
-        "Interactive investigation graph",
-        "Offline geolocation and ASN enrichment",
-        "Encrypted at rest with two-factor authentication"
+      "@graph": [
+        {
+          "@type": "WebApplication",
+          "name": "Digital Footprint Tracker",
+          "url": "https://swift.micutu.com/",
+          "applicationCategory": "SecurityApplication",
+          "operatingSystem": "Any (modern web browser)",
+          "browserRequirements": "Requires JavaScript. Requires HTML5.",
+          "isAccessibleForFree": true,
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+          "description": "Free OSINT tool that finds the accounts, breaches and person behind an email, username, domain, IP address or phone number across 45+ sources, scoring every link by how certain it is.",
+          "featureList": [
+            "Email lookup: accounts, PGP keys, registrations and owner",
+            "Username search across 480+ sites with false positives removed",
+            "Domain OSINT: registrant, DNS, subdomains and services used",
+            "IP lookup: open ports, CVEs, network owner and reputation",
+            "Free data breach check",
+            "Attribution scoring and an interactive connections graph",
+            "Encrypted at rest, no third-party scripts"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "name": "Digital Footprint Tracker",
+          "url": "https://swift.micutu.com/"
+        }
       ]
     }
     </script>
@@ -215,15 +227,16 @@
     <noscript>
         <div style="max-width:720px;margin:2rem auto;padding:1.5rem;font-family:system-ui,sans-serif;color:#cbd5e1;background:#1e293b;border:1px solid #334155;border-radius:12px;line-height:1.6">
             <h2 style="color:#f8fafc;margin:0 0 .5rem">Digital Footprint Tracker — Privacy-First OSINT Scanner</h2>
-            <p>Digital Footprint Tracker is a self-hosted OSINT tool that aggregates a target's public exposure across 30+ sources — emails, domains, usernames, data breaches, exposed files and attack surface — into a single report and an interactive investigation graph.</p>
+            <p>Digital Footprint Tracker is a free OSINT tool that aggregates a target's public exposure across 45+ sources — emails, domains, usernames, data breaches, exposed files and attack surface — into a single report and an interactive investigation graph.</p>
             <ul>
-                <li>OSINT aggregation across 30+ sources</li>
+                <li>OSINT aggregation across 45+ sources</li>
                 <li>Attack-surface &amp; exposed-file discovery</li>
                 <li>Breach and paste correlation</li>
                 <li>Interactive investigation graph with connection tracing</li>
                 <li>Offline geolocation &amp; ASN enrichment</li>
                 <li>Encrypted at rest, two-factor authentication, no third parties</li>
             </ul>
+            <p>Guides: <a href="/email-lookup/">email lookup</a>, <a href="/username-search/">username search</a>, <a href="/domain-osint/">domain OSINT</a>, <a href="/ip-lookup/">IP lookup</a>, <a href="/phone-lookup/">phone lookup</a>, <a href="/data-breach-check/">data breach check</a>, <a href="/sources/">sources</a>, <a href="/how-it-works/">how it works</a>, <a href="/faq/">FAQ</a>.</p>
             <p>This application requires JavaScript. Please enable it to run scans.</p>
         </div>
     </noscript>
@@ -242,7 +255,7 @@
             </div>
             <div class="grow">
                 <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-md">OSINT <span class="text-brand-500">FOOTPRINT TRACKER</span></h1>
-                <p class="text-slate-400 text-sm mt-1">Aggregated target intel analysis module</p>
+                <p class="text-slate-400 text-sm mt-1">Free OSINT lookup for emails, usernames, domains, IPs and phone numbers</p>
             </div>
             <!-- Hamburger (mobile only) -->
             <button id="hamburger-btn" title="Menu" class="items-center justify-center w-10 h-10 rounded-sm bg-dark-800 border border-dark-700 text-slate-400 hover:text-white shrink-0" aria-label="Toggle menu" aria-expanded="false">☰</button>
@@ -832,7 +845,18 @@
     </main>
 
     <footer class="mt-auto py-6 border-t border-dark-700 text-center text-xs text-slate-500">
-        <p>Digital Footprint Tracker v1.0.0 &copy; 2026. Secure VPS Environment.</p>
+        <nav aria-label="Guides" class="mb-2">
+            <a href="/email-lookup/" class="hover:text-slate-400 transition-colors underline">Email lookup</a> &middot;
+            <a href="/username-search/" class="hover:text-slate-400 transition-colors underline">Username search</a> &middot;
+            <a href="/domain-osint/" class="hover:text-slate-400 transition-colors underline">Domain OSINT</a> &middot;
+            <a href="/ip-lookup/" class="hover:text-slate-400 transition-colors underline">IP lookup</a> &middot;
+            <a href="/phone-lookup/" class="hover:text-slate-400 transition-colors underline">Phone lookup</a> &middot;
+            <a href="/data-breach-check/" class="hover:text-slate-400 transition-colors underline">Breach check</a> &middot;
+            <a href="/sources/" class="hover:text-slate-400 transition-colors underline">Sources</a> &middot;
+            <a href="/how-it-works/" class="hover:text-slate-400 transition-colors underline">How it works</a> &middot;
+            <a href="/faq/" class="hover:text-slate-400 transition-colors underline">FAQ &amp; help</a>
+        </nav>
+        <p>Digital Footprint Tracker &copy; 2026. Free, privacy-first OSINT.</p>
         <p class="mt-2">
             <a href="/privacy.html" class="hover:text-slate-400 transition-colors underline">Privacy</a>
             &middot;
@@ -878,7 +902,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=ff8595c7158a" integrity="sha384-LnSjGwjpAy2D83ZwzcFKMDTJnBbxTxtNPyoNRxDJAgiMpOLs3Ij7aXhH9w4FVjBd"></script>
+    <script src="/app.js?v=fa780845d23d" integrity="sha384-HyVJJqIqlh61sYldNh2b/cIk+ni93GNkiZom0T8rHReMvF8qyaFBhkAn4CL926PB"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>

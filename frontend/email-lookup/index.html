@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email OSINT Lookup — Accounts, Breaches &amp; Owner of an Email</title>
+<meta name="description" content="Free email OSINT lookup: find the accounts registered to an address, the person behind it, its PGP keys and the data breaches it appears in — each link scored by how certain it is.">
+<link rel="canonical" href="https://swift.micutu.com/email-lookup/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:title" content="Email OSINT Lookup — Accounts, Breaches &amp; Owner of an Email">
+<meta property="og:description" content="Free email OSINT lookup: find the accounts registered to an address, the person behind it, its PGP keys and the data breaches it appears in — each link scored by how certain it is.">
+<meta property="og:url" content="https://swift.micutu.com/email-lookup/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Email OSINT Lookup — Accounts, Breaches &amp; Owner of an Email">
+<meta name="twitter:description" content="Free email OSINT lookup: find the accounts registered to an address, the person behind it, its PGP keys and the data breaches it appears in — each link scored by how certain it is.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/email-lookup/",
+      "url": "https://swift.micutu.com/email-lookup/",
+      "name": "Email OSINT Lookup — Accounts, Breaches & Owner of an Email",
+      "description": "Free email OSINT lookup: find the accounts registered to an address, the person behind it, its PGP keys and the data breaches it appears in — each link scored by how certain it is.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://swift.micutu.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Email OSINT lookup",
+          "item": "https://swift.micutu.com/email-lookup/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can I find who owns an email address?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Often. When a platform has verified the address — a GitHub commit, a Gravatar profile, an OpenPGP key — the account and the name on it are attributed with high confidence. Addresses that were never used publicly reveal little."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does the lookup alert the owner?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Every source is queried passively; nothing is sent to the address. Account-recovery checks never complete a reset."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is the email lookup free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Account registration checks and the 480-site username sweep need a free, verified account; everything else runs anonymously."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Guides">
+<a href="/email-lookup/" aria-current="page">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › Email OSINT lookup</nav>
+<h1>Email OSINT lookup</h1>
+<p class="lead">Find out what an email address leads to: the accounts registered with it, the name of the person behind it, the keys and profiles tied to it and the breaches it has leaked in.</p>
+<div class="cta"><a class="button" href="/?q=name%40example.com">Run a free scan</a><a class="button secondary" href="/how-it-works/">How it works</a></div>
+<h2>What an email address reveals</h2>
+<p>An address is the strongest starting point in open-source intelligence, because platforms verify it. The scanner asks the sources that can tie an address to an account and keeps the reason each one gives:</p>
+<ul>
+<li><strong>GitHub</strong> links commits to an account only through a verified email, so a commit authored with the address names its owner. A public profile email is checked too.</li>
+<li><strong>Gravatar</strong> returns the profile behind the address and the social accounts Gravatar verified for it.</li>
+<li><strong>OpenPGP keys</strong>: keys.openpgp.org lists only addresses whose owner confirmed them, so the other addresses on the same key belong to the same person.</li>
+<li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite.</li>
+<li><strong>Data breaches</strong> from XposedOrNot (free) and, optionally, Have I Been Pwned: which breaches, when, and what was exposed.</li>
+<li><strong>The address’s own domain</strong>: for a mailbox on a domain of its own (not Gmail or Outlook), the domain is scanned too — its registrant, website and the services it uses.</li>
+</ul>
+<h2>From one address to a whole footprint</h2>
+<p>Every confirmed account is followed further. The local part of the address is searched as a username, a GitHub account leads to its Keybase proofs, its SSH keys and the website it lists, and a domain proven on Keybase is scanned in turn. Each step is a link in a chain, and the chain is what decides how sure the tool is that an account belongs to the person.</p>
+<div class="note">Links a platform verified count for 98%, links the person published for 90%, a shared username for 40%. An account found only because it shares a name never takes over the profile. <a href="/how-it-works/">How the scoring works</a>.</div>
+<h2>Who it is for</h2>
+<p>Checking your own exposure, investigating phishing and fraud, due diligence and authorised security assessments. Read the <a href="/acceptable-use.html">acceptable use policy</a> before scanning anyone else.</p>
+<h2>Questions</h2>
+<details><summary>Can I find who owns an email address?</summary><p>Often. When a platform has verified the address — a GitHub commit, a Gravatar profile, an OpenPGP key — the account and the name on it are attributed with high confidence. Addresses that were never used publicly reveal little.</p></details>
+<details><summary>Does the lookup alert the owner?</summary><p>No. Every source is queried passively; nothing is sent to the address. Account-recovery checks never complete a reset.</p></details>
+<details><summary>Is the email lookup free?</summary><p>Yes. Account registration checks and the 480-site username sweep need a free, verified account; everything else runs anonymously.</p></details>
+<div class="cta"><a class="button" href="/?q=name%40example.com">Run a free scan</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scanner</a>
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html">Terms</a>
+<a href="/acceptable-use.html">Acceptable use</a>
+</nav>
+<p>Digital Footprint Tracker — privacy-first OSINT, no third-party scripts.</p>
+</div></footer>
+</body>
+</html>

@@ -55,8 +55,10 @@ const server = createServer(async (request, response) => {
 
         // Like production, the shared-report page is the app itself.
         const isSharePage = requestURL.pathname === '/share' || requestURL.pathname.startsWith('/share/');
+        // A guide page lives at /<slug>/, served from its index.html as nginx does.
         const pathname = decodeURIComponent(
-            requestURL.pathname === '/' || isSharePage ? '/index.html' : requestURL.pathname);
+            requestURL.pathname === '/' || isSharePage ? '/index.html'
+                : requestURL.pathname.endsWith('/') ? `${requestURL.pathname}index.html` : requestURL.pathname);
         const filePath = resolve(frontendRoot, `.${pathname}`);
         if (filePath !== frontendRoot && !filePath.startsWith(`${frontendRoot}${sep}`)) {
             response.writeHead(403, securityHeaders('text/plain; charset=utf-8'));

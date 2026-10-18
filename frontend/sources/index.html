@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT Sources — 45+ Data Sources Behind Every Scan</title>
+<meta name="description" content="The 45+ OSINT sources the scanner queries for emails, usernames, domains, IP addresses and phone numbers, and what each one reveals.">
+<link rel="canonical" href="https://swift.micutu.com/sources/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:title" content="OSINT Sources — 45+ Data Sources Behind Every Scan">
+<meta property="og:description" content="The 45+ OSINT sources the scanner queries for emails, usernames, domains, IP addresses and phone numbers, and what each one reveals.">
+<meta property="og:url" content="https://swift.micutu.com/sources/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OSINT Sources — 45+ Data Sources Behind Every Scan">
+<meta name="twitter:description" content="The 45+ OSINT sources the scanner queries for emails, usernames, domains, IP addresses and phone numbers, and what each one reveals.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/sources/",
+      "url": "https://swift.micutu.com/sources/",
+      "name": "OSINT Sources — 45+ Data Sources Behind Every Scan",
+      "description": "The 45+ OSINT sources the scanner queries for emails, usernames, domains, IP addresses and phone numbers, and what each one reveals.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://swift.micutu.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "OSINT sources",
+          "item": "https://swift.micutu.com/sources/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Guides">
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/" aria-current="page">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › OSINT sources</nav>
+<h1>OSINT sources</h1>
+<p class="lead">Every scan queries the sources that fit its input. Most are free and need no key; a few take an optional API key.</p>
+<div class="cta"><a class="button" href="/">Run a free scan</a><a class="button secondary" href="/how-it-works/">How it works</a></div>
+<h2>Email</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">What it reveals</th></tr></thead>
+<tbody>
+<tr><td>Gravatar</td><td>Profile, display name and the accounts Gravatar verified for the address</td></tr>
+<tr><td>GitHub commits and profiles</td><td>The GitHub account and author name behind an address, from its commits or public profile email</td></tr>
+<tr><td>keys.openpgp.org</td><td>Other addresses verified on the same OpenPGP key</td></tr>
+<tr><td>Ubuntu keyserver</td><td>Names on public PGP keys that mention the address (unverified, weighed accordingly)</td></tr>
+<tr><td>Holehe</td><td>Sites whose account recovery recognises the address (verified accounts)</td></tr>
+<tr><td>XposedOrNot</td><td>Data breaches the address appears in, what each exposed and when (free)</td></tr>
+<tr><td>Have I Been Pwned</td><td>Breaches and pastes (optional, needs an API key)</td></tr>
+<tr><td>Email intelligence</td><td>Deliverability, mailbox provider and disposable-address detection</td></tr>
+<tr><td>Mail security</td><td>SPF, DMARC, DKIM, MTA-STS, DNSSEC and CAA of the address’s own domain</td></tr>
+</tbody></table></div>
+
+<h2>Username</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">What it reveals</th></tr></thead>
+<tbody>
+<tr><td>480+ sites (Sherlock data)</td><td>Presence across hundreds of platforms, each hit checked against a name nobody has</td></tr>
+<tr><td>GitHub</td><td>Profile, organisations, social accounts, and addresses GitHub verified on the account’s GPG keys</td></tr>
+<tr><td>GitLab, Codeberg</td><td>Profiles, names, locations and websites</td></tr>
+<tr><td>SSH keys</td><td>The same public SSH key on GitHub, GitLab and Codeberg accounts</td></tr>
+<tr><td>Keybase</td><td>Signed proofs tying Twitter, Reddit, Hacker News, GitHub and domains together</td></tr>
+<tr><td>Mastodon, Bluesky</td><td>Profiles, verified rel=me links and DNS-verified domain handles</td></tr>
+<tr><td>DEV Community, Lobsters</td><td>Profiles and the GitHub, Twitter and Mastodon accounts they list</td></tr>
+<tr><td>Telegram, Hacker News, Steam</td><td>Public profiles</td></tr>
+<tr><td>npm, PyPI, crates.io, Docker Hub</td><td>Published packages and images</td></tr>
+</tbody></table></div>
+
+<h2>Domain</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">What it reveals</th></tr></thead>
+<tbody>
+<tr><td>RDAP / WHOIS</td><td>Registrar, dates and, where not redacted, the registrant’s name, organisation, email and phone</td></tr>
+<tr><td>DNS</td><td>A, MX and TXT records, and the services the owner uses (Microsoft 365, Google Workspace, Atlassian, Stripe…)</td></tr>
+<tr><td>Certificate Transparency</td><td>Subdomains from issued certificates (crt.sh, with CertSpotter as fallback)</td></tr>
+<tr><td>Passive DNS</td><td>Historical resolutions and further subdomains</td></tr>
+<tr><td>Homepage</td><td>The owner’s accounts marked rel=me, profile links, contact address, phone and author</td></tr>
+<tr><td>Web posture</td><td>TLS, HTTP security headers and server fingerprint</td></tr>
+<tr><td>Exposed files</td><td>Content-verified .env, .git, database dumps and backups left public</td></tr>
+<tr><td>Wayback Machine</td><td>First and last archive snapshot, and how many</td></tr>
+<tr><td>Typosquats</td><td>Lookalike domains that resolve</td></tr>
+<tr><td>Keybase, Bluesky</td><td>Accounts that proved control of the domain</td></tr>
+</tbody></table></div>
+
+<h2>IP address</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">What it reveals</th></tr></thead>
+<tbody>
+<tr><td>InternetDB (Shodan)</td><td>Open ports, known CVEs and hostnames (free)</td></tr>
+<tr><td>RIPEstat</td><td>Routed prefix, origin AS and network operator</td></tr>
+<tr><td>RDAP / WHOIS</td><td>The network the address belongs to</td></tr>
+<tr><td>Tor Project</td><td>Whether the address is a current Tor exit relay</td></tr>
+<tr><td>GreyNoise</td><td>Whether the address scans the internet, and its classification</td></tr>
+<tr><td>Shodan, AbuseIPDB, VirusTotal</td><td>Services, abuse reports and reputation (optional API keys)</td></tr>
+</tbody></table></div>
+
+<h2>Phone</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">What it reveals</th></tr></thead>
+<tbody>
+<tr><td>Abstract phone intelligence</td><td>Validity, carrier, country, line type and, sometimes, the registered name</td></tr>
+<tr><td>Found on the way</td><td>Numbers on a target’s website or domain registration become leads of their own</td></tr>
+</tbody></table></div>
+<p>Each source is checked daily against a known account, and a source that starts failing is reported on the status page and backed off rather than slowing every scan.</p>
+
+<div class="cta"><a class="button" href="/">Run a free scan</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scanner</a>
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html">Terms</a>
+<a href="/acceptable-use.html">Acceptable use</a>
+</nav>
+<p>Digital Footprint Tracker — privacy-first OSINT, no third-party scripts.</p>
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Username Search Across 480+ Sites — With False Positives Removed</title>
+<meta name="description" content="Search a username across 480+ websites and dedicated profile lookups. Every hit is checked against a name nobody has, and accounts are tied together by SSH keys and Keybase proofs.">
+<link rel="canonical" href="https://swift.micutu.com/username-search/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:title" content="Username Search Across 480+ Sites — With False Positives Removed">
+<meta property="og:description" content="Search a username across 480+ websites and dedicated profile lookups. Every hit is checked against a name nobody has, and accounts are tied together by SSH keys and Keybase proofs.">
+<meta property="og:url" content="https://swift.micutu.com/username-search/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Username Search Across 480+ Sites — With False Positives Removed">
+<meta name="twitter:description" content="Search a username across 480+ websites and dedicated profile lookups. Every hit is checked against a name nobody has, and accounts are tied together by SSH keys and Keybase proofs.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/username-search/",
+      "url": "https://swift.micutu.com/username-search/",
+      "name": "Username Search Across 480+ Sites — With False Positives Removed",
+      "description": "Search a username across 480+ websites and dedicated profile lookups. Every hit is checked against a name nobody has, and accounts are tied together by SSH keys and Keybase proofs.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://swift.micutu.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Username search across 480+ sites",
+          "item": "https://swift.micutu.com/username-search/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many sites are checked?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Around 480 through the Sherlock project’s site data, plus about twenty platforms read through their own profile APIs."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why are some accounts marked unconfirmed?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A matching username proves only that the name is taken. Unless something ties the account to the others — a shared SSH key, a signed proof, a published link — it stays unconfirmed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do I need an account?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The 480-site sweep needs a free, verified account. The dedicated profile lookups run anonymously."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Guides">
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/" aria-current="page">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › Username search across 480+ sites</nav>
+<h1>Username search across 480+ sites</h1>
+<p class="lead">See where a username is registered — and which of those accounts actually belong to the same person.</p>
+<div class="cta"><a class="button" href="/?q=username">Run a free scan</a><a class="button secondary" href="/how-it-works/">How it works</a></div>
+<h2>Hundreds of sites, without the noise</h2>
+<p>Most username checkers ask each site for a profile URL and report every page that loads. Many sites answer “200 OK” for any name at all — a login wall, a catch-all page — so the result is a long list of accounts that do not exist.</p>
+<p>This scanner asks every site that reports a hit about a random name nobody owns as well. A site that “finds” that one too cannot tell real accounts from missing ones, and its hit is dropped. On a typical scan this removes more than half of the raw hits.</p>
+<h2>Dedicated profile lookups</h2>
+<p>For the platforms that matter most, a profile API is read instead of a status code: GitHub (profile, organisations, social accounts and the addresses GitHub verified on the account’s GPG keys), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, npm, PyPI, crates.io and Docker Hub.</p>
+<h2>Is it the same person?</h2>
+<p>Two accounts with the same name may belong to strangers. The scanner looks for evidence that ties them:</p>
+<ul>
+<li><strong>The same SSH key</strong> on GitHub, GitLab and Codeberg accounts.</li>
+<li><strong>Keybase proofs</strong>: signed statements tying a Keybase identity to Twitter, Reddit, Hacker News, GitHub and domains.</li>
+<li><strong>Links the person published</strong>: the Twitter on a GitHub profile, the accounts on a DEV or Lobsters profile, the verified rel=me links on Mastodon.</li>
+</ul>
+<p>Accounts tied by such evidence are reported as confirmed; the rest are kept apart as found by name alone. <a href="/how-it-works/">How attribution works</a>.</p>
+<h2>Questions</h2>
+<details><summary>How many sites are checked?</summary><p>Around 480 through the Sherlock project’s site data, plus about twenty platforms read through their own profile APIs.</p></details>
+<details><summary>Why are some accounts marked unconfirmed?</summary><p>A matching username proves only that the name is taken. Unless something ties the account to the others — a shared SSH key, a signed proof, a published link — it stays unconfirmed.</p></details>
+<details><summary>Do I need an account?</summary><p>The 480-site sweep needs a free, verified account. The dedicated profile lookups run anonymously.</p></details>
+<div class="cta"><a class="button" href="/?q=username">Run a free scan</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scanner</a>
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html">Terms</a>
+<a href="/acceptable-use.html">Acceptable use</a>
+</nav>
+<p>Digital Footprint Tracker — privacy-first OSINT, no third-party scripts.</p>
+</div></footer>
+</body>
+</html>

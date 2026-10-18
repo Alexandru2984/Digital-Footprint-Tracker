@@ -15,9 +15,10 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listPages } from './pages.mjs';
 
 const frontendDir = dirname(fileURLToPath(import.meta.url));
-const pages = readdirSync(frontendDir).filter(name => name.endsWith('.html')).sort();
+const pages = listPages(frontendDir);
 
 // Twelve hex characters of the file's sha256: long enough that two builds never
 // collide, short enough to read in a URL.

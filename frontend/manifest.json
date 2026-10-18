@@ -1,7 +1,7 @@
 {
   "name": "Digital Footprint Tracker",
   "short_name": "Footprint",
-  "description": "Privacy-first OSINT scanner: map a target's public digital footprint across 30+ sources.",
+  "description": "Privacy-first OSINT scanner: find the accounts, breaches and person behind an email, username, domain, IP or phone across 45+ sources.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

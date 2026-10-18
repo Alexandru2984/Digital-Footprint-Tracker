@@ -2769,6 +2769,14 @@
             const scanID = params.get('scan');
             if (scanID && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(scanID)) {
                 loadScanByID(scanID);
+                return;
+            }
+            // `?q=` fills the target in, from the guide pages' "try it" links.
+            // It never starts a scan: a crawled link must not run one.
+            const prefill = params.get('q');
+            if (prefill && prefill.length <= 254) {
+                const field = document.getElementById('target-input');
+                if (field) { field.value = prefill.trim(); field.focus(); }
             }
         })();
 

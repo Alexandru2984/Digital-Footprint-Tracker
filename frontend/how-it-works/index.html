@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How It Works — Attribution Scoring for OSINT Results</title>
+<meta name="description" content="How the scanner turns raw OSINT hits into a profile: candidate derivation, pivots, verified, declared, observed and inferred links, attribution scores and a risk score that weighs what leaked.">
+<link rel="canonical" href="https://swift.micutu.com/how-it-works/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:title" content="How It Works — Attribution Scoring for OSINT Results">
+<meta property="og:description" content="How the scanner turns raw OSINT hits into a profile: candidate derivation, pivots, verified, declared, observed and inferred links, attribution scores and a risk score that weighs what leaked.">
+<meta property="og:url" content="https://swift.micutu.com/how-it-works/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How It Works — Attribution Scoring for OSINT Results">
+<meta name="twitter:description" content="How the scanner turns raw OSINT hits into a profile: candidate derivation, pivots, verified, declared, observed and inferred links, attribution scores and a risk score that weighs what leaked.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/how-it-works/",
+      "url": "https://swift.micutu.com/how-it-works/",
+      "name": "How It Works — Attribution Scoring for OSINT Results",
+      "description": "How the scanner turns raw OSINT hits into a profile: candidate derivation, pivots, verified, declared, observed and inferred links, attribution scores and a risk score that weighs what leaked.",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://swift.micutu.com/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "How it works",
+          "item": "https://swift.micutu.com/how-it-works/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Guides">
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/" aria-current="page">How it works</a>
+<a href="/faq/">FAQ</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › How it works</nav>
+<h1>How it works</h1>
+<p class="lead">An OSINT tool that lists every account with the same name is easy to build and hard to trust. This one keeps track of why each finding is connected to the target, and how strongly.</p>
+<div class="cta"><a class="button" href="/">Run a free scan</a><a class="button secondary" href="/how-it-works/">How it works</a></div>
+<h2>1. From one input to several</h2>
+<p>An email address is also searched by its local part as a username, a username with separators by its variants, and an address on a domain of its own by that domain. Each derived identifier remembers how it was reached.</p>
+<h2>2. Following the leads</h2>
+<p>Findings name new identifiers: an address on a GitHub key, a domain proven on Keybase, a website on a profile, a phone number on a homepage. Up to two rounds of these leads are scanned, but only from accounts already likely to be the target’s, and never handles under shared platforms such as <code>name.bsky.social</code>.</p>
+<h2>3. Links, and how much each is worth</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Kind</th><th scope="col">Example</th><th scope="col">Worth</th></tr></thead>
+<tbody>
+<tr><td>Verified</td><td>GitHub tied a commit to the account through a verified email; a signed Keybase proof</td><td>98%</td></tr>
+<tr><td>Declared</td><td>The person listed the account or website on their profile</td><td>90%</td></tr>
+<tr><td>Observed</td><td>The same SSH key on both accounts; a site’s account recovery knows the address</td><td>80%</td></tr>
+<tr><td>Inferred</td><td>Same username as the email’s local part / another lead / a spelling variant</td><td>55% / 40% / 35%</td></tr>
+</tbody></table></div>
+<h2>4. Attribution</h2>
+<p>Every identifier gets the score of its strongest chain back to the input — the product of the links along it. An account two verified links away scores 96%; one that only shares a name scores about 40%. Names, places and organisations are weighed by these scores, so a stranger who shares a username cannot take over the profile.</p>
+<h2>5. The dossier</h2>
+<p>The report opens with the profile at a glance: the likely name, accounts confirmed (80% and up), probable (50–79%) and unconfirmed, the target’s websites and domains, contact details, and what has leaked.</p>
+<h2>6. Risk</h2>
+<p>The risk score adds up categories — breaches, exposed services, linked identities, contact details, accounts — each saturating so that volume alone cannot max it out. A breach report counts for what it holds: how many breaches, whether passwords, payment or identity data leaked, and how recent. Clean verdicts add nothing.</p>
+<h2>Privacy</h2>
+<p>Scan inputs and results are encrypted at rest, anonymous scans expire after 30 days, and there are no third-party scripts or analytics on this site. See the <a href="/privacy.html">privacy notice</a>.</p>
+
+<div class="cta"><a class="button" href="/">Run a free scan</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scanner</a>
+<a href="/email-lookup/">Email</a>
+<a href="/username-search/">Username</a>
+<a href="/domain-osint/">Domain</a>
+<a href="/ip-lookup/">IP</a>
+<a href="/phone-lookup/">Phone</a>
+<a href="/data-breach-check/">Breaches</a>
+<a href="/sources/">Sources</a>
+<a href="/how-it-works/">How it works</a>
+<a href="/faq/">FAQ</a>
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html">Terms</a>
+<a href="/acceptable-use.html">Acceptable use</a>
+</nav>
+<p>Digital Footprint Tracker — privacy-first OSINT, no third-party scripts.</p>
+</div></footer>
+</body>
+</html>

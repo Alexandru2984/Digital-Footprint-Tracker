@@ -7,6 +7,9 @@ const pages = [
     { path: '/login.html', heading: /OSINT.*TRACKER/i, authenticated: false },
     { path: '/register.html', heading: /OSINT.*TRACKER/i, authenticated: false },
     { path: '/admin.html', heading: /ADMIN.*DASHBOARD/i, authenticated: true, admin: true },
+    { path: '/email-lookup/', heading: /Email OSINT lookup/i, authenticated: false },
+    { path: '/sources/', heading: /OSINT sources/i, authenticated: false },
+    { path: '/how-it-works/', heading: /How it works/i, authenticated: false },
 ];
 
 for (const pageCase of pages) {

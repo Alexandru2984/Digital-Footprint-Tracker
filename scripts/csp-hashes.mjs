@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const directories = process.argv.slice(2);
@@ -17,13 +17,23 @@ for (const input of directories) {
     }
     // Derived from the tree being scanned, so a new page's inline script cannot
     // be missing from the CSP the same deploy installs.
-    const pages = readdirSync(frontend).filter(name => name.endsWith('.html')).sort();
-    for (const page of pages) {
+    // Top-level pages and each content directory's index.html, as
+    // frontend/pages.mjs lists them (kept in step by the CSP drift check).
+    const pages = readdirSync(frontend).filter(name => name.endsWith('.html'));
+    for (const name of readdirSync(frontend)) {
+        if (['node_modules', 'tests', 'docs', 'playwright-report', 'test-results'].includes(name)) continue;
+        if (statSync(join(frontend, name)).isDirectory() && existsSync(join(frontend, name, 'index.html'))) {
+            pages.push(join(name, 'index.html'));
+        }
+    }
+    for (const page of pages.sort()) {
         const html = readFileSync(join(frontend, page), 'utf8');
-        const inlineScript = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+        const inlineScript = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi;
         let match;
         while ((match = inlineScript.exec(html))) {
-            hashes.add(`sha256-${createHash('sha256').update(match[1]).digest('base64')}`);
+            // JSON-LD is data; script-src does not govern it.
+            if (/\btype=["']application\/ld\+json["']/i.test(match[1])) continue;
+            hashes.add(`sha256-${createHash('sha256').update(match[2]).digest('base64')}`);
         }
     }
 }

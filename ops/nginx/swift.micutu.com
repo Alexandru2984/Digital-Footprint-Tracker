@@ -41,10 +41,26 @@ server {
         access_log off;
     }
 
+    # A path that is not a page is a 404, not the scanner served with a 200:
+    # search engines index such "soft 404s" as duplicate content. The only
+    # client-side route is /share (with its legacy /share/TOKEN form).
     location / {
         root  /srv/swift-vapor/current/frontend;
         index index.html;
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ =404;
+    }
+    location = /share {
+        root  /srv/swift-vapor/current/frontend;
+        try_files /index.html =404;
+    }
+    location ^~ /share/ {
+        root  /srv/swift-vapor/current/frontend;
+        try_files /index.html =404;
+    }
+    error_page 404 /404.html;
+    location = /404.html {
+        root  /srv/swift-vapor/current/frontend;
+        internal;
     }
 
     # ── API scan (POST) — stricter rate limit ─────────────────────────────────

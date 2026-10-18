@@ -12,10 +12,21 @@ trap cleanup EXIT
 
 mapfile -t current < <(node "$COLLECTOR" "$ROOT_DIR/frontend")
 # A floor, so a collector that finds nothing cannot pass: one hash per inline
-# script the pages carry today (three since the app script moved to app.js).
-(( ${#current[@]} >= 3 ))
+# script the pages carry today (two: JSON-LD is data and takes no hash).
+(( ${#current[@]} >= 2 ))
 mapfile -t duplicate < <(node "$COLLECTOR" "$ROOT_DIR/frontend" "$ROOT_DIR/frontend")
 [[ "${current[*]}" == "${duplicate[*]}" ]]
+
+# A JSON-LD block is data: adding one must not add a hash.
+mkdir -p "$BASE/data"
+printf '<script type="application/ld+json">{"@type":"WebPage"}</script><script>x()</script>\n' > "$BASE/data/index.html"
+mapfile -t data < <(node "$COLLECTOR" "$BASE/data")
+(( ${#data[@]} == 1 ))
+# A content directory's page is scanned like a top-level one.
+mkdir -p "$BASE/data/guide"
+printf '<script>y()</script>\n' > "$BASE/data/guide/index.html"
+mapfile -t nested < <(node "$COLLECTOR" "$BASE/data")
+(( ${#nested[@]} == 2 ))
 
 cp -a "$ROOT_DIR/frontend" "$BASE/candidate"
 printf '<script>window.__cspTransitionTest = true;</script>\n' >> "$BASE/candidate/index.html"

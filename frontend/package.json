@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:css": "node ./build-css.mjs && node ./sri.mjs",
+    "build:css": "node ./build-pages.mjs && node ./build-css.mjs && node ./sri.mjs",
     "test": "node ./check.mjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "build:pages": "node ./build-pages.mjs"
   },
   "keywords": [],
   "author": "",

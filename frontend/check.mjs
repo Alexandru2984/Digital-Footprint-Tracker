@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDataBlock, listPages } from './pages.mjs';
 
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const repositoryDir = resolve(frontendDir, '..');
 // Derived, not listed. Three legal pages were added to this directory and to
 // no list, so nothing here checked them: not the inline-handler ban, not the
 // first-party rule, not SRI. A page that exists is a page that ships.
-const pages = readdirSync(frontendDir).filter(name => name.endsWith('.html')).sort();
+const pages = listPages(frontendDir);
 if (pages.length === 0) fail('no pages found to check');
 const inlineHashes = [];
 
@@ -73,12 +74,12 @@ for (const page of pages) {
     while ((scriptMatch = inlineScript.exec(html))) {
         const attributes = scriptMatch[1];
         const source = scriptMatch[2];
-        if (/\btype=["']application\/ld\+json["']/i.test(attributes)) {
+        if (isDataBlock(attributes)) {
             JSON.parse(source);
-        } else {
-            // Parse without executing browser code.
-            new Function(source);
+            continue;
         }
+        // Parse without executing browser code.
+        new Function(source);
         inlineHashes.push(createHash('sha256').update(source).digest('base64'));
     }
 }

@@ -42,7 +42,7 @@ jobs:
           npm run build:css
           # The stylesheet must rebuild byte-for-byte, and the integrity
           # attributes it feeds must already match what a rebuild derives.
-          git diff --exit-code -- tailwind.css '*.html'
+          git diff --exit-code -- tailwind.css '*.html' sitemap.xml
 
       - name: Audit frontend dependencies
         # Wraps `npm audit --audit-level=high`, which cannot waive a single
