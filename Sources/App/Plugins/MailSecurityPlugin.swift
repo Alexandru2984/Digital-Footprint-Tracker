@@ -160,16 +160,15 @@ struct MailSecurityPlugin: FootprintPlugin {
 
         var signals = EmailAuth.Signals()
 
-        // SPF: a v=spf1 TXT at the apex.
-        signals.spf = await DoHResolver.resolve(domain, type: "TXT", on: app)
-            .first { $0.lowercased().hasPrefix("v=spf1") }
-
-        // DMARC: a v=DMARC1 TXT at _dmarc.<domain>.
-        signals.dmarc = await DoHResolver.resolve("_dmarc.\(domain)", type: "TXT", on: app)
-            .first { $0.lowercased().hasPrefix("v=dmarc1") }
-
-        // DKIM: probe common selectors concurrently; a hit is a TXT with DKIM markers.
-        await withTaskGroup(of: String?.self) { group in
+        // Every lookup at once: one after another they cost a scan ~5 s.
+        async let spf = DoHResolver.resolve(domain, type: "TXT", on: app)
+        async let dmarc = DoHResolver.resolve("_dmarc.\(domain)", type: "TXT", on: app)
+        async let mtaSts = DoHResolver.resolve("_mta-sts.\(domain)", type: "TXT", on: app)
+        async let tlsRpt = DoHResolver.resolve("_smtp._tls.\(domain)", type: "TXT", on: app)
+        async let ds = DoHResolver.resolve(domain, type: "DS", on: app)
+        async let caa = DoHResolver.resolve(domain, type: "CAA", on: app)
+        // DKIM: probe common selectors; a hit is a TXT with DKIM markers.
+        async let dkim: [String] = withTaskGroup(of: String?.self) { group in
             for sel in EmailAuth.commonDKIMSelectors {
                 group.addTask {
                     let recs = await DoHResolver.resolve("\(sel)._domainkey.\(domain)", type: "TXT", on: app)
@@ -177,19 +176,21 @@ struct MailSecurityPlugin: FootprintPlugin {
                     return hit ? sel : nil
                 }
             }
-            for await sel in group { if let sel { signals.dkimSelectors.append(sel) } }
+            var found: [String] = []
+            for await sel in group { if let sel { found.append(sel) } }
+            return found.sorted()
         }
-        signals.dkimSelectors.sort()
 
+        // SPF: a v=spf1 TXT at the apex. DMARC: a v=DMARC1 TXT at _dmarc.<domain>.
+        signals.spf = await spf.first { $0.lowercased().hasPrefix("v=spf1") }
+        signals.dmarc = await dmarc.first { $0.lowercased().hasPrefix("v=dmarc1") }
+        signals.dkimSelectors = await dkim
         // MTA-STS + TLS-RPT.
-        signals.mtaSts = await DoHResolver.resolve("_mta-sts.\(domain)", type: "TXT", on: app)
-            .contains { $0.lowercased().hasPrefix("v=stsv1") }
-        signals.tlsRpt = await DoHResolver.resolve("_smtp._tls.\(domain)", type: "TXT", on: app)
-            .contains { $0.lowercased().hasPrefix("v=tlsrptv1") }
-
+        signals.mtaSts = await mtaSts.contains { $0.lowercased().hasPrefix("v=stsv1") }
+        signals.tlsRpt = await tlsRpt.contains { $0.lowercased().hasPrefix("v=tlsrptv1") }
         // DNSSEC (DS present at the parent) + CAA.
-        signals.dnssec = !(await DoHResolver.resolve(domain, type: "DS", on: app)).isEmpty
-        signals.caa = (await DoHResolver.resolve(domain, type: "CAA", on: app)).compactMap { rec in
+        signals.dnssec = !(await ds).isEmpty
+        signals.caa = (await caa).compactMap { rec in
             // CAA data looks like `0 issue "letsencrypt.org"`; pull the CA host.
             rec.split(separator: "\"").dropFirst().first.map(String.init)
         }
