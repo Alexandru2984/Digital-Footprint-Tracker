@@ -10,6 +10,8 @@ const pages = [
     { path: '/email-lookup/', heading: /Email OSINT lookup/i, authenticated: false },
     { path: '/sources/', heading: /OSINT sources/i, authenticated: false },
     { path: '/how-it-works/', heading: /How it works/i, authenticated: false },
+    { path: '/ro/', heading: /Instrument OSINT gratuit/i, authenticated: false },
+    { path: '/ro/verificare-bresa-date/', heading: /Verificare breșe de date/i, authenticated: false },
 ];
 
 for (const pageCase of pages) {

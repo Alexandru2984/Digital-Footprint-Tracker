@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Căutare adresă IP — porturi deschise, CVE-uri, operator și reputație</title>
+<meta name="description" content="Verifică o adresă IP: porturile deschise și vulnerabilitățile cunoscute, rețeaua și AS-ul care o anunță, reputația de abuz și scanare și dacă e un nod de ieșire Tor.">
+<link rel="canonical" href="https://swift.micutu.com/ro/cautare-ip/">
+<link rel="alternate" hreflang="en" href="https://swift.micutu.com/ip-lookup/">
+<link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-ip/">
+<link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/ip-lookup/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:locale" content="ro_RO">
+<meta property="og:title" content="Căutare adresă IP — porturi deschise, CVE-uri, operator și reputație">
+<meta property="og:description" content="Verifică o adresă IP: porturile deschise și vulnerabilitățile cunoscute, rețeaua și AS-ul care o anunță, reputația de abuz și scanare și dacă e un nod de ieșire Tor.">
+<meta property="og:url" content="https://swift.micutu.com/ro/cautare-ip/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Căutare adresă IP — porturi deschise, CVE-uri, operator și reputație">
+<meta name="twitter:description" content="Verifică o adresă IP: porturile deschise și vulnerabilitățile cunoscute, rețeaua și AS-ul care o anunță, reputația de abuz și scanare și dacă e un nod de ieșire Tor.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/ro/cautare-ip/",
+      "url": "https://swift.micutu.com/ro/cautare-ip/",
+      "name": "Căutare adresă IP — porturi deschise, CVE-uri, operator și reputație",
+      "description": "Verifică o adresă IP: porturile deschise și vulnerabilitățile cunoscute, rețeaua și AS-ul care o anunță, reputația de abuz și scanare și dacă e un nod de ieșire Tor.",
+      "inLanguage": "ro",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Acasă",
+          "item": "https://swift.micutu.com/ro/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Căutare după adresă IP",
+          "item": "https://swift.micutu.com/ro/cautare-ip/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "inLanguage": "ro",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Pot afla cine se află în spatele unei adrese IP?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Poți afla operatorul rețelei și organizația căreia i-a fost alocat blocul. Identificarea unei persoane cere evidențele furnizorului, care nu sunt publice."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Sunt acceptate adrese interne?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nu. Adresele private, loopback și cele de metadate cloud sunt refuzate, atât ca input, cât și când sunt descoperite în timpul unei scanări."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Sari la conținut</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/ro/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Ghiduri">
+<a href="/ro/cautare-email/">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/" aria-current="page">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/ip-lookup/" hreflang="en" lang="en">English</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/ro/">Acasă</a> › Căutare după adresă IP</nav>
+<h1>Căutare după adresă IP</h1>
+<p class="lead">Ce expune o adresă IP, cine o operează și dacă are o reputație.</p>
+<div class="cta"><a class="button" href="/?q=8.8.8.8">Scanează gratuit</a><a class="button secondary" href="/ro/cum-functioneaza/">Cum funcționează</a></div>
+<h2>Ce se verifică</h2>
+<ul>
+<li><strong>Porturi deschise și vulnerabilități cunoscute</strong> din InternetDB, baza gratuită a Shodan: porturi, CVE-uri, hostname-uri și etichete. O gazdă care răspunde doar pe porturi web e raportată ca site, nu ca expunere.</li>
+<li><strong>Operatorul rețelei</strong>: prefixul rutat, AS-ul de origine și operatorul din RIPEstat, plus alocarea din RDAP-ul registrului regional.</li>
+<li><strong>Reputație</strong>: dacă GreyNoise a văzut adresa scanând internetul și, opțional, Shodan, AbuseIPDB și VirusTotal.</li>
+<li><strong>Tor</strong>: dacă adresa e un nod de ieșire Tor activ, din lista Tor Project.</li>
+</ul>
+<p>Verdictele curate apar ca atare și nu adaugă nimic la scorul de risc; doar constatările reale contează.</p>
+<h2>Întrebări</h2>
+<details><summary>Pot afla cine se află în spatele unei adrese IP?</summary><p>Poți afla operatorul rețelei și organizația căreia i-a fost alocat blocul. Identificarea unei persoane cere evidențele furnizorului, care nu sunt publice.</p></details>
+<details><summary>Sunt acceptate adrese interne?</summary><p>Nu. Adresele private, loopback și cele de metadate cloud sunt refuzate, atât ca input, cât și când sunt descoperite în timpul unei scanări.</p></details>
+<div class="cta"><a class="button" href="/?q=8.8.8.8">Scanează gratuit</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scaner</a>
+<a href="/ro/cautare-email/">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/privacy.html">Confidențialitate</a>
+<a href="/terms.html">Termeni</a>
+<a href="/acceptable-use.html">Utilizare acceptabilă</a>
+</nav>
+<p>Digital Footprint Tracker — OSINT cu respect pentru confidențialitate, fără scripturi terțe.</p>
+</div></footer>
+</body>
+</html>

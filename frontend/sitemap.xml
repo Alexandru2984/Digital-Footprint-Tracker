@@ -1,61 +1,181 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://swift.micutu.com/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://swift.micutu.com/ro/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://swift.micutu.com/email-lookup/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/email-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-email/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/email-lookup/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/cautare-email/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/email-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-email/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/email-lookup/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/username-search/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/username-search/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-username/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/username-search/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/cautare-username/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/username-search/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-username/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/username-search/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/domain-osint/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/domain-osint/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/osint-domeniu/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/domain-osint/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/osint-domeniu/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/domain-osint/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/osint-domeniu/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/domain-osint/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/ip-lookup/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/ip-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-ip/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/ip-lookup/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/cautare-ip/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/ip-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-ip/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/ip-lookup/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/phone-lookup/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/phone-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-telefon/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/phone-lookup/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/cautare-telefon/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/phone-lookup/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-telefon/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/phone-lookup/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/data-breach-check/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/data-breach-check/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/verificare-bresa-date/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/data-breach-check/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/verificare-bresa-date/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/data-breach-check/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/verificare-bresa-date/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/data-breach-check/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/sources/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/sources/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/surse/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/sources/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/surse/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/sources/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/surse/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/sources/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/how-it-works/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/how-it-works/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cum-functioneaza/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/how-it-works/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/cum-functioneaza/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/how-it-works/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cum-functioneaza/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/how-it-works/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://swift.micutu.com/faq/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/faq/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/intrebari/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/faq/"/>
+    <lastmod>2026-10-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://swift.micutu.com/ro/intrebari/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://swift.micutu.com/faq/"/>
+    <xhtml:link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/intrebari/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/faq/"/>
     <lastmod>2026-10-19</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>

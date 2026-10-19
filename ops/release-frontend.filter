@@ -26,6 +26,9 @@
 + /robots.txt
 + /sitemap.xml
 + /openapi.yaml
+# IndexNow ownership key (scripts/indexnow.sh): tells Bing, Yandex and
+# the other IndexNow engines that submissions for this host are ours.
++ /9419635d952bef7c28ba422c4da678fa.txt
 
 # Asset types that are legitimately runtime anywhere in the tree.
 + *.html

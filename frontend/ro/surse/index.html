@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Surse OSINT — peste 45 de surse de date pentru fiecare scanare</title>
+<meta name="description" content="Cele peste 45 de surse OSINT pe care scanerul le interoghează pentru emailuri, username-uri, domenii, adrese IP și numere de telefon, și ce dezvăluie fiecare.">
+<link rel="canonical" href="https://swift.micutu.com/ro/surse/">
+<link rel="alternate" hreflang="en" href="https://swift.micutu.com/sources/">
+<link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/surse/">
+<link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/sources/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:locale" content="ro_RO">
+<meta property="og:title" content="Surse OSINT — peste 45 de surse de date pentru fiecare scanare">
+<meta property="og:description" content="Cele peste 45 de surse OSINT pe care scanerul le interoghează pentru emailuri, username-uri, domenii, adrese IP și numere de telefon, și ce dezvăluie fiecare.">
+<meta property="og:url" content="https://swift.micutu.com/ro/surse/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Surse OSINT — peste 45 de surse de date pentru fiecare scanare">
+<meta name="twitter:description" content="Cele peste 45 de surse OSINT pe care scanerul le interoghează pentru emailuri, username-uri, domenii, adrese IP și numere de telefon, și ce dezvăluie fiecare.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/ro/surse/",
+      "url": "https://swift.micutu.com/ro/surse/",
+      "name": "Surse OSINT — peste 45 de surse de date pentru fiecare scanare",
+      "description": "Cele peste 45 de surse OSINT pe care scanerul le interoghează pentru emailuri, username-uri, domenii, adrese IP și numere de telefon, și ce dezvăluie fiecare.",
+      "inLanguage": "ro",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Acasă",
+          "item": "https://swift.micutu.com/ro/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Surse OSINT",
+          "item": "https://swift.micutu.com/ro/surse/"
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Sari la conținut</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/ro/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Ghiduri">
+<a href="/ro/cautare-email/">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/" aria-current="page">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/sources/" hreflang="en" lang="en">English</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/ro/">Acasă</a> › Surse OSINT</nav>
+<h1>Surse OSINT</h1>
+<p class="lead">Fiecare scanare interoghează sursele potrivite inputului. Majoritatea sunt gratuite și nu cer cheie; câteva acceptă o cheie API opțională.</p>
+<div class="cta"><a class="button" href="/">Scanează gratuit</a><a class="button secondary" href="/ro/cum-functioneaza/">Cum funcționează</a></div>
+<h2>Email</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sursă</th><th scope="col">Ce dezvăluie</th></tr></thead>
+<tbody>
+<tr><td>Gravatar</td><td>Profilul, numele afișat și conturile pe care Gravatar le-a verificat pentru adresă</td></tr>
+<tr><td>Commit-uri și profiluri GitHub</td><td>Contul GitHub și numele autorului din spatele adresei, din commit-uri sau din emailul public al profilului</td></tr>
+<tr><td>keys.openpgp.org</td><td>Alte adrese verificate pe aceeași cheie OpenPGP</td></tr>
+<tr><td>Keyserver Ubuntu</td><td>Numele de pe cheile PGP publice care menționează adresa (neverificate, cântărite ca atare)</td></tr>
+<tr><td>Holehe</td><td>Site-urile la care recuperarea contului recunoaște adresa</td></tr>
+<tr><td>XposedOrNot</td><td>Breșele de date în care apare adresa, ce s-a scurs și când (gratuit)</td></tr>
+<tr><td>Have I Been Pwned</td><td>Breșe și paste-uri (opțional, cu cheie API)</td></tr>
+<tr><td>Analiză email</td><td>Livrabilitate, furnizorul de email și adrese de unică folosință</td></tr>
+<tr><td>Securitatea emailului</td><td>SPF, DMARC, DKIM, MTA-STS, DNSSEC și CAA pentru domeniul propriu al adresei</td></tr>
+</tbody></table></div>
+
+<h2>Username</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sursă</th><th scope="col">Ce dezvăluie</th></tr></thead>
+<tbody>
+<tr><td>480+ site-uri (date Sherlock)</td><td>Prezența pe sute de platforme, fiecare rezultat verificat cu un nume pe care nu-l are nimeni</td></tr>
+<tr><td>GitHub</td><td>Profilul, organizațiile, conturile sociale și adresele verificate de GitHub pe cheile GPG ale contului</td></tr>
+<tr><td>GitLab, Codeberg</td><td>Profiluri, nume, locații și site-uri</td></tr>
+<tr><td>Chei SSH</td><td>Aceeași cheie SSH publică pe conturile de GitHub, GitLab și Codeberg</td></tr>
+<tr><td>Keybase</td><td>Dovezi semnate care leagă Twitter, Reddit, Hacker News, GitHub și domenii</td></tr>
+<tr><td>Mastodon, Bluesky</td><td>Profiluri, link-uri verificate rel=me și handle-uri pe domeniu propriu</td></tr>
+<tr><td>DEV Community, Lobsters</td><td>Profiluri și conturile GitHub, Twitter și Mastodon pe care le listează</td></tr>
+<tr><td>Telegram, Hacker News, Steam</td><td>Profiluri publice</td></tr>
+<tr><td>npm, PyPI, crates.io, Docker Hub</td><td>Pachete și imagini publicate</td></tr>
+</tbody></table></div>
+
+<h2>Domeniu</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sursă</th><th scope="col">Ce dezvăluie</th></tr></thead>
+<tbody>
+<tr><td>RDAP / WHOIS</td><td>Registrarul, datele și, unde nu sunt ascunse, numele, organizația, emailul și telefonul deținătorului</td></tr>
+<tr><td>DNS</td><td>Înregistrările A, MX și TXT și serviciile folosite de deținător (Microsoft 365, Google Workspace, Atlassian, Stripe…)</td></tr>
+<tr><td>Certificate Transparency</td><td>Subdomenii din certificatele emise (crt.sh, cu CertSpotter ca rezervă)</td></tr>
+<tr><td>DNS pasiv</td><td>Rezoluții istorice și alte subdomenii</td></tr>
+<tr><td>Pagina principală</td><td>Conturile marcate rel=me, link-urile spre profiluri, emailul de contact, telefonul și autorul</td></tr>
+<tr><td>Securitate web</td><td>TLS, header-e de securitate HTTP și serverul folosit</td></tr>
+<tr><td>Fișiere expuse</td><td>.env, .git, dump-uri de baze de date și backup-uri lăsate publice, confirmate după conținut</td></tr>
+<tr><td>Wayback Machine</td><td>Prima și ultima arhivare și câte există</td></tr>
+<tr><td>Domenii-capcană</td><td>Domenii asemănătoare care rezolvă (posibil phishing)</td></tr>
+<tr><td>Keybase, Bluesky</td><td>Conturi care au dovedit controlul asupra domeniului</td></tr>
+</tbody></table></div>
+
+<h2>Adresă IP</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sursă</th><th scope="col">Ce dezvăluie</th></tr></thead>
+<tbody>
+<tr><td>InternetDB (Shodan)</td><td>Porturi deschise, CVE-uri cunoscute și hostname-uri (gratuit)</td></tr>
+<tr><td>RIPEstat</td><td>Prefixul rutat, AS-ul de origine și operatorul rețelei</td></tr>
+<tr><td>RDAP / WHOIS</td><td>Rețeaua căreia îi aparține adresa</td></tr>
+<tr><td>Tor Project</td><td>Dacă adresa e un nod de ieșire Tor activ</td></tr>
+<tr><td>GreyNoise</td><td>Dacă adresa scanează internetul și cum e clasificată</td></tr>
+<tr><td>Shodan, AbuseIPDB, VirusTotal</td><td>Servicii, rapoarte de abuz și reputație (chei API opționale)</td></tr>
+</tbody></table></div>
+
+<h2>Telefon</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Sursă</th><th scope="col">Ce dezvăluie</th></tr></thead>
+<tbody>
+<tr><td>Abstract phone intelligence</td><td>Validitate, operator, țară, tipul liniei și uneori numele titularului</td></tr>
+<tr><td>Găsite pe parcurs</td><td>Numerele de pe site-ul sau din înregistrarea domeniului unei ținte devin piste noi</td></tr>
+</tbody></table></div>
+<p>Fiecare sursă e verificată zilnic pe un cont cunoscut, iar o sursă care începe să pice e raportată și ocolită, în loc să încetinească fiecare scanare.</p>
+
+<div class="cta"><a class="button" href="/">Scanează gratuit</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scaner</a>
+<a href="/ro/cautare-email/">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/privacy.html">Confidențialitate</a>
+<a href="/terms.html">Termeni</a>
+<a href="/acceptable-use.html">Utilizare acceptabilă</a>
+</nav>
+<p>Digital Footprint Tracker — OSINT cu respect pentru confidențialitate, fără scripturi terțe.</p>
+</div></footer>
+</body>
+</html>

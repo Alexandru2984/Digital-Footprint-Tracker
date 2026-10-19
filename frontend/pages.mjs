@@ -8,11 +8,17 @@ const notContent = new Set(['node_modules', 'tests', 'docs', 'playwright-report'
 
 export function listPages(frontendDir) {
     const pages = readdirSync(frontendDir).filter(name => name.endsWith('.html'));
-    for (const name of readdirSync(frontendDir)) {
-        if (notContent.has(name) || name.startsWith('.')) continue;
-        const dir = join(frontendDir, name);
-        if (statSync(dir).isDirectory() && existsSync(join(dir, 'index.html'))) pages.push(`${name}/index.html`);
-    }
+    // Content directories, two levels deep at most (/ro/cautare-email/).
+    const walk = (relative, depth) => {
+        for (const name of readdirSync(join(frontendDir, relative))) {
+            if (name.startsWith('.') || (depth === 0 && notContent.has(name))) continue;
+            const child = relative ? `${relative}/${name}` : name;
+            if (!statSync(join(frontendDir, child)).isDirectory()) continue;
+            if (existsSync(join(frontendDir, child, 'index.html'))) pages.push(`${child}/index.html`);
+            if (depth < 1) walk(child, depth + 1);
+        }
+    };
+    walk('', 0);
     return pages.sort();
 }
 

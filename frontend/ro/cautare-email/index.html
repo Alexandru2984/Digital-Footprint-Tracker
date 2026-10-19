@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Căutare după email (OSINT) — conturi, breșe și cine e în spate</title>
+<meta name="description" content="Căutare OSINT gratuită după adresa de email: conturile înregistrate cu ea, persoana din spate, cheile PGP și breșele de date în care apare — fiecare legătură cu un scor de încredere.">
+<link rel="canonical" href="https://swift.micutu.com/ro/cautare-email/">
+<link rel="alternate" hreflang="en" href="https://swift.micutu.com/email-lookup/">
+<link rel="alternate" hreflang="ro" href="https://swift.micutu.com/ro/cautare-email/">
+<link rel="alternate" hreflang="x-default" href="https://swift.micutu.com/email-lookup/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Digital Footprint Tracker">
+<meta property="og:locale" content="ro_RO">
+<meta property="og:title" content="Căutare după email (OSINT) — conturi, breșe și cine e în spate">
+<meta property="og:description" content="Căutare OSINT gratuită după adresa de email: conturile înregistrate cu ea, persoana din spate, cheile PGP și breșele de date în care apare — fiecare legătură cu un scor de încredere.">
+<meta property="og:url" content="https://swift.micutu.com/ro/cautare-email/">
+<meta property="og:image" content="https://swift.micutu.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Căutare după email (OSINT) — conturi, breșe și cine e în spate">
+<meta name="twitter:description" content="Căutare OSINT gratuită după adresa de email: conturile înregistrate cu ea, persoana din spate, cheile PGP și breșele de date în care apare — fiecare legătură cu un scor de încredere.">
+<meta name="twitter:image" content="https://swift.micutu.com/og-image.png">
+<link rel="stylesheet" href="/content.css?v=233fb4dd6b92">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://swift.micutu.com/ro/cautare-email/",
+      "url": "https://swift.micutu.com/ro/cautare-email/",
+      "name": "Căutare după email (OSINT) — conturi, breșe și cine e în spate",
+      "description": "Căutare OSINT gratuită după adresa de email: conturile înregistrate cu ea, persoana din spate, cheile PGP și breșele de date în care apare — fiecare legătură cu un scor de încredere.",
+      "inLanguage": "ro",
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Digital Footprint Tracker",
+        "url": "https://swift.micutu.com/"
+      },
+      "dateModified": "2026-10-19"
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Acasă",
+          "item": "https://swift.micutu.com/ro/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Căutare după email",
+          "item": "https://swift.micutu.com/ro/cautare-email/"
+        }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "inLanguage": "ro",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Pot afla cine deține o adresă de email?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Deseori, da. Când o platformă a verificat adresa — un commit GitHub, un profil Gravatar, o cheie OpenPGP — contul și numele de pe el sunt atribuite cu încredere mare. Adresele nefolosite public dezvăluie puțin."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Proprietarul adresei află că a fost căutat?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nu. Toate sursele sunt interogate pasiv; nu se trimite nimic către adresă. Verificările de recuperare a contului nu finalizează nicio resetare."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Căutarea e gratuită?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Da. Verificarea conturilor înregistrate și căutarea pe 480 de site-uri cer un cont gratuit, verificat; restul merge anonim."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Sari la conținut</a>
+<header class="site-header"><div class="wrap">
+<a class="brand" href="/ro/">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="Ghiduri">
+<a href="/ro/cautare-email/" aria-current="page">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/email-lookup/" hreflang="en" lang="en">English</a>
+</nav>
+</div></header>
+<main id="main" class="wrap">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/ro/">Acasă</a> › Căutare după email</nav>
+<h1>Căutare după email</h1>
+<p class="lead">Află la ce duce o adresă de email: conturile create cu ea, numele persoanei din spate, cheile și profilurile legate de ea și breșele în care s-a scurs.</p>
+<div class="cta"><a class="button" href="/?q=nume%40exemplu.ro">Scanează gratuit</a><a class="button secondary" href="/ro/cum-functioneaza/">Cum funcționează</a></div>
+<h2>Ce dezvăluie o adresă de email</h2>
+<p>Emailul e cel mai bun punct de plecare într-o investigație OSINT, pentru că platformele îl verifică. Scanerul întreabă sursele care pot lega o adresă de un cont și păstrează motivul dat de fiecare:</p>
+<ul>
+<li><strong>GitHub</strong> leagă un commit de un cont doar printr-un email verificat, deci un commit semnat cu adresa numește proprietarul. Se verifică și emailul public al profilului.</li>
+<li><strong>Gravatar</strong> întoarce profilul asociat adresei și conturile sociale verificate de Gravatar.</li>
+<li><strong>Cheile OpenPGP</strong>: keys.openpgp.org listează doar adrese confirmate de proprietar, deci celelalte adrese de pe aceeași cheie sunt ale aceleiași persoane.</li>
+<li><strong>Conturi înregistrate</strong>: Holehe întreabă formularele de recuperare a parolei dacă recunosc adresa și descoperă conturi pe Spotify, Office 365, Eventbrite și altele.</li>
+<li><strong>Breșe de date</strong> din XposedOrNot (gratuit) și, opțional, Have I Been Pwned: ce breșe, când și ce s-a scurs.</li>
+<li><strong>Domeniul adresei</strong>: pentru o adresă pe un domeniu propriu (nu Gmail sau Yahoo), se scanează și domeniul — deținătorul, site-ul și serviciile folosite.</li>
+</ul>
+<h2>De la o adresă la o amprentă întreagă</h2>
+<p>Fiecare cont confirmat e urmat mai departe. Partea dinainte de @ e căutată ca username, un cont GitHub duce la dovezile lui Keybase, la cheile SSH și la site-ul listat, iar un domeniu dovedit pe Keybase e scanat la rândul lui. Fiecare pas e o verigă într-un lanț, iar lanțul decide cât de sigur e instrumentul că un cont aparține persoanei.</p>
+<div class="note">Legăturile verificate de o platformă valorează 98%, cele publicate de persoană 90%, un username comun 40%. Un cont găsit doar pentru că are același nume nu poate prelua profilul. <a href="/ro/cum-functioneaza/">Cum funcționează scorul</a>.</div>
+<h2>Pentru cine e</h2>
+<p>Pentru verificarea propriei expuneri, investigarea phishing-ului și a fraudelor, due diligence și evaluări de securitate autorizate. Citește <a href="/acceptable-use.html">politica de utilizare</a> înainte să scanezi pe altcineva.</p>
+<h2>Întrebări</h2>
+<details><summary>Pot afla cine deține o adresă de email?</summary><p>Deseori, da. Când o platformă a verificat adresa — un commit GitHub, un profil Gravatar, o cheie OpenPGP — contul și numele de pe el sunt atribuite cu încredere mare. Adresele nefolosite public dezvăluie puțin.</p></details>
+<details><summary>Proprietarul adresei află că a fost căutat?</summary><p>Nu. Toate sursele sunt interogate pasiv; nu se trimite nimic către adresă. Verificările de recuperare a contului nu finalizează nicio resetare.</p></details>
+<details><summary>Căutarea e gratuită?</summary><p>Da. Verificarea conturilor înregistrate și căutarea pe 480 de site-uri cer un cont gratuit, verificat; restul merge anonim.</p></details>
+<div class="cta"><a class="button" href="/?q=nume%40exemplu.ro">Scanează gratuit</a></div>
+</main>
+<footer class="site-footer"><div class="wrap">
+<nav aria-label="Site">
+<a href="/">Scaner</a>
+<a href="/ro/cautare-email/">Email</a>
+<a href="/ro/cautare-username/">Username</a>
+<a href="/ro/osint-domeniu/">Domeniu</a>
+<a href="/ro/cautare-ip/">IP</a>
+<a href="/ro/cautare-telefon/">Telefon</a>
+<a href="/ro/verificare-bresa-date/">Breșe</a>
+<a href="/ro/surse/">Surse</a>
+<a href="/ro/cum-functioneaza/">Cum funcționează</a>
+<a href="/ro/intrebari/">Întrebări</a>
+<a href="/privacy.html">Confidențialitate</a>
+<a href="/terms.html">Termeni</a>
+<a href="/acceptable-use.html">Utilizare acceptabilă</a>
+</nav>
+<p>Digital Footprint Tracker — OSINT cu respect pentru confidențialitate, fără scripturi terțe.</p>
+</div></footer>
+</body>
+</html>

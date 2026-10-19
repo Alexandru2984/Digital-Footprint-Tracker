@@ -7,6 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { roHome, roNav, roPages, roSourceGroups } from './guides-ro.mjs';
 
 const frontendDir = dirname(fileURLToPath(import.meta.url));
 const origin = 'https://swift.micutu.com';
@@ -301,107 +302,182 @@ ${rows.map(([name, what]) => `<tr><td>${escapeHTML(name)}</td><td>${escapeHTML(w
     },
 ];
 
-function header(current) {
+
+const sourceTable = (groups, sourceLabel, revealsLabel) => groups.map(([group, rows]) => `
+<h2>${escapeHTML(group)}</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">${sourceLabel}</th><th scope="col">${revealsLabel}</th></tr></thead>
+<tbody>
+${rows.map(([name, what]) => `<tr><td>${escapeHTML(name)}</td><td>${escapeHTML(what)}</td></tr>`).join('\n')}
+</tbody></table></div>`).join('\n');
+
+const roByKey = new Map(roPages.map(page => [page.key, page]));
+const locales = {
+    en: {
+        lang: 'en', ogLocale: 'en_US', home: '/', homeLabel: 'Home', nav, navLabel: 'Guides',
+        path: key => `/${key}/`, page: key => pages.find(page => page.slug === key),
+        cta: 'Run a free scan', how: 'How it works', questions: 'Questions', skip: 'Skip to content',
+        scanner: 'Scanner', privacy: 'Privacy', terms: 'Terms', acceptable: 'Acceptable use',
+        tagline: 'privacy-first OSINT, no third-party scripts.', other: 'ro', otherLabel: 'Română',
+    },
+    ro: {
+        lang: 'ro', ogLocale: 'ro_RO', home: '/ro/', homeLabel: 'Acasă', nav: roNav, navLabel: 'Ghiduri',
+        path: key => `/ro/${roByKey.get(key).slug}/`, page: key => roByKey.get(key),
+        cta: 'Scanează gratuit', how: 'Cum funcționează', questions: 'Întrebări', skip: 'Sari la conținut',
+        scanner: 'Scaner', privacy: 'Confidențialitate', terms: 'Termeni', acceptable: 'Utilizare acceptabilă',
+        tagline: 'OSINT cu respect pentru confidențialitate, fără scripturi terțe.', other: 'en', otherLabel: 'English',
+    },
+};
+
+function header(l, current, otherPath) {
     return `<header class="site-header"><div class="wrap">
-<a class="brand" href="/">OSINT <span>Footprint Tracker</span></a>
-<nav class="site-nav" aria-label="Guides">
-${nav.map(([slug, label]) => `<a href="/${slug}/"${slug === current ? ' aria-current="page"' : ''}>${escapeHTML(label)}</a>`).join('\n')}
+<a class="brand" href="${l.home}">OSINT <span>Footprint Tracker</span></a>
+<nav class="site-nav" aria-label="${l.navLabel}">
+${l.nav.map(([key, label]) => `<a href="${l.path(key)}"${key === current ? ' aria-current="page"' : ''}>${escapeHTML(label)}</a>`).join('\n')}
+<a href="${otherPath}" hreflang="${l.other}" lang="${l.other}">${l.otherLabel}</a>
 </nav>
 </div></header>`;
 }
 
-const footer = `<footer class="site-footer"><div class="wrap">
+function footer(l) {
+    return `<footer class="site-footer"><div class="wrap">
 <nav aria-label="Site">
-<a href="/">Scanner</a>
-${nav.map(([slug, label]) => `<a href="/${slug}/">${escapeHTML(label)}</a>`).join('\n')}
-<a href="/privacy.html">Privacy</a>
-<a href="/terms.html">Terms</a>
-<a href="/acceptable-use.html">Acceptable use</a>
+<a href="/">${l.scanner}</a>
+${l.nav.map(([key, label]) => `<a href="${l.path(key)}">${escapeHTML(label)}</a>`).join('\n')}
+<a href="/privacy.html">${l.privacy}</a>
+<a href="/terms.html">${l.terms}</a>
+<a href="/acceptable-use.html">${l.acceptable}</a>
 </nav>
-<p>${siteName} — privacy-first OSINT, no third-party scripts.</p>
+<p>${siteName} — ${l.tagline}</p>
 </div></footer>`;
+}
 
-function render(page) {
-    const url = `${origin}/${page.slug}/`;
-    const body = typeof page.body === 'function' ? page.body() : page.body;
+function head(l, { title, description, url, alternates, type, robots, extra = '' }) {
+    return `<!DOCTYPE html>
+<html lang="${l.lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHTML(title)}</title>
+${description ? `<meta name="description" content="${escapeHTML(description)}">\n` : ''}${url ? `<link rel="canonical" href="${url}">\n` : ''}${(alternates || []).map(([lang, href]) => `<link rel="alternate" hreflang="${lang}" href="${href}">`).join('\n')}
+<meta name="robots" content="${robots}">
+<meta name="theme-color" content="#0f172a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${url ? `<meta property="og:type" content="${type}">
+<meta property="og:site_name" content="${siteName}">
+<meta property="og:locale" content="${l.ogLocale}">
+<meta property="og:title" content="${escapeHTML(title)}">
+<meta property="og:description" content="${escapeHTML(description)}">
+<meta property="og:url" content="${url}">
+<meta property="og:image" content="${origin}/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHTML(title)}">
+<meta name="twitter:description" content="${escapeHTML(description)}">
+<meta name="twitter:image" content="${origin}/og-image.png">
+` : ''}<link rel="stylesheet" href="/content.css?v=0">
+${extra}</head>`;
+}
+
+const alternatesFor = key => [
+    ['en', `${origin}${locales.en.path(key)}`], ['ro', `${origin}${locales.ro.path(key)}`],
+    ['x-default', `${origin}${locales.en.path(key)}`],
+];
+
+function renderGuide(lang, key) {
+    const l = locales[lang];
+    const page = l.page(key);
+    const url = `${origin}${l.path(key)}`;
+    let body = typeof page.body === 'function' ? page.body() : page.body;
+    if (body === 'SOURCES') {
+        body = sourceTable(roSourceGroups, 'Sursă', 'Ce dezvăluie')
+            + '\n<p>Fiecare sursă e verificată zilnic pe un cont cunoscut, iar o sursă care începe să pice e raportată și ocolită, în loc să încetinească fiecare scanare.</p>';
+    }
     const graph = [
-        { '@type': 'WebPage', '@id': url, url, name: page.title, description: page.description,
+        { '@type': 'WebPage', '@id': url, url, name: page.title, description: page.description, inLanguage: l.lang,
           isPartOf: { '@type': 'WebSite', name: siteName, url: `${origin}/` }, dateModified: contentDate },
         { '@type': 'BreadcrumbList', itemListElement: [
-            { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+            { '@type': 'ListItem', position: 1, name: l.homeLabel, item: `${origin}${l.home}` },
             { '@type': 'ListItem', position: 2, name: page.h1, item: url },
         ] },
     ];
     if (page.faq.length) {
-        graph.push({ '@type': 'FAQPage', mainEntity: page.faq.map(([q, a]) => ({
+        graph.push({ '@type': 'FAQPage', inLanguage: l.lang, mainEntity: page.faq.map(([q, a]) => ({
             '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) });
     }
     const tryLink = page.example ? `/?q=${encodeURIComponent(page.example)}` : '/';
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHTML(page.title)}</title>
-<meta name="description" content="${escapeHTML(page.description)}">
-<link rel="canonical" href="${url}">
-<meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#0f172a">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta property="og:type" content="article">
-<meta property="og:site_name" content="${siteName}">
-<meta property="og:title" content="${escapeHTML(page.title)}">
-<meta property="og:description" content="${escapeHTML(page.description)}">
-<meta property="og:url" content="${url}">
-<meta property="og:image" content="${origin}/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${escapeHTML(page.title)}">
-<meta name="twitter:description" content="${escapeHTML(page.description)}">
-<meta name="twitter:image" content="${origin}/og-image.png">
-<link rel="stylesheet" href="/content.css?v=0">
-<script type="application/ld+json">
-${jsonLD({ '@context': 'https://schema.org', '@graph': graph })}
-</script>
-</head>
+    const other = locales[l.other];
+    return `${head(l, { title: page.title, description: page.description, url, alternates: alternatesFor(key),
+                        type: 'article', robots: 'index, follow, max-image-preview:large',
+                        extra: `<script type="application/ld+json">\n${jsonLD({ '@context': 'https://schema.org', '@graph': graph })}\n</script>\n` })}
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
-${header(page.slug)}
+<a class="skip-link" href="#main">${l.skip}</a>
+${header(l, key, other.path(key))}
 <main id="main" class="wrap">
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › ${escapeHTML(page.h1)}</nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="${l.home}">${l.homeLabel}</a> › ${escapeHTML(page.h1)}</nav>
 <h1>${escapeHTML(page.h1)}</h1>
 <p class="lead">${escapeHTML(page.lead)}</p>
-<div class="cta"><a class="button" href="${tryLink}">Run a free scan</a><a class="button secondary" href="/how-it-works/">How it works</a></div>
+<div class="cta"><a class="button" href="${tryLink}">${l.cta}</a><a class="button secondary" href="${l.path('how-it-works')}">${l.how}</a></div>
 ${body.trim()}
-${page.faq.length ? `<h2>Questions</h2>\n${page.faq.map(([q, a]) => `<details><summary>${escapeHTML(q)}</summary><p>${escapeHTML(a)}</p></details>`).join('\n')}` : ''}
-<div class="cta"><a class="button" href="${tryLink}">Run a free scan</a></div>
+${page.faq.length ? `<h2>${l.questions}</h2>\n${page.faq.map(([q, a]) => `<details><summary>${escapeHTML(q)}</summary><p>${escapeHTML(a)}</p></details>`).join('\n')}` : ''}
+<div class="cta"><a class="button" href="${tryLink}">${l.cta}</a></div>
 </main>
-${footer}
+${footer(l)}
 </body>
 </html>
 `;
 }
 
+const write = (path, html) => {
+    mkdirSync(dirname(join(frontendDir, path)), { recursive: true });
+    writeFileSync(join(frontendDir, path), html);
+};
+
 for (const page of pages) {
-    mkdirSync(join(frontendDir, page.slug), { recursive: true });
-    writeFileSync(join(frontendDir, page.slug, 'index.html'), render(page));
+    write(`${page.slug}/index.html`, renderGuide('en', page.slug));
+    write(`ro/${roByKey.get(page.slug).slug}/index.html`, renderGuide('ro', page.slug));
+}
+
+// The Romanian home: what the tool does, and the guides. The scanner itself
+// is the English home page, which it links to.
+{
+    const l = locales.ro;
+    const url = `${origin}/ro/`;
+    const graph = [{ '@type': 'WebPage', '@id': url, url, name: roHome.title, description: roHome.description,
+                     inLanguage: 'ro', isPartOf: { '@type': 'WebSite', name: siteName, url: `${origin}/` } }];
+    write('ro/index.html', `${head(l, { title: roHome.title, description: roHome.description, url,
+                                         alternates: [['en', `${origin}/`], ['ro', url], ['x-default', `${origin}/`]],
+                                         type: 'website', robots: 'index, follow, max-image-preview:large',
+                                         extra: `<script type="application/ld+json">\n${jsonLD({ '@context': 'https://schema.org', '@graph': graph })}\n</script>\n` })}
+<body>
+<a class="skip-link" href="#main">${l.skip}</a>
+${header(l, '', '/')}
+<main id="main" class="wrap">
+<h1>${escapeHTML(roHome.h1)}</h1>
+<p class="lead">${escapeHTML(roHome.lead)}</p>
+<div class="cta"><a class="button" href="/">${l.cta}</a><a class="button secondary" href="${l.path('how-it-works')}">${l.how}</a></div>
+<h2>Ce poți căuta</h2>
+<div class="cards">
+${roPages.filter(page => page.example).map(page => `<div class="card"><h3><a href="${l.path(page.key)}">${escapeHTML(page.h1)}</a></h3><p>${escapeHTML(page.lead)}</p></div>`).join('\n')}
+</div>
+<h2>Mai multe</h2>
+<div class="cards">
+${roPages.filter(page => !page.example).map(page => `<div class="card"><h3><a href="${l.path(page.key)}">${escapeHTML(page.h1)}</a></h3><p>${escapeHTML(page.lead)}</p></div>`).join('\n')}
+</div>
+</main>
+${footer(l)}
+</body>
+</html>
+`);
 }
 
 // Served by nginx for any path that is not a page, instead of the scanner
 // with a 200 (a "soft 404" search engines index as duplicate content).
-writeFileSync(join(frontendDir, '404.html'), `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Page not found — ${siteName}</title>
-<meta name="robots" content="noindex, follow">
-<meta name="theme-color" content="#0f172a">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/content.css?v=0">
-</head>
+{
+    const l = locales.en;
+    write('404.html', `${head(l, { title: `Page not found — ${siteName}`, robots: 'noindex, follow' })}
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
-${header('')}
+<a class="skip-link" href="#main">${l.skip}</a>
+${header(l, '', '/ro/')}
 <main id="main" class="wrap">
 <h1>Page not found</h1>
 <p class="lead">There is nothing at this address. The scanner and the guides are below.</p>
@@ -410,24 +486,33 @@ ${header('')}
 ${pages.map(page => `<div class="card"><h3><a href="/${page.slug}/">${escapeHTML(page.h1)}</a></h3><p>${escapeHTML(page.lead)}</p></div>`).join('\n')}
 </div>
 </main>
-${footer}
+${footer(l)}
 </body>
 </html>
 `);
+}
 
 const legal = [['privacy.html', '2026-08-30', 'yearly', '0.3'], ['terms.html', '2026-08-30', 'yearly', '0.3'],
                ['acceptable-use.html', '2026-08-30', 'yearly', '0.3']];
-const entries = [[`${origin}/`, contentDate, 'weekly', '1.0'],
-                 ...pages.map(page => [`${origin}/${page.slug}/`, contentDate, 'monthly', '0.8']),
-                 ...legal.map(([path, date, freq, priority]) => [`${origin}/${path}`, date, freq, priority])];
-writeFileSync(join(frontendDir, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${entries.map(([loc, lastmod, freq, priority]) => `  <url>
+const entry = (loc, lastmod, freq, priority, alternates = []) => `  <url>
     <loc>${loc}</loc>
-    <lastmod>${lastmod}</lastmod>
+${alternates.map(([lang, href]) => `    <xhtml:link rel="alternate" hreflang="${lang}" href="${href}"/>`).join('\n')}${alternates.length ? '\n' : ''}    <lastmod>${lastmod}</lastmod>
     <changefreq>${freq}</changefreq>
     <priority>${priority}</priority>
-  </url>`).join('\n')}
+  </url>`;
+const homeAlternates = [['en', `${origin}/`], ['ro', `${origin}/ro/`], ['x-default', `${origin}/`]];
+const entries = [
+    entry(`${origin}/`, contentDate, 'weekly', '1.0', homeAlternates),
+    entry(`${origin}/ro/`, contentDate, 'weekly', '0.9', homeAlternates),
+    ...pages.flatMap(page => [
+        entry(`${origin}/${page.slug}/`, contentDate, 'monthly', '0.8', alternatesFor(page.slug)),
+        entry(`${origin}${locales.ro.path(page.slug)}`, contentDate, 'monthly', '0.8', alternatesFor(page.slug)),
+    ]),
+    ...legal.map(([path, date, freq, priority]) => entry(`${origin}/${path}`, date, freq, priority)),
+];
+writeFileSync(join(frontendDir, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${entries.join('\n')}
 </urlset>
 `);
-console.log(`build-pages: wrote ${pages.length} guide pages and sitemap.xml`);
+console.log(`build-pages: wrote ${pages.length * 2 + 1} guide pages, 404.html and sitemap.xml`);
