@@ -60,6 +60,7 @@ enum APIKeyRoutePolicy {
         Rule(.POST, "/auth/retention", .deny),
         Rule(.PATCH, "/auth/settings", .deny),
         Rule(.POST, "/auth/notifications/test", .deny),
+        Rule(.POST, "/auth/notifications/telegram/detect", .deny),
         Rule(.POST, "/auth/2fa/setup", .deny),
         Rule(.POST, "/auth/2fa/enable", .deny),
         Rule(.POST, "/auth/2fa/disable", .deny),

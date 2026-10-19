@@ -2358,6 +2358,38 @@
                 btn.disabled = false;
             }
         });
+        // Asks the server to read, with the saved bot token, which chats wrote to
+        // the bot; one chat is saved at once, several are listed to pick from.
+        document.getElementById('telegram-detect-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('telegram-detect-btn');
+            const msg = document.getElementById('notif-settings-msg');
+            const field = document.getElementById('telegram-chatid-input');
+            btn.textContent = 'Detecting…';
+            btn.disabled = true;
+            try {
+                const resp = await fetch('/api/auth/notifications/telegram/detect', { method: 'POST', credentials: 'include' });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(String(data.reason || ('HTTP ' + resp.status)));
+                const chats = Array.isArray(data.chats) ? data.chats : [];
+                if (data.saved) {
+                    field.value = String(data.saved);
+                    msg.textContent = '✓ Chat ' + String(chats[0] && chats[0].name || data.saved) + ' saved';
+                } else {
+                    field.value = String(chats[0] && chats[0].id || '');
+                    msg.textContent = 'Several chats found — the latest is filled in; Save to keep it: '
+                        + chats.slice(0, 5).map(c => String(c.name || c.id) + ' (' + String(c.id) + ')').join(', ');
+                }
+                msg.className = 'text-[10px] mt-1 text-green-400';
+            } catch (err) {
+                msg.textContent = '✗ ' + err.message;
+                msg.className = 'text-[10px] mt-1 text-red-400';
+            } finally {
+                msg.classList.remove('hidden');
+                btn.textContent = 'Detect';
+                btn.disabled = false;
+            }
+        });
+
         document.getElementById('test-notification-btn').addEventListener('click', async () => {
             const btn = document.getElementById('test-notification-btn');
             btn.textContent = 'Sending…';

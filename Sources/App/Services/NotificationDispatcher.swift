@@ -139,7 +139,7 @@ struct NotificationDispatcher {
                     result = await sendTelegram(
                         token: token,
                         chatID: chatID,
-                        text: "**\(title)**\n\(message)",
+                        text: telegramText(title: title, message: message),
                         deliveryID: deliveryID,
                         app: app
                     )
@@ -252,11 +252,75 @@ struct NotificationDispatcher {
         guard let url = URL(string: "https://api.telegram.org/bot\(token)/sendMessage") else {
             return .failed(.permanent, code: "invalid_destination")
         }
-        let payload: [String: Any] = ["chat_id": chatID, "text": text, "parse_mode": "Markdown"]
+        // Plain text, no parse_mode: a message carries scan data (usernames,
+        // addresses) whose underscores and asterisks made Telegram reject the
+        // whole message as malformed Markdown.
+        let payload: [String: Any] = ["chat_id": chatID, "text": text, "disable_web_page_preview": true]
         guard let data = jsonData(payload) else {
             return .failed(.permanent, code: "invalid_payload")
         }
         return await sendWebhook(url: url, data: data, deliveryID: deliveryID, app: app)
+    }
+
+    /// Title on its own line, the message under it, within Telegram's limit.
+    static func telegramText(title: String, message: String) -> String {
+        let text = "\(title)\n\n\(message)"
+        return text.count > 4_000 ? String(text.prefix(4_000)) + "…" : text
+    }
+
+    /// A chat the bot has heard from, for picking where alerts go.
+    struct TelegramChat: Content, Equatable {
+        let id: String
+        let type: String
+        let name: String
+    }
+
+    enum TelegramDetectError: Error, Equatable {
+        case invalidToken, webhookInUse, unreachable, nothingYet
+    }
+
+    /// The chats in a `getUpdates` answer, most recent first, one per chat.
+    static func telegramChats(fromUpdates data: Data) -> [TelegramChat] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              (json["ok"] as? Bool) == true,
+              let updates = json["result"] as? [[String: Any]] else { return [] }
+        var seen = Set<String>()
+        var chats: [TelegramChat] = []
+        for update in updates.reversed() {
+            let container = ["message", "channel_post", "my_chat_member", "edited_message"]
+                .lazy.compactMap { update[$0] as? [String: Any] }.first
+            guard let chat = container?["chat"] as? [String: Any],
+                  let rawID = chat["id"] as? NSNumber else { continue }
+            let id = rawID.stringValue
+            guard seen.insert(id).inserted else { continue }
+            let name = (chat["title"] as? String) ?? (chat["username"] as? String).map { "@\($0)" }
+                ?? [chat["first_name"] as? String, chat["last_name"] as? String].compactMap { $0 }.joined(separator: " ")
+            chats.append(TelegramChat(id: id, type: chat["type"] as? String ?? "private", name: String(name.prefix(80))))
+            if chats.count == 10 { break }
+        }
+        return chats
+    }
+
+    /// Asks Telegram which chats have written to the bot. The token rides in
+    /// the URL path, so no error text from the request is ever logged.
+    static func detectTelegramChats(token: String, app: Application) async -> Swift.Result<[TelegramChat], TelegramDetectError> {
+        guard let url = URL(string: "https://api.telegram.org/bot\(token)/getUpdates?limit=50") else {
+            return .failure(.invalidToken)
+        }
+        do {
+            let response = try await OutboundHTTP.request(url, timeout: 10, bodyMode: .complete(maxBytes: 1_024 * 1_024),
+                                                          maxRedirects: 0, on: app)
+            switch response.status {
+            case 200:
+                let chats = telegramChats(fromUpdates: response.data)
+                return chats.isEmpty ? .failure(.nothingYet) : .success(chats)
+            case 401, 404: return .failure(.invalidToken)
+            case 409: return .failure(.webhookInUse)
+            default: return .failure(.unreachable)
+            }
+        } catch {
+            return .failure(.unreachable)
+        }
     }
 
     private static func genericWebhookBody(

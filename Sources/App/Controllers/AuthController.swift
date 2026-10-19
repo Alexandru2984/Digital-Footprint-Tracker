@@ -61,6 +61,9 @@ struct AuthController: RouteCollection {
         // so without a budget this is an unlimited relay to any public HTTPS host.
         auth.grouped(ScanRateLimiter(anonMax: 0, authedMax: 5, windowSeconds: 3600))
             .post("notifications", "test", use: testNotifications)
+        // Asks Telegram, with the account's own bot token, who wrote to the bot.
+        auth.grouped(ScanRateLimiter(anonMax: 0, authedMax: 10, windowSeconds: 3600))
+            .post("notifications", "telegram", "detect", use: detectTelegramChat)
     }
 
     @Sendable
@@ -342,6 +345,11 @@ struct AuthController: RouteCollection {
             }
         }
         if let chatID = body.telegramChatID {
+            // A numeric chat (negative for groups and channels) or a public
+            // @channel: anything else can only fail at delivery time.
+            guard chatID.isEmpty || Self.isTelegramChatID(chatID) else {
+                throw Abort(.badRequest, reason: "Telegram chat ID must be a number (e.g. 123456789 or -1001234567890) or an @channel name.")
+            }
             user.setTelegramChatID(chatID.isEmpty ? nil : chatID)
         }
         if let slack = body.slackWebhookURL {
@@ -351,6 +359,46 @@ struct AuthController: RouteCollection {
         try await user.save(on: req.db)
         await AuditLogger.log(req: req, action: "update_settings", target: user.username)
         return try user.toPublic()
+    }
+
+    static func isTelegramChatID(_ value: String) -> Bool {
+        value.range(of: #"^(-?[0-9]{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$"#, options: .regularExpression) != nil
+    }
+
+    struct TelegramDetectResponse: Content {
+        let chats: [NotificationDispatcher.TelegramChat]
+        /// The chat saved as the destination: set when exactly one was found.
+        let saved: String?
+    }
+
+    /// Finds the chat ID for the account's saved bot token: the person sends
+    /// /start to their bot, then this asks Telegram who wrote to it. With one
+    /// chat it is saved; with several the person picks.
+    @Sendable
+    func detectTelegramChat(req: Request) async throws -> TelegramDetectResponse {
+        let user = try await req.requireRecentSessionUser()
+        guard let token = try user.telegramBotToken, !token.isEmpty else {
+            throw Abort(.unprocessableEntity, reason: "Save your Telegram bot token first.")
+        }
+        switch await NotificationDispatcher.detectTelegramChats(token: token, app: req.application) {
+        case .success(let chats):
+            var saved: String?
+            if chats.count == 1 {
+                user.setTelegramChatID(chats[0].id)
+                try await user.save(on: req.db)
+                await AuditLogger.log(req: req, action: "update_settings", target: user.username)
+                saved = chats[0].id
+            }
+            return TelegramDetectResponse(chats: chats, saved: saved)
+        case .failure(.nothingYet):
+            throw Abort(.notFound, reason: "No messages yet: open your bot in Telegram, send it /start, then try again.")
+        case .failure(.invalidToken):
+            throw Abort(.badRequest, reason: "Telegram rejected the bot token.")
+        case .failure(.webhookInUse):
+            throw Abort(.conflict, reason: "This bot has a webhook set, so its messages cannot be read here. Enter the chat ID by hand.")
+        case .failure(.unreachable):
+            throw Abort(.badGateway, reason: "Telegram could not be reached. Try again shortly.")
+        }
     }
 
     @Sendable

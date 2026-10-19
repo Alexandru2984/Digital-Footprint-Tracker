@@ -4787,6 +4787,47 @@ final class AppTests: XCTestCase {
                        "an account the site's recovery flow ties to the address: observed")
     }
 
+    func testTelegramAlertsArePlainTextAndTheChatCanBeDetected() async throws {
+        // Scan data is full of underscores and asterisks: as Markdown it was
+        // rejected; as plain text it arrives as written.
+        let text = NotificationDispatcher.telegramText(title: "New findings", message: "john_doe on *Steam*")
+        XCTAssertEqual(text, "New findings\n\njohn_doe on *Steam*")
+        XCTAssertLessThanOrEqual(NotificationDispatcher.telegramText(title: "t", message: String(repeating: "x", count: 9_000)).count, 4_001)
+
+        let updates = Data(#"""
+        {"ok":true,"result":[
+          {"update_id":1,"message":{"chat":{"id":111,"type":"private","first_name":"Ana","last_name":"P"},"text":"/start"}},
+          {"update_id":2,"message":{"chat":{"id":-1001234567890,"type":"supergroup","title":"Ops"},"text":"hi"}},
+          {"update_id":3,"message":{"chat":{"id":111,"type":"private","first_name":"Ana"},"text":"again"}}]}
+        """#.utf8)
+        let chats = NotificationDispatcher.telegramChats(fromUpdates: updates)
+        XCTAssertEqual(chats.map(\.id), ["111", "-1001234567890"], "one per chat, most recent first")
+        XCTAssertEqual(chats.last?.name, "Ops")
+        XCTAssertTrue(NotificationDispatcher.telegramChats(fromUpdates: Data(#"{"ok":false}"#.utf8)).isEmpty)
+
+        for valid in ["123456789", "-1001234567890", "@my_channel"] {
+            XCTAssertTrue(AuthController.isTelegramChatID(valid), valid)
+        }
+        for invalid in ["12a", "@ab", "chat 1", "-", String(repeating: "1", count: 25)] {
+            XCTAssertFalse(AuthController.isTelegramChatID(invalid), invalid)
+        }
+
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let cookie = try await registerAndLogin(app, username: "telegramuser")
+        try await app.test(.POST, "/auth/notifications/telegram/detect", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unprocessableEntity, "no token saved yet")
+        })
+        try await app.test(.PATCH, "/auth/settings", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .cookie, value: cookie)
+            try req.content.encode(["telegramChatID": "not a chat"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+        })
+    }
+
     func testOneAccountReportedByThreeSourcesIsOneAccount() {
         let cases = ["Twitter": "twitter", "twitter.com": "twitter", "X": "twitter", "DEV Community": "devto",
                      "dev.to": "devto", "Docker Hub": "dockerhub", "PyPi": "pypi", "en.gravatar.com": "gravatar",

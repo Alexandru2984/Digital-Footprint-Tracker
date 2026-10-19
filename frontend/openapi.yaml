@@ -1453,6 +1453,24 @@ paths:
         '422': { description: No notification channel is currently available }
         '503': { description: Every attempted delivery failed }
 
+  /auth/notifications/telegram/detect:
+    post:
+      summary: Find the Telegram chat for the saved bot token
+      description: |
+        Asks Telegram which chats have written to the account's own bot (send
+        it /start first). One chat is saved as the alert destination; several
+        are returned to choose from. Session only, rate limited, and the bot
+        token is never returned. A bot whose updates another program reads
+        (polling or a webhook) cannot be read here.
+      tags: [Auth]
+      responses:
+        '200': { description: 'Chats found: `chats` (id, type, name), and `saved` when exactly one was saved' }
+        '400': { description: Telegram rejected the bot token }
+        '404': { description: Nobody has written to the bot yet }
+        '409': { description: The bot has a webhook set; enter the chat ID by hand }
+        '422': { description: No bot token saved }
+        '502': { description: Telegram could not be reached }
+
   /account/export:
     get:
       summary: Export the caller's entire account data (GDPR)
