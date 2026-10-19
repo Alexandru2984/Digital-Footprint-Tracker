@@ -12,6 +12,16 @@ graph.
 
 🔗 **Live demo:** <https://swift.micutu.com>  ·  **Interactive API:** <https://swift.micutu.com/docs/>
 
+**Guides:** [email OSINT lookup](https://swift.micutu.com/email-lookup/) ·
+[username search across 480+ sites](https://swift.micutu.com/username-search/) ·
+[domain OSINT](https://swift.micutu.com/domain-osint/) ·
+[IP address lookup](https://swift.micutu.com/ip-lookup/) ·
+[phone number lookup](https://swift.micutu.com/phone-lookup/) ·
+[free data breach check](https://swift.micutu.com/data-breach-check/) ·
+[all OSINT sources](https://swift.micutu.com/sources/) ·
+[how attribution scoring works](https://swift.micutu.com/how-it-works/) ·
+[în română](https://swift.micutu.com/ro/)
+
 ---
 
 ## Highlights
@@ -24,7 +34,7 @@ graph.
   [`live delta`](docs/SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md),
   [`rollout runbook`](docs/PRODUCTION_ROLLOUT.md) and
   [`roadmap`](docs/ROADMAP.md).
-- **25 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
+- **46 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
   deadline; results streamed live via SSE as each plugin completes.
 - **Cross-plugin result cache** with per-plugin TTL (1 h for volatile threat
   intel, 24 h for breach data) — cuts external API calls dramatically on
