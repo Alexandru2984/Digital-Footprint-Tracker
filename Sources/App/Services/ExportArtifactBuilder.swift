@@ -57,6 +57,8 @@ enum ExportArtifactBuilder {
         let riskScore: Int
         let riskLevel: String
         let riskFactors: [RiskScorer.Factor]
+        /// The profile at a glance, for the PDF's first section.
+        let dossier: Dossier.Summary
         let scannedAt: Double?
         let completedAt: Double?
         /// Sources the scan skipped because they were failing.
@@ -236,6 +238,7 @@ enum ExportArtifactBuilder {
             riskScore: risk.value,
             riskLevel: risk.level.rawValue,
             riskFactors: risk.factors,
+            dossier: profile.dossier,
             scannedAt: scan.createdAt?.timeIntervalSince1970,
             completedAt: scan.completedAt?.timeIntervalSince1970,
             unavailableSources: scan.unavailableSources,

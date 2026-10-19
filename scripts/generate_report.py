@@ -3,7 +3,7 @@
 generate_report.py — reads scan JSON from stdin, writes PDF bytes to stdout.
 Usage: python3 generate_report.py < scan.json > report.pdf
 """
-import sys, json
+import os, sys, json
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from datetime import datetime, timezone
@@ -34,6 +34,48 @@ def compute_risk(results: list) -> tuple:
         return (score, 'Critical', (200,  40,  40))
 
 
+def report_risk(data: dict, results: list) -> tuple:
+    """The application's own score, so the PDF agrees with the page and the
+    other reports; the local estimate only for a document without one."""
+    score, level, colour = compute_risk(results)
+    if isinstance(data.get('riskScore'), int) and not isinstance(data.get('riskScore'), bool) and data.get('riskLevel'):
+        score, level = data['riskScore'], str(data['riskLevel'])
+        colour = {'Low': (100, 160, 100), 'Medium': (200, 160, 50),
+                  'High': (210, 100, 30), 'Critical': (200, 40, 40)}.get(level, colour)
+    return score, level, colour
+
+
+# Names, bios and handles are not Latin-1 ("Ștefan", an emoji in a bio): the
+# PDF core fonts refused them and the whole export failed. A Unicode TrueType
+# font is used when the host has one; otherwise text is reduced to Latin-1.
+UNICODE_FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+UNICODE_FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+
+
+class Report(FPDF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unicode = os.path.exists(UNICODE_FONT) and os.path.exists(UNICODE_FONT_BOLD)
+        if self.unicode:
+            self.add_font('Body', '', UNICODE_FONT)
+            self.add_font('Body', 'B', UNICODE_FONT_BOLD)
+            self.add_font('Body', 'I', UNICODE_FONT)
+
+    def set_font(self, family=None, style='', size=0):
+        super().set_font('Body' if self.unicode else 'Helvetica', style, size)
+
+    def normalize_text(self, text):
+        if self.unicode:
+            # Glyphs DejaVu lacks (emoji) would print as boxes; drop them.
+            text = ''.join(ch for ch in text if ord(ch) < 0x1F000)
+        else:
+            # The core fonts' encoding: what it lacks becomes "?" rather
+            # than failing the export.
+            encoding = self.core_fonts_encoding or 'latin-1'
+            text = text.encode(encoding, 'replace').decode(encoding)
+        return super().normalize_text(text)
+
+
 def make_report(data: dict) -> bytes:
     scan_id = str(data.get('scanID', ''))
     target = data.get('input', 'UNKNOWN')
@@ -50,9 +92,11 @@ def make_report(data: dict) -> bytes:
     med  = [r for r in results if 0.5 <= r.get('confidenceScore', 0) < 0.8]
     low  = [r for r in results if r.get('confidenceScore', 0) < 0.5]
 
-    risk_score, risk_level, risk_colour = compute_risk(results)
+    risk_score, risk_level, risk_colour = report_risk(data, results)
+    factors = [f for f in (data.get('riskFactors') or []) if isinstance(f, dict)]
+    dossier = data.get('dossier') if isinstance(data.get('dossier'), dict) else {}
 
-    pdf = FPDF(orientation='L', unit='mm', format='A4')
+    pdf = Report(orientation='L', unit='mm', format='A4')
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
@@ -93,6 +137,49 @@ def make_report(data: dict) -> bytes:
         pdf.cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
+    if factors:
+        pdf.set_font('Helvetica', '', 9)
+        made_of = ' · '.join(f"{f.get('label', '')} {f.get('points', 0)} ({f.get('findings', 0)})" for f in factors)
+        pdf.multi_cell(0, 5, 'Risk made of: ' + made_of, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
+
+    # At a glance: who, which accounts are theirs, what leaked.
+    if dossier.get('headline'):
+        pdf.set_font('Helvetica', 'B', 12)
+        pdf.set_text_color(20, 20, 20)
+        pdf.cell(0, 7, 'At a glance', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font('Helvetica', 'B', 10)
+        pdf.multi_cell(0, 5, str(dossier['headline']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(60, 60, 60)
+
+        def line(label, value):
+            if not value:
+                return
+            pdf.set_font('Helvetica', 'B', 9)
+            pdf.cell(55, 5, label + ':')
+            pdf.set_font('Helvetica', '', 9)
+            pdf.multi_cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        def entries(items):
+            return ', '.join(f"{e.get('label', '')} ({e.get('score', 0)}%)" for e in (items or [])[:25] if isinstance(e, dict))
+
+        line('Confirmed accounts (80%+)', entries(dossier.get('confirmed')))
+        line('Probable accounts (50-79%)', entries(dossier.get('probable')))
+        if dossier.get('unconfirmedCount'):
+            line('Unconfirmed', f"{dossier['unconfirmedCount']} more found by name alone")
+        line('Sites and domains', entries(dossier.get('sites')))
+        for key, label in (('emails', 'Emails'), ('phones', 'Phones'), ('locations', 'Locations'),
+                           ('organizations', 'Organisations')):
+            line(label, ', '.join(str(v) for v in (dossier.get(key) or [])[:20]))
+        if dossier.get('breachCount'):
+            leak = f"{dossier['breachCount']} breach(es)"
+            if dossier.get('latestBreach'):
+                leak += f", latest {dossier['latestBreach']}"
+            if dossier.get('sensitiveData'):
+                leak += '; leaked: ' + ', '.join(str(v) for v in dossier['sensitiveData'][:10])
+            line('Exposure', leak)
+        pdf.ln(4)
+
     # Summary
     pdf.set_font('Helvetica', 'B', 12)
     pdf.set_text_color(20, 20, 20)
@@ -118,8 +205,7 @@ def make_report(data: dict) -> bytes:
                 'No result from these sources does not mean there is nothing there.')
         pdf.set_font('Helvetica', 'B', 9)
         pdf.set_text_color(150, 80, 0)
-        pdf.multi_cell(0, 5, note.encode('latin-1', 'replace').decode('latin-1'),
-                       new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, note, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_text_color(60, 60, 60)
         pdf.ln(3)
 
