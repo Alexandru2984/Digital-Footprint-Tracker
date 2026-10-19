@@ -326,6 +326,9 @@ enum ScanPluginRunner {
                                     }
                                     raw = bounded
                                 }
+                                // Abandoned after its timeout, the work stops here
+                                // rather than writing into a round already closed.
+                                try Task.checkCancellation()
                                 for pr in raw where try await persist(pr, candidate: candidate, scanID: scanID, dedup: dedup, on: db) {
                                     // With the provenance the stored row carries, so
                                     // pivot mining can weigh whose account it is.

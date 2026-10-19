@@ -4787,6 +4787,15 @@ final class AppTests: XCTestCase {
                        "an account the site's recovery flow ties to the address: observed")
     }
 
+    func testCredentialHeadersNeverFollowARedirectToAnotherHost() {
+        for name in ["Authorization", "Cookie", "hibp-api-key", "X-Api-Key", "X-Auth-Token", "Proxy-Authorization"] {
+            XCTAssertTrue(OutboundHTTP.carriesCredentials(name), name)
+        }
+        for name in ["Accept", "User-Agent", "Accept-Language", "Content-Type"] {
+            XCTAssertFalse(OutboundHTTP.carriesCredentials(name), name)
+        }
+    }
+
     func testAScanInterruptedByARestartIsMarkedFailed() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

@@ -43,6 +43,7 @@ enum OutboundHTTP {
 
         let deadline = Date().addingTimeInterval(timeout)
         var currentURL = try normalized(initialURL)
+        var currentHeaders = headers
         var currentMethod = method
         var currentBody = body
         var visited = Set<String>()
@@ -60,7 +61,7 @@ enum OutboundHTTP {
             var request = HTTPClientRequest(url: currentURL.absoluteString)
             request.method = currentMethod
             request.headers.add(name: "User-Agent", value: "Digital-Footprint-Tracker/1.0 (+https://swift.micutu.com)")
-            for (name, value) in headers { request.headers.replaceOrAdd(name: name, value: value) }
+            for (name, value) in currentHeaders { request.headers.replaceOrAdd(name: name, value: value) }
             if let currentBody {
                 request.body = .bytes(currentBody)
             }
@@ -99,6 +100,12 @@ enum OutboundHTTP {
                 // redirects; this also makes the invariant explicit here.
                 guard currentMethod == .GET || currentMethod == .HEAD else {
                     throw RequestError.insecureRedirect
+                }
+                // A GET may follow, but a caller's credentials stay with the
+                // host they were meant for: an Authorization header, an API key
+                // or a cookie is dropped once a redirect leaves that host.
+                if nextURL.host?.lowercased() != currentURL.host?.lowercased() {
+                    currentHeaders = currentHeaders.filter { !Self.carriesCredentials($0.key) }
                 }
                 currentURL = nextURL
                 currentBody = nil
@@ -145,6 +152,13 @@ enum OutboundHTTP {
                 finalURL: currentURL
             )
         }
+    }
+
+    /// Header names that can carry a credential: dropped on a cross-host redirect.
+    static func carriesCredentials(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower == "authorization" || lower == "cookie" || lower == "proxy-authorization"
+            || lower.contains("key") || lower.contains("token") || lower.contains("secret")
     }
 
     private static func normalized(_ url: URL) throws -> URL {
