@@ -147,8 +147,10 @@ enum IdentitySynthesizer {
                 for host in csv(m["hostnames"]) { svcHosts[ip, default: []].insert(host) }
             }
 
-            if let handle = nonEmpty(m["username"]) {
-                let platform = nonEmpty(m["platform"]) ?? inp.source
+            if let rawHandle = nonEmpty(m["username"]) {
+                // One handle, one platform name, however each source spells them.
+                let handle = rawHandle.lowercased()
+                let platform = IdentityLinks.canonicalPlatform(nonEmpty(m["platform"]) ?? inp.source)
                 handlePlatforms[handle, default: []].insert(platform)
                 handleConfidence[handle] = max(handleConfidence[handle] ?? 0, inp.confidence)
             }
@@ -156,7 +158,11 @@ enum IdentitySynthesizer {
             if accountTypes.contains(inp.type) {
                 let platform = nonEmpty(m["platform"]) ?? inp.source
                 let reference = nonEmpty(m["profileURL"]) ?? nonEmpty(m["url"]) ?? nonEmpty(m["username"]) ?? String(inp.rawData.prefix(160))
-                let key = "\(platform.lowercased())|\(canonicalRef(reference))"
+                // The same account from two sources (the sweep's "Twitter" and
+                // Gravatar's verified `twitter`) is one account, kept at its
+                // best sighting.
+                let identity = (nonEmpty(m["username"]) ?? nonEmpty(m["account"]))?.lowercased() ?? canonicalRef(reference)
+                let key = "\(IdentityLinks.canonicalPlatform(platform))|\(identity)"
                 // Keep the highest-confidence sighting of each (platform, reference).
                 if (accountsByKey[key]?.confidence ?? -1) < inp.confidence * weight {
                     accountsByKey[key] = Account(platform: platform, reference: String(reference.prefix(200)), confidence: inp.confidence * weight)

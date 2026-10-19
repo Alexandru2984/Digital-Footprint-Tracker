@@ -4783,8 +4783,33 @@ final class AppTests: XCTestCase {
                                   metadata: ($0.metadata ?? [:]).merging(["queriedAs": "a@b.test", "via": "input"]) { $1 },
                                   rawData: $0.rawData) },
             riskScore: 0, riskLevel: "Low", target: "a@b.test")
-        XCTAssertEqual(profile.attributions.first { $0.node == "spotify.com: a@b.test" }?.score, 80,
+        XCTAssertEqual(profile.attributions.first { $0.node == "spotify: a@b.test" }?.score, 80,
                        "an account the site's recovery flow ties to the address: observed")
+    }
+
+    func testOneAccountReportedByThreeSourcesIsOneAccount() {
+        let cases = ["Twitter": "twitter", "twitter.com": "twitter", "X": "twitter", "DEV Community": "devto",
+                     "dev.to": "devto", "Docker Hub": "dockerhub", "PyPi": "pypi", "en.gravatar.com": "gravatar",
+                     "office365.com": "office365", "crates.io": "crates.io", "Steam Community (User)": "steam",
+                     "mastodon.social": "mastodon", "mastodon.cloud": "mastodon.cloud", "github": "github"]
+        for (raw, expected) in cases { XCTAssertEqual(IdentityLinks.canonicalPlatform(raw), expected, raw) }
+
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "Twitter", type: "account_presence", confidence: 0.7,
+              metadata: ["platform": "Twitter", "username": "dtolnay", "profileURL": "https://twitter.com/dtolnay"], rawData: "s"),
+            I(source: "Gravatar:twitter", type: "social_media", confidence: 0.95,
+              metadata: ["platform": "twitter", "username": "DTolnay", "url": "https://x.com/dtolnay"], rawData: "g"),
+            I(source: "DEV Community", type: "account_presence", confidence: 0.7,
+              metadata: ["platform": "DEV Community", "username": "dtolnay"], rawData: "d"),
+            I(source: "DEV Community", type: "account_presence", confidence: 1.0,
+              metadata: ["platform": "devto", "username": "dtolnay"], rawData: "d2"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low")
+        XCTAssertEqual(profile.confirmedAccounts.count, 2, "\(profile.confirmedAccounts)")
+        XCTAssertEqual(profile.confirmedAccounts.first { $0.platform.lowercased().contains("twitter") }?.confidence, 0.95,
+                       "kept at its best sighting")
+        XCTAssertEqual(profile.handles.first?.platforms, ["devto", "twitter"], "two platforms, not four")
     }
 
     func testCredentialHeadersNeverFollowARedirectToAnotherHost() {

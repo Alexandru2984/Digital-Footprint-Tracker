@@ -156,6 +156,38 @@ enum IdentityLinks {
             .map(\.element)
     }
 
+    /// One name per platform, whichever source reported it: the profile
+    /// plugins say `twitter` and `devto`, the 480-site sweep "Twitter" and
+    /// "DEV Community", Holehe `twitter.com`. Without this one account was
+    /// three accounts, three nodes, and a handle "seen on" three platforms.
+    static func canonicalPlatform(_ raw: String) -> String {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let alias = platformAliases[name] { return alias }
+        guard name.contains("."), !name.contains(" ") else { return name }
+        // A site named by its domain (Holehe): the name the domain is for.
+        for prefix in ["www.", "en.", "m.", "app."] where name.hasPrefix(prefix) { name.removeFirst(prefix.count) }
+        if let alias = platformAliases[name] { return alias }
+        var labels = name.split(separator: ".").map(String.init)
+        if labels.count >= 2 { labels.removeLast() }
+        let stem = labels.joined(separator: ".")
+        return platformAliases[stem] ?? stem
+    }
+
+    private static let platformAliases: [String: String] = [
+        "x": "twitter", "x.com": "twitter", "twitter.com": "twitter",
+        "dev community": "devto", "dev.to": "devto", "dev": "devto",
+        "docker hub": "dockerhub", "hub.docker.com": "dockerhub",
+        "hacker news": "hackernews", "news.ycombinator.com": "hackernews",
+        "steam community (user)": "steam", "steamcommunity.com": "steam",
+        "npmjs.com": "npm", "npmjs": "npm", "pypi.org": "pypi",
+        "crates.io": "crates.io", "crates": "crates.io",
+        "keybase.io": "keybase", "t.me": "telegram", "bsky.app": "bluesky", "bsky": "bluesky",
+        "lobste.rs": "lobsters", "lobste": "lobsters", "mastodon.social": "mastodon",
+        // Other Mastodon instances hold other accounts: they keep their name.
+        "mastodon.cloud": "mastodon.cloud", "mastodon.xyz": "mastodon.xyz",
+        "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg",
+    ]
+
     /// What a finding connects `from` to: an account (`platform: name`), or
     /// another email address.
     static func node(for meta: [String: String], from: String, type: String = "") -> String? {
@@ -164,7 +196,7 @@ enum IdentityLinks {
             return email
         }
         if let platform = nonEmpty(meta["platform"]), let username = nonEmpty(meta["username"]) ?? nonEmpty(meta["account"]) {
-            return "\(platform.lowercased()): \(username.lowercased())"
+            return "\(canonicalPlatform(platform)): \(username.lowercased())"
         }
         if let email = nonEmpty(meta["email"])?.lowercased(), email.contains("@"), email != from {
             return email
@@ -300,7 +332,7 @@ enum IdentityLinks {
             if value.hasPrefix("@") { value.removeFirst() }
             // An address is its own node, however it was found.
             if parts[0].lowercased() == "email" { return value.contains("@") ? value : nil }
-            return "\(parts[0].lowercased()): \(value)"
+            return "\(canonicalPlatform(parts[0])): \(value)"
         }.prefix(20).map { $0 }
     }
 
