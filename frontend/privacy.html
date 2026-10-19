@@ -107,21 +107,27 @@
             relevant to its type. These are independent controllers with their own privacy
             policies. Depending on the identifier, they may include:</p>
             <ul>
-                <li><strong class="text-white">Breach and reputation:</strong> Have I Been Pwned, VirusTotal,
-                    AbuseIPDB, Shodan / InternetDB.</li>
+                <li><strong class="text-white">Breach and reputation:</strong> XposedOrNot, Have I Been Pwned,
+                    VirusTotal, AbuseIPDB, Shodan / InternetDB.</li>
                 <li><strong class="text-white">Account presence:</strong> GitHub, GitLab, Keybase, Mastodon,
-                    Bluesky, Telegram, Steam, npm, PyPI, crates.io, Docker Hub, Codeberg, public SSH keys (GitHub, GitLab, Codeberg), DEV Community, Lobsters, XposedOrNot (breaches), Hacker News, Gravatar, Pastebin, GitHub commit and user search (by email), keys.openpgp.org, keyserver.ubuntu.com,
-                    and the public platform list used by the bulk username sweep.</li>
-                <li><strong class="text-white">Infrastructure:</strong> crt.sh, RDAP/WHOIS, the Wayback Machine,
+                    Bluesky, Telegram, Steam, npm, PyPI, crates.io, Docker Hub, Codeberg, public SSH keys (GitHub, GitLab, Codeberg), DEV Community, Lobsters, Hacker News, Gravatar, Pastebin, GitHub commit and user search (by email), keys.openpgp.org, keyserver.ubuntu.com,
+                    the public platform list used by the bulk username sweep, and — for signed-in users
+                    only — the password-recovery pages of online services (Holehe), which are asked whether
+                    they know an email address without any reset being completed.</li>
+                <li><strong class="text-white">Infrastructure:</strong> crt.sh and CertSpotter, RDAP/WHOIS registries
+                    and registrars, the scanned domain's own website (its homepage, security.txt and robots.txt),
+                    the Wayback Machine,
                     HackerTarget passive DNS, RIPEstat, GreyNoise, the Tor Project's exit list
                     (downloaded and checked locally, so no address is sent), and public DNS-over-HTTPS resolvers.</li>
-                <li><strong class="text-white">Phone validation:</strong> AbstractAPI (only for phone-shaped input,
-                    and only if the operator has configured a key).</li>
+                <li><strong class="text-white">Phone validation:</strong> AbstractAPI (for a phone number entered,
+                    or found on a scanned website or domain registration, and only if the operator has
+                    configured a key).</li>
             </ul>
             <p>Several of these are outside the EU/EEA, so a scan may involve an international
             transfer. Sending an identifier to them is inherent to what a scan is.</p>
-            <p>Separately, the service uses <strong class="text-white">Resend</strong> to send transactional and
-            alert email, and <strong class="text-white">Cloudflare</strong> as a CDN and protective proxy in front of
+            <p>Separately, the service uses <strong class="text-white">Resend</strong> to send transactional
+            email, <strong class="text-white">Telegram</strong> to deliver operational alerts to the operator
+            (these carry the affected system component's own log lines, which do not include scan targets), and <strong class="text-white">Cloudflare</strong> as a CDN and protective proxy in front of
             the site. IP geolocation is resolved locally from an offline database, so scanned
             IP addresses are not sent to a geolocation provider.</p>
             <p>Data is not sold, and not used for advertising or profiling.</p>
