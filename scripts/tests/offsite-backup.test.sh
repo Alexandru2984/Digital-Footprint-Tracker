@@ -63,17 +63,35 @@ grep -q -- "--include footprint-\*.sql.gz.gpg" "$TMP/rclone.log" \
 [[ -f "$STATE/last-success" ]] || fail "expected a status file"
 [[ "$(stat -c '%a' "$STATE/last-success")" == "644" ]] || fail "status file should be world-readable, no secret in it"
 grep -q "verified=2" "$STATE/last-success" || fail "expected the verified artifact count"
-grep -q "destinations=gdrive:Backup_VPS/swift-vapor,r2:micutu-vps-backup/swift-vapor" "$STATE/last-success" \
+grep -q "destinations=gdrive:Backup_VPS/swift-vapor,r2:micutu-vps-backup/swift-vapor failed=$" "$STATE/last-success" \
     || fail "expected every destination recorded"
 
-# The property two destinations exist for: one of them failing is a failure, and
-# a copy that reached only half of them is not recorded as a copy.
+# The property two destinations exist for: one of them failing is still a
+# failure (the run fails and names it, so it is alerted on), but it must not
+# stop the other, and a copy verified at one destination is a copy.
 rm -f "$STATE/last-success"; : > "$TMP/rclone.log"
-if FAIL_REMOTE="r2:micutu-vps-backup" ship >/dev/null 2>&1; then
+if FAIL_REMOTE="r2:micutu-vps-backup" ship >"$TMP/partial.out" 2>&1; then
     fail "expected a failure at the second destination to fail the run"
 fi
-[[ ! -f "$STATE/last-success" ]] || fail "a partial copy must not publish success"
+grep -q "failed at r2:micutu-vps-backup/swift-vapor" "$TMP/partial.out" || fail "expected the failed destination named"
 grep "^copy " "$TMP/rclone.log" | grep -q -- "gdrive:" || fail "expected the first destination to still be attempted"
+grep -q "destinations=gdrive:Backup_VPS/swift-vapor failed=r2:micutu-vps-backup/swift-vapor" "$STATE/last-success" \
+    || fail "a copy verified at one destination must be recorded, with the failure"
+
+# What happened on 2026-10-15: the FIRST destination failing (a full Drive)
+# must not keep the second from being tried.
+rm -f "$STATE/last-success"; : > "$TMP/rclone.log"
+if FAIL_REMOTE="gdrive:Backup_VPS" ship >/dev/null 2>&1; then
+    fail "expected a failure at the first destination to fail the run"
+fi
+grep "^check " "$TMP/rclone.log" | grep -q -- "r2:" || fail "expected the second destination copied and verified"
+grep -q "destinations=r2:micutu-vps-backup/swift-vapor failed=gdrive:Backup_VPS/swift-vapor" "$STATE/last-success" \
+    || fail "expected the copy at r2 recorded"
+
+# Every destination failing publishes nothing.
+rm -f "$STATE/last-success"; : > "$TMP/rclone.log"
+if COPY_STATUS=1 ship >/dev/null 2>&1; then fail "expected every destination failing to fail"; fi
+[[ ! -f "$STATE/last-success" ]] || fail "no verified copy must not publish success"
 
 # An environment file written before this was plural keeps working.
 : > "$TMP/rclone.log"

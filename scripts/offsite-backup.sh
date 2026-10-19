@@ -83,35 +83,54 @@ common=(
     --log-level NOTICE
 )
 
-# Each destination is copied and then verified on its own, and the status below
-# is published only if every one of them held. Two destinations exist so that a
-# single provider — an expiring OAuth client, a quota, a deleted folder — cannot
-# take the only off-host copy with it.
+# Each destination is copied and then verified on its own. Two destinations
+# exist so that a single provider — an expiring OAuth client, a quota, a
+# deleted folder — cannot take the only off-host copy with it, so one failing
+# must not stop the next: on 2026-10-15 a full Google Drive stopped the loop
+# before R2, and for five days there was no off-host copy anywhere.
 echo "offsite-backup: copying ${#artifacts[@]} artifact(s) to ${#REMOTES[@]} destination(s)"
+verified=()
+failed=()
 for remote in "${REMOTES[@]}"; do
     # --immutable refuses to replace a remote file whose content differs: a name
     # already on the far side is history, and history is not rewritten from here.
-    "$RCLONE" copy "$SOURCE_DIR" "$remote" "${common[@]}" --immutable --checksum \
-        || die "upload to $remote failed."
+    if ! "$RCLONE" copy "$SOURCE_DIR" "$remote" "${common[@]}" --immutable --checksum; then
+        echo "offsite-backup: upload to $remote failed." >&2
+        failed+=("$remote")
+        continue
+    fi
 
     # Upload success only means the transfers returned. This re-reads the far
     # side and compares checksums, so the claim below is about what is there.
-    "$RCLONE" check "$SOURCE_DIR" "$remote" "${common[@]}" --one-way --checksum \
-        || die "post-upload verification at $remote failed."
+    if ! "$RCLONE" check "$SOURCE_DIR" "$remote" "${common[@]}" --one-way --checksum; then
+        echo "offsite-backup: post-upload verification at $remote failed." >&2
+        failed+=("$remote")
+        continue
+    fi
 
     echo "offsite-backup: verified ${#artifacts[@]} artifact(s) at $remote"
+    verified+=("$remote")
 done
+(( ${#verified[@]} > 0 )) || die "no destination holds a verified copy (failed: ${failed[*]})."
 
 # Published only after verification, and staged in its own directory rather than
 # /tmp — on this shared host a full /tmp leaves sandboxed units a read-only one
 # (see healthcheck.sh, "Shared scratch space").
 STATUS_TMP="$(mktemp --tmpdir="$STATUS_DIR" .last-success.partial.XXXXXX)"
 trap 'rm -f -- "$STATUS_TMP"' EXIT
-destinations="$(printf '%s,' "${REMOTES[@]}")"
-printf '%s verified=%d destinations=%s\n' \
-    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${#artifacts[@]}" "${destinations%,}" > "$STATUS_TMP"
+destinations="$(printf '%s,' "${verified[@]}")"
+failures=""
+(( ${#failed[@]} == 0 )) || failures="$(printf '%s,' "${failed[@]}")"
+printf '%s verified=%d destinations=%s failed=%s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${#artifacts[@]}" "${destinations%,}" "${failures%,}" > "$STATUS_TMP"
 chmod 0644 "$STATUS_TMP"
 mv -f -- "$STATUS_TMP" "$STATUS_FILE"
 trap - EXIT
 
+# The off-host copy exists (the status above says so, and the healthcheck is
+# satisfied), but a destination that failed is still an alert: the unit fails
+# and names it, so a full Drive is reported daily instead of hidden.
+if (( ${#failed[@]} > 0 )); then
+    die "verified at ${verified[*]}, but failed at ${failed[*]}."
+fi
 echo "offsite-backup: ${#artifacts[@]} artifact(s) verified at every destination (${#REMOTES[@]})"
