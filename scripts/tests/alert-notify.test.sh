@@ -41,6 +41,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         name = os.path.join(capture, "%03d.json" % len(os.listdir(capture)))
         with open(name, "w") as handle:
             json.dump({
+                "path": self.path,
                 "authorization": self.headers.get("Authorization"),
                 "content_type": self.headers.get("Content-Type"),
                 "body": body.decode(),
@@ -78,6 +79,22 @@ send() {
         ALERT_MAX_BODY_BYTES="${MAX_BYTES:-16384}" \
         "$SENDER" "$@"
 }
+send_state() { # $1 = state dir, rest = sender arguments
+    local state="$1"; shift
+    env -i PATH="$PATH" HOME="$TMP" TMPDIR="$TMP/no-scratch-space" \
+        ALERT_API_URL="http://127.0.0.1:$PORT/emails" ALERT_API_KEY_FILE="$KEY_FILE" \
+        ALERT_EMAIL_TO="ops@example.test" ALERT_EMAIL_FROM="alerts@example.test" \
+        ALERT_STATE_DIR="$state" "$SENDER" "$@"
+}
+TELEGRAM_CREDS="$TMP/telegram.env"
+printf 'BOT_TOKEN=123456:fixture_Token-x\nCHAT_ID=-1001234\n' > "$TELEGRAM_CREDS"
+send_telegram() {
+    env -i PATH="$PATH" HOME="$TMP" TMPDIR="$TMP/no-scratch-space" \
+        TELEGRAM_CREDENTIALS_FILE="$TELEGRAM_CREDS" TELEGRAM_API_URL="http://127.0.0.1:$PORT" \
+        ALERT_API_URL="http://127.0.0.1:$PORT/emails" ALERT_API_KEY_FILE="$KEY_FILE" \
+        ALERT_EMAIL_TO="ops@example.test" ALERT_EMAIL_FROM="alerts@example.test" \
+        ALERT_STATE_DIR="$TMP/tg-state" "$SENDER" "$@"
+}
 requests() { find "$CAPTURE" -name '*.json' | wc -l; }
 last_request() { find "$CAPTURE" -name '*.json' | sort | tail -1; }
 
@@ -98,11 +115,19 @@ assert payload["from"] == "alerts@example.test", payload["from"]
 assert "disk is at 99%" in payload["text"], payload["text"]
 PY
 
-# 2. An identical alert inside the interval is journalled but not sent.
+# 2. The same problem inside the interval is journalled but not sent — even
+#    when only its numbers moved (a backup an hour older is the same problem).
 before="$(requests)"
-out="$(send --subject "disk full" </dev/null)" || fail "a throttled alert must still exit 0"
+out="$(printf 'disk is at 98%%\n' | send --subject "disk full")" || fail "a throttled alert must still exit 0"
 grep -q "throttled" <<<"$out" || fail "expected the repeat to be throttled"
 [[ "$(requests)" == "$before" ]] || fail "a throttled alert must not reach the API"
+#    A different problem on the same subject goes out at once, marked ongoing.
+out="$(printf 'inodes exhausted\n' | send --subject "disk full")" || fail "a new problem must be sent"
+grep -q "delivered to" <<<"$out" || fail "expected a different problem to be delivered"
+python3 - "$(last_request)" <<'PY'
+import json, sys
+assert json.loads(json.load(open(sys.argv[1]))["body"])["subject"] == "[swift-vapor] disk full (still failing)"
+PY
 
 # 3. The body ceiling holds, and says so.
 head -c 5000 /dev/zero | tr '\0' 'x' | MAX_BYTES=200 send --subject "noisy unit" >/dev/null \
@@ -115,15 +140,14 @@ assert text.endswith(marker), text[-60:]
 assert len(text.encode()) == 200 + len(marker), len(text.encode())
 PY
 
-# 4. A throttle marker that cannot be written must not stop the mail — a full
-#    disk is one of the things this exists to report. A directory squatting on
-#    the marker's path makes the write fail without needing root.
-key="$(printf '%s' "|marker unwritable" | sha256sum | cut -c1-32)"
-mkdir -p "$TMP/state/$key"
+# 4. A throttle marker that cannot be written must not stop the alert — a full
+#    disk is one of the things this exists to report. A file squatting on the
+#    state directory's path makes it unusable without needing root.
+printf 'not a directory' > "$TMP/squatted-state"
 before="$(requests)"
-err="$(send --subject "marker unwritable" </dev/null 2>&1 >/dev/null)" \
+err="$(send_state "$TMP/squatted-state" --subject "marker unwritable" </dev/null 2>&1 >/dev/null)" \
     || fail "expected delivery even when the throttle marker cannot be written"
-grep -q "sending anyway" <<<"$err" || fail "expected the marker failure to be journalled"
+grep -q "could not record" <<<"$err" || fail "expected the marker failure to be journalled"
 (( $(requests) == before + 1 )) || fail "expected exactly one request despite the marker failure"
 
 # 5. A rejected request is a failure, loudly.
@@ -133,4 +157,39 @@ if send --subject "rejected" </dev/null >/dev/null 2>"$TMP/rejected.err"; then
 fi
 grep -q "DELIVERY FAILED" "$TMP/rejected.err" || fail "expected the failure to be journalled"
 
+printf '200' > "$TMP/status"
+
+# 6. With Telegram configured, the alert goes there and not to mail; the token
+#    is in the URL path the API defines, never in argv.
+before="$(requests)"
+out="$(printf 'backup copy is 119h old\n' | send_telegram --unit fixture-offsite.service --subject "offsite stale")" || fail "expected Telegram delivery"
+grep -q "delivered to Telegram" <<<"$out" || fail "expected a Telegram confirmation"
+(( $(requests) == before + 1 )) || fail "expected one request: Telegram, and no mail"
+python3 - "$(last_request)" <<'PY'
+import json, sys
+request = json.load(open(sys.argv[1]))
+assert request["path"] == "/bot123456:fixture_Token-x/sendMessage", request["path"]
+payload = json.loads(request["body"])
+assert payload["chat_id"] == -1001234, payload
+assert payload["text"].startswith("[swift-vapor] offsite stale"), payload["text"]
+assert "119h old" in payload["text"]
+PY
+
+# 7. Resolved: one note after an alert, and none when nothing was wrong.
+out="$(send_telegram --resolved fixture-offsite.service)" || fail "resolved must exit 0"
+grep -q "delivered to Telegram" <<<"$out" || fail "expected a resolved note after the alert"
+python3 - "$(last_request)" <<'PY'
+import json, sys
+assert "RESOLVED: fixture-offsite.service is healthy again" in json.loads(json.load(open(sys.argv[1]))["body"])["text"]
+PY
+before="$(requests)"
+send_telegram --resolved fixture-offsite.service >/dev/null || fail "a second resolved must exit 0"
+(( $(requests) == before )) || fail "a unit that did not alert must not send a resolved note"
+
+# 8. Telegram down: mail is the fallback.
+printf '500' > "$TMP/status"
+if printf 'a new failure\n' | send_telegram --subject "telegram down" >/dev/null 2>&1; then
+    fail "with every endpoint answering 500 the alert must fail"
+fi
+printf '200' > "$TMP/status"
 echo "alert-notify contract tests passed"

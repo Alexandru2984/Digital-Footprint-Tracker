@@ -9,6 +9,7 @@ After=network-online.target
 Wants=network-online.target
 ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/offsite-backup.sh
 OnFailure=swift-vapor-alert@%n.service
+OnSuccess=swift-vapor-resolved@%n.service
 
 [Service]
 Type=oneshot

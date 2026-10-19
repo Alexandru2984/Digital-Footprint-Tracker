@@ -7,6 +7,7 @@ ConditionFileIsExecutable=/usr/local/libexec/swift-vapor/healthcheck.sh
 # its own (database reachability, silent backup failure, certificate expiry,
 # disk headroom, restart flapping under Restart=always) all land here.
 OnFailure=swift-vapor-alert@%n.service
+OnSuccess=swift-vapor-resolved@%n.service
 
 [Service]
 Type=oneshot

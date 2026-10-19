@@ -63,6 +63,11 @@ validate each subsystem.
   makes systemd hand every `PrivateTmp=` unit a read-only one, and a pager that
   needs scratch space is silenced by the same event it should report (F22).
   Routing lives in `/etc/swift-vapor/alerts.env` (non-secret).
+  Alerts go to Telegram (`/etc/credstore.encrypted/swift-vapor-telegram`, an
+  encrypted copy of a `BOT_TOKEN=`/`CHAT_ID=` file) with mail as the fallback.
+  The same problem repeats at most daily (`ALERT_MIN_INTERVAL_SECONDS=86400`),
+  a different one is sent at once, and `swift-vapor-resolved@` (OnSuccess=)
+  sends one note when an alerting unit recovers.
 - `config-manifest.sh` (installed to `libexec`) — records and verifies the
   checksum, mode and owner of the host configuration this service depends on:
   the systemd units and drop-ins, the two swift nginx vhosts, the CSP snippet,
