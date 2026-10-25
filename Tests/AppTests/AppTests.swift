@@ -4617,6 +4617,17 @@ final class AppTests: XCTestCase {
                                               timelineDates: ["2009-03-01", "2033-10-24", "2026-10-25"],
                                               now: Date(timeIntervalSince1970: 1_792_900_000)))
         XCTAssertEqual(spanned.lastSeen, "2026-10-25", "a domain's expiry has not been seen yet")
+
+        func attribution(_ node: String, _ score: Int) -> IdentityLinks.Attribution {
+            IdentityLinks.Attribution(node: node, score: score, path: ["a@x.test", node])
+        }
+        let merged = Dossier.summarize(.init(
+            name: nil, attributions: [attribution("gravatar: ana", 98), attribution("gravatar: a@x.test", 80),
+                                      attribution("spotify: a@x.test", 80), attribution("mastodon: ana@unsplash.com", 94)],
+            accounts: [], emails: ["a@x.test"], phones: [], locations: [], organizations: [], breaches: [],
+            breachTotal: 0, dataClasses: [], breachYears: [], timelineDates: []))
+        XCTAssertEqual(merged.confirmed.map(\.label), ["gravatar: ana", "spotify: a@x.test", "mastodon: ana@unsplash.com"],
+                       "the Gravatar account registered with the address is the one found by name")
         XCTAssertTrue(spanned.headline.hasSuffix("seen 2009–2026"), spanned.headline)
     }
 

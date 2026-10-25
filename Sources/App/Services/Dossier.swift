@@ -92,6 +92,20 @@ enum Dossier {
                 }
             }
         }
+        // "An account on Gravatar registered with this address" and the
+        // Gravatar account found by name are one account: the named entry
+        // stands for both.
+        let addresses = Set(input.emails.map { $0.lowercased() })
+        func platform(_ label: String) -> Substring { label.split(separator: ":", maxSplits: 1).first ?? "" }
+        let named = Set((confirmed + probable).filter { entry in
+            !addresses.contains(where: { entry.label.hasSuffix(": \($0)") })
+        }.map { platform($0.label) })
+        func standsAlone(_ entry: Entry) -> Bool {
+            !(named.contains(platform(entry.label)) && addresses.contains(where: { entry.label.hasSuffix(": \($0)") }))
+        }
+        confirmed = confirmed.filter(standsAlone)
+        probable = probable.filter(standsAlone)
+
         let sensitive = input.dataClasses.filter { cls in
             let lower = cls.lowercased()
             return sensitiveMarkers.contains { lower.contains($0) }
