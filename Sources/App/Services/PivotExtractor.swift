@@ -122,6 +122,12 @@ enum PivotExtractor {
                 let email = rawValue.trimmingCharacters(in: .whitespaces).dropFirst().contains("@")
                 consider(rawValue, priority: (verified ? 2.0 : 0.0) + (email ? 1.0 : 0.0) + result.confidenceScore)
             }
+            // The name an address answers to, when it is a real host name
+            // and not one a provider generated from the address.
+            if result.type == "dns_ptr_record", let host = meta["domain"], let ip = meta["ip"],
+               !isGenericReverseName(host, ip: ip) {
+                consider(host, priority: result.confidenceScore)
+            }
             // What a confirmed account points to: its proven accounts and
             // domains, the website it lists. Only from an account whose own
             // tie to the target is confirmed: a same-name stranger's website
@@ -134,6 +140,23 @@ enum PivotExtractor {
             }
         }
         return scored.sorted { $0.priority > $1.priority }.prefix(maxPivots).map { $0.value }
+    }
+
+    /// Hosting providers name their addresses after them (`45-33-32-156.ip.linodeusercontent.com`,
+    /// `ec2-3-1-2-3.compute.amazonaws.com`): such a name describes the provider.
+    private static let genericReverseSuffixes = [
+        "linodeusercontent.com", "members.linode.com", "amazonaws.com", "googleusercontent.com", "your-server.de",
+        "vultrusercontent.com", "contaboserver.net", "ovh.net", "ip-addr.vultr.com", "hostwindsdns.com",
+        "digitaloceanspaces.com", "cloudapp.azure.com", "clients.your-server.de", "dynamic-ip.com",
+    ]
+
+    static func isGenericReverseName(_ host: String, ip: String) -> Bool {
+        let lower = host.lowercased()
+        if genericReverseSuffixes.contains(where: { lower == $0 || lower.hasSuffix(".\($0)") }) { return true }
+        // Two or more of the address's numbers in the name: generated from it.
+        let octets = ip.split(separator: ".").map(String.init)
+        let groups = Set(lower.split(whereSeparator: { !$0.isNumber }).map(String.init))
+        return octets.filter(groups.contains).count >= 2
     }
 
     /// A bare username/handle, or an email address.

@@ -314,6 +314,7 @@ enum RiskScorer {
         "dns_spf_record": .infra,
         "subdomain": .infra,
         "subdomain_ip": .infra,
+        "cohosted_domain": .infra,
         "whois_record": .infra,
         "domain_registration": .infra,
         "archive_history": .infra,

@@ -5650,6 +5650,27 @@ final class AppTests: XCTestCase {
             """)
     }
 
+    func testAnAddressesOwnHostNameIsFollowedButAProvidersIsNot() {
+        func ptr(_ host: String, _ ip: String) -> PluginResult {
+            PluginResult(source: "DomainDNS", type: "dns_ptr_record", confidenceScore: 0.9,
+                         rawData: "Reverse DNS for \(ip): \(host)", metadata: ["ip": ip, "domain": host])
+        }
+        XCTAssertEqual(PivotExtractor.candidates(from: [ptr("scanme.nmap.org", "45.33.32.156")],
+                                                 alreadyScanned: ["45.33.32.156"]), ["scanme.nmap.org"])
+        for (host, ip) in [("45-33-32-156.ip.linodeusercontent.com", "45.33.32.156"),
+                           ("ec2-3-120-1-9.eu-central-1.compute.amazonaws.com", "3.120.1.9"),
+                           ("static.9.1.120.3.clients.your-server.de", "3.120.1.9"),
+                           ("host-3-120.example-isp.net", "3.120.1.9")] {
+            XCTAssertTrue(PivotExtractor.candidates(from: [ptr(host, ip)], alreadyScanned: [ip]).isEmpty, host)
+        }
+
+        let cohosted = PassiveDNSPlugin.parseCohosted(
+            "scanme.nmap.org\nscanme.org\n45.33.32.156\nAPI count exceeded - Increase Quota\n", ip: "45.33.32.156")
+        XCTAssertEqual(cohosted.first?.type, "cohosted_domain")
+        XCTAssertEqual(cohosted.first?.metadata?["domains"], "scanme.nmap.org, scanme.org")
+        XCTAssertTrue(PassiveDNSPlugin.parseCohosted("No DNS A records found", ip: "1.2.3.4").isEmpty)
+    }
+
     func testADomainsResolvedAddressBecomesAPivotTarget() {
         let dnsFinding = PluginResult(
             source: "DomainDNS", type: "dns_a_record", confidenceScore: 1.0,
@@ -6971,7 +6992,7 @@ final class AppTests: XCTestCase {
         print("E2E risk \(scored.value) \(scored.level.rawValue) \(scored.factors.map { "\($0.category)=\($0.points)/\($0.findings)" }) name=\(profile.likelyName ?? "-") accounts=\(profile.confirmedAccounts.count)")
         for attribution in profile.attributions.prefix(25) { print("E2E attr \(attribution.score) \(attribution.node)") }
         print("E2E dossier \(profile.dossier.headline) | sites=\(profile.dossier.sites.map(\.label)) sensitive=\(profile.dossier.sensitiveData)")
-        for result in inputs where ["VirusTotal", "Instagram", "Venmo", "PyPi"].contains(result.source) {
+        for result in inputs where ["VirusTotal", "Instagram", "Venmo", "PyPi"].contains(result.source) || env["LIVE_E2E_ALL"] == "1" {
             print("E2E sample \(result.source) \(result.type) \(result.confidence) \(result.rawData.prefix(160))")
         }
         XCTAssertNotEqual(finished?.status, .pending, "the scan must finish")
@@ -8592,6 +8613,40 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(EmailAuth.dmarcPolicy("v=DMARC1; p=quarantine")?.enforced, true)
         XCTAssertEqual(EmailAuth.dmarcPolicy("v=DMARC1; p=none")?.enforced, false)
         XCTAssertNil(EmailAuth.dmarcPolicy(nil))
+    }
+
+    func testWhoisKeepsRegistrationFactsNotTheRegistrysTerms() {
+        let terms = """
+        Terms of Use: Access to Public Interest Registry WHOIS information is provided to assist persons in \
+        determining the contents of a domain name registration record. The data is for information about the registrant.
+        NOT FOUND
+        """
+        XCTAssertTrue(DomainPlugin.whoisFields(terms).isEmpty)
+        let record = """
+        Domain Name: NMAP.ORG
+        Registrar: Gandi SAS
+        Creation Date: 1999-01-18T05:00:00Z
+        Registrant Organization: Insecure.Com LLC
+        Name Server: NS1.LINODE.COM
+        """
+        XCTAssertEqual(DomainPlugin.whoisFields(record),
+                       ["Registrar: Gandi SAS", "Creation Date: 1999-01-18T05:00:00Z",
+                        "Registrant Organization: Insecure.Com LLC", "Name Server: NS1.LINODE.COM"])
+    }
+
+    func testASubdomainInheritsItsParentsDMARC() {
+        XCTAssertEqual(EmailAuth.dmarcParents(of: "a.b.example.com"), ["b.example.com", "example.com"])
+        XCTAssertEqual(EmailAuth.dmarcParents(of: "example.com"), [])
+        let inherited = EmailAuth.analyze(domain: "blog.example.com",
+            EmailAuth.Signals(spf: "v=spf1 -all", dmarc: "v=DMARC1; p=reject", dmarcInheritedFrom: "example.com"))
+        let dmarc = inherited.first { $0.type == "email_auth_dmarc" }
+        XCTAssertEqual(dmarc?.metadata["enforced"], "yes")
+        XCTAssertTrue(dmarc?.rawData.hasSuffix("(inherited from example.com)") == true, dmarc?.rawData ?? "")
+        XCTAssertFalse(inherited.contains { $0.type == "email_auth_dmarc_missing" })
+        let relaxed = EmailAuth.analyze(domain: "blog.example.com",
+            EmailAuth.Signals(spf: "v=spf1 -all", dmarc: "v=DMARC1; p=reject; sp=none", dmarcInheritedFrom: "example.com"))
+        XCTAssertEqual(relaxed.first { $0.type == "email_auth_dmarc" }?.metadata["enforced"], "no",
+                       "sp= is the policy subdomains get")
     }
 
     func testEmailAuthGrades() {

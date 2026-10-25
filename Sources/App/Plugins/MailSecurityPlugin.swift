@@ -14,6 +14,9 @@ enum EmailAuth {
     struct Signals {
         var spf: String?
         var dmarc: String?
+        /// The organizational domain whose DMARC record applies, when the
+        /// scanned name has none of its own (RFC 7489 §6.6.3).
+        var dmarcInheritedFrom: String?
         var dkimSelectors: [String] = []
         var mtaSts: Bool = false
         var tlsRpt: Bool = false
@@ -51,10 +54,28 @@ enum EmailAuth {
         return ("none — monitoring only, receivers take no action", false)
     }
 
+    /// A parent's record as it applies to a subdomain: `sp=` when set, else `p=`.
+    static func subdomainView(_ record: String) -> String {
+        let lower = record.lowercased()
+        guard let sp = lower.range(of: #"(^|;)\s*sp\s*=\s*(none|quarantine|reject)"#, options: .regularExpression),
+              let value = lower[sp].split(separator: "=").last?.trimmingCharacters(in: .whitespaces) else { return record }
+        return lower.replacingOccurrences(of: #"(^|;)\s*p\s*=\s*(none|quarantine|reject)"#,
+                                          with: "$1p=\(value)", options: .regularExpression)
+    }
+
+    /// The names a subdomain's DMARC falls back to, nearest first, down to two
+    /// labels: `a.b.example.com` → `b.example.com`, `example.com`.
+    static func dmarcParents(of domain: String) -> [String] {
+        let labels = domain.split(separator: ".")
+        guard labels.count > 2 else { return [] }
+        return (1...(labels.count - 2)).map { labels[$0...].joined(separator: ".") }
+    }
+
     static func analyze(domain: String, _ s: Signals) -> [Finding] {
         var out: [Finding] = []
         let spf = spfPolicy(s.spf)
-        let dmarc = dmarcPolicy(s.dmarc)
+        let dmarc = dmarcPolicy(s.dmarcInheritedFrom == nil ? s.dmarc : s.dmarc.map(subdomainView))
+        let inherited = s.dmarcInheritedFrom.map { " (inherited from \($0))" } ?? ""
 
         // ── SPF ──
         if let spf {
@@ -70,7 +91,7 @@ enum EmailAuth {
         // ── DMARC ──
         if let dmarc {
             out.append(Finding(type: "email_auth_dmarc", confidence: 0.9,
-                rawData: "DMARC for \(domain): p=\(dmarc.policy)",
+                rawData: "DMARC for \(domain): p=\(dmarc.policy)\(inherited)",
                 metadata: ["domain": domain, "enforced": dmarc.enforced ? "yes" : "no", "record": String((s.dmarc ?? "").prefix(300))]))
         } else {
             out.append(Finding(type: "email_auth_dmarc_missing", confidence: 0.9,
@@ -141,7 +162,8 @@ struct MailSecurityPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.email, .domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
     /// v2: a mail provider's domain is not graded for one of its users.
-    let cacheVersion = 2
+    /// v3: a subdomain without its own DMARC record inherits its parent's.
+    let cacheVersion = 3
 
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         // Domain targets only. Strip an email local-part so scanning
@@ -184,6 +206,16 @@ struct MailSecurityPlugin: FootprintPlugin {
         // SPF: a v=spf1 TXT at the apex. DMARC: a v=DMARC1 TXT at _dmarc.<domain>.
         signals.spf = await spf.first { $0.lowercased().hasPrefix("v=spf1") }
         signals.dmarc = await dmarc.first { $0.lowercased().hasPrefix("v=dmarc1") }
+        if signals.dmarc == nil {
+            for parent in EmailAuth.dmarcParents(of: domain).prefix(3) {
+                let found = await DoHResolver.resolve("_dmarc.\(parent)", type: "TXT", on: app)
+                if let record = found.first(where: { $0.lowercased().hasPrefix("v=dmarc1") }) {
+                    signals.dmarc = record
+                    signals.dmarcInheritedFrom = parent
+                    break
+                }
+            }
+        }
         signals.dkimSelectors = await dkim
         // MTA-STS + TLS-RPT.
         signals.mtaSts = await mtaSts.contains { $0.lowercased().hasPrefix("v=stsv1") }

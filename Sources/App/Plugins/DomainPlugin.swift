@@ -15,7 +15,8 @@ struct DomainPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 14_400 // 4 h
     /// v2: the services the owner uses, from TXT, SPF and MX.
-    let cacheVersion = 2
+    /// v3: a host name's WHOIS is its registered parent's; only `Key: value` facts.
+    let cacheVersion = 3
 
     // Basic domain/IP regex. Intentionally loose — input has already been
     // sanitised by ScanController's character whitelist.
@@ -88,24 +89,21 @@ struct DomainPlugin: FootprintPlugin {
         }
 
         // ── WHOIS ────────────────────────────────────────────────────────────────
-        if let whoisOut = await runWhois(target: target, app: app) {
-            let lines = whoisOut.components(separatedBy: .newlines)
-            let interesting = lines.filter { line in
-                let l = line.lowercased()
-                return l.contains("registrar:") || l.contains("creation date:") ||
-                       l.contains("registry expiry") || l.contains("name server:") ||
-                       l.contains("registrant") || l.contains("updated date:")
-            }.prefix(8).map { $0.trimmingCharacters(in: .whitespaces) }
-
-            if !interesting.isEmpty {
-                results.append(PluginResult(
-                    source: "DomainWHOIS",
-                    type: "whois_record",
-                    confidenceScore: 0.85,
-                    rawData: "WHOIS for \(target): \(interesting.joined(separator: " | "))",
-                    metadata: ["domain": target]
-                ))
-            }
+        // A host name (`scanme.nmap.org`) is not registered itself: the
+        // registry answers with its terms of use. Its registered parent is.
+        let isAddress = target.range(of: #"^\d{1,3}(\.\d{1,3}){3}$"#, options: .regularExpression) != nil
+        for name in ([target] + (isAddress ? [] : EmailAuth.dmarcParents(of: target))).prefix(3) {
+            guard let whoisOut = await runWhois(target: name, app: app) else { continue }
+            let interesting = Self.whoisFields(whoisOut)
+            guard !interesting.isEmpty else { continue }
+            results.append(PluginResult(
+                source: "DomainWHOIS",
+                type: "whois_record",
+                confidenceScore: 0.85,
+                rawData: "WHOIS for \(name): \(interesting.joined(separator: " | "))",
+                metadata: ["domain": name]
+            ))
+            break
         }
 
         // ── Reverse DNS (PTR) for IPs ────────────────────────────────────────────
@@ -170,6 +168,15 @@ struct DomainPlugin: FootprintPlugin {
     }
 
     // MARK: - Subprocess helpers
+
+    /// The registration facts in a WHOIS answer, as `Key: value` lines. Prose
+    /// (a registry's terms of use mention "registrant" too) is left out.
+    static func whoisFields(_ output: String) -> [String] {
+        let pattern = #"^\s*(Registrar|Creation Date|Registry Expiry Date|Registrar Registration Expiration Date|Name Server|Updated Date|Registrant (Name|Organization|Email|Country|State/Province)):\s*\S"#
+        return output.components(separatedBy: .newlines)
+            .filter { $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil }
+            .prefix(8).map { $0.trimmingCharacters(in: .whitespaces) }
+    }
 
     private func runWhois(target: String, app: Application) async -> String? {
         // Sanitise: whois only accepts hostname chars (already guaranteed by
