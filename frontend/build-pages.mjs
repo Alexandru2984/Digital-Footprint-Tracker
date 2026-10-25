@@ -70,6 +70,7 @@ const sourceGroups = [
     ]],
     ['Phone', [
         ['Abstract phone intelligence', 'Validity, carrier, country, line type and, sometimes, the registered name'],
+        ['libphonenumber (offline)', 'Country, the region of the prefix and the range’s original carrier, with no request'],
         ['Found on the way', 'Numbers on a target’s website or domain registration become leads of their own'],
     ]],
 ];
@@ -146,7 +147,7 @@ const pages = [
 <li><strong>DNS</strong>: addresses, mail servers and TXT records.</li>
 <li><strong>Services in use</strong>: ownership tokens in TXT records, SPF senders and MX hosts reveal Microsoft 365, Google Workspace, Atlassian, Stripe, Slack, Zoom, OpenAI and dozens more.</li>
 <li><strong>Subdomains</strong> from Certificate Transparency logs and passive DNS.</li>
-<li><strong>Every IP</strong> the domain resolves to is checked for open ports, CVEs and its network operator.</li>
+<li><strong>Every IP</strong> the domain resolves to is checked for open ports, CVEs and its network operator. A CDN’s edge (Cloudflare, Fastly…) is named as such instead of being reported as the domain’s own open ports.</li>
 </ul>
 <h2>Exposure</h2>
 <ul>
@@ -154,6 +155,7 @@ const pages = [
 <li><strong>Web posture</strong>: TLS and HTTP security headers, graded.</li>
 <li><strong>Mail security</strong>: whether mail from the domain can be spoofed (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Lookalike domains</strong> that resolve — candidates for phishing.</li>
+<li><strong>Subdomain takeover</strong>: subdomains whose CNAME points at GitHub Pages, S3, Heroku, Azure and other services where nothing is claimed any more — anyone could claim the name and serve content on the subdomain.</li>
 </ul>
 <h2>The people behind it</h2>
 <p>The homepage is read for the accounts its owner marks with rel=me, the profiles it links, a contact address and phone. Keybase and Bluesky are asked who proved control of the domain. The Wayback Machine shows how long it has existed.</p>`,
@@ -161,6 +163,7 @@ const pages = [
             ['Can I see who owns a domain?', 'When the registration is not redacted, yes — many ccTLDs, organisations and older registrations still name the holder. Otherwise the homepage, Keybase and Bluesky proofs often identify the owner.'],
             ['How are subdomains found?', 'From Certificate Transparency logs, which record every publicly trusted certificate, and from historical DNS.'],
             ['Is the scan intrusive?', 'No. It reads public records and fetches a handful of well-known paths, as a browser would.'],
+            ['How is a subdomain takeover detected?', 'From DNS alone, or one page load: the subdomain’s CNAME target no longer exists, or the service it points at answers with its “nothing here” page. Nothing is claimed or registered.'],
         ],
     },
     {
@@ -177,6 +180,7 @@ const pages = [
 <li><strong>Network ownership</strong>: the routed prefix, origin AS and operator from RIPEstat, and the allocation from the regional registry’s RDAP.</li>
 <li><strong>Reputation</strong>: whether GreyNoise has seen the address scanning the internet, and optionally Shodan, AbuseIPDB and VirusTotal.</li>
 <li><strong>Tor</strong>: whether the address is a current Tor exit relay, checked against the Tor Project’s list.</li>
+<li><strong>Domains it serves</strong>: the host name the address answers to (reverse DNS) and the other domains hosted on it. A meaningful host name is followed as a lead of its own; provider-generated names are not.</li>
 </ul>
 <p>Clean verdicts are reported as clean and add nothing to the risk score; only real findings do.</p>`,
         faq: [
@@ -195,14 +199,14 @@ const pages = [
 <h2>What a lookup returns</h2>
 <ul>
 <li><strong>Validity</strong> and whether the number is assigned.</li>
-<li><strong>Carrier, country and region</strong> of the number.</li>
+<li><strong>Carrier, country and region</strong> of the number — the country, the region its prefix was assigned to and the carrier its range was allocated to are answered offline, from Google’s libphonenumber data, even when no provider answers. A ported number may since have moved carrier.</li>
 <li><strong>Line type</strong>: mobile, landline, VoIP, toll-free.</li>
 <li><strong>Registered name</strong>, where the provider has one.</li>
 </ul>
 <h2>Numbers found during other scans</h2>
 <p>A phone number on a target’s website (a <code>tel:</code> link) or in a domain registration becomes a lead of its own and is looked up too — but only numbers in international form, since a national number would mean guessing the country. A number read off an account that only shares the target’s name is never added to their profile.</p>`,
         faq: [
-            ['Which format should I use?', 'International format with the country code, for example +40 721 234 567 or +1 415 555 0123.'],
+            ['Which format should I use?', 'International format with the country code, for example +40 721 234 567 or +1 415 555 0123. A national number such as 0721 234 567 names no country, so the scan asks for the code.'],
             ['Can I find the owner of a phone number?', 'Sometimes: the lookup returns a registered name when the provider has one. The number is also matched against what other sources found about a target.'],
         ],
     },

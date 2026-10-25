@@ -86,6 +86,14 @@
             "@type": "Answer",
             "text": "Nu. Citește înregistrări publice și accesează câteva căi cunoscute, cum ar face un browser."
           }
+        },
+        {
+          "@type": "Question",
+          "name": "Cum e detectată preluarea unui subdomeniu?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Doar din DNS sau dintr-o singură încărcare de pagină: ținta CNAME-ului nu mai există sau serviciul răspunde cu pagina lui de „nimic aici”. Nu se revendică și nu se înregistrează nimic."
+          }
         }
       ]
     }
@@ -122,7 +130,7 @@
 <li><strong>DNS</strong>: adrese, servere de mail și înregistrări TXT.</li>
 <li><strong>Servicii folosite</strong>: tokenurile din TXT, expeditorii din SPF și serverele MX arată Microsoft 365, Google Workspace, Atlassian, Stripe, Slack, Zoom, OpenAI și zeci de altele.</li>
 <li><strong>Subdomenii</strong> din jurnalele Certificate Transparency și din DNS-ul pasiv.</li>
-<li><strong>Fiecare IP</strong> la care rezolvă domeniul e verificat pentru porturi deschise, CVE-uri și operatorul rețelei.</li>
+<li><strong>Fiecare IP</strong> la care rezolvă domeniul e verificat pentru porturi deschise, CVE-uri și operatorul rețelei. Marginea unui CDN (Cloudflare, Fastly…) e numită ca atare, nu raportată drept porturile deschise ale domeniului.</li>
 </ul>
 <h2>Expunere</h2>
 <ul>
@@ -130,6 +138,7 @@
 <li><strong>Securitate web</strong>: TLS și header-e HTTP de securitate, cu notă.</li>
 <li><strong>Securitatea emailului</strong>: dacă se pot trimite emailuri false în numele domeniului (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Domenii-capcană</strong> asemănătoare care rezolvă — candidate pentru phishing.</li>
+<li><strong>Preluare de subdomenii</strong> (subdomain takeover): subdomenii al căror CNAME trimite la GitHub Pages, S3, Heroku, Azure sau alte servicii unde numele nu mai e revendicat — oricine l-ar putea revendica și ar servi conținut pe subdomeniu.</li>
 </ul>
 <h2>Oamenii din spate</h2>
 <p>Pagina principală e citită pentru conturile marcate rel=me, profilurile spre care trimite, un email și un telefon de contact. Keybase și Bluesky sunt întrebate cine a dovedit controlul asupra domeniului. Wayback Machine arată de cât timp există.</p>
@@ -137,6 +146,7 @@
 <details><summary>Pot vedea cine deține un domeniu?</summary><p>Când înregistrarea nu e ascunsă, da — multe domenii .ro, organizații și înregistrări mai vechi încă numesc deținătorul. Altfel, pagina principală și dovezile Keybase sau Bluesky îl identifică deseori.</p></details>
 <details><summary>Cum sunt găsite subdomeniile?</summary><p>Din jurnalele Certificate Transparency, care înregistrează fiecare certificat public, și din istoricul DNS.</p></details>
 <details><summary>Scanarea e intruzivă?</summary><p>Nu. Citește înregistrări publice și accesează câteva căi cunoscute, cum ar face un browser.</p></details>
+<details><summary>Cum e detectată preluarea unui subdomeniu?</summary><p>Doar din DNS sau dintr-o singură încărcare de pagină: ținta CNAME-ului nu mai există sau serviciul răspunde cu pagina lui de „nimic aici”. Nu se revendică și nu se înregistrează nimic.</p></details>
 <div class="cta"><a class="button" href="/?q=exemplu.ro">Scanează gratuit</a></div>
 </main>
 <footer class="site-footer"><div class="wrap">

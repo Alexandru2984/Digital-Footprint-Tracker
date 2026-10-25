@@ -121,7 +121,7 @@ Vapor 4
         Domain/IP → DomainOSINT (DNS+WHOIS+geo), CertificateTransparency (crt.sh),
                     Bluesky (verified domain handles),
                     PassiveDNS, Shodan, VirusTotal, AbuseIPDB, WHOIS
-        Phone     → PhoneOSINT (AbstractAPI)
+        Phone     → PhoneOSINT (AbstractAPI, offline libphonenumber data)
   │
   ▼
 PostgreSQL
@@ -147,8 +147,8 @@ PostgreSQL
 ### OSINT Engine (35 plugins, 500+ sources)
 - **Email** — Gravatar, HaveIBeenPwned (breaches + pastes), Pastebin, holehe (400+ sites)
 - **Username** — GitHub (enriched: name/bio/location/Twitter), GitLab, Keybase, Telegram, Mastodon, Bluesky, Codeberg, Docker Hub, HackerNews, Steam, npm, PyPI, crates.io (publisher ↔ GitHub login), Sherlock (481 sites)
-- **Domain / IP** — DNS A/MX/TXT/SPF + reverse PTR + WHOIS + IP geolocation, **certificate transparency (crt.sh)**, **Bluesky domain handles** (a domain verified as someone's handle), **passive DNS**, **Shodan**, **VirusTotal**, **AbuseIPDB**
-- **Phone** — E.164 detection, carrier + country via AbstractAPI
+- **Domain / IP** — DNS A/MX/TXT/SPF + reverse PTR + WHOIS + IP geolocation, **certificate transparency (crt.sh)**, **Bluesky domain handles** (a domain verified as someone's handle), **passive DNS**, **Shodan**, **VirusTotal**, **AbuseIPDB**, **subdomain takeover** (dangling CNAMEs to GitHub Pages, S3, Heroku, Azure…), domains served by an IP (reverse IP), CDN edges named instead of scanned
+- **Phone** — E.164 detection; country, region and original carrier offline (libphonenumber), line status and owner via AbstractAPI
 - **Parallel execution** — all plugins run concurrently in a Swift `TaskGroup` with a 120 s hard timeout
 - **Risk score** — confidence-weighted aggregate (Low / Medium / High / Critical) with breach + credential findings weighted 3×
 

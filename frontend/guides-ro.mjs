@@ -52,6 +52,7 @@ export const roSourceGroups = [
     ]],
     ['Telefon', [
         ['Abstract phone intelligence', 'Validitate, operator, țară, tipul liniei și uneori numele titularului'],
+        ['libphonenumber (offline)', 'Țara, regiunea prefixului și operatorul inițial al plajei, fără nicio cerere'],
         ['Găsite pe parcurs', 'Numerele de pe site-ul sau din înregistrarea domeniului unei ținte devin piste noi'],
     ]],
 ];
@@ -128,7 +129,7 @@ export const roPages = [
 <li><strong>DNS</strong>: adrese, servere de mail și înregistrări TXT.</li>
 <li><strong>Servicii folosite</strong>: tokenurile din TXT, expeditorii din SPF și serverele MX arată Microsoft 365, Google Workspace, Atlassian, Stripe, Slack, Zoom, OpenAI și zeci de altele.</li>
 <li><strong>Subdomenii</strong> din jurnalele Certificate Transparency și din DNS-ul pasiv.</li>
-<li><strong>Fiecare IP</strong> la care rezolvă domeniul e verificat pentru porturi deschise, CVE-uri și operatorul rețelei.</li>
+<li><strong>Fiecare IP</strong> la care rezolvă domeniul e verificat pentru porturi deschise, CVE-uri și operatorul rețelei. Marginea unui CDN (Cloudflare, Fastly…) e numită ca atare, nu raportată drept porturile deschise ale domeniului.</li>
 </ul>
 <h2>Expunere</h2>
 <ul>
@@ -136,6 +137,7 @@ export const roPages = [
 <li><strong>Securitate web</strong>: TLS și header-e HTTP de securitate, cu notă.</li>
 <li><strong>Securitatea emailului</strong>: dacă se pot trimite emailuri false în numele domeniului (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Domenii-capcană</strong> asemănătoare care rezolvă — candidate pentru phishing.</li>
+<li><strong>Preluare de subdomenii</strong> (subdomain takeover): subdomenii al căror CNAME trimite la GitHub Pages, S3, Heroku, Azure sau alte servicii unde numele nu mai e revendicat — oricine l-ar putea revendica și ar servi conținut pe subdomeniu.</li>
 </ul>
 <h2>Oamenii din spate</h2>
 <p>Pagina principală e citită pentru conturile marcate rel=me, profilurile spre care trimite, un email și un telefon de contact. Keybase și Bluesky sunt întrebate cine a dovedit controlul asupra domeniului. Wayback Machine arată de cât timp există.</p>`,
@@ -143,6 +145,7 @@ export const roPages = [
             ['Pot vedea cine deține un domeniu?', 'Când înregistrarea nu e ascunsă, da — multe domenii .ro, organizații și înregistrări mai vechi încă numesc deținătorul. Altfel, pagina principală și dovezile Keybase sau Bluesky îl identifică deseori.'],
             ['Cum sunt găsite subdomeniile?', 'Din jurnalele Certificate Transparency, care înregistrează fiecare certificat public, și din istoricul DNS.'],
             ['Scanarea e intruzivă?', 'Nu. Citește înregistrări publice și accesează câteva căi cunoscute, cum ar face un browser.'],
+            ['Cum e detectată preluarea unui subdomeniu?', 'Doar din DNS sau dintr-o singură încărcare de pagină: ținta CNAME-ului nu mai există sau serviciul răspunde cu pagina lui de „nimic aici”. Nu se revendică și nu se înregistrează nimic.'],
         ],
     },
     {
@@ -159,6 +162,7 @@ export const roPages = [
 <li><strong>Operatorul rețelei</strong>: prefixul rutat, AS-ul de origine și operatorul din RIPEstat, plus alocarea din RDAP-ul registrului regional.</li>
 <li><strong>Reputație</strong>: dacă GreyNoise a văzut adresa scanând internetul și, opțional, Shodan, AbuseIPDB și VirusTotal.</li>
 <li><strong>Tor</strong>: dacă adresa e un nod de ieșire Tor activ, din lista Tor Project.</li>
+<li><strong>Domeniile pe care le servește</strong>: numele la care răspunde adresa (reverse DNS) și celelalte domenii găzduite pe ea. Un nume cu sens devine o pistă nouă; numele generate de furnizor, nu.</li>
 </ul>
 <p>Verdictele curate apar ca atare și nu adaugă nimic la scorul de risc; doar constatările reale contează.</p>`,
         faq: [
@@ -177,14 +181,14 @@ export const roPages = [
 <h2>Ce afli</h2>
 <ul>
 <li><strong>Validitatea</strong> și dacă numărul e alocat.</li>
-<li><strong>Operatorul, țara și regiunea</strong> numărului.</li>
+<li><strong>Operatorul, țara și regiunea</strong> numărului — țara, regiunea căreia i-a fost alocat prefixul și operatorul căruia i-a fost alocată plaja vin offline, din datele libphonenumber (Google), chiar și când niciun furnizor nu răspunde. Un număr portat poate avea între timp alt operator.</li>
 <li><strong>Tipul liniei</strong>: mobil, fix, VoIP, gratuit.</li>
 <li><strong>Numele titularului</strong>, când furnizorul îl are.</li>
 </ul>
 <h2>Numere găsite în alte scanări</h2>
 <p>Un număr de pe site-ul unei ținte (un link <code>tel:</code>) sau dintr-o înregistrare de domeniu devine o pistă nouă și e verificat și el — dar doar numerele în format internațional, pentru că la un număr național ar trebui ghicită țara. Un număr găsit pe un cont care doar are același nume cu ținta nu intră niciodată în profilul ei.</p>`,
         faq: [
-            ['Ce format folosesc?', 'Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567.'],
+            ['Ce format folosesc?', 'Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567. Un număr național, ca 0721 234 567, nu spune țara, așa că scanarea cere prefixul.'],
             ['Pot afla al cui e un număr?', 'Uneori: verificarea întoarce numele titularului când furnizorul îl are. Numărul e comparat și cu ce au găsit celelalte surse despre o țintă.'],
         ],
     },

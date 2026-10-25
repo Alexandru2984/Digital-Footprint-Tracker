@@ -68,7 +68,7 @@
           "name": "Ce format folosesc?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567."
+            "text": "Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567. Un număr național, ca 0721 234 567, nu spune țara, așa că scanarea cere prefixul."
           }
         },
         {
@@ -110,14 +110,14 @@
 <h2>Ce afli</h2>
 <ul>
 <li><strong>Validitatea</strong> și dacă numărul e alocat.</li>
-<li><strong>Operatorul, țara și regiunea</strong> numărului.</li>
+<li><strong>Operatorul, țara și regiunea</strong> numărului — țara, regiunea căreia i-a fost alocat prefixul și operatorul căruia i-a fost alocată plaja vin offline, din datele libphonenumber (Google), chiar și când niciun furnizor nu răspunde. Un număr portat poate avea între timp alt operator.</li>
 <li><strong>Tipul liniei</strong>: mobil, fix, VoIP, gratuit.</li>
 <li><strong>Numele titularului</strong>, când furnizorul îl are.</li>
 </ul>
 <h2>Numere găsite în alte scanări</h2>
 <p>Un număr de pe site-ul unei ținte (un link <code>tel:</code>) sau dintr-o înregistrare de domeniu devine o pistă nouă și e verificat și el — dar doar numerele în format internațional, pentru că la un număr național ar trebui ghicită țara. Un număr găsit pe un cont care doar are același nume cu ținta nu intră niciodată în profilul ei.</p>
 <h2>Întrebări</h2>
-<details><summary>Ce format folosesc?</summary><p>Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567.</p></details>
+<details><summary>Ce format folosesc?</summary><p>Formatul internațional, cu prefixul țării, de exemplu +40 721 234 567. Un număr național, ca 0721 234 567, nu spune țara, așa că scanarea cere prefixul.</p></details>
 <details><summary>Pot afla al cui e un număr?</summary><p>Uneori: verificarea întoarce numele titularului când furnizorul îl are. Numărul e comparat și cu ce au găsit celelalte surse despre o țintă.</p></details>
 <div class="cta"><a class="button" href="/?q=%2B40721000000">Scanează gratuit</a></div>
 </main>

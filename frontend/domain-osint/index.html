@@ -86,6 +86,14 @@
             "@type": "Answer",
             "text": "No. It reads public records and fetches a handful of well-known paths, as a browser would."
           }
+        },
+        {
+          "@type": "Question",
+          "name": "How is a subdomain takeover detected?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "From DNS alone, or one page load: the subdomain’s CNAME target no longer exists, or the service it points at answers with its “nothing here” page. Nothing is claimed or registered."
+          }
         }
       ]
     }
@@ -122,7 +130,7 @@
 <li><strong>DNS</strong>: addresses, mail servers and TXT records.</li>
 <li><strong>Services in use</strong>: ownership tokens in TXT records, SPF senders and MX hosts reveal Microsoft 365, Google Workspace, Atlassian, Stripe, Slack, Zoom, OpenAI and dozens more.</li>
 <li><strong>Subdomains</strong> from Certificate Transparency logs and passive DNS.</li>
-<li><strong>Every IP</strong> the domain resolves to is checked for open ports, CVEs and its network operator.</li>
+<li><strong>Every IP</strong> the domain resolves to is checked for open ports, CVEs and its network operator. A CDN’s edge (Cloudflare, Fastly…) is named as such instead of being reported as the domain’s own open ports.</li>
 </ul>
 <h2>Exposure</h2>
 <ul>
@@ -130,6 +138,7 @@
 <li><strong>Web posture</strong>: TLS and HTTP security headers, graded.</li>
 <li><strong>Mail security</strong>: whether mail from the domain can be spoofed (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Lookalike domains</strong> that resolve — candidates for phishing.</li>
+<li><strong>Subdomain takeover</strong>: subdomains whose CNAME points at GitHub Pages, S3, Heroku, Azure and other services where nothing is claimed any more — anyone could claim the name and serve content on the subdomain.</li>
 </ul>
 <h2>The people behind it</h2>
 <p>The homepage is read for the accounts its owner marks with rel=me, the profiles it links, a contact address and phone. Keybase and Bluesky are asked who proved control of the domain. The Wayback Machine shows how long it has existed.</p>
@@ -137,6 +146,7 @@
 <details><summary>Can I see who owns a domain?</summary><p>When the registration is not redacted, yes — many ccTLDs, organisations and older registrations still name the holder. Otherwise the homepage, Keybase and Bluesky proofs often identify the owner.</p></details>
 <details><summary>How are subdomains found?</summary><p>From Certificate Transparency logs, which record every publicly trusted certificate, and from historical DNS.</p></details>
 <details><summary>Is the scan intrusive?</summary><p>No. It reads public records and fetches a handful of well-known paths, as a browser would.</p></details>
+<details><summary>How is a subdomain takeover detected?</summary><p>From DNS alone, or one page load: the subdomain’s CNAME target no longer exists, or the service it points at answers with its “nothing here” page. Nothing is claimed or registered.</p></details>
 <div class="cta"><a class="button" href="/?q=example.com">Run a free scan</a></div>
 </main>
 <footer class="site-footer"><div class="wrap">
