@@ -4667,6 +4667,21 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(IdentityLinks.isOnSharedHost("a@bsky.social"))
     }
 
+    func testACDNAddressIsNotPivotedTo() {
+        let dns = PluginResult(source: "DomainDNS", type: "dns_record", confidenceScore: 1.0, rawData: "A",
+                               metadata: ["ip": "188.114.97.3"])
+        let own = PluginResult(source: "DomainDNS", type: "dns_record", confidenceScore: 1.0, rawData: "A",
+                               metadata: ["ip": "93.184.215.14"])
+        XCTAssertEqual(PivotExtractor.candidates(from: [dns, own], alreadyScanned: []), ["93.184.215.14"],
+                       "Cloudflare's edge describes Cloudflare; the site's own server is still followed")
+        XCTAssertTrue(SharedEdge.contains("104.21.25.147"))
+        XCTAssertTrue(SharedEdge.contains("151.101.1.69"))
+        XCTAssertTrue(SharedEdge.contains("185.199.110.153"))
+        XCTAssertFalse(SharedEdge.contains("104.32.0.1"))
+        XCTAssertFalse(SharedEdge.contains("188.114.97"))
+        XCTAssertFalse(SharedEdge.contains("sindresorhus.com"))
+    }
+
     func testSherlockDropsHitsFromSitesThatFindAnyone() async {
         await SherlockReliability.shared.reset()
         await SherlockReliability.shared.record("CatchAll", reliable: false)

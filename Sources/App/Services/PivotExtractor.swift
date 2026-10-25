@@ -96,6 +96,8 @@ enum PivotExtractor {
                   // (`ana.bsky.social`) reads as a domain, but scanning it
                   // describes the platform's servers, not the person.
                   !IdentityLinks.isOnSharedHost(value),
+                  // Likewise a CDN's address: it is the provider's machine.
+                  !SharedEdge.contains(value),
                   seen.insert(value).inserted
             else { return }
             scored.append((value, priority))
