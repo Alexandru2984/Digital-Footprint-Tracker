@@ -34,7 +34,7 @@ graph.
   [`live delta`](docs/SECURITY_AUDIT_2026-08-24_LIVE_DELTA.md),
   [`rollout runbook`](docs/PRODUCTION_ROLLOUT.md) and
   [`roadmap`](docs/ROADMAP.md).
-- **47 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
+- **49 OSINT plugins** orchestrated by a `TaskGroup` with a hard 120 s
   deadline; results streamed live via SSE as each plugin completes.
 - **Cross-plugin result cache** with per-plugin TTL (1 h for volatile threat
   intel, 24 h for breach data) — cuts external API calls dramatically on

@@ -46,6 +46,8 @@ const sourceGroups = [
         ['Mastodon, Bluesky', 'Profiles, verified rel=me links and DNS-verified domain handles'],
         ['DEV Community, Lobsters', 'Profiles and the GitHub, Twitter and Mastodon accounts they list'],
         ['Duolingo', 'A profile’s name, join date and languages; and whether an email address has an account'],
+        ['Lichess', 'A player’s real name, country, join date and the accounts the profile lists'],
+        ['speedrun.com', 'A runner’s region, join date and the Twitch, YouTube and Twitter accounts they link'],
         ['Telegram, Hacker News, Steam', 'Public profiles'],
         ['npm, PyPI, crates.io, Docker Hub', 'Published packages and images'],
     ]],
@@ -118,7 +120,7 @@ const pages = [
 <p>Most username checkers ask each site for a profile URL and report every page that loads. Many sites answer “200 OK” for any name at all — a login wall, a catch-all page — so the result is a long list of accounts that do not exist.</p>
 <p>This scanner asks every site that reports a hit about a random name nobody owns as well. A site that “finds” that one too cannot tell real accounts from missing ones, and its hit is dropped. On a typical scan this removes more than half of the raw hits.</p>
 <h2>Dedicated profile lookups</h2>
-<p>For the platforms that matter most, a profile API is read instead of a status code: GitHub (profile, organisations, social accounts and the addresses GitHub verified on the account’s GPG keys), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, npm, PyPI, crates.io and Docker Hub.</p>
+<p>For the platforms that matter most, a profile API is read instead of a status code: GitHub (profile, organisations, social accounts and the addresses GitHub verified on the account’s GPG keys), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, npm, PyPI, crates.io and Docker Hub.</p>
 <h2>Is it the same person?</h2>
 <p>Two accounts with the same name may belong to strangers. The scanner looks for evidence that ties them:</p>
 <ul>

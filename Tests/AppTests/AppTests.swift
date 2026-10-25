@@ -4723,6 +4723,39 @@ final class AppTests: XCTestCase {
         XCTAssertNil(DuolingoPlugin.evaluate(email: "a@b.test", body: Data(#"{"users":[]}"#.utf8)), "no account")
     }
 
+    func testLichessReadsTheRealNameAndTheAccountsAProfileLists() throws {
+        let body = Data(#"""
+        {"id":"thibault","username":"thibault","createdAt":1290415680000,
+         "profile":{"realName":"Thibault Duplessis","flag":"FR","links":"github.com/ornicar\nmas.to/@thibault\nhttp://plain.example\nhttps://example.org/blog"},
+         "streamer":{"twitch":{"channel":"https://www.twitch.tv/ornicar2"}}}
+        """#.utf8)
+        let found = try XCTUnwrap(LichessPlugin.evaluate(username: "Thibault", status: 200, body: body))
+        XCTAssertEqual(found.metadata?["name"], "Thibault Duplessis")
+        XCTAssertEqual(found.metadata?["since"], "2010-11-22")
+        XCTAssertEqual(found.metadata?["linked"], "github:ornicar,mastodon:thibault@mas.to,twitch:ornicar2")
+        XCTAssertTrue(found.rawData.contains("Country: France"))
+        XCTAssertNil(LichessPlugin.evaluate(username: "thibault", status: 404, body: Data()))
+        let closed = Data(#"{"id":"gone","username":"gone","closed":true}"#.utf8)
+        XCTAssertNil(LichessPlugin.evaluate(username: "gone", status: 200, body: closed), "a closed account")
+    }
+
+    func testSpeedrunReadsTheRegionAndTheLinkedChannels() throws {
+        let body = Data(#"""
+        {"data":[{"names":{"international":"cheese"},"weblink":"https://www.speedrun.com/users/cheese",
+          "signup":"2015-09-10T12:52:58Z",
+          "location":{"country":{"names":{"international":"Spain"}},"region":{"names":{"international":"Madrid, Spain"}}},
+          "twitch":{"uri":"https://www.twitch.tv/cheese"},"youtube":{"uri":"https://www.youtube.com/c/cheese05"},
+          "twitter":{"uri":"https://www.twitter.com/cheese051"}}]}
+        """#.utf8)
+        let found = try XCTUnwrap(SpeedrunPlugin.evaluate(username: "Cheese", status: 200, body: body))
+        XCTAssertEqual(found.metadata?["location"], "Madrid, Spain")
+        XCTAssertEqual(found.metadata?["since"], "2015-09-10")
+        XCTAssertEqual(found.metadata?["linked"], "twitch:cheese,twitter:cheese051")
+        XCTAssertNil(SpeedrunPlugin.evaluate(username: "cheese", status: 200, body: Data(#"{"data":[]}"#.utf8)))
+        XCTAssertTrue(BulkUsernamePlugin.checkedElsewhere("Speedrun.com"))
+        XCTAssertTrue(BulkUsernamePlugin.checkedElsewhere("Lichess"))
+    }
+
     func testSherlockLeavesPlatformsWithADedicatedCheckToIt() {
         for site in ["Keybase", "DEV Community", "dev.to", "Docker Hub", "PyPi", "Steam Community (User)",
                      "mastodon.social", "GitHub", "Telegram"] {

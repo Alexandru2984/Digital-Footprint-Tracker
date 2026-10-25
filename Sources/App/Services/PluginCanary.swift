@@ -57,6 +57,8 @@ enum PluginCanary {
         Check(plugin: "Lobsters", input: "pushcx", username: "pushcx"),
         // Duolingo's co-founder holds user id 14.
         Check(plugin: "Duolingo", input: "luis", username: "luis"),
+        Check(plugin: "Lichess", input: "thibault", username: "thibault"),
+        Check(plugin: "Speedrun", input: "cheese", username: "cheese"),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),
