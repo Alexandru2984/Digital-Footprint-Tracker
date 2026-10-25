@@ -8178,6 +8178,56 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/ghost", "Sorry, User not found."))
         XCTAssertNotNil(eval(msg, "real", 200, "https://ex.com/real", "Welcome real"))
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
+
+        // A name in the query is about that name when nothing redirected.
+        let query = SherlockSite(errorType: "message", url: "https://news.example/user?id={}",
+                                 urlMain: "https://news.example/", errorMsg: .string("No such user."),
+                                 errorUrl: nil, regexCheck: nil)
+        XCTAssertNotNil(eval(query, "real", 200, "https://news.example/user?id=real", "karma: 12"))
+        XCTAssertNil(eval(query, "ghost", 200, "https://news.example/user?id=ghost", "No such user."))
+
+        // errorCode: a 2xx the site uses for "nobody" is not a hit.
+        var coded = sc
+        coded.errorCode = try? JSONDecoder().decode(SherlockSite.StatusCodes.self, from: Data("204".utf8))
+        XCTAssertNil(eval(coded, "realuser", 204, "https://9gag.com/u/realuser"))
+        XCTAssertNotNil(eval(coded, "realuser", 200, "https://9gag.com/u/realuser"))
+    }
+
+    func testSherlockAsksTheProbeTheWayTheSiteWants() throws {
+        let sites = try JSONDecoder().decode(SherlockData.self, from: Data(#"""
+        {"Discord": {"errorType": "message", "url": "https://discord.com", "urlMain": "https://discord.com/",
+          "urlProbe": "https://discord.com/api/v9/unique-username/username-attempt-unauthed",
+          "errorMsg": ["{\"taken\":false}"], "request_method": "POST", "request_payload": {"username": "{}"},
+          "headers": {"Content-Type": "application/json"}},
+         "Anilist": {"errorType": "status_code", "url": "https://anilist.co/user/{}/", "urlMain": "https://anilist.co/",
+          "urlProbe": "https://graphql.anilist.co/", "request_method": "POST",
+          "request_payload": {"query": "query($name:String){User(name:$name){id}}", "variables": {"name": "{}"}}},
+         "Wowhead": {"errorType": "status_code", "errorCode": [404, 410], "url": "https://wowhead.com/user={}",
+          "urlMain": "https://wowhead.com/"}}
+        """#.utf8)).sites
+        XCTAssertEqual(sites.count, 3, "no site is dropped for a field it carries")
+
+        let discord = try XCTUnwrap(sites["Discord"]).request(for: "ana")
+        XCTAssertEqual(discord.url, "https://discord.com/api/v9/unique-username/username-attempt-unauthed")
+        XCTAssertEqual(discord.method, .POST)
+        XCTAssertEqual(discord.headers["Content-Type"], "application/json")
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: XCTUnwrap(discord.body)) as? [String: String], ["username": "ana"])
+
+        let anilist = try XCTUnwrap(sites["Anilist"]).request(for: "Josh")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(anilist.body)) as? [String: Any])
+        XCTAssertEqual((body["variables"] as? [String: String])?["name"], "Josh")
+        XCTAssertEqual(anilist.headers["Content-Type"], "application/json", "a JSON body says so")
+        XCTAssertEqual(sites["Wowhead"]?.errorCode?.codes, [404, 410])
+        XCTAssertEqual(sites["Wowhead"]?.request(for: "x").method, .GET)
+
+        // Discord answers on the probe, not the profile URL; its verdict is in the body.
+        let taken = BulkUsernamePlugin.evaluate(
+            siteName: "Discord", siteData: try XCTUnwrap(sites["Discord"]), username: "ana", targetURL: "https://discord.com",
+            status: 200, finalURL: try XCTUnwrap(URL(string: discord.url)), body: Data(#"{"taken":true}"#.utf8))
+        XCTAssertNotNil(taken)
+        XCTAssertNil(BulkUsernamePlugin.evaluate(
+            siteName: "Discord", siteData: try XCTUnwrap(sites["Discord"]), username: "ana", targetURL: "https://discord.com",
+            status: 200, finalURL: try XCTUnwrap(URL(string: discord.url)), body: Data(#"{"taken":false}"#.utf8)))
     }
 
     func testAHomepageSaysWhoRunsIt() throws {

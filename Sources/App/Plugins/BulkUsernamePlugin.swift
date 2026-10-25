@@ -14,6 +14,59 @@ struct SherlockSite: Decodable {
     let errorMsg: StringOrArray?
     let errorUrl: String?
     let regexCheck: String?
+    /// Where to ask instead of the profile page (an API that answers plainly),
+    /// how, and with what: the profile page stays the link shown.
+    var urlProbe: String? = nil
+    var headers: [String: String]? = nil
+    var request_method: String? = nil
+    var request_payload: Payload? = nil
+    /// Statuses that mean "no such user" for a `status_code` site.
+    var errorCode: StatusCodes? = nil
+
+    /// A request body template: any JSON, `{}` in its strings is the name.
+    indirect enum Payload: Codable, Equatable {
+        case string(String), number(Double), bool(Bool), null
+        case array([Payload]), object([String: Payload])
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() { self = .null }
+            else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+            else if let value = try? container.decode(Double.self) { self = .number(value) }
+            else if let value = try? container.decode(String.self) { self = .string(value) }
+            else if let value = try? container.decode([Payload].self) { self = .array(value) }
+            else { self = .object(try container.decode([String: Payload].self)) }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .string(let value): try container.encode(value)
+            case .number(let value): try container.encode(value)
+            case .bool(let value): try container.encode(value)
+            case .null: try container.encodeNil()
+            case .array(let value): try container.encode(value)
+            case .object(let value): try container.encode(value)
+            }
+        }
+
+        func filled(with name: String) -> Payload {
+            switch self {
+            case .string(let value): return .string(value.replacingOccurrences(of: "{}", with: name))
+            case .array(let value): return .array(value.map { $0.filled(with: name) })
+            case .object(let value): return .object(value.mapValues { $0.filled(with: name) })
+            default: return self
+            }
+        }
+    }
+
+    struct StatusCodes: Decodable, Equatable {
+        let codes: [Int]
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let list = try? container.decode([Int].self) { codes = list } else { codes = [try container.decode(Int.self)] }
+        }
+    }
 
     // Custom decodable to handle errorMsg which can be a String or Array of Strings in the Sherlock data
     enum StringOrArray: Decodable {
@@ -66,6 +119,24 @@ struct SherlockData: Decodable {
 }
 
 extension SherlockSite {
+    /// What to send for `name`: the probe URL when the site has one, its
+    /// method, headers and body.
+    func request(for name: String) -> (url: String, method: HTTPMethod, headers: [String: String], body: Data?) {
+        let url = (urlProbe ?? self.url).replacingOccurrences(of: "{}", with: name)
+        let method: HTTPMethod = switch request_method?.uppercased() {
+        case "POST": .POST
+        case "HEAD": .HEAD
+        case "PUT": .PUT
+        default: .GET
+        }
+        let body = request_payload.flatMap { try? JSONEncoder().encode($0.filled(with: name)) }
+        var headers = headers ?? [:]
+        if body != nil, !headers.keys.contains(where: { $0.lowercased() == "content-type" }) {
+            headers["Content-Type"] = "application/json"
+        }
+        return (url, method, headers, body)
+    }
+
     /// Whether `name` fits the site's own username rule, when it has one.
     func accepts(_ name: String) -> Bool {
         guard let rule = regexCheck, !rule.isEmpty else { return true }
@@ -105,7 +176,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
     /// v2: hits from sites that also "find" a name nobody has are dropped.
     /// v3: platforms a dedicated plugin checks are left to it.
-    let cacheVersion = 4
+    let cacheVersion = 5
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
@@ -235,18 +306,22 @@ struct BulkUsernamePlugin: FootprintPlugin {
         userAgent: String
     ) async -> PluginResult? {
         let targetURL = siteData.url.replacingOccurrences(of: "{}", with: username)
-        guard let url = URL(string: targetURL) else { return nil }
+        let probe = siteData.request(for: username)
+        guard let url = URL(string: probe.url) else { return nil }
         // Only the message method needs the body; the rest decide on status +
         // final URL, so skip downloading bodies we won't read.
         let needsBody = siteData.errorType == "message"
+        let headers = [
+            "User-Agent": userAgent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        ].merging(probe.headers) { _, site in site }
         do {
             let response = try await OutboundHTTP.request(
                 url,
-                headers: [
-                    "User-Agent": userAgent,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.5",
-                ],
+                method: probe.method,
+                headers: headers,
+                body: probe.body,
                 timeout: 10,
                 bodyMode: needsBody ? .complete(maxBytes: 512 * 1_024) : .prefix(maxBytes: 0),
                 maxRedirects: 3,
@@ -284,9 +359,14 @@ struct BulkUsernamePlugin: FootprintPlugin {
                          metadata: ["platform": siteName, "username": username, "profileURL": targetURL])
         }
 
-        // Username preserved in the destination's host or path (not the query).
+        // Username preserved in the destination's host or path (not the query),
+        // or no redirect at all: a probe may carry the name in its query or
+        // body, and an answer from the very URL asked is about that name.
         let locus = ((finalURL.host ?? "") + finalURL.path).lowercased()
-        let mentionsUser = locus.contains(username.lowercased())
+        let asked = siteData.request(for: username).url
+        let trim = CharacterSet(charactersIn: "/")
+        let unredirected = finalURL.absoluteString.trimmingCharacters(in: trim) == asked.trimmingCharacters(in: trim)
+        let mentionsUser = locus.contains(username.lowercased()) || unredirected
 
         switch siteData.errorType {
         case "response_url":
@@ -297,7 +377,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
             return hit(0.8, "redirect-based")
 
         case "status_code":
-            guard status == 200, mentionsUser else { return nil }
+            guard (200..<300).contains(status), !(siteData.errorCode?.codes.contains(status) ?? false),
+                  mentionsUser else { return nil }
             return hit(0.7, "HTTP 200")
 
         case "message":

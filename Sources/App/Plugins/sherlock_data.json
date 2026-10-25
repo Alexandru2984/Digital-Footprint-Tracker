@@ -602,10 +602,9 @@
     "username_claimed": "blue"
   },
   "Cracked Forum": {
-    "errorMsg": "The member you specified is either invalid or doesn't exist",
-    "errorType": "message",
-    "url": "https://cracked.sh/{}",
-    "urlMain": "https://cracked.sh/",
+    "errorType": "status_code",
+    "url": "https://cracked.ax/{}",
+    "urlMain": "https://cracked.ax/",
     "username_claimed": "Blue"
   },
   "Credly": {
@@ -955,7 +954,8 @@
     "username_claimed": "blue"
   },
   "GeeksforGeeks": {
-    "errorType": "status_code",
+    "errorMsg": "false   | GeeksforGeeks Profile",
+    "errorType": "message",
     "url": "https://auth.geeksforgeeks.org/user/{}",
     "urlMain": "https://www.geeksforgeeks.org/",
     "username_claimed": "adam"
@@ -1521,7 +1521,8 @@
     "username_claimed": "lottiefiles"
   },
   "LushStories": {
-    "errorType": "status_code",
+    "errorType": "response_url",
+    "errorUrl": "https://www.lushstories.com/login",
     "isNSFW": true,
     "url": "https://www.lushstories.com/profile/{}",
     "urlMain": "https://www.lushstories.com/",
@@ -3292,11 +3293,18 @@
     "errorCode": 404,
     "regexCheck": "^[a-zA-Z0-9_]+$"
   },
-  "Threads": {
-    "url": "https://www.threads.net/@{}",
-    "urlMain": "https://www.threads.net",
+  "Carrd": {
+    "errorType": "status_code",
+    "regexCheck": "^[a-zA-Z0-9_-]{3,50}$",
+    "url": "https://{}.carrd.co/",
+    "urlMain": "https://carrd.co/",
+    "username_claimed": "blue"
+  },
+  "SpaceHey": {
     "errorType": "message",
-    "errorMsg": "Log in",
-    "regexCheck": "^[a-zA-Z0-9_.]+$"
+    "errorMsg": "Not Found (Error 404) | SpaceHey",
+    "url": "https://spacehey.com/{}",
+    "urlMain": "https://spacehey.com/",
+    "username_claimed": "blue"
   }
 }
