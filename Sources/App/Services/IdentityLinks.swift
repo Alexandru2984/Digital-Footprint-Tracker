@@ -102,12 +102,13 @@ enum IdentityLinks {
         // platforms, is better evidence than the handle alone. Anchored on the
         // name of an account confirmed to be the target's when there is one,
         // so a stranger's consistent name across sites never counts.
-        var named: [(from: String, node: String, name: String, kind: Kind)] = []
+        var named: [(from: String, node: String, name: String, display: String, kind: Kind)] = []
         for input in inputs where identityTypes.contains(input.type) {
             let meta = input.metadata
             let from = (nonEmpty(meta["queriedAs"]) ?? target ?? "target").lowercased()
             guard let name = fullName(meta["name"]), let node = node(for: meta, from: from, type: input.type) else { continue }
-            named.append((from, node, name, nonEmpty(meta["matchKind"]).flatMap(Kind.init(rawValue:)) ?? .inferred))
+            named.append((from, node, name, nonEmpty(meta["name"]) ?? name,
+                          nonEmpty(meta["matchKind"]).flatMap(Kind.init(rawValue:)) ?? .inferred))
         }
         let anchored = Set(named.filter { $0.kind > .inferred }.map(\.name))
         let platformsByName = Dictionary(grouping: named, by: \.name)
@@ -118,7 +119,7 @@ enum IdentityLinks {
                 : anchored.contains(entry.name)
             guard corroborated else { continue }
             add(Link(from: entry.from, to: entry.node, kind: .inferred, source: "derived",
-                     reason: "the same handle and the same full name (\(entry.name)) as on another platform",
+                     reason: "the same handle and the same full name (\(entry.display)) as on another platform",
                      via: "sameName"))
         }
 
