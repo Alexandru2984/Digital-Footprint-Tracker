@@ -769,6 +769,22 @@
                 timelineHead.appendChild(filter);
                 sec.appendChild(timelineHead);
 
+                // Years at a glance: one column per year from the first event to
+                // the last (empty years stay visible, so gaps read as gaps), its
+                // height the number of events; a breach year carries a marker.
+                // A column filters the list to its year.
+                const years = document.createElement('div');
+                years.className = 'js-timeline-years';
+                years.setAttribute('role', 'group');
+                years.setAttribute('aria-label', 'Events per year; choose a year to filter the list');
+                years.style.cssText = 'display:flex;align-items:flex-end;gap:2px;margin:0 0 10px;overflow-x:auto;padding-bottom:2px;';
+                sec.appendChild(years);
+                let yearFilter = null;
+                const yearOf = ev => {
+                    const year = Number(String(ev.date || '').slice(0, 4));
+                    return Number.isInteger(year) && year > 1980 && year < 2200 ? year : null;
+                };
+
                 const list = document.createElement('div');
                 list.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
                 sec.appendChild(list);
@@ -786,10 +802,70 @@
                     domain: ['🌐', '#67e8f9'], certificate: ['🔐', '#c4b5fd'],
                     archive: ['🗄', '#fcd34d']
                 };
+                function renderYears(inCategory) {
+                    years.replaceChildren();
+                    const counts = new Map();
+                    const breaches = new Map();
+                    inCategory.forEach(ev => {
+                        const year = yearOf(ev);
+                        if (year === null) return;
+                        counts.set(year, (counts.get(year) || 0) + 1);
+                        if (ev.category === 'breach') breaches.set(year, (breaches.get(year) || 0) + 1);
+                    });
+                    const known = [...counts.keys()];
+                    years.classList.toggle('hidden', known.length < 2);
+                    if (known.length < 2) return;
+                    const last = Math.max(...known);
+                    const first = Math.max(Math.min(...known), last - 59);
+                    const peak = Math.max(...counts.values());
+                    for (let year = first; year <= last; year++) {
+                        const count = counts.get(year) || 0;
+                        const breachCount = breaches.get(year) || 0;
+                        const column = document.createElement('button');
+                        column.type = 'button';
+                        column.className = 'js-timeline-year';
+                        column.dataset.year = String(year);
+                        const selected = yearFilter === year;
+                        const description = year + ': ' + count + ' event' + (count === 1 ? '' : 's') +
+                            (breachCount ? ', ' + breachCount + ' breach' + (breachCount === 1 ? '' : 'es') : '');
+                        column.title = description;
+                        column.setAttribute('aria-label', description);
+                        column.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                        column.disabled = count === 0;
+                        column.style.cssText = 'flex:1 0 14px;max-width:32px;min-height:44px;display:flex;flex-direction:column;' +
+                            'align-items:center;justify-content:flex-end;gap:2px;padding:0;background:none;border:0;' +
+                            'cursor:' + (count ? 'pointer' : 'default') + ';opacity:' + (yearFilter === null || selected ? '1' : '0.45') + ';';
+                        const bar = document.createElement('span');
+                        bar.setAttribute('aria-hidden', 'true');
+                        const height = count ? Math.max(4, Math.round(36 * count / peak)) : 1;
+                        bar.style.cssText = 'display:block;width:100%;height:' + height + 'px;border-radius:4px 4px 0 0;background:' +
+                            (count ? (selected ? '#a5b4fc' : '#6366f1') : '#334155') + ';';
+                        column.appendChild(bar);
+                        const mark = document.createElement('span');
+                        mark.setAttribute('aria-hidden', 'true');
+                        mark.style.cssText = 'font-size:9px;line-height:10px;height:10px;color:#fca5a5;';
+                        mark.textContent = breachCount ? '⚠' : '';
+                        column.appendChild(mark);
+                        column.addEventListener('click', () => {
+                            yearFilter = yearFilter === year ? null : year;
+                            expanded = false;
+                            renderTimelineRows();
+                        });
+                        years.appendChild(column);
+                    }
+                    const axis = document.createElement('div');
+                    axis.setAttribute('aria-hidden', 'true');
+                    axis.style.cssText = 'flex:0 0 auto;align-self:flex-end;color:#64748b;font-size:10px;padding:0 0 12px 6px;white-space:nowrap;font-variant-numeric:tabular-nums;';
+                    axis.textContent = first + '–' + last + (breaches.size ? ' · ⚠ breach' : '');
+                    years.appendChild(axis);
+                }
                 function renderTimelineRows() {
                     list.replaceChildren();
                     const category = filter.value;
-                    const filtered = timelineEvents.filter(ev => category === 'all' || ev.category === category);
+                    const inCategory = timelineEvents.filter(ev => category === 'all' || ev.category === category);
+                    if (yearFilter !== null && !inCategory.some(ev => yearOf(ev) === yearFilter)) yearFilter = null;
+                    renderYears(inCategory);
+                    const filtered = inCategory.filter(ev => yearFilter === null || yearOf(ev) === yearFilter);
                     const visible = expanded ? filtered : filtered.slice(-12);
                     visible.forEach(ev => {
                         const style = categoryStyles[ev.category] || ['•', '#cbd5e1'];
@@ -835,6 +911,7 @@
                         line.appendChild(d); line.appendChild(body); list.appendChild(line);
                     });
                     shown.textContent = 'Showing ' + visible.length + ' of ' + filtered.length +
+                        (yearFilter !== null ? ' from ' + yearFilter : '') +
                         (timelineEvents.length < total ? ' recent events (' + total + ' total)' : '');
                     toggle.classList.toggle('hidden', filtered.length <= 12);
                     toggle.textContent = expanded ? 'Show recent 12' : 'Show all loaded';

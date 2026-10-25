@@ -253,9 +253,21 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 
+    const years = panel.locator('.js-timeline-year');
+    await expect(years).toHaveCount(13);
+    await expect(panel.locator('.js-timeline-year[data-year="2010"]')).toHaveAttribute('aria-label', '2010: 1 event, 1 breach');
+    await panel.locator('.js-timeline-year[data-year="2011"]').click();
+    await expect(panel).toContainText('Showing 1 of 1 from 2011');
+    await expect(panel.locator('.js-timeline-year[data-year="2011"]')).toHaveAttribute('aria-pressed', 'true');
+    await panel.locator('.js-timeline-year[data-year="2011"]').click();
+    await expect(panel).toContainText('Showing 12 of 13');
+
     const filter = page.getByLabel('Filter timeline by category');
     await filter.selectOption('account');
     await expect(panel).toContainText('Showing 6 of 6');
+    // Years with no account event stay as empty, disabled columns.
+    await expect(years).toHaveCount(11);
+    await expect(panel.locator('.js-timeline-year[data-year="2012"]')).toBeDisabled();
     await filter.selectOption('all');
     const expand = page.getByRole('button', { name: 'Show all loaded' });
     await expand.click();
