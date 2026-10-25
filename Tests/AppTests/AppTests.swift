@@ -7232,7 +7232,7 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(score["web: blog.example"], 88, "GitHub (0.98) → the website it lists (declared, 0.9)")
         XCTAssertEqual(score["rewrite.in.rs"], 94, "keybase (0.98) → proven domain (0.98) → followed as a lead (0.98)")
         XCTAssertEqual(profile.attributions.first { $0.node == "bluesky: rewrite.in.rs" }?.path,
-                       ["dtolnay@gmail.com", "keybase: dtolnay", "dns: rewrite.in.rs", "rewrite.in.rs", "bluesky: rewrite.in.rs"])
+                       ["dtolnay@gmail.com", "keybase: dtolnay", "web: rewrite.in.rs", "rewrite.in.rs", "bluesky: rewrite.in.rs"])
     }
 
     func testWhoisNamesTheRegistrantWhenTheRecordDoes() throws {

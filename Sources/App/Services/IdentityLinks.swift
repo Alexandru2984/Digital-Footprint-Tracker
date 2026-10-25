@@ -188,6 +188,9 @@ enum IdentityLinks {
         // Other Mastodon instances hold other accounts: they keep their name.
         "mastodon.cloud": "mastodon.cloud", "mastodon.xyz": "mastodon.xyz",
         "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg",
+        // A proven domain (Keybase's `dns`, `generic_web_site`) is the same site a
+        // profile lists: one node.
+        "dns": "web", "generic_web_site": "web",
     ]
 
     /// What a finding connects `from` to: an account (`platform: name`), or
