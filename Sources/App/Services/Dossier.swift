@@ -122,6 +122,8 @@ enum Dossier {
             var accounts = "\(confirmed.count) confirmed account\(confirmed.count == 1 ? "" : "s")"
             if !probable.isEmpty { accounts += ", \(probable.count) probable" }
             clauses.append(accounts)
+        } else if unconfirmed > 0 {
+            clauses.append("\(unconfirmed) account\(unconfirmed == 1 ? "" : "s") with this name, none confirmed")
         }
         if breachCount > 0 {
             var breaches = "in \(breachCount) breach\(breachCount == 1 ? "" : "es")"

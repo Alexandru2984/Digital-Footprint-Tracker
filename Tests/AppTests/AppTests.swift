@@ -4628,6 +4628,12 @@ final class AppTests: XCTestCase {
             breachTotal: 0, dataClasses: [], breachYears: [], timelineDates: []))
         XCTAssertEqual(merged.confirmed.map(\.label), ["gravatar: ana", "spotify: a@x.test", "mastodon: ana@unsplash.com"],
                        "the Gravatar account registered with the address is the one found by name")
+
+        let namesake = Dossier.summarize(.init(
+            name: "Ana", attributions: [attribution("codeberg: ana", 40), attribution("gitea: ana", 40)],
+            accounts: [], emails: [], phones: [], locations: [], organizations: [], breaches: [],
+            breachTotal: 0, dataClasses: [], breachYears: [], timelineDates: []))
+        XCTAssertEqual(namesake.headline, "Ana — 2 accounts with this name, none confirmed")
         XCTAssertTrue(spanned.headline.hasSuffix("seen 2009–2026"), spanned.headline)
     }
 
