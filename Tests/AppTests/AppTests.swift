@@ -8403,6 +8403,27 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(PhonePlugin.evaluate(body: Data("nope".utf8), fallback: "+1").isEmpty)
     }
 
+    func testAPhoneNumberSaysWhereAndWhoAllocatedItWithoutAKey() throws {
+        let california = try XCTUnwrap(PhoneLookup.lookup("16502530000"))
+        XCTAssertEqual(california.country, "United States")
+        XCTAssertEqual(california.region, "California")
+        let toronto = try XCTUnwrap(PhoneLookup.lookup("14165550100"))
+        XCTAssertEqual(toronto.countryCode, "CA", "one calling code, and the province says which country")
+        let bucharest = try XCTUnwrap(PhoneLookup.lookup("40212345678"))
+        XCTAssertEqual(bucharest.country, "Romania")
+        XCTAssertEqual(bucharest.region, "Bucharest and Ilfov County")
+        let mobile = try XCTUnwrap(PhoneLookup.lookup("40722123456"))
+        XCTAssertEqual(mobile.carrier, "Vodafone")
+        XCTAssertNil(PhoneLookup.lookup("999123456"), "no such calling code")
+        XCTAssertNil(PhoneLookup.lookup("12"))
+
+        let result = try XCTUnwrap(PhonePlugin.offline(digits: "40722123456", e164: "+40722123456").first)
+        XCTAssertEqual(result.metadata?["carrier"], "Vodafone")
+        XCTAssertEqual(result.metadata?["lineType"], "mobile")
+        XCTAssertNil(result.metadata?["location"], "where a number was allocated is not where its owner lives")
+        XCTAssertTrue(result.rawData.hasPrefix("Phone +40722123456 | Romania"), result.rawData)
+    }
+
     func testRIPEStatNamesTheNetworkWithoutCallingItTheTargetsEmployer() throws {
         let body = Data(#"{"data":{"resource":"8.8.8.0/24","announced":true,"asns":[{"asn":15169,"holder":"GOOGLE - Google LLC"}],"block":{"desc":"Administered by ARIN"}}}"#.utf8)
         let result = try XCTUnwrap(RIPEStatPlugin.evaluate(ip: "8.8.8.8", body: body))

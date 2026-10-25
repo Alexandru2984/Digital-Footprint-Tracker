@@ -9,7 +9,7 @@ import Foundation
 ///
 /// If `ABSTRACT_PHONE_API_KEY` is set in the environment, validates the number
 /// via AbstractAPI Phone Validation (https://app.abstractapi.com/api/phone-validation).
-/// Otherwise, returns a structural-analysis result only.
+/// Otherwise (or when that fails), answers from libphonenumber's offline data.
 ///
 /// Responses use the shared streaming client with a strict size limit.
 struct PhonePlugin: FootprintPlugin {
@@ -19,7 +19,8 @@ struct PhonePlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.phone]
     let cacheTTL: TimeInterval = 86_400 // carrier/region data is very stable
     /// v2: phone intelligence API (line status, owner, breaches).
-    let cacheVersion = 2
+    /// v3: country, region and carrier offline when the API has no answer.
+    let cacheVersion = 3
 
     // Matches E.164 (+…) or raw digit strings, 7–15 digits total.
     private static let phoneRegex = try? NSRegularExpression(
@@ -39,17 +40,9 @@ struct PhonePlugin: FootprintPlugin {
         let digits = trimmed.filter { $0.isNumber }
         let e164 = trimmed.hasPrefix("+") ? trimmed : "+\(trimmed)"
 
+        let offline = Self.offline(digits: digits, e164: e164)
         guard let apiKey = try RuntimeSecret.value("ABSTRACT_PHONE_API_KEY"), !apiKey.isEmpty else {
-            // No API key: return a low-confidence structural result so the UI
-            // shows the operator detected a phone number without false precision.
-            return [PluginResult(
-                source: "PhoneFormat",
-                type: "phone_number",
-                confidenceScore: 0.4,
-                rawData: "Input looks like a phone number (\(digits) digits). " +
-                    "Configure the Abstract API credential for carrier/country lookup.",
-                metadata: ["phone": e164]
-            )]
+            return offline
         }
 
         // Abstract retired phonevalidation.abstractapi.com; keys are only
@@ -65,8 +58,31 @@ struct PhonePlugin: FootprintPlugin {
                 bodyMode: .complete(maxBytes: 256 * 1_024),
                 on: app
               ),
-              response.status == 200 else { return [] }
-        return Self.evaluate(body: response.data, fallback: e164)
+              response.status == 200 else { return offline }
+        let evaluated = Self.evaluate(body: response.data, fallback: e164)
+        return evaluated.isEmpty ? offline : evaluated
+    }
+
+    /// What the number itself says, with no service asked: its country, the
+    /// region and carrier its range was allocated to.
+    static func offline(digits: String, e164: String) -> [PluginResult] {
+        guard let info = PhoneLookup.lookup(digits) else {
+            return [PluginResult(source: "PhoneFormat", type: "phone_number", confidenceScore: 0.4,
+                                 rawData: "Input looks like a phone number (\(digits.count) digits), "
+                                    + "but its calling code is not one in use.",
+                                 metadata: ["phone": e164])]
+        }
+        var parts = ["Phone \(e164)", info.region.map { "\(info.country) (\($0))" } ?? info.country]
+        var meta = ["phone": e164, "country": info.country, "countryCode": info.countryCode]
+        if let region = info.region { meta["numberRegion"] = region }
+        if let carrier = info.carrier {
+            parts.append("Mobile range of \(carrier) (the original carrier; a ported number may have moved)")
+            meta["carrier"] = carrier
+            meta["lineType"] = "mobile"
+        }
+        return [PluginResult(source: "PhoneFormat", type: "phone_number", confidenceScore: 0.8,
+                             rawData: parts.joined(separator: " | ") + " | offline data: libphonenumber \(PhoneData.release)",
+                             metadata: meta)]
     }
 
     /// Pure parser for the phone intelligence response.

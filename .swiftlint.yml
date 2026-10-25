@@ -67,5 +67,6 @@ excluded:
   - frontend
   - scripts
   - docs
+  - Sources/App/Services/PhoneData.swift   # Generated data (scripts/build-phone-data.py).
 
 reporter: "github-actions-logging"
