@@ -267,6 +267,7 @@ enum RiskScorer {
 
         // ── Exposed service, malicious or abusive reputation ─────────────────
         "exposed_service": .threat,
+        "subdomain_takeover": .threat,
         "vulnerability": .threat,
         "ip_abuse": .threat,
         "ip_reputation": .threat,

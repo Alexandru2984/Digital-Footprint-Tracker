@@ -28,6 +28,29 @@ enum DoHResolver {
         return parse(resp.data, type: type)
     }
 
+    /// Whether `name` exists at all: false on NXDOMAIN, nil when the resolver
+    /// gave no usable answer.
+    static func exists(_ name: String, on app: Application) async -> Bool? {
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
+        guard let url = URL(string: "https://cloudflare-dns.com/dns-query?name=\(encoded)&type=A"),
+              let resp = await PluginHTTP.request(url, headers: ["Accept": "application/dns-json"],
+                                                  bodyMode: .complete(maxBytes: 512 * 1_024), on: app),
+              resp.status == 200 else { return nil }
+        return existence(resp.data)
+    }
+
+    /// DNS status 0 (NOERROR) exists, 3 (NXDOMAIN) does not; anything else
+    /// (SERVFAIL, refused) is no answer.
+    static func existence(_ data: Data) -> Bool? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = json["Status"] as? Int else { return nil }
+        switch status {
+        case 0: return true
+        case 3: return false
+        default: return nil
+        }
+    }
+
     /// Parses a Cloudflare DoH JSON body into the `data` strings for `type`.
     /// Pure + internal so it's unit-testable offline.
     static func parse(_ data: Data, type: String) -> [String] {

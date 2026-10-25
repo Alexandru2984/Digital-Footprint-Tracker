@@ -16,13 +16,14 @@ import FoundationNetworking
 /// `InternetDBPlugin` so the two don't double-report the same IP.
 struct AttackSurfacePlugin: FootprintPlugin {
     let name = "AttackSurface"
-    let description = "Whole-footprint exposure: subdomains → IPs → open ports & CVEs"
+    let description = "Whole-footprint exposure: subdomains → IPs → open ports & CVEs, and subdomain takeovers"
     /// Subdomain enumeration needs a registrable name.
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
     let heavy = true
     /// v2: CDN edge addresses are not looked up.
-    let cacheVersion = 2
+    /// v3: subdomains that can be taken over.
+    let cacheVersion = 3
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#
     static let maxHosts = 15
@@ -63,6 +64,26 @@ struct AttackSurfacePlugin: FootprintPlugin {
                 source: "AttackSurface", type: "subdomain_ip", confidenceScore: 0.85,
                 rawData: "\(host) → \(ip)",
                 metadata: ["subdomain": host, "ip": ip, "domain": target]))
+        }
+
+        // Subdomains pointing at a third-party service nothing is claimed on.
+        for host in hosts where host != target {
+            if Task.isCancelled { break }
+            guard let cname = await DoHResolver.resolve(host, type: "CNAME", on: app).first else { continue }
+            let pointee = cname.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            guard pointee != target, !pointee.hasSuffix(".\(target)") else { continue }
+            let exists = await DoHResolver.exists(pointee, on: app)
+            var body: String?
+            if exists != false, SubdomainTakeover.service(for: pointee)?.unclaimed != nil,
+               let url = URL(string: "https://\(host)/"),
+               let page = await PluginHTTP.request(url, timeout: 8, maxRetries: 0,
+                                                   bodyMode: .complete(maxBytes: 256 * 1_024), on: app) {
+                body = String(decoding: page.data, as: UTF8.self)
+            }
+            if let finding = SubdomainTakeover.evaluate(host: host, domain: target, cname: pointee,
+                                                        targetExists: exists, body: body) {
+                results.append(finding)
+            }
         }
 
         // 3. Exposure for IPs unique to the subdomains (not shared with the apex),

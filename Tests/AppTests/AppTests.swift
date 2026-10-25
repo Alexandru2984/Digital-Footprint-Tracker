@@ -8658,6 +8658,30 @@ final class AppTests: XCTestCase {
                         "Registrant Organization: Insecure.Com LLC", "Name Server: NS1.LINODE.COM"])
     }
 
+    func testASubdomainPointingAtNothingClaimedCanBeTakenOver() throws {
+        let dangling = try XCTUnwrap(SubdomainTakeover.evaluate(
+            host: "old.example.com", domain: "example.com", cname: "example-old.azurewebsites.net.",
+            targetExists: false, body: nil))
+        XCTAssertEqual(dangling.type, "subdomain_takeover")
+        XCTAssertEqual(dangling.metadata?["service"], "Azure")
+        XCTAssertTrue(dangling.rawData.contains("does not exist"), dangling.rawData)
+
+        let pages = try XCTUnwrap(SubdomainTakeover.evaluate(
+            host: "docs.example.com", domain: "example.com", cname: "example.github.io", targetExists: true,
+            body: "<h1>404</h1><p>There isn't a GitHub Pages site here.</p>"))
+        XCTAssertEqual(pages.metadata?["service"], "GitHub Pages")
+
+        XCTAssertNil(SubdomainTakeover.evaluate(host: "docs.example.com", domain: "example.com", cname: "example.github.io",
+                                                targetExists: true, body: "<h1>Docs</h1>"), "a live site")
+        XCTAssertNil(SubdomainTakeover.evaluate(host: "www.example.com", domain: "example.com", cname: "lb.example.com",
+                                                targetExists: false, body: nil), "the owner's own record")
+        XCTAssertNil(SubdomainTakeover.evaluate(host: "a.example.com", domain: "example.com", cname: "x.cdn.test",
+                                                targetExists: nil, body: nil), "no answer is not a finding")
+        XCTAssertEqual(DoHResolver.existence(Data(#"{"Status":3}"#.utf8)), false)
+        XCTAssertEqual(DoHResolver.existence(Data(#"{"Status":0,"Answer":[]}"#.utf8)), true)
+        XCTAssertNil(DoHResolver.existence(Data(#"{"Status":2}"#.utf8)))
+    }
+
     func testASubdomainInheritsItsParentsDMARC() {
         XCTAssertEqual(EmailAuth.dmarcParents(of: "a.b.example.com"), ["b.example.com", "example.com"])
         XCTAssertEqual(EmailAuth.dmarcParents(of: "example.com"), [])
