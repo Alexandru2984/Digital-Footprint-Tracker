@@ -4707,6 +4707,22 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(SharedEdge.contains("sindresorhus.com"))
     }
 
+    func testDuolingoReadsAProfileAndTellsWhetherAnAddressHasAnAccount() throws {
+        let profile = Data(#"{"users":[{"username":"SindreSorhus","name":"Sindre Sorhus","creationDate":1470832568,"courses":[{"title":"Swedish"}],"streak":0}]}"#.utf8)
+        let found = try XCTUnwrap(DuolingoPlugin.evaluate(username: "sindresorhus", body: profile))
+        XCTAssertEqual(found.metadata?["name"], "Sindre Sorhus")
+        XCTAssertEqual(found.metadata?["since"], "2016-08-10")
+        XCTAssertEqual(found.metadata?["languages"], "Swedish")
+        XCTAssertNil(DuolingoPlugin.evaluate(username: "someoneelse", body: profile), "another user")
+        XCTAssertNil(DuolingoPlugin.evaluate(username: "x", body: Data(#"{"users":[]}"#.utf8)))
+
+        let redacted = Data(#"{"users":[{"username":"","name":"","hasGoogleId":true,"hasFacebookId":false,"hasAppleId":true}]}"#.utf8)
+        let registered = try XCTUnwrap(DuolingoPlugin.evaluate(email: "a@b.test", body: redacted))
+        XCTAssertEqual(registered.metadata?["matchKind"], "observed")
+        XCTAssertEqual(registered.metadata?["signIn"], "Google, Apple")
+        XCTAssertNil(DuolingoPlugin.evaluate(email: "a@b.test", body: Data(#"{"users":[]}"#.utf8)), "no account")
+    }
+
     func testSherlockLeavesPlatformsWithADedicatedCheckToIt() {
         for site in ["Keybase", "DEV Community", "dev.to", "Docker Hub", "PyPi", "Steam Community (User)",
                      "mastodon.social", "GitHub", "Telegram"] {

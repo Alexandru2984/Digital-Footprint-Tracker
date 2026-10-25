@@ -131,7 +131,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
     /// canonical name: its answer is more precise (an API, not a status
     /// code), and a second, weaker hit for the same account is noise.
     static let dedicatedPlatforms: Set<String> = [
-        "bluesky", "codeberg", "crates.io", "devto", "dockerhub", "github", "gitlab", "hackernews",
+        "bluesky", "codeberg", "crates.io", "devto", "dockerhub", "duolingo", "github", "gitlab", "hackernews",
         "keybase", "lobsters", "mastodon", "npm", "pypi", "steam", "telegram",
     ]
 

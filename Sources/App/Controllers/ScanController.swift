@@ -104,6 +104,7 @@ struct ScanController: RouteCollection {
         SSHKeyPlugin(),
         DevToPlugin(),
         LobstersPlugin(),
+        DuolingoPlugin(),
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),
