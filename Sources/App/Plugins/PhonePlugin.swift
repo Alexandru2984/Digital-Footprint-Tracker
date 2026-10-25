@@ -67,10 +67,13 @@ struct PhonePlugin: FootprintPlugin {
     /// region and carrier its range was allocated to.
     static func offline(digits: String, e164: String) -> [PluginResult] {
         guard let info = PhoneLookup.lookup(digits) else {
+            // `0722 123 456`: a national number, which names no country.
+            let why = digits.hasPrefix("0")
+                ? "it is in national format: scan it with its country code (+40 722 123 456, not 0722 123 456)"
+                : "its calling code is not one in use"
             return [PluginResult(source: "PhoneFormat", type: "phone_number", confidenceScore: 0.4,
-                                 rawData: "Input looks like a phone number (\(digits.count) digits), "
-                                    + "but its calling code is not one in use.",
-                                 metadata: ["phone": e164])]
+                                 rawData: "Input looks like a phone number (\(digits.count) digits), but \(why).",
+                                 metadata: ["phone": digits.hasPrefix("0") ? digits : e164])]
         }
         var parts = ["Phone \(e164)", info.region.map { "\(info.country) (\($0))" } ?? info.country]
         var meta = ["phone": e164, "country": info.country, "countryCode": info.countryCode]

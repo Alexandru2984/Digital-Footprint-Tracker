@@ -8422,6 +8422,9 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(result.metadata?["lineType"], "mobile")
         XCTAssertNil(result.metadata?["location"], "where a number was allocated is not where its owner lives")
         XCTAssertTrue(result.rawData.hasPrefix("Phone +40722123456 | Romania"), result.rawData)
+        let national = try XCTUnwrap(PhonePlugin.offline(digits: "0722123456", e164: "+0722123456").first)
+        XCTAssertTrue(national.rawData.contains("national format"), national.rawData)
+        XCTAssertEqual(national.metadata?["phone"], "0722123456", "not dressed as an international number")
     }
 
     func testRIPEStatNamesTheNetworkWithoutCallingItTheTargetsEmployer() throws {
