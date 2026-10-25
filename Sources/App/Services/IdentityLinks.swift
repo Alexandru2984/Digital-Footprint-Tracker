@@ -142,8 +142,10 @@ enum IdentityLinks {
         // A pivot the scan followed from a linked account or domain is that
         // account's name or that domain: tie the two, or everything found by
         // the pivot floats unattached.
+        // Only an account reached some other way: one found by looking this
+        // very name up is what the pivot produced, tied to it by name alone.
         for (value, via) in queried.sorted(by: { $0.key < $1.key }) where via == "pivot" {
-            for link in order.compactMap({ best[$0] }) where identifier(of: link.to) == value {
+            for link in order.compactMap({ best[$0] }) where identifier(of: link.to) == value && link.from != value {
                 add(Link(from: link.to, to: value, kind: .verified, source: "derived",
                          reason: "the same identifier, followed as a lead"))
             }

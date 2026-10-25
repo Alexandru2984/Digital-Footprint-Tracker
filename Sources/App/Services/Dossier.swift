@@ -61,6 +61,7 @@ enum Dossier {
         let dataClasses: [String]
         let breachYears: [String]
         let timelineDates: [String]
+        var now = Date()
     }
 
     static func summarize(_ input: Inputs) -> Summary {
@@ -96,7 +97,10 @@ enum Dossier {
             return sensitiveMarkers.contains { lower.contains($0) }
         }
         let breachCount = max(input.breachTotal, input.breaches.count)
-        let dates = input.timelineDates.sorted()
+        // What was seen: a domain's expiry date is on the timeline too, but
+        // it has not happened yet.
+        let today = ISO8601DateFormatter.string(from: input.now, timeZone: .gmt, formatOptions: [.withFullDate])
+        let dates = input.timelineDates.filter { $0.prefix(10) <= today }.sorted()
 
         var headline = input.name ?? "Unnamed target"
         var clauses: [String] = []

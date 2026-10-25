@@ -4610,6 +4610,14 @@ final class AppTests: XCTestCase {
                                                dataClasses: [], breachYears: [], timelineDates: []))
         let html = ExecutiveReportHTML.glance(hostile)
         XCTAssertFalse(html.contains("<script>"), html)
+
+        let spanned = Dossier.summarize(.init(name: "A", attributions: [], accounts: [], emails: [], phones: [],
+                                              locations: [], organizations: [], breaches: [], breachTotal: 0,
+                                              dataClasses: [], breachYears: [],
+                                              timelineDates: ["2009-03-01", "2033-10-24", "2026-10-25"],
+                                              now: Date(timeIntervalSince1970: 1_792_900_000)))
+        XCTAssertEqual(spanned.lastSeen, "2026-10-25", "a domain's expiry has not been seen yet")
+        XCTAssertTrue(spanned.headline.hasSuffix("seen 2009–2026"), spanned.headline)
     }
 
     func testABreachReportCountsForWhatItHolds() {
@@ -6945,6 +6953,7 @@ final class AppTests: XCTestCase {
                                                      target: input)
         print("E2E risk \(scored.value) \(scored.level.rawValue) \(scored.factors.map { "\($0.category)=\($0.points)/\($0.findings)" }) name=\(profile.likelyName ?? "-") accounts=\(profile.confirmedAccounts.count)")
         for attribution in profile.attributions.prefix(25) { print("E2E attr \(attribution.score) \(attribution.node)") }
+        print("E2E dossier \(profile.dossier.headline) | sites=\(profile.dossier.sites.map(\.label)) sensitive=\(profile.dossier.sensitiveData)")
         for result in inputs where ["VirusTotal", "Instagram", "Venmo", "PyPi"].contains(result.source) {
             print("E2E sample \(result.source) \(result.type) \(result.confidence) \(result.rawData.prefix(160))")
         }
@@ -7108,6 +7117,25 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(IdentityLinks.attribute([], target: "x").isEmpty)
         let island = IdentityLinks.Link(from: "a", to: "b", kind: .verified, source: "s", reason: "r")
         XCTAssertTrue(IdentityLinks.attribute([island], target: "x").isEmpty, "nothing reachable from the target")
+    }
+
+    func testAPivotedNameConfirmsOnlyTheAccountItCameFrom() throws {
+        typealias I = IdentitySynthesizer.Input
+        let inputs = [
+            I(source: "Keybase", type: "identity_proof", confidence: 1.0,
+              metadata: ["platform": "keybase", "username": "sindresorhus", "queriedAs": "s@x.test", "via": "input",
+                         "matchKind": "verified", "linked": "hackernews:mofle", "linkKind": "verified"], rawData: "k"),
+            I(source: "HackerNews", type: "account_presence", confidence: 0.6,
+              metadata: ["platform": "hackernews", "username": "mofle", "queriedAs": "mofle", "via": "pivot"], rawData: "h"),
+            I(source: "GitLabAccountCheck", type: "account_presence", confidence: 0.6,
+              metadata: ["platform": "gitlab", "username": "mofle", "name": "Kyle Holm", "queriedAs": "mofle",
+                         "via": "pivot"], rawData: "g"),
+        ]
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low", target: "s@x.test")
+        let score = Dictionary(uniqueKeysWithValues: profile.attributions.map { ($0.node, $0.score) })
+        XCTAssertEqual(score["hackernews: mofle"], 96, "proven by the Keybase signature")
+        XCTAssertLessThan(score["gitlab: mofle"] ?? 0, 50,
+                          "an account found by looking the pivoted name up shares only the name")
     }
 
     func testAStrangerSharingTheUsernameDoesNotBecomeTheTarget() throws {
