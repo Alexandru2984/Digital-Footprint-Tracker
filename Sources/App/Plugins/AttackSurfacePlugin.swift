@@ -21,6 +21,8 @@ struct AttackSurfacePlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 21_600 // 6 h
     let heavy = true
+    /// v2: CDN edge addresses are not looked up.
+    let cacheVersion = 2
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#
     static let maxHosts = 15
@@ -63,8 +65,10 @@ struct AttackSurfacePlugin: FootprintPlugin {
                 metadata: ["subdomain": host, "ip": ip, "domain": target]))
         }
 
-        // 3. Exposure for IPs unique to the subdomains (not shared with the apex).
-        let exposureIPs = ipToHost.keys.filter { !apexIPs.contains($0) }.sorted().prefix(Self.maxIPs)
+        // 3. Exposure for IPs unique to the subdomains (not shared with the apex),
+        //    leaving out CDN edges: their ports are the provider's.
+        let exposureIPs = ipToHost.keys.filter { !apexIPs.contains($0) && !SharedEdge.contains($0) }
+            .sorted().prefix(Self.maxIPs)
         for ip in exposureIPs {
             if Task.isCancelled { break }
             guard let url = URL(string: "https://internetdb.shodan.io/\(ip)"),

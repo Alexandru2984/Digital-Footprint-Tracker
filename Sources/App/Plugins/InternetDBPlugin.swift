@@ -20,7 +20,8 @@ struct InternetDBPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.domain, .ipv4]
     let cacheTTL: TimeInterval = 21_600 // 6 h
     /// v2: a host on web ports only is a website, not an exposed service.
-    let cacheVersion = 2
+    /// v3: a domain's CDN edge addresses are named, not looked up.
+    let cacheVersion = 3
 
     private static let ipv4Pattern = #"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$"#
 
@@ -29,10 +30,23 @@ struct InternetDBPlugin: FootprintPlugin {
         // Only domain / IP inputs have host infrastructure to look up.
         guard !target.contains("@"), target.contains(".") else { return [] }
 
-        let ips = await Self.resolveIPs(target, app: app)
-        guard !ips.isEmpty else { return [] }
+        let resolved = await Self.resolveIPs(target, app: app)
+        guard !resolved.isEmpty else { return [] }
 
         var results: [PluginResult] = []
+        // A domain behind a CDN resolves to the provider's edge: its ports are
+        // the provider's, shared with thousands of sites. An address typed in
+        // directly is still looked up.
+        let isDomain = target.range(of: Self.ipv4Pattern, options: .regularExpression) == nil
+        let ips = isDomain ? resolved.filter { !SharedEdge.contains($0) } : resolved
+        if ips.count < resolved.count {
+            let edge = resolved.filter(SharedEdge.contains)
+            results.append(PluginResult(
+                source: "InternetDB", type: "web_service", confidenceScore: 0.9,
+                rawData: "\(target) is served through a CDN (\(edge.joined(separator: ", "))): "
+                    + "its own server's address and ports are hidden behind the provider's.",
+                metadata: ["domain": target, "cdnAddresses": edge.joined(separator: ", ")]))
+        }
         for ip in ips {
             guard let url = URL(string: "https://internetdb.shodan.io/\(ip)") else { continue }
             // 404 = host not in the dataset (i.e. nothing exposed) — a real "clean" answer.
