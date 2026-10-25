@@ -278,6 +278,8 @@ test('the surface tab warns about a subdomain that can be taken over, as text', 
     await expect(warning).toContainText('old.example.com');
     await expect(warning).toContainText('(Azure)');
     await expect(warning).toContainText(fixture.malicious);
+    const history = page.locator('#surface-tab-content .js-dns-history');
+    await expect(history).toContainText('POSSIBLE ORIGIN BEHIND THE CDN: 203.0.113.9');
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });
