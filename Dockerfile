@@ -32,11 +32,13 @@ RUN --mount=type=cache,id=swift-vapor-spm-6.2,target=/build/.build,sharing=locke
 
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
 # Ubuntu (no Swift toolchain) — the binary is statically linked so we only
-# need the system C libraries it dynamically depends on.
-FROM ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf026486401 AS runtime
+# need the system C libraries it dynamically depends on. A newer release than
+# the builder's is fine (glibc is backward compatible) and brings Python 3.12,
+# which the locked report/holehe runtime needs (Pillow 13 requires 3.11+).
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS runtime
 
 # Runtime dependencies:
-#   libatomic1 libcurl4 libxml2 — required by the Vapor binary
+#   libatomic1 libcurl4t64 libxml2 — required by the Vapor binary
 #   ca-certificates             — outbound TLS (HIBP, Shodan, VT, ip-api, …)
 #   curl                        — used by EmailService for SMTPS (M-16)
 #   python3 + venv              — isolated, hash-locked report/holehe runtime
@@ -44,7 +46,7 @@ FROM ubuntu:22.04@sha256:5ec03bb3441e8b0bf3b4f9cd4629a1ae763010dc3035bb8da3ae6cf
 COPY requirements-runtime.txt /tmp/requirements-runtime.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        libatomic1 libcurl4 libxml2 ca-certificates tzdata \
+        libatomic1 libcurl4t64 libxml2 ca-certificates tzdata \
         curl python3 python3-venv \
     && python3 -m venv /opt/python-runtime \
     && /opt/python-runtime/bin/pip install \

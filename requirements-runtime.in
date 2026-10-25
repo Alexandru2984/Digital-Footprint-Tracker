@@ -1,4 +1,4 @@
 # Python subprocess dependencies used by PDF reports and BulkEmailOSINT.
-# Regenerate requirements-runtime.txt with Python 3.10 when updating either pin.
+# Regenerate requirements-runtime.txt with Python 3.12 (the image's) when updating either pin.
 fpdf2==2.8.9
 holehe==1.61
