@@ -1756,6 +1756,7 @@
             const hosts = {};    // ip -> { names:Set, ports:Set, cves:Set, geo:'' }
             const posture = {};  // domain -> { grade, missing, present, https, server }
             const subs = new Set();
+            const takeovers = [];
             const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
             const dom = d => posture[d] || (posture[d] = {});
 
@@ -1768,12 +1769,14 @@
                     splitCsv(m.cves).forEach(c => h.cves.add(c));
                     splitCsv(m.hostnames).forEach(n => h.names.add(n));
                     if (m.subdomain) h.names.add(m.subdomain);
+                    if (r.type === 'cohosted_domain') splitCsv(m.domains).forEach(n => h.names.add(n));
                     if (r.type === 'ip_geolocation') {
                         const bits = [m.country, m.org].filter(Boolean);
                         if (bits.length) h.geo = bits.join(' · ');
                     }
                 }
                 if ((r.type === 'subdomain' || r.type === 'subdomain_ip') && m.subdomain) subs.add(m.subdomain);
+                if (r.type === 'subdomain_takeover' && m.subdomain) takeovers.push({ sub: m.subdomain, service: m.service, cname: m.cname });
                 if (m.domain && r.type === 'security_headers') {
                     const d = dom(m.domain); d.grade = m.grade; d.missing = m.missing; d.present = m.present; d.https = m.https;
                 }
@@ -1784,7 +1787,7 @@
 
             const ipList = Object.keys(hosts);
             const domList = Object.keys(posture);
-            if (!ipList.length && !domList.length && !subs.size) {
+            if (!ipList.length && !domList.length && !subs.size && !takeovers.length) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
@@ -1813,6 +1816,17 @@
             }
             function labelled(text, color) {
                 const l = document.createElement('div'); l.style.cssText = 'font-size:11px;color:' + (color || '#64748b') + ';margin-top:8px;'; l.textContent = text; return l;
+            }
+
+            if (takeovers.length) {
+                root.appendChild(sectionTitle('Subdomain Takeover Risk', takeovers.length + (takeovers.length === 1 ? ' subdomain' : ' subdomains')));
+                takeovers.forEach(t => {
+                    const c = card(); c.classList.add('js-takeover'); c.style.borderColor = '#ef444466';
+                    const name = document.createElement('div'); name.style.cssText = 'font-family:monospace;font-weight:700;color:#fca5a5;word-break:break-all;'; name.textContent = t.sub; c.appendChild(name);
+                    const why = document.createElement('div'); why.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:4px;word-break:break-all;';
+                    why.textContent = 'Points to ' + String(t.cname || '?') + (t.service && t.service !== 'unknown' ? ' (' + t.service + ')' : '') + ', where nothing is claimed: whoever claims it serves content here.';
+                    c.appendChild(why); root.appendChild(c);
+                });
             }
 
             if (ipList.length) {

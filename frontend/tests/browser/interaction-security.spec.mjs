@@ -269,6 +269,19 @@ test('timeline evidence is responsive, filterable and rendered only as text', as
     expect(overflow).toBe(false);
 });
 
+test('the surface tab warns about a subdomain that can be taken over, as text', async ({ page }) => {
+    const fixture = await mockAPI(page);
+    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+    await page.locator('#tab-surface').click();
+    const warning = page.locator('#surface-tab-content .js-takeover');
+    await expect(warning).toHaveCount(1);
+    await expect(warning).toContainText('old.example.com');
+    await expect(warning).toContainText('(Azure)');
+    await expect(warning).toContainText(fixture.malicious);
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+});
+
 test('d3 and qrcode load only when their feature opens, within the CSP', async ({ page }) => {
     await page.addInitScript(() => {
         window.__cspViolations = [];

@@ -45,6 +45,8 @@ export async function mockAPI(page, options = {}) {
                 results: [
                     { id: null, source: 'GitHub', type: 'developer_identity', confidenceScore: 1, rawData: 'verified', metadata: null },
                     { id: null, source: 'Steam', type: 'account_presence', confidenceScore: 0.75, rawData: 'same name', metadata: null },
+                    { id: null, source: 'AttackSurface', type: 'subdomain_takeover', confidenceScore: 0.9, rawData: 'takeover',
+                      metadata: { subdomain: 'old.example.com', service: 'Azure', cname: malicious, domain: 'example.com' } },
                 ],
             };
         } else if (pathname === '/api/identity/00000000-0000-4000-8000-0000000000bb') {
