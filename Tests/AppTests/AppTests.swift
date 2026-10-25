@@ -4682,6 +4682,16 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(SharedEdge.contains("sindresorhus.com"))
     }
 
+    func testSherlockLeavesPlatformsWithADedicatedCheckToIt() {
+        for site in ["Keybase", "DEV Community", "dev.to", "Docker Hub", "PyPi", "Steam Community (User)",
+                     "mastodon.social", "GitHub", "Telegram"] {
+            XCTAssertTrue(BulkUsernamePlugin.checkedElsewhere(site), site)
+        }
+        for site in ["Snapchat", "mastodon.cloud", "Steam Community (Group)", "HackerOne", "devRant"] {
+            XCTAssertFalse(BulkUsernamePlugin.checkedElsewhere(site), site)
+        }
+    }
+
     func testSherlockDropsHitsFromSitesThatFindAnyone() async {
         await SherlockReliability.shared.reset()
         await SherlockReliability.shared.record("CatchAll", reliable: false)

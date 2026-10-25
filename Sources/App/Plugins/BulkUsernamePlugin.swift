@@ -104,7 +104,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.username]
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
     /// v2: hits from sites that also "find" a name nobody has are dropped.
-    let cacheVersion = 2
+    /// v3: platforms a dedicated plugin checks are left to it.
+    let cacheVersion = 3
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
@@ -126,11 +127,23 @@ struct BulkUsernamePlugin: FootprintPlugin {
         }
     }
     
+    /// Platforms a dedicated plugin already checks for a username, by their
+    /// canonical name: its answer is more precise (an API, not a status
+    /// code), and a second, weaker hit for the same account is noise.
+    static let dedicatedPlatforms: Set<String> = [
+        "bluesky", "codeberg", "crates.io", "devto", "dockerhub", "github", "gitlab", "hackernews",
+        "keybase", "lobsters", "mastodon", "npm", "pypi", "steam", "telegram",
+    ]
+
+    static func checkedElsewhere(_ site: String) -> Bool {
+        dedicatedPlatforms.contains(IdentityLinks.canonicalPlatform(site))
+    }
+
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard !input.contains("@") else { return [] }
         let username = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let validSites = Array(sites)
+        let validSites = sites.filter { !Self.checkedElsewhere($0.key) }
         let maxConcurrent = 30
         // Internal time budget kept under ScanPluginRunner's 120s hard deadline.
         // Previously this ran 480 sites in sequential chunks of 30 and returned
