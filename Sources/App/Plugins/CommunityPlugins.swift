@@ -134,7 +134,12 @@ struct LichessPlugin: FootprintPlugin {
         let streamer = json["streamer"] as? [String: Any] ?? [:]
         let channels = ["twitch", "youTube"].compactMap { (streamer[$0] as? [String: Any])?["channel"] as? String }
         let links = (profile["links"] as? String ?? "").split(whereSeparator: \.isNewline).map(String.init) + channels
-        if let declared = CommunityHandle.declare(CommunityHandle.accounts(in: links), on: "Lichess", into: &meta) {
+        // A bio's contact address ("for business inquiries: …") is declared too.
+        let bio = profile["bio"] as? String ?? ""
+        let addresses = bio.matches(of: #/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/#).prefix(3)
+            .compactMap { EmailAddress.normalize(String($0.output)) }.map { ("email", Optional($0)) }
+        let declaredPairs = CommunityHandle.accounts(in: links) + addresses
+        if let declared = CommunityHandle.declare(declaredPairs, on: "Lichess", into: &meta) {
             parts.append("Lists: \(declared)")
         }
         return PluginResult(source: "Lichess", type: "account_presence", confidenceScore: 1.0,

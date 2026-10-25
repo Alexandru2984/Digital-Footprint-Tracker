@@ -4726,13 +4726,13 @@ final class AppTests: XCTestCase {
     func testLichessReadsTheRealNameAndTheAccountsAProfileLists() throws {
         let body = Data(#"""
         {"id":"thibault","username":"thibault","createdAt":1290415680000,
-         "profile":{"realName":"Thibault Duplessis","flag":"FR","links":"github.com/ornicar\nmas.to/@thibault\nhttp://plain.example\nhttps://example.org/blog"},
+         "profile":{"realName":"Thibault Duplessis","flag":"FR","bio":"Business: Thibault@Example.org","links":"github.com/ornicar\nmas.to/@thibault\nhttp://plain.example\nhttps://example.org/blog"},
          "streamer":{"twitch":{"channel":"https://www.twitch.tv/ornicar2"}}}
         """#.utf8)
         let found = try XCTUnwrap(LichessPlugin.evaluate(username: "Thibault", status: 200, body: body))
         XCTAssertEqual(found.metadata?["name"], "Thibault Duplessis")
         XCTAssertEqual(found.metadata?["since"], "2010-11-22")
-        XCTAssertEqual(found.metadata?["linked"], "github:ornicar,mastodon:thibault@mas.to,twitch:ornicar2")
+        XCTAssertEqual(found.metadata?["linked"], "github:ornicar,mastodon:thibault@mas.to,twitch:ornicar2,email:thibault@example.org")
         XCTAssertTrue(found.rawData.contains("Country: France"))
         XCTAssertNil(LichessPlugin.evaluate(username: "thibault", status: 404, body: Data()))
         let closed = Data(#"{"id":"gone","username":"gone","closed":true}"#.utf8)
