@@ -316,6 +316,7 @@ enum RiskScorer {
         "subdomain": .infra,
         "subdomain_ip": .infra,
         "cohosted_domain": .infra,
+        "dns_history": .infra,
         "whois_record": .infra,
         "domain_registration": .infra,
         "archive_history": .infra,

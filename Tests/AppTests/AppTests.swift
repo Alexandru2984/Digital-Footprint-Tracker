@@ -5671,6 +5671,26 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(PassiveDNSPlugin.parseCohosted("No DNS A records found", ip: "1.2.3.4").isEmpty)
     }
 
+    func testPassiveDNSHistoryNamesAnOriginLeftBehindACDN() throws {
+        let body = Data("""
+        {"responseCode":200,"data":[
+         {"query":"example.org","answer":"104.21.25.147","rrtype":"a","firstSeenTimestamp":1700000000000,"lastSeenTimestamp":1790000000000},
+         {"query":"example.org","answer":"203.0.113.9","rrtype":"a","firstSeenTimestamp":1500000000000,"lastSeenTimestamp":1690000000000},
+         {"query":"example.org","answer":"mail.example.org","rrtype":"cname","firstSeenTimestamp":1,"lastSeenTimestamp":2},
+         {"query":"www.example.org","answer":"203.0.113.9","rrtype":"a","firstSeenTimestamp":1500000000000,"lastSeenTimestamp":1690000000000}
+        ]}
+        """.utf8)
+        let seen = PassiveDNSPlugin.parseObservations(body)
+        XCTAssertEqual(seen.count, 3, "A records only")
+        let history = try XCTUnwrap(PassiveDNSPlugin.history(of: "example.org", from: seen))
+        XCTAssertEqual(history.type, "dns_history")
+        XCTAssertEqual(history.metadata?["addresses"], "104.21.25.147, 203.0.113.9", "newest first")
+        XCTAssertEqual(history.metadata?["possibleOrigins"], "203.0.113.9")
+        XCTAssertNil(history.metadata?["ip"], "a past address is not a pivot")
+        XCTAssertTrue(history.rawData.contains("104.21.25.147 (CDN) 2023-11–2026-09"), history.rawData)
+        XCTAssertNil(PassiveDNSPlugin.history(of: "other.org", from: seen))
+    }
+
     func testADomainsResolvedAddressBecomesAPivotTarget() {
         let dnsFinding = PluginResult(
             source: "DomainDNS", type: "dns_a_record", confidenceScore: 1.0,
