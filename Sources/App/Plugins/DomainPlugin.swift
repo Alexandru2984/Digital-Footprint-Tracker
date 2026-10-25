@@ -172,7 +172,9 @@ struct DomainPlugin: FootprintPlugin {
     /// The registration facts in a WHOIS answer, as `Key: value` lines. Prose
     /// (a registry's terms of use mention "registrant" too) is left out.
     static func whoisFields(_ output: String) -> [String] {
-        let pattern = #"^\s*(Registrar|Creation Date|Registry Expiry Date|Registrar Registration Expiration Date|Name Server|Updated Date|Registrant (Name|Organization|Email|Country|State/Province)):\s*\S"#
+        let keys = "Registrar|Creation Date|Registry Expiry Date|Registrar Registration Expiration Date|Name Server"
+            + "|Updated Date|Registrant (Name|Organization|Email|Country|State/Province)"
+        let pattern = #"^\s*("# + keys + #"):\s*\S"#
         return output.components(separatedBy: .newlines)
             .filter { $0.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil }
             .prefix(8).map { $0.trimmingCharacters(in: .whitespaces) }
