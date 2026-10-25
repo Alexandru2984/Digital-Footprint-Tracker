@@ -57,6 +57,7 @@ struct MastodonPlugin: FootprintPlugin {
         // Mastodon is still identity signal, weighted and corroborated there.
         if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
         if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
+        if let linked = BioLinks.linked(in: acct.bio, excluding: "mastodon:\(acct.acct)") { meta["bioLinked"] = linked }
         if let linked = IdentityLinks.linked(acct.verifiedLinks.compactMap(IdentityLinks.account(at:))) {
             parts.append("Verified links: " + acct.verifiedLinks.prefix(5).joined(separator: ", "))
             meta["linked"] = linked

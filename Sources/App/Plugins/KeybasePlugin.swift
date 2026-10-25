@@ -68,6 +68,7 @@ struct KeybasePlugin: FootprintPlugin {
         ]
         if !fullName.isEmpty { profileMeta["name"] = fullName }
         if !location.isEmpty { profileMeta["location"] = location }
+        if let linked = BioLinks.linked(in: bio, excluding: "keybase:\(username.lowercased())") { profileMeta["bioLinked"] = linked }
 
         results.append(PluginResult(
             source: "Keybase",

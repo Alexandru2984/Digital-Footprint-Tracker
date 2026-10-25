@@ -68,6 +68,7 @@ struct CodebergPlugin: FootprintPlugin {
         if !location.isEmpty { meta["location"] = location }
         if !website.isEmpty { meta["blog"] = website }
         if !publicEmail.isEmpty { meta["email"] = publicEmail }
+        if let linked = BioLinks.linked(in: bio, excluding: "codeberg:\(login)") { meta["bioLinked"] = linked }
         if let joined { meta["since"] = joined }
 
         return PluginResult(source: "Codeberg", type: "account_presence", confidenceScore: 1.0,

@@ -72,6 +72,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
+            if let bio = BioLinks.linked(in: user?.bio, excluding: "github:\(cleanedUsername)") { meta["bioLinked"] = bio }
             var linked: [(String, String?)] = []
             if let tw = user?.twitter_username, !tw.isEmpty {
                 meta["twitter"] = tw

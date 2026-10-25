@@ -50,12 +50,14 @@ struct SteamPlugin: FootprintPlugin {
         if let persona = extractTag("steamID", from: xml)           { parts.append("Persona: \(persona)") }
         if let memberSince                                          { parts.append("Member since: \(memberSince)") }
         if let location = extractTag("location", from: xml)         { parts.append("Location: \(location)") }
+        var summaryText: String?
         if let summary = extractTag("summary", from: xml) {
             let cleaned = summary
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !cleaned.isEmpty {
                 parts.append("Summary: \(cleaned.prefix(200))")
+                summaryText = cleaned
             }
         }
 
@@ -67,6 +69,7 @@ struct SteamPlugin: FootprintPlugin {
         ]
         if let location = extractTag("location", from: xml) { meta["location"] = location }
         if let memberSince { meta["since"] = memberSince }
+        if let linked = BioLinks.linked(in: summaryText, excluding: "steam:\(username)") { meta["bioLinked"] = linked }
 
         return [PluginResult(
             source: name,

@@ -4732,11 +4732,33 @@ final class AppTests: XCTestCase {
         let found = try XCTUnwrap(LichessPlugin.evaluate(username: "Thibault", status: 200, body: body))
         XCTAssertEqual(found.metadata?["name"], "Thibault Duplessis")
         XCTAssertEqual(found.metadata?["since"], "2010-11-22")
-        XCTAssertEqual(found.metadata?["linked"], "github:ornicar,mastodon:thibault@mas.to,twitch:ornicar2,email:thibault@example.org")
+        XCTAssertEqual(found.metadata?["linked"], "github:ornicar,mastodon:thibault@mas.to,twitch:ornicar2")
+        XCTAssertEqual(found.metadata?["bioLinked"], "email:thibault@example.org")
         XCTAssertTrue(found.rawData.contains("Country: France"))
         XCTAssertNil(LichessPlugin.evaluate(username: "thibault", status: 404, body: Data()))
         let closed = Data(#"{"id":"gone","username":"gone","closed":true}"#.utf8)
         XCTAssertNil(LichessPlugin.evaluate(username: "gone", status: 200, body: closed), "a closed account")
+    }
+
+    func testBioLinksFindAddressesAccountsAndMastodonHandles() {
+        let bio = """
+        Rustacean. For business: Ana.Pop@Example.org — also @ana@fosstodon.org, github.com/anapop and \
+        https://www.twitch.tv/anastreams/ (old: http://twitter.com/plain) see https://anapop.dev/blog, me on x.com/anapop.
+        """
+        XCTAssertEqual(BioLinks.linked(in: bio, excluding: "github:anapop"),
+                       "mastodon:ana@fosstodon.org,email:ana.pop@example.org,twitch:anastreams,twitter:anapop")
+        XCTAssertNil(BioLinks.linked(in: "Just a person who likes chess."))
+        XCTAssertNil(BioLinks.linked(in: nil))
+
+        // A bio's links are declared edges from the account, and leads to follow.
+        let inputs = [IdentitySynthesizer.Input(source: "GitHub", type: "account_presence", confidence: 1.0, metadata: [
+            "platform": "github", "username": "anapop", "bioLinked": "email:ana.pop@example.org,twitch:anastreams",
+        ], rawData: "")]
+        let links = IdentityLinks.build(from: inputs, target: "anapop")
+        let edge = links.first { $0.from == "github: anapop" && $0.to == "ana.pop@example.org" }
+        XCTAssertEqual(edge?.kind, .declared)
+        XCTAssertEqual(edge?.reason, "written in this profile's bio")
+        XCTAssertTrue(IdentityLinks.pivotableLinks(inputs[0].metadata).contains("ana.pop@example.org"))
     }
 
     func testSpeedrunReadsTheRegionAndTheLinkedChannels() throws {

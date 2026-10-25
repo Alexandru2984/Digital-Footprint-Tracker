@@ -92,6 +92,10 @@ enum IdentityLinks {
             for linked in parseLinked(meta["linked"]) {
                 add(Link(from: node, to: linked, kind: linkKind, source: input.source, reason: linkReason))
             }
+            for linked in parseLinked(meta["bioLinked"]) {
+                add(Link(from: node, to: linked, kind: .declared, source: input.source,
+                         reason: "written in this profile's bio"))
+            }
             if let site = websiteDomain(meta["blog"]) {
                 add(Link(from: node, to: "web: \(site)", kind: .declared, source: input.source,
                          reason: "the website listed on this profile"))
@@ -253,7 +257,7 @@ enum IdentityLinks {
     /// What an account points to that is worth scanning next: proven accounts
     /// and domains from `linked`, and the domain of the website it lists.
     static func pivotableLinks(_ meta: [String: String]) -> [String] {
-        var values = parseLinked(meta["linked"]).compactMap(identifier(of:))
+        var values = (parseLinked(meta["linked"]) + parseLinked(meta["bioLinked"])).compactMap(identifier(of:))
         if let site = websiteDomain(meta["blog"]) { values.append(site) }
         return values
     }
