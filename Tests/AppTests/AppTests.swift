@@ -7136,6 +7136,37 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(IdentityLinks.attribute([island], target: "x").isEmpty, "nothing reachable from the target")
     }
 
+    func testTheSameFullNameOnTwoPlatformsCorroboratesAHandle() throws {
+        typealias I = IdentitySynthesizer.Input
+        func account(_ platform: String, _ name: String?, via: String = "input") -> I {
+            var meta = ["platform": platform, "username": "torvalds", "queriedAs": "torvalds", "via": via]
+            meta["name"] = name
+            return I(source: platform, type: "account_presence", confidence: 0.75, metadata: meta, rawData: platform)
+        }
+        let byHandle = IdentitySynthesizer.synthesize(
+            from: [account("github", "Linus Torvalds"), account("gitlab", "linus  torvalds"),
+                   account("codeberg", "Someone Else"), account("steam", nil)],
+            riskScore: 0, riskLevel: "Low", target: "torvalds")
+        var score = Dictionary(uniqueKeysWithValues: byHandle.attributions.map { ($0.node, $0.score) })
+        XCTAssertEqual(score["github: torvalds"], 70)
+        XCTAssertEqual(score["gitlab: torvalds"], 70, "case and spacing aside, the same name")
+        XCTAssertEqual(score["codeberg: torvalds"], 40, "another name: the handle alone")
+        XCTAssertEqual(score["steam: torvalds"], 40)
+
+        let anchored = IdentitySynthesizer.synthesize(
+            from: [I(source: "GitHub", type: "developer_identity", confidence: 1.0,
+                     metadata: ["platform": "github", "username": "torvalds", "name": "Linus Torvalds",
+                                "email": "torvalds@x.test", "queriedAs": "torvalds@x.test", "via": "input",
+                                "matchKind": "verified"],
+                     rawData: "gh"),
+                   account("codeberg", "Linus Torvalds", via: "emailLocalPart")],
+            riskScore: 0, riskLevel: "Low", target: "torvalds@x.test")
+        score = Dictionary(uniqueKeysWithValues: anchored.attributions.map { ($0.node, $0.score) })
+        XCTAssertEqual(score["codeberg: torvalds"], 67, "the confirmed account's name, on the same handle: 0.98² · 0.7")
+        XCTAssertNil(IdentityLinks.fullName("torvalds"))
+        XCTAssertNil(IdentityLinks.fullName("L. T."))
+    }
+
     func testAPivotedNameConfirmsOnlyTheAccountItCameFrom() throws {
         typealias I = IdentitySynthesizer.Input
         let inputs = [

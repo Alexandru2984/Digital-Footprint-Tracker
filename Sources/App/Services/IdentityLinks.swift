@@ -69,7 +69,8 @@ enum IdentityLinks {
         func add(_ link: Link) {
             guard !link.from.isEmpty, !link.to.isEmpty, link.from != link.to else { return }
             let key = "\(link.from)\u{1}\(link.to)"
-            if let existing = best[key], existing.kind >= link.kind { return }
+            if let existing = best[key], existing.kind > link.kind
+                || (existing.kind == link.kind && existing.strength >= link.strength) { return }
             if best[key] == nil { order.append(key) }
             best[key] = link
         }
@@ -95,6 +96,30 @@ enum IdentityLinks {
                 add(Link(from: node, to: "web: \(site)", kind: .declared, source: input.source,
                          reason: "the website listed on this profile"))
             }
+        }
+
+        // The same full name on accounts sharing a handle, on independent
+        // platforms, is better evidence than the handle alone. Anchored on the
+        // name of an account confirmed to be the target's when there is one,
+        // so a stranger's consistent name across sites never counts.
+        var named: [(from: String, node: String, name: String, kind: Kind)] = []
+        for input in inputs where identityTypes.contains(input.type) {
+            let meta = input.metadata
+            let from = (nonEmpty(meta["queriedAs"]) ?? target ?? "target").lowercased()
+            guard let name = fullName(meta["name"]), let node = node(for: meta, from: from, type: input.type) else { continue }
+            named.append((from, node, name, nonEmpty(meta["matchKind"]).flatMap(Kind.init(rawValue:)) ?? .inferred))
+        }
+        let anchored = Set(named.filter { $0.kind > .inferred }.map(\.name))
+        let platformsByName = Dictionary(grouping: named, by: \.name)
+            .mapValues { Set($0.map { $0.node.split(separator: ":").first.map(String.init) ?? $0.node }) }
+        for entry in named where entry.kind == .inferred {
+            let corroborated = anchored.isEmpty
+                ? (platformsByName[entry.name]?.count ?? 0) >= 2
+                : anchored.contains(entry.name)
+            guard corroborated else { continue }
+            add(Link(from: entry.from, to: entry.node, kind: .inferred, source: "derived",
+                     reason: "the same handle and the same full name (\(entry.name)) as on another platform",
+                     via: "sameName"))
         }
 
         // Connect the identifiers the scan looked things up as. Without these
@@ -392,9 +417,21 @@ enum IdentityLinks {
             // A mailbox there shows a tie to the domain, not who holds it.
             case "emailDomain": return 0.55
             case "variant": return 0.35
+            // The handle and a full name, both matching another platform's.
+            case "sameName": return 0.7
             default: return 0.4
             }
         }
+    }
+
+    /// A display name specific enough to tell people apart: two or more words
+    /// of letters, folded for comparison. Nil for a bare handle or initials.
+    static func fullName(_ raw: String?) -> String? {
+        guard let raw = nonEmpty(raw), raw.count <= 80 else { return nil }
+        let words = raw.lowercased().split(whereSeparator: { $0.isWhitespace })
+            .map { $0.filter(\.isLetter) }.filter { !$0.isEmpty }
+        guard words.count >= 2, words.allSatisfy({ $0.count >= 2 }) else { return nil }
+        return words.joined(separator: " ")
     }
 
     /// The strongest chain from `target` to every identifier the links reach.
