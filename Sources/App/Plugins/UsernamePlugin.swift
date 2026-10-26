@@ -123,7 +123,7 @@ struct UsernamePlugin: FootprintPlugin {
                 readmeURL, headers: headers.merging(["Accept": "application/vnd.github.raw"]) { _, raw in raw },
                 bodyMode: .complete(maxBytes: 256 * 1_024), on: app),
                readme.status == 200,
-               let found = BioLinks.linked(in: String(decoding: readme.data, as: UTF8.self), limit: 40_000, dropping: ["github"]) {
+               let found = BioLinks.linked(in: String(decoding: readme.data, as: UTF8.self), limit: 40_000, dropping: ["github", "huggingface"]) {
                 parts.append("Profile README lists: " + found.replacingOccurrences(of: ",", with: ", "))
                 written = BioLinks.merged(written, found)
             }

@@ -4877,6 +4877,57 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(png.isGenerated)
     }
 
+    func testLinktreeListsEveryAccountOnThePage() throws {
+        let data = #"{"props":{"pageProps":{"username":"AnaPop","pageTitle":"Ana Popescu","description":"Booking: ana@pop.dev","isProfileVerified":true,"account":{"isActive":true,"createdAt":1579860925000,"country":"RO","profilePictureUrl":"https://ugc.example/ana.jpg"},"socialLinks":[{"type":"INSTAGRAM","url":"https://instagram.com/ana.pop"},{"type":"X","url":"https://x.com/anapop"},{"type":"SPOTIFY","url":"https://open.spotify.com/artist/1"}],"links":[{"type":"CLASSIC","url":"https://www.tiktok.com/@anapop"},{"type":"CLASSIC","url":"https://shop.example/merch"}]}}}"#
+        let html = #"<html><body><script id="__NEXT_DATA__" type="application/json" crossorigin="anonymous">"# + data + "</script></body></html>"
+        let found = try XCTUnwrap(LinktreePlugin.evaluate(username: "anapop", html: html))
+        XCTAssertEqual(found.metadata?["linked"], "instagram:ana.pop,twitter:anapop,tiktok:anapop",
+                       "accounts, not shops or music pages")
+        XCTAssertEqual(found.metadata?["name"], "Ana Popescu")
+        XCTAssertEqual(found.metadata?["since"], "2020-01-24")
+        XCTAssertEqual(found.metadata?["location"], "Romania")
+        XCTAssertEqual(found.metadata?["bioLinked"], "email:ana@pop.dev")
+        XCTAssertEqual(found.metadata?["avatar"], "https://ugc.example/ana.jpg")
+        XCTAssertTrue(found.rawData.contains("Verified by Linktree"))
+        XCTAssertNil(LinktreePlugin.evaluate(username: "someoneelse", html: html))
+        XCTAssertNil(LinktreePlugin.evaluate(username: "anapop", html: "<html>not found</html>"))
+
+        // Elsewhere a Linktree link is that account, and a lead to follow.
+        XCTAssertEqual(IdentityLinks.account(at: "https://linktr.ee/anapop")?.1, "anapop")
+        XCTAssertEqual(IdentityLinks.pivotableLinks(["linked": "linktree:anapop"]), ["anapop"])
+        XCTAssertTrue(BulkUsernamePlugin.checkedElsewhere("Linktree"))
+    }
+
+    func testHuggingFaceReadsTheAccountsTheProfileLists() throws {
+        let props = #"{"u":{"user":"ana-pop","fullname":"Ana Popescu","avatarUrl":"https://cdn-avatars.example/a.jpg","orgs":[{"name":"acme-ml"}],"signup":{"details":"ML at Acme","homepage":"https://anapop.dev","github":"anapop","twitter":"ana_pop","linkedin":"ana-popescu","bluesky":"ana.bsky.social"}}}"#
+        let escaped = props.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+        let html = #"<div class="x" data-target="UserProfile" data-props=""# + escaped + #""></div>"#
+        let found = try XCTUnwrap(HuggingFacePlugin.evaluate(username: "Ana-Pop", html: html))
+        XCTAssertEqual(found.metadata?["name"], "Ana Popescu")
+        XCTAssertEqual(found.metadata?["linked"], "github:anapop,twitter:ana_pop,linkedin:ana-popescu,bluesky:ana.bsky.social")
+        XCTAssertEqual(found.metadata?["blog"], "https://anapop.dev")
+        XCTAssertEqual(found.metadata?["orgs"], "acme-ml")
+        XCTAssertNil(HuggingFacePlugin.evaluate(username: "ana-pop", html: #"<div data-target="OrgProfile" data-props="{}"></div>"#),
+                     "an organisation's page")
+        XCTAssertNil(IdentityLinks.account(at: "https://huggingface.co/datasets/acme/corpus"), "a dataset is not an account")
+        XCTAssertEqual(IdentityLinks.account(at: "https://huggingface.co/ana-pop")?.0, "huggingface")
+        XCTAssertTrue(BulkUsernamePlugin.checkedElsewhere("Hugging Face"))
+        XCTAssertNil(IdentityLinks.websiteDomain("https://huggingface.co"), "the platform, not the user's own site")
+    }
+
+    func testANamesakesNameDoesNotHeadTheProfile() {
+        func account(_ platform: String, _ name: String) -> IdentitySynthesizer.Input {
+            .init(source: platform, type: "account_presence", confidence: 1,
+                  metadata: ["platform": platform, "username": "selenagomez", "name": name,
+                             "queriedAs": "selenagomez", "via": "primary"], rawData: "")
+        }
+        let lone = IdentitySynthesizer.synthesize(from: [account("huggingface", "Raul")], riskScore: 0, riskLevel: "Low", target: "selenagomez")
+        XCTAssertNil(lone.likelyName, "one account found by the handle alone may be anyone's")
+        let twice = IdentitySynthesizer.synthesize(from: [account("huggingface", "Raul Mendez"), account("lichess", "Raul Mendez")], riskScore: 0, riskLevel: "Low",
+                                                   target: "selenagomez")
+        XCTAssertEqual(twice.likelyName, "Raul Mendez")
+    }
+
     func testSpeedrunReadsTheRegionAndTheLinkedChannels() throws {
         let body = Data(#"""
         {"data":[{"names":{"international":"cheese"},"weblink":"https://www.speedrun.com/users/cheese",

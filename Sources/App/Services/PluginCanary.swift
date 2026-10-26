@@ -59,6 +59,8 @@ enum PluginCanary {
         Check(plugin: "Duolingo", input: "luis", username: "luis"),
         Check(plugin: "Lichess", input: "thibault", username: "thibault"),
         Check(plugin: "Speedrun", input: "cheese", username: "cheese"),
+        Check(plugin: "Linktree", input: "selenagomez", username: "selenagomez"),
+        Check(plugin: "HuggingFace", input: "julien-c", username: "julien-c"),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),

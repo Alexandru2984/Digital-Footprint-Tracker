@@ -178,7 +178,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
     let cacheTTL: TimeInterval = 21_600 // 6 h — accounts churn but mostly persist
     /// v2: hits from sites that also "find" a name nobody has are dropped.
     /// v3: platforms a dedicated plugin checks are left to it.
-    let cacheVersion = 5
+    let cacheVersion = 6
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
@@ -205,7 +205,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
     /// code), and a second, weaker hit for the same account is noise.
     static let dedicatedPlatforms: Set<String> = [
         "bluesky", "codeberg", "crates.io", "devto", "dockerhub", "duolingo", "github", "gitlab", "hackernews",
-        "keybase", "lichess", "lobsters", "mastodon", "npm", "pypi", "speedrun", "steam", "telegram",
+        "huggingface", "keybase", "lichess", "linktree", "lobsters", "mastodon", "npm", "pypi", "speedrun", "steam",
+        "telegram",
     ]
 
     static func checkedElsewhere(_ site: String) -> Bool {

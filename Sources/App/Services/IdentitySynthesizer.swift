@@ -78,6 +78,8 @@ enum IdentitySynthesizer {
         let links = IdentityLinks.build(from: inputs, target: target)
         var nameScore: [String: Double] = [:]            // normalized key → summed confidence (weight)
         var nameForms: [String: [String: Int]] = [:]     // normalized key → seen display forms + counts
+        var namePlatforms: [String: Set<String>] = [:]   // normalized key → platforms that show it
+        var nameBelonging: [String: Double] = [:]        // normalized key → its likeliest account's attribution
         var locationForms: [String: [String: Int]] = [:] // same case/spacing merge for places…
         var orgForms: [String: [String: Int]] = [:]      // …and organizations
         var emails = Set<String>()
@@ -124,6 +126,8 @@ enum IdentitySynthesizer {
                 // ("John Smith" / "john  smith") merge into one identity.
                 nameScore[key, default: 0] += max(0.1, min(1.0, inp.confidence)) * weight
                 nameForms[key, default: [:]][display, default: 0] += 1
+                namePlatforms[key, default: []].insert(IdentityLinks.canonicalPlatform(nonEmpty(m["platform"]) ?? inp.source))
+                nameBelonging[key] = max(nameBelonging[key] ?? 0, weight)
             }
             if weight >= 0.5, let l = nonEmpty(m["location"]) {
                 let display = collapseWhitespace(l)
@@ -184,30 +188,9 @@ enum IdentitySynthesizer {
             }
         }
 
-        // Pick the most-seen casing for a normalized name key.
-        func displayForm(_ key: String) -> String { nameForms[key].flatMap(bestForm) ?? key }
-        // Drop "names" that just echo a handle, or are handle-shaped (contain a
-        // digit/underscore, or are a single lowercase token). Plugins sometimes
-        // copy the username into `name`; that's not a real identity and must not
-        // become the headline. Kept: anything with a space (given + family) or an
-        // uppercase letter (a proper noun) and no handle markers.
-        let handleKeys = Set(handlePlatforms.keys.map { $0.lowercased() })
-        func isRealName(_ key: String) -> Bool {
-            if handleKeys.contains(key) { return false }
-            let display = displayForm(key)
-            if display.contains("_") || display.rangeOfCharacter(from: .decimalDigits) != nil { return false }
-            let hasSpace = display.contains(" ")
-            let hasUpper = display.rangeOfCharacter(from: .uppercaseLetters) != nil
-            return hasSpace || hasUpper
-        }
-        let validNameKeys = nameScore.keys.filter(isRealName)
-        // The highest summed-confidence name is the likely identity; ties → lexical.
-        let bestNameKey = validNameKeys.max { l, r in
-            let a = nameScore[l] ?? 0, b = nameScore[r] ?? 0
-            return a != b ? a < b : l > r
-        }
-        let likelyName = bestNameKey.map(displayForm)
-        let resolvedNames = validNameKeys.map(displayForm).sorted()
+        let (likelyName, resolvedNames) = chooseNames(
+            scores: nameScore, forms: nameForms, platforms: namePlatforms, belonging: nameBelonging,
+            handles: Set(handlePlatforms.keys.map { $0.lowercased() }), attributed: attributed)
         let handles = handlePlatforms.map { handle, platforms -> HandleUse in
             let base = handleConfidence[handle] ?? 0.5
             let boosted = min(1.0, base + 0.1 * Double(platforms.count - 1))
@@ -333,6 +316,41 @@ enum IdentitySynthesizer {
 
     /// The most-seen display form for one normalized key; ties break to the
     /// lexically-smallest form so the result is deterministic.
+    /// The names worth listing, and the one that heads the profile.
+    private static func chooseNames(
+        scores nameScore: [String: Double], forms nameForms: [String: [String: Int]], platforms namePlatforms: [String: Set<String>],
+        belonging nameBelonging: [String: Double], handles handleKeys: Set<String>, attributed: Bool
+    ) -> (likely: String?, all: [String]) {
+        // Pick the most-seen casing for a normalized name key.
+        func displayForm(_ key: String) -> String { nameForms[key].flatMap(bestForm) ?? key }
+        // Drop "names" that just echo a handle, or are handle-shaped (contain a
+        // digit/underscore, or are a single lowercase token). Plugins sometimes
+        // copy the username into `name`; that's not a real identity and must not
+        // become the headline. Kept: anything with a space (given + family) or an
+        // uppercase letter (a proper noun) and no handle markers.
+        func isRealName(_ key: String) -> Bool {
+            if handleKeys.contains(key) { return false }
+            let display = displayForm(key)
+            if display.contains("_") || display.rangeOfCharacter(from: .decimalDigits) != nil { return false }
+            let hasSpace = display.contains(" ")
+            let hasUpper = display.rangeOfCharacter(from: .uppercaseLetters) != nil
+            return hasSpace || hasUpper
+        }
+        // A name shown by one account found by the handle alone is as likely a
+        // namesake's: it heads the profile only when that account is probably
+        // the target's, or another platform shows the same name.
+        func isBacked(_ key: String) -> Bool {
+            !attributed || (nameBelonging[key] ?? 0) >= 0.5 || (namePlatforms[key]?.count ?? 0) >= 2
+        }
+        let realNameKeys = nameScore.keys.filter(isRealName)
+        // The highest summed-confidence name is the likely identity; ties → lexical.
+        let bestNameKey = realNameKeys.filter(isBacked).max { l, r in
+            let a = nameScore[l] ?? 0, b = nameScore[r] ?? 0
+            return a != b ? a < b : l > r
+        }
+        return (bestNameKey.map(displayForm), realNameKeys.map(displayForm).sorted())
+    }
+
     private static func bestForm(_ forms: [String: Int]) -> String? {
         forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key
     }

@@ -107,6 +107,8 @@ struct ScanController: RouteCollection {
         DuolingoPlugin(),
         LichessPlugin(),
         SpeedrunPlugin(),
+        LinktreePlugin(),
+        HuggingFacePlugin(),
         PastebinPlugin(),
         PhonePlugin(),
         DomainPlugin(),

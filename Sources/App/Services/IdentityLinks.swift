@@ -232,6 +232,7 @@ enum IdentityLinks {
         "crates.io": "crates.io", "crates": "crates.io",
         "keybase.io": "keybase", "t.me": "telegram", "bsky.app": "bluesky", "bsky": "bluesky",
         "lobste.rs": "lobsters", "lobste": "lobsters", "mastodon.social": "mastodon",
+        "linktr.ee": "linktree", "linktr": "linktree", "hugging face": "huggingface", "huggingface.co": "huggingface",
         // Other Mastodon instances hold other accounts: they keep their name.
         "mastodon.cloud": "mastodon.cloud", "mastodon.xyz": "mastodon.xyz",
         "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg",
@@ -259,7 +260,7 @@ enum IdentityLinks {
     /// Platforms whose linked value is a domain, and those whose value is a
     /// handle worth scanning by name.
     static let domainPlatforms: Set<String> = ["dns", "generic_web_site", "web"]
-    static let handlePlatforms: Set<String> = ["github", "twitter", "reddit", "hackernews", "gitlab"]
+    static let handlePlatforms: Set<String> = ["github", "twitter", "reddit", "hackernews", "gitlab", "linktree"]
 
     /// The scannable identifier behind a `platform: value` node: the domain
     /// for a website or proven domain, the handle for an account on a
@@ -302,6 +303,7 @@ enum IdentityLinks {
         "tiktok.com", "twitch.tv", "reddit.com", "medium.com", "substack.com", "dev.to", "hashnode.dev",
         "t.me", "bsky.app", "bsky.social", "mastodon.social", "keybase.io", "google.com", "blogspot.com",
         "wordpress.com", "tumblr.com", "linktr.ee", "about.me", "notion.site", "vercel.app", "netlify.app",
+        "huggingface.co", "hf.co", "hf.space",
         "pages.dev", "herokuapp.com", "stackoverflow.com", "npmjs.com", "pypi.org", "crates.io", "docs.rs",
         "docker.com", "sourceforge.net", "wikipedia.org", "carrd.co", "wixsite.com", "squarespace.com",
     ]
@@ -328,13 +330,15 @@ enum IdentityLinks {
             "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg", "twitter.com": "twitter",
             "x.com": "twitter", "keybase.io": "keybase", "instagram.com": "instagram", "facebook.com": "facebook",
             "twitch.tv": "twitch", "news.ycombinator.com": "hackernews", "t.me": "telegram", "tiktok.com": "tiktok",
+            "linktr.ee": "linktree", "huggingface.co": "huggingface",
         ]
         switch bare {
         case _ where firstSegment[bare] != nil:
             let reserved: Set<String> = ["orgs", "sponsors", "settings", "search", "explore", "topics", "home",
                                          "intent", "share", "i", "hashtag", "p", "reel", "watch", "groups",
                                          "sharer", "sharer.php", "dialog", "plugins", "login", "signup", "about",
-                                         "features", "pricing", "join", "tos", "privacy", "policies", "legal"]
+                                         "features", "pricing", "join", "tos", "privacy", "policies", "legal",
+                                         "datasets", "spaces", "models", "docs", "blog", "papers", "collections", "posts"]
             guard let first = path.first, !reserved.contains(first.lowercased()) else { return nil }
             let handle = name(0).map { $0.hasPrefix("@") ? String($0.dropFirst()) : $0 } ?? name(0, dropping: "@")
             return handle.map { (firstSegment[bare] ?? bare, $0) }
