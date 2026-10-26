@@ -87,7 +87,8 @@ enum IdentitySynthesizer {
         var handlePlatforms: [String: Set<String>] = [:]
         var handleConfidence: [String: Double] = [:]
         var accountsByKey: [String: Account] = [:]
-        var breaches = Set<String>()
+        // By breach, whatever each source calls it: the first name seen.
+        var breachNames: [String: String] = [:]
         var dataClasses = Set<String>()
         var breachTotal = 0
         var breachYears = Set<String>()
@@ -174,7 +175,7 @@ enum IdentitySynthesizer {
             }
 
             if inp.type == "data_breach" {
-                for name in csv(m["breaches"]) { breaches.insert(name) }
+                for name in csv(m["breaches"]) where breachNames[breachKey(name)] == nil { breachNames[breachKey(name)] = name }
                 // Categories of data leaked (passwords, phone numbers, …) — what the
                 // breaches actually exposed, not just their names.
                 for dc in csv(m["dataClasses"]) { dataClasses.insert(dc) }
@@ -188,6 +189,7 @@ enum IdentitySynthesizer {
             }
         }
 
+        let breaches = breachNames.values.sorted()
         let (likelyName, resolvedNames) = chooseNames(
             scores: nameScore, forms: nameForms, platforms: namePlatforms, belonging: nameBelonging,
             handles: Set(handlePlatforms.keys.map { $0.lowercased() }), attributed: attributed)
@@ -216,7 +218,7 @@ enum IdentitySynthesizer {
         let dossier = Dossier.summarize(.init(
             name: likelyName, attributions: attributed ? attributions : [], accounts: accounts,
             emails: emails.sorted(), phones: phones, locations: locations, organizations: organizations,
-            breaches: breaches.sorted(), breachTotal: breachTotal, dataClasses: dataClasses.sorted(),
+            breaches: breaches, breachTotal: breachTotal, dataClasses: dataClasses.sorted(),
             breachYears: breachYears.sorted(), timelineDates: timeline.map(\.date)))
 
         return IdentityProfile(
@@ -228,7 +230,7 @@ enum IdentitySynthesizer {
             phones: phones,
             handles: handles,
             confirmedAccounts: accounts,
-            breaches: breaches.sorted(),
+            breaches: breaches,
             exposedDataClasses: dataClasses.sorted(),
             exposedIPs: ips.sorted(),
             exposedServices: exposedServices,
@@ -314,8 +316,21 @@ enum IdentitySynthesizer {
         return plus + s.filter { $0.isNumber }
     }
 
-    /// The most-seen display form for one normalized key; ties break to the
-    /// lexically-smallest form so the result is deterministic.
+    /// One breach, whatever a source calls it: `Dropbox.com`, `Dropbox` and
+    /// `MyVidster-2025` / `MyVidster.com` each name one.
+    static func breachKey(_ name: String) -> String {
+        var key = name.lowercased().trimmingCharacters(in: .whitespaces)
+        if key.range(of: #"^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$"#, options: .regularExpression) != nil,
+           let first = key.split(separator: ".").first {
+            key = String(first)
+        }
+        if let year = key.range(of: #"[-_ ]?(19|20)\d\d$"#, options: .regularExpression), year.lowerBound != key.startIndex {
+            key.removeSubrange(year)
+        }
+        let letters = key.filter { $0.isLetter || $0.isNumber }
+        return letters.isEmpty ? key : letters
+    }
+
     /// The names worth listing, and the one that heads the profile.
     private static func chooseNames(
         scores nameScore: [String: Double], forms nameForms: [String: [String: Int]], platforms namePlatforms: [String: Set<String>],
@@ -351,6 +366,8 @@ enum IdentitySynthesizer {
         return (bestNameKey.map(displayForm), realNameKeys.map(displayForm).sorted())
     }
 
+    /// The most-seen display form for one normalized key; ties break to the
+    /// lexically-smallest form so the result is deterministic.
     private static func bestForm(_ forms: [String: Int]) -> String? {
         forms.max { l, r in l.value != r.value ? l.value < r.value : l.key > r.key }?.key
     }

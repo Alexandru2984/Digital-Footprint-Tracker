@@ -15,6 +15,7 @@ export const roSourceGroups = [
         ['Keyserver Ubuntu', 'Numele de pe cheile PGP publice care menționează adresa (neverificate, cântărite ca atare)'],
         ['Holehe', 'Site-urile la care recuperarea contului recunoaște adresa'],
         ['XposedOrNot', 'Breșele de date în care apare adresa, ce s-a scurs și când (gratuit)'],
+        ['LeakCheck', 'Un al doilea index de breșe, unit cu primul: o breșă se numără o dată, oricum ar numi-o fiecare (gratuit)'],
         ['Have I Been Pwned', 'Breșe și paste-uri (opțional, cu cheie API)'],
         ['Analiză email', 'Livrabilitate, furnizorul de email și adrese de unică folosință'],
         ['Securitatea emailului', 'SPF, DMARC, DKIM, MTA-STS, DNSSEC și CAA pentru domeniul propriu al adresei'],
@@ -80,7 +81,7 @@ export const roPages = [
 <li><strong>Gravatar</strong> întoarce profilul asociat adresei și conturile sociale verificate de Gravatar.</li>
 <li><strong>Cheile OpenPGP</strong>: keys.openpgp.org listează doar adrese confirmate de proprietar, deci celelalte adrese de pe aceeași cheie sunt ale aceleiași persoane.</li>
 <li><strong>Conturi înregistrate</strong>: Holehe întreabă formularele de recuperare a parolei dacă recunosc adresa și descoperă conturi pe Spotify, Office 365, Eventbrite și altele.</li>
-<li><strong>Breșe de date</strong> din XposedOrNot (gratuit) și, opțional, Have I Been Pwned: ce breșe, când și ce s-a scurs.</li>
+<li><strong>Breșe de date</strong> din XposedOrNot și LeakCheck (ambele gratuite) și, opțional, Have I Been Pwned: ce breșe, când și ce s-a scurs.</li>
 <li><strong>Domeniul adresei</strong>: pentru o adresă pe un domeniu propriu (nu Gmail sau Yahoo), se scanează și domeniul — deținătorul, site-ul și serviciile folosite.</li>
 </ul>
 <h2>De la o adresă la o amprentă întreagă</h2>
@@ -218,7 +219,7 @@ export const roPages = [
 <li><strong>Parole stocate slab</strong>: breșele în care parolele erau în clar sau într-o formă ușor de spart.</li>
 <li><strong>Un scor de risc</strong> care cântărește breșele după conținut, nu după număr: o scurgere recentă de parole și carduri contează mult mai mult decât o listă veche de newsletter.</li>
 </ul>
-<p>Datele vin din XposedOrNot, gratuit și fără cheie, și opțional din Have I Been Pwned.</p>
+<p>Datele vin din XposedOrNot și LeakCheck, ambele gratuite și fără cheie, și opțional din Have I Been Pwned. Indexurile se suprapun, așa că o breșă listată de amândouă se numără o dată, iar scorul de risc cântărește cel mai complet raport al unei adrese, nu suma copiilor.</p>
 <h2>Ce faci mai departe</h2>
 <ol>
 <li>Schimbă parola la fiecare cont care folosea o parolă scursă, începând cu emailul și banca.</li>

@@ -130,12 +130,22 @@ enum RiskScorer {
         // a repeat finding can't inflate the score.
         var seen = Set<String>()
         var contributions: [(Category, Double)] = []
+        // Breach indexes list the same breaches: an address's fullest report
+        // counts, not every source's copy of it.
+        var breachReports: [String: Double] = [:]
         for r in results {
             let key = "\(r.source)\u{1}\(r.type)\u{1}\(try r.rawData)"
             guard seen.insert(key).inserted else { continue }
-            contributions.append((category(for: r.type),
-                                  evidence(type: r.type, confidence: r.confidenceScore, metadata: try r.metadataObject)))
+            let metadata = try r.metadataObject
+            let weight = evidence(type: r.type, confidence: r.confidenceScore, metadata: metadata)
+            if r.type == "data_breach" {
+                let address = metadata?["email"]?.lowercased() ?? ""
+                breachReports[address] = max(breachReports[address] ?? 0, weight)
+                continue
+            }
+            contributions.append((category(for: r.type), weight))
         }
+        contributions += breachReports.keys.sorted().compactMap { breachReports[$0].map { (.breach, $0) } }
         return score(from: contributions)
     }
 

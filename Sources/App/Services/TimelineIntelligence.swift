@@ -137,7 +137,7 @@ enum TimelineIntelligence {
                 rawDate: rawDate,
                 label: "Breach: \(cleanName)",
                 category: "breach",
-                logicalKey: "breach|\(cleanName)",
+                logicalKey: "breach|\(IdentitySynthesizer.breachKey(cleanName))",
                 input: input,
                 to: &candidates
             )

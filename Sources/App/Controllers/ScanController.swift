@@ -86,6 +86,7 @@ struct ScanController: RouteCollection {
         PGPKeyserverPlugin(),
         HaveIBeenPwnedPlugin(),
         XposedOrNotPlugin(),
+        LeakCheckPlugin(),
         EmailIntelPlugin(),
         UsernamePlugin(),
         GitLabPlugin(),

@@ -5045,6 +5045,52 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(profile.breaches, ["Canva", "Dailymotion"])
     }
 
+    func testLeakCheckBreachesMergeWithTheOtherIndex() throws {
+        let body = Data(#"""
+        {"success":true,"found":7,"fields":["password","dob","first_name","last_name","origin","ip1"],
+         "sources":[{"name":"Dropbox.com","date":"2012-07"},{"name":"MyVidster.com","date":"2025-01"},
+                    {"name":"CDEK","date":""},{"name":"Dropbox.com","date":"2012-07"}]}
+        """#.utf8)
+        let found = try XCTUnwrap(LeakCheckPlugin.evaluate(email: "a@b.test", body: body).first)
+        XCTAssertEqual(found.type, "data_breach")
+        XCTAssertEqual(found.metadata?["breachCount"], "3", "a breach listed twice is one")
+        XCTAssertEqual(found.metadata?["breaches"], "MyVidster.com, Dropbox.com, CDEK", "newest first, undated last")
+        XCTAssertEqual(found.metadata?["breachDates"], "MyVidster.com|2025; Dropbox.com|2012")
+        XCTAssertEqual(found.metadata?["dataClasses"], "Email addresses, Passwords, Dates of birth, Names, IP addresses")
+
+        let clean = LeakCheckPlugin.evaluate(email: "a@b.test", body: Data(#"{"success": false, "error": "Not found"}"#.utf8))
+        XCTAssertEqual(clean.first?.type, "breach_check")
+        XCTAssertTrue(LeakCheckPlugin.evaluate(email: "a@b.test", body: Data(#"{"success": false, "error": "Too many requests"}"#.utf8)).isEmpty,
+                      "a refusal says nothing either way")
+
+        // XposedOrNot names the same breaches without the domain, or with the year.
+        let other = PluginResult(source: "XposedOrNot", type: "data_breach", confidenceScore: 1, rawData: "x",
+                                 metadata: ["email": "a@b.test", "breachCount": "3", "breaches": "Dropbox, MyVidster-2025, Canva",
+                                            "breachDates": "Dropbox|2012; Canva|2019"])
+        let inputs = [found, other].map {
+            IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: 1, metadata: $0.metadata ?? [:], rawData: $0.rawData)
+        }
+        let profile = IdentitySynthesizer.synthesize(from: inputs, riskScore: 0, riskLevel: "Low")
+        XCTAssertEqual(profile.breaches.count, 4, "Dropbox, MyVidster, CDEK and Canva: \(profile.breaches)")
+        let timeline = TimelineIntelligence.build(from: inputs)
+        let dropbox = timeline.events.filter { $0.label.lowercased().contains("dropbox") }
+        XCTAssertEqual(dropbox.count, 1)
+        XCTAssertEqual(dropbox.first?.sources, ["LeakCheck", "XposedOrNot"], "one event, seen by both")
+
+        // Two indexes reporting the same address's breaches score as one report.
+        func stored(_ result: PluginResult) throws -> App.Result {
+            App.Result(scanID: UUID(), source: result.source, type: result.type, confidenceScore: 1, rawData: result.rawData,
+                       metadata: String(decoding: try JSONEncoder().encode(result.metadata ?? [:]), as: UTF8.self))
+        }
+        let one = try RiskScorer.compute(results: [stored(found)])
+        let both = try RiskScorer.compute(results: [stored(found), stored(other)])
+        XCTAssertEqual(both.value, one.value)
+        let elsewhere = PluginResult(source: "XposedOrNot", type: "data_breach", confidenceScore: 1, rawData: "y",
+                                     metadata: ["email": "c@d.test", "breachCount": "1", "breaches": "Canva"])
+        XCTAssertGreaterThan(try RiskScorer.compute(results: [stored(found), stored(elsewhere)]).value, one.value,
+                             "another address's breaches still count")
+    }
+
     func testCommunityProfilesDeclareTheOtherAccounts() throws {
         let dev = try XCTUnwrap(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"""
         {"username":"ben","name":"Ben Halpern","twitter_username":"bendhalpern","github_username":"benhalpern",

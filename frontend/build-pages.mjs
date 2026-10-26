@@ -33,6 +33,7 @@ const sourceGroups = [
         ['Ubuntu keyserver', 'Names on public PGP keys that mention the address (unverified, weighed accordingly)'],
         ['Holehe', 'Sites whose account recovery recognises the address (verified accounts)'],
         ['XposedOrNot', 'Data breaches the address appears in, what each exposed and when (free)'],
+        ['LeakCheck', 'A second breach index, merged with the first: one breach is counted once, whatever each calls it (free)'],
         ['Have I Been Pwned', 'Breaches and pastes (optional, needs an API key)'],
         ['Email intelligence', 'Deliverability, mailbox provider and disposable-address detection'],
         ['Mail security', 'SPF, DMARC, DKIM, MTA-STS, DNSSEC and CAA of the address’s own domain'],
@@ -98,7 +99,7 @@ const pages = [
 <li><strong>Gravatar</strong> returns the profile behind the address and the social accounts Gravatar verified for it.</li>
 <li><strong>OpenPGP keys</strong>: keys.openpgp.org lists only addresses whose owner confirmed them, so the other addresses on the same key belong to the same person.</li>
 <li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite.</li>
-<li><strong>Data breaches</strong> from XposedOrNot (free) and, optionally, Have I Been Pwned: which breaches, when, and what was exposed.</li>
+<li><strong>Data breaches</strong> from XposedOrNot and LeakCheck (both free) and, optionally, Have I Been Pwned: which breaches, when, and what was exposed.</li>
 <li><strong>The address’s own domain</strong>: for a mailbox on a domain of its own (not Gmail or Outlook), the domain is scanned too — its registrant, website and the services it uses.</li>
 </ul>
 <h2>From one address to a whole footprint</h2>
@@ -236,7 +237,7 @@ const pages = [
 <li><strong>Weak password storage</strong>: breaches where passwords were kept in plain text or in an easily cracked form.</li>
 <li><strong>A risk score</strong> that weighs breaches by what they hold, not by how many there are: a recent leak of passwords and card numbers counts far more than an old mailing list.</li>
 </ul>
-<p>Breach data comes from XposedOrNot, free and without a key, and optionally from Have I Been Pwned.</p>
+<p>Breach data comes from XposedOrNot and LeakCheck, both free and without a key, and optionally from Have I Been Pwned. The indexes overlap, so a breach both list is counted once, and the risk score weighs an address’s fullest report rather than adding up the copies.</p>
 <h2>What to do next</h2>
 <ol>
 <li>Change the password of every account that shared a leaked password, starting with email and banking.</li>
