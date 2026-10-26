@@ -2,7 +2,7 @@
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # Statically link the Swift runtime so the final image only needs system C libs.
-FROM swift:6.2-jammy@sha256:af5d222ef7e25779bfc52b078c1e92b2e0c4e1ab29d24ace4533e25f8c3ec8c8 AS builder
+FROM swift:6.2-jammy@sha256:5db2c7b978a8d00d3a7faa3787c66da7e2f34373c5bd81c13f5cc90ea477ac49 AS builder
 WORKDIR /build
 
 # Resolve deps in a layer that only invalidates when the manifest changes.
