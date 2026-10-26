@@ -40,7 +40,7 @@ export const roSourceGroups = [
     ['Domeniu', [
         ['RDAP / WHOIS', 'Registrarul, datele și, unde nu sunt ascunse, numele, organizația, emailul și telefonul deținătorului'],
         ['DNS', 'Înregistrările A, MX și TXT și serviciile folosite de deținător (Microsoft 365, Google Workspace, Atlassian, Stripe…)'],
-        ['Certificate Transparency', 'Subdomenii din certificatele emise (crt.sh, cu CertSpotter ca rezervă)'],
+        ['Certificate Transparency', 'Subdomenii din certificatele emise și celelalte domenii numite pe aceleași certificate (crt.sh, cu CertSpotter ca rezervă)'],
         ['DNS pasiv', 'Rezoluții istorice și alte subdomenii'],
         ['Pagina principală', 'Conturile marcate rel=me, link-urile spre profiluri, emailul de contact, telefonul și autorul'],
         ['Tenant Microsoft 365', 'Numele organizației, tenantul și furnizorul de identitate, plus celelalte domenii verificate de Microsoft pentru același proprietar'],
@@ -137,6 +137,7 @@ export const roPages = [
 <p>Înregistrarea RDAP a registry-ului dă registrarul și datele de înregistrare, actualizare și expirare. Pentru registry-urile „subțiri”, cum e .com, se interoghează și serverul RDAP al registrarului, unde stau datele deținătorului — iar unde nu sunt ascunse, se extrag numele, organizația, emailul, telefonul și țara. Emailul și telefonul deținătorului devin apoi piste noi.</p>
 <p>Un site își trădează proprietarul și prin conturile de analytics și publicitate pe care le include: un ID Google Analytics, Tag Manager sau AdSense, ori un Meta Pixel. Același ID pe alt site înseamnă același proprietar — AdSense plătește un singur publisher. Scanerul le citește din pagina principală și întreabă HackerTarget ce alte site-uri le folosesc; un ID prezent pe zeci de site-uri e al unei agenții sau platforme și nu leagă nimic.</p>
 <p>Un domeniu care folosește Microsoft 365 își numește organizația în pagina de autentificare Microsoft, împreună cu furnizorul de identitate prin care se face logarea. Microsoft listează și celelalte domenii din același tenant, iar un domeniu intră într-un tenant doar după ce proprietarul dovedește că îi controlează DNS-ul: acolo apar un nume vechi, un brand înrudit sau o achiziție.</p>
+<p>Și certificatele leagă domenii: fiecare nume de pe un certificat a fost dovedit de cine l-a cerut, așa că alt domeniu de pe un certificat al celui scanat avea același operator. Certificatele CDN care grupează clienți fără legătură sunt ignorate.</p>
 <h2>Infrastructură și servicii</h2>
 <ul>
 <li><strong>DNS</strong>: adrese, servere de mail și înregistrări TXT.</li>

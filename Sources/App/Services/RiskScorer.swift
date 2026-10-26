@@ -303,6 +303,7 @@ enum RiskScorer {
         "tracking_id": .identity,
         "shared_tracker": .identity,
         "microsoft_tenant": .identity,
+        "shared_certificate": .identity,
         "developer_identity": .identity,
 
         // ── Direct PII ───────────────────────────────────────────────────────

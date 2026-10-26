@@ -1838,6 +1838,7 @@
             const trackers = {};
             const tracker = d => trackers[d] || (trackers[d] = { ids: [], shared: [] });
             const tenants = {};
+            const certified = [];
             const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
             const dom = d => posture[d] || (posture[d] = {});
 
@@ -1861,6 +1862,7 @@
                 if (r.type === 'dns_history' && m.domain) history.push({ domain: m.domain, addresses: splitCsv(m.addresses), origins: splitCsv(m.possibleOrigins) });
                 if (r.type === 'tracking_id' && m.domain) tracker(m.domain).ids = splitCsv(m.ids);
                 if (r.type === 'shared_tracker' && m.domain && m.username) tracker(m.domain).shared.push({ id: m.username, domains: splitCsv(m.domains), linked: !!m.linked });
+                if (r.type === 'shared_certificate' && m.domain) certified.push({ domain: m.domain, others: splitCsv(m.domains), linked: !!m.linked });
                 if (r.type === 'microsoft_tenant' && m.domain) {
                     const t = tenants[m.tenantID || m.domain] || (tenants[m.tenantID || m.domain] = { scanned: [], domains: new Set(), m });
                     t.scanned.push(m.domain);
@@ -1878,7 +1880,7 @@
             const domList = Object.keys(posture);
             const trackerList = Object.keys(trackers);
             const tenantList = Object.keys(tenants);
-            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length && !tenantList.length) {
+            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length && !tenantList.length && !certified.length) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
@@ -1980,6 +1982,17 @@
                         c.appendChild(labelled('OTHER DOMAINS IN THE TENANT'));
                         const w = chipWrap(); w.classList.add('js-tenant-domains'); others.slice(0, 40).forEach(x => w.appendChild(chip(x, 'port'))); c.appendChild(w);
                     }
+                    root.appendChild(c);
+                });
+            }
+
+            if (certified.length) {
+                root.appendChild(sectionTitle('Shared Certificates', 'other domains on the same TLS certificates'));
+                certified.forEach(x => {
+                    const c = card(); c.classList.add('js-shared-cert');
+                    const d = document.createElement('div'); d.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;word-break:break-all;'; d.textContent = x.domain; c.appendChild(d);
+                    c.appendChild(labelled(x.linked ? 'WHOEVER ASKED FOR THEM CONTROLLED THESE TOO' : 'NAMED ALONGSIDE IT'));
+                    const w = chipWrap(); x.others.slice(0, 40).forEach(o => w.appendChild(chip(o, 'port'))); c.appendChild(w);
                     root.appendChild(c);
                 });
             }

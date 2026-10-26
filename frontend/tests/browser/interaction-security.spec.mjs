@@ -299,6 +299,9 @@ test('the surface tab warns about a subdomain that can be taken over, as text', 
     await expect(tenant).toContainText(fixture.malicious);
     await expect(tenant).toContainText('signs in through login.example.com');
     await expect(tenant.locator('.js-tenant-domains')).toContainText('example.net');
+    const certified = page.locator('#surface-tab-content .js-shared-cert');
+    await expect(certified).toContainText('example-old.com');
+    await expect(certified).toContainText(fixture.malicious);
     const tracking = page.locator('#surface-tab-content .js-tracking');
     await expect(tracking).toContainText('Google AdSense pub-1234567890123456');
     await expect(tracking).toContainText('Google Tag Manager GTM-ABC123');

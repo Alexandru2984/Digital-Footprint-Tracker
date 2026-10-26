@@ -13,11 +13,14 @@ struct CrtShPlugin: FootprintPlugin {
     /// Certificate transparency is indexed by domain name, not by IP.
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
+    /// v2: the other domains the same certificates name.
+    let cacheVersion = 2
 
     private struct CrtEntry: Decodable {
         let name_value: String
         let not_before: String?
         let entry_timestamp: String?
+        let issuer_name: String?
     }
 
     struct CertificateEvidence: Equatable {
@@ -28,18 +31,22 @@ struct CrtShPlugin: FootprintPlugin {
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("."), !input.contains("@"), !input.hasPrefix("http") else { return [] }
         let domain = Self.normalizeDomain(input)
-        let (evidence, provider) = await Self.fetchEvidenceWithProvider(domain: domain, limit: 50, app: app)
-        return evidence.map { evidence in
+        let found = await Self.fetchCertificates(domain: domain, limit: 50, app: app)
+        var out = found.evidence.map { evidence in
             var metadata = ["subdomain": evidence.hostname, "domain": domain]
             metadata["certificateNotBefore"] = evidence.firstSeen
             return PluginResult(
-                source: provider,
+                source: found.provider,
                 type: "subdomain",
                 confidenceScore: 0.9,
                 rawData: evidence.hostname,
                 metadata: metadata
             )
         }
+        if let shared = Self.sharedCertificateResult(domain: domain, others: found.coCertified, provider: found.provider) {
+            out.append(shared)
+        }
+        return out
     }
 
     /// Strips scheme and path down to the bare host.
@@ -64,8 +71,18 @@ struct CrtShPlugin: FootprintPlugin {
     /// which is why it is the fallback rather than the source.
     static func fetchEvidenceWithProvider(domain: String, limit: Int, app: Application)
         async -> (evidence: [CertificateEvidence], provider: String) {
-        if let evidence = await fetchEvidence(domain: domain, limit: limit, app: app) {
-            return (evidence, "crt.sh")
+        let found = await fetchCertificates(domain: domain, limit: limit, app: app)
+        return (found.evidence, found.provider)
+    }
+
+    /// The subdomains, and the other domains the same certificates name.
+    static func fetchCertificates(domain: String, limit: Int, app: Application)
+        async -> (evidence: [CertificateEvidence], provider: String, coCertified: [String]) {
+        if let data = await fetchCrtSh(domain: domain, app: app) {
+            let certificates = (try? JSONDecoder().decode([CrtEntry].self, from: data))?.prefix(maximumEntries).map {
+                (names: $0.name_value.split(separator: "\n").map(String.init), issuer: $0.issuer_name)
+            } ?? []
+            return (parseEvidence(data, limit: limit, domain: domain), "crt.sh", coCertified(certificates, domain: domain))
         }
         var components = URLComponents(string: "https://api.certspotter.com/v1/issuances")
         components?.queryItems = [
@@ -79,8 +96,67 @@ struct CrtShPlugin: FootprintPlugin {
                 bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024), on: app
               ),
               response.status == 200
-        else { return ([], "crt.sh") }
-        return (parseCertSpotter(response.data, limit: limit, domain: domain), "CertSpotter")
+        else { return ([], "crt.sh", []) }
+        let issuances = (try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]) ?? []
+        let certificates = issuances.prefix(maximumEntries).map {
+            (names: $0["dns_names"] as? [String] ?? [], issuer: String?.none)
+        }
+        return (parseCertSpotter(response.data, limit: limit, domain: domain), "CertSpotter",
+                coCertified(certificates, domain: domain))
+    }
+
+    /// Names on one certificate were each proved by whoever asked for it, so
+    /// another domain on a certificate of `domain` had the same operator when
+    /// it was issued. Left out: CDN certificates bundling unrelated customers
+    /// (Cloudflare's, or any naming dozens of hosts or several sites), and the
+    /// domain's own subdomains and parents. Each other domain by its highest
+    /// name seen, the most certified first.
+    static func coCertified(_ certificates: [(names: [String], issuer: String?)], domain: String) -> [String] {
+        guard let apex = normalizedHostname(domain[...], scopedTo: nil), isApexLike(apex) else { return [] }
+        var count: [String: Int] = [:]
+        var order: [String] = []
+        for certificate in certificates {
+            guard certificate.names.count <= 40, !(certificate.issuer ?? "").lowercased().contains("cloudflare") else { continue }
+            let names = Set(certificate.names.compactMap { normalizedHostname($0[...], scopedTo: nil) })
+            guard !names.contains(where: { $0.hasSuffix("cloudflaressl.com") }) else { continue }
+            let foreign = names.filter { $0 != apex && !$0.hasSuffix(".\(apex)") && !apex.hasSuffix(".\($0)") }
+            let roots = foreign.filter { name in !foreign.contains { name.hasSuffix(".\($0)") } }
+            guard roots.count <= 5 else { continue }
+            for root in roots.sorted() {
+                if count[root] == nil { order.append(root) }
+                count[root, default: 0] += 1
+            }
+        }
+        let all = Set(order)
+        return order.filter { name in !all.contains { name.hasSuffix(".\($0)") } }
+            .enumerated().sorted { (count[$0.element] ?? 0, -$0.offset) > (count[$1.element] ?? 0, -$1.offset) }
+            .map(\.element).prefix(40).map { $0 }
+    }
+
+    /// A registrable name, not a subdomain: two labels, or three under a
+    /// second-level suffix such as `co.uk`. A subdomain's certificates name its
+    /// siblings, which are not other sites.
+    static func isApexLike(_ host: String) -> Bool {
+        let labels = host.split(separator: ".")
+        if labels.count == 2 { return true }
+        return labels.count == 3 && labels[2].count == 2
+            && ["co", "com", "org", "net", "ac", "gov", "edu", "nom", "ltd", "plc", "or", "ne", "go"].contains(String(labels[1]))
+    }
+
+    static func sharedCertificateResult(domain: String, others: [String], provider: String) -> PluginResult? {
+        guard !others.isEmpty else { return nil }
+        var meta = ["platform": "web", "account": domain, "domain": domain, "domains": others.joined(separator: ","),
+                    "matchKind": "verified", "matchReason": "the domain itself"]
+        if others.count <= 15 {
+            meta["linked"] = others.prefix(10).map { "web:\($0)" }.joined(separator: ",")
+            meta["linkKind"] = "observed"
+            meta["linkReason"] = "named on the same TLS certificate as \(domain)"
+        }
+        return PluginResult(
+            source: provider, type: "shared_certificate", confidenceScore: 0.8,
+            rawData: "Certificates of \(domain) also name \(others.prefix(15).joined(separator: ", "))"
+                + (others.count > 15 ? ", …" : "") + ": whoever asked for them controlled both",
+            metadata: meta)
     }
 
     /// CertSpotter issuances: `[{"dns_names": [...], "not_before": "..."}]`.
@@ -109,7 +185,7 @@ struct CrtShPlugin: FootprintPlugin {
     }
 
     /// nil when crt.sh did not answer; an empty list when it found nothing.
-    private static func fetchEvidence(domain: String, limit: Int, app: Application) async -> [CertificateEvidence]? {
+    private static func fetchCrtSh(domain: String, app: Application) async -> Data? {
         guard let url = URL(string: "https://crt.sh/?q=%25.\(domain)&output=json") else { return nil }
         // crt.sh answers a domain it has not queried lately in ~25 s and the
         // same query moments later in under one, from its own cache. The shared
@@ -123,7 +199,7 @@ struct CrtShPlugin: FootprintPlugin {
                 on: app
               ),
               resp.status == 200 else { return nil }
-        return parseEvidence(resp.data, limit: limit, domain: domain)
+        return resp.data
     }
 
     /// Pure: CT-log JSON → unique subdomain hostnames (lowercased, wildcard-stripped).

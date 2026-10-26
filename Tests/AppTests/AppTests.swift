@@ -6959,6 +6959,34 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(CrtShPlugin.parseEvidence(json, limit: 0).isEmpty)
     }
 
+    func testADomainOnTheSameCertificateHasTheSameOperator() throws {
+        let certificates: [(names: [String], issuer: String?)] = [
+            (["upb.ro", "www.upb.ro", "myupb.ro", "www.myupb.ro"], "C=BE, O=GEANT Vereniging, CN=GEANT TLS RSA 1"),
+            (["*.myupb.ro", "upb.ro"], "C=US, O=Let's Encrypt, CN=R3"),
+            (["mail.upb.ro", "old-name.ro", "ro"], "C=US, O=Let's Encrypt, CN=R3"),
+            (["upb.ro", "stranger.com"], "C=US, O=Cloudflare, Inc., CN=Cloudflare Inc ECC CA-3"),
+            (["sni123.cloudflaressl.com", "upb.ro", "another.com"], "C=US, O=COMODO, CN=COMODO ECC DV"),
+            (["upb.ro"] + (1...6).map { "client\($0).net" }, "C=US, O=Let's Encrypt, CN=R3"),
+            (["upb.ro"] + (1...45).map { "h\($0).upb.ro" }, "C=US, O=Let's Encrypt, CN=R3"),
+        ]
+        XCTAssertEqual(CrtShPlugin.coCertified(certificates, domain: "upb.ro"), ["myupb.ro", "old-name.ro"],
+                       "the most certified first; CDN and shared-hosting certificates prove nothing")
+        XCTAssertTrue(CrtShPlugin.coCertified([(["blog.upb.ro", "www.upb.ro"], nil)], domain: "blog.upb.ro").isEmpty,
+                      "a subdomain's certificates name its siblings")
+        XCTAssertTrue(CrtShPlugin.isApexLike("example.co.uk"))
+        XCTAssertFalse(CrtShPlugin.isApexLike("blog.example.com"))
+
+        let found = try XCTUnwrap(CrtShPlugin.sharedCertificateResult(domain: "upb.ro", others: ["myupb.ro"], provider: "crt.sh"))
+        XCTAssertEqual(found.type, "shared_certificate")
+        XCTAssertEqual(found.metadata?["linked"], "web:myupb.ro")
+        XCTAssertNil(CrtShPlugin.sharedCertificateResult(domain: "upb.ro", others: [], provider: "crt.sh"))
+        let input = IdentitySynthesizer.Input(source: found.source, type: found.type, confidence: found.confidenceScore,
+                                              metadata: (found.metadata ?? [:]).merging(["queriedAs": "upb.ro"]) { $1 },
+                                              rawData: found.rawData)
+        let links = IdentityLinks.build(from: [input], target: "upb.ro")
+        XCTAssertNotNil(IdentityLinks.attribute(links, target: "upb.ro").first { $0.node == "web: myupb.ro" })
+    }
+
     func testAttackSurfaceHostListAndIPFilter() {
         let hosts = AttackSurfacePlugin.hostList(
             apex: "example.com",
