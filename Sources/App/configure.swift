@@ -195,6 +195,7 @@ public func configure(_ app: Application) async throws {
         app.lifecycle.use(ScheduledScanRunner())
         app.lifecycle.use(InvestigationWatchRunner())
         app.lifecycle.use(PluginCanaryRunner())
+        app.lifecycle.use(SherlockAuditRunner())
         app.lifecycle.use(app.notificationDeliveryWorker)
         app.lifecycle.use(app.exportJobWorker)
         app.lifecycle.use(app.darkWebRunner)

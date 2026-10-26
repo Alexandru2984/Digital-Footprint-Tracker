@@ -93,7 +93,7 @@ export async function mockAPI(page, options = {}) {
                   canary: { plugin: 'Reddit', input: 'spez', passed: true, results: 1, detail: null, checkedAt: '2026-08-24T00:00:00Z' } },
                 { plugin: 'Shodan', status: 'idle', runs: 0, failures: 0, averageMilliseconds: null,
                   lastRunAt: null, lastSuccessAt: null, lastFailureAt: null, lastFailure: null, skipped: 0, nextProbeAt: null,
-                  configured: false },
+                  configured: false, note: `Site audit: 1 of 400 sites cannot find their known account, left out of the sweep: ${malicious}` },
             ];
         } else if (pathname === '/api/admin/audit/integrity') {
             body = {

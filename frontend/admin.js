@@ -261,6 +261,14 @@
                     td.className = 'align-top py-1 pr-2 wrap-anywhere ' + cls + columns[index][1];
                     td.textContent = String(text ?? '');
                 });
+                if (r.note) {
+                    const noteRow = body.insertRow();
+                    noteRow.className = 'border-b border-dark-800 js-plugin-note';
+                    const td = noteRow.insertCell();
+                    td.colSpan = columns.length;
+                    td.className = 'py-1 pr-2 wrap-anywhere text-slate-400';
+                    td.textContent = String(r.note);
+                }
             }
             container.replaceChildren(table);
         } catch (error) {

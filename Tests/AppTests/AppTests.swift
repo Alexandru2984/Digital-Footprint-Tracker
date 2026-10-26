@@ -4904,6 +4904,56 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func testSherlockSitesThatCannotFindTheirOwnAccountAreLeftOut() async {
+        XCTAssertEqual(SherlockAudit.verdict(audited: 400, missedTwice: ["Zeta", "Alpha"]), ["Alpha", "Zeta"])
+        XCTAssertNil(SherlockAudit.verdict(audited: 400, missedTwice: Set((0..<300).map { "site\($0)" })),
+                     "most sites missing at once is this server's network, not the sites")
+        XCTAssertNil(SherlockAudit.note(nil))
+        let now = Date()
+        let summary = SherlockAudit.Summary(checkedAt: now, audited: 400, broken: ["Alpha", "Zeta"])
+        XCTAssertEqual(SherlockAudit.note(summary),
+                       "Site audit: 2 of 400 sites cannot find their known account, left out of the sweep: Alpha, Zeta")
+        XCTAssertEqual(SherlockAudit.note(.init(checkedAt: now, audited: 400, broken: [])),
+                       "Site audit: all 400 sites found their known account")
+
+        await SherlockAudit.shared.reset()
+        await SherlockAudit.shared.record(summary)
+        let current = await SherlockAudit.shared.broken(now: now.addingTimeInterval(3_600))
+        XCTAssertEqual(current, ["Alpha", "Zeta"])
+        let stale = await SherlockAudit.shared.broken(now: now.addingTimeInterval(3 * 86_400))
+        XCTAssertTrue(stale.isEmpty, "an old audit is not applied")
+        await SherlockAudit.shared.reset()
+    }
+
+    func testLiveSherlockSites() async throws {
+        let names = ProcessInfo.processInfo.environment["LIVE_SHERLOCK_SITES"]?.split(separator: ",").map(String.init) ?? []
+        try XCTSkipIf(names.isEmpty)
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let sites = BulkUsernamePlugin().siteTable
+        let agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        for name in names {
+            guard let site = sites[name], let claimed = site.username_claimed else { print("SITE \(name): unknown"); continue }
+            do {
+                let response = try await BulkUsernamePlugin.fetch(site, username: claimed, app: app, userAgent: agent)
+                let hit = BulkUsernamePlugin.evaluate(siteName: name, siteData: site, username: claimed, targetURL: site.url,
+                                                      status: response.status, finalURL: response.finalURL, body: response.data)
+                print("SITE \(name) \(response.status) \(response.finalURL) hit=\(hit != nil) body=\(String(decoding: response.data.prefix(120), as: UTF8.self).replacingOccurrences(of: "\n", with: " "))")
+            } catch {
+                print("SITE \(name) error \(error)")
+            }
+        }
+    }
+
+    func testLiveSherlockAudit() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["LIVE_SHERLOCK_AUDIT"] == "1")
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        await BulkUsernamePlugin().audit(app: app)
+        let summary = await SherlockAudit.shared.latest
+        print("AUDIT \(summary?.broken.count ?? -1) of \(summary?.audited ?? 0): \(summary?.broken ?? [])")
+    }
+
     func testSherlockDropsHitsFromSitesThatFindAnyone() async {
         await SherlockReliability.shared.reset()
         await SherlockReliability.shared.record("CatchAll", reliable: false)
@@ -8295,6 +8345,27 @@ final class AppTests: XCTestCase {
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/ghost", "Sorry, User not found."))
         XCTAssertNotNil(eval(msg, "real", 200, "https://ex.com/real", "Welcome real"))
         XCTAssertNil(eval(msg, "ghost", 200, "https://ex.com/", "home"))      // redirected home
+
+        // A redirect within the site to the profile under its id still counts;
+        // one to a login or search page does not.
+        let byID = SherlockSite(errorType: "status_code", url: "https://www.roblox.com/user.aspx?username={}",
+                                urlMain: "https://www.roblox.com/", errorMsg: nil, errorUrl: nil, regexCheck: nil)
+        XCTAssertNotNil(eval(byID, "blue", 200, "https://www.roblox.com/users/35650715/profile"))
+        XCTAssertNil(eval(byID, "ghost", 200, "https://www.roblox.com/search/users"))
+        XCTAssertNil(eval(byID, "ghost", 200, "https://www.roblox.com/account/signin"))
+        XCTAssertNil(eval(byID, "ghost", 200, "https://elsewhere.example/users/1/profile"), "another site")
+
+        // response_url: a homepage as the "not found" page is matched exactly,
+        // a deeper one as a prefix, `{}` in it is the name.
+        let home = SherlockSite(errorType: "response_url", url: "https://devrant.com/users/{}",
+                                urlMain: "https://devrant.com/", errorMsg: nil, errorUrl: "https://devrant.com/", regexCheck: nil)
+        XCTAssertNotNil(eval(home, "blue", 200, "https://devrant.com/users/blue"))
+        XCTAssertNil(eval(home, "ghost", 200, "https://devrant.com/"))
+        XCTAssertNil(eval(home, "blue", 403, "https://devrant.com/users/blue"), "a block is not a profile")
+        let named = SherlockSite(errorType: "response_url", url: "https://x.example/{}",
+                                 urlMain: "https://x.example/", errorMsg: nil, errorUrl: "https://x.example/missing?u={}", regexCheck: nil)
+        XCTAssertNil(eval(named, "ghost", 200, "https://x.example/missing?u=ghost"))
+        XCTAssertNotNil(eval(named, "real", 200, "https://x.example/real"))
 
         // A name in the query is about that name when nothing redirected.
         let query = SherlockSite(errorType: "message", url: "https://news.example/user?id={}",

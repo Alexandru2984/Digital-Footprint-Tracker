@@ -14,6 +14,8 @@ struct SherlockSite: Decodable {
     let errorMsg: StringOrArray?
     let errorUrl: String?
     let regexCheck: String?
+    /// An account known to exist there: the site's positive control.
+    var username_claimed: String? = nil
     /// Where to ask instead of the profile page (an API that answers plainly),
     /// how, and with what: the profile page stays the link shown.
     var urlProbe: String? = nil
@@ -214,7 +216,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
         guard !input.contains("@") else { return [] }
         let username = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let validSites = sites.filter { !Self.checkedElsewhere($0.key) }
+        let broken = await SherlockAudit.shared.broken()
+        let validSites = sites.filter { !Self.checkedElsewhere($0.key) && !broken.contains($0.key) }
         let maxConcurrent = 30
         // Internal time budget kept under ScanPluginRunner's 120s hard deadline.
         // Previously this ran 480 sites in sequential chunks of 30 and returned
@@ -252,6 +255,41 @@ struct BulkUsernamePlugin: FootprintPlugin {
             pluginLogger.info("BulkUsername: checked \(checked)/\(validSites.count) sites before the 65s budget elapsed.")
         }
         return await Self.dropUnreliable(results, sites: sites, app: app, userAgent: userAgent)
+    }
+
+    /// Asks every site about the account it is known to have, twice for the
+    /// ones that miss (a timeout is not a broken site), and records the
+    /// sites that never find it. See `SherlockAudit`.
+    func audit(app: Application) async {
+        let userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        let audited = sites.filter { !Self.checkedElsewhere($0.key) && !($0.value.username_claimed ?? "").isEmpty }
+        func misses(_ names: [String]) async -> Set<String> {
+            await withTaskGroup(of: String?.self) { group in
+                var iterator = names.makeIterator()
+                var running = 0
+                func next() -> Bool {
+                    guard let name = iterator.next(), let site = audited[name], let claimed = site.username_claimed else { return false }
+                    group.addTask { await Self.checkSite(name, site, username: claimed, app: app, userAgent: userAgent) == nil ? name : nil }
+                    return true
+                }
+                while running < 20, next() { running += 1 }
+                var missed: Set<String> = []
+                for await name in group {
+                    if let name { missed.insert(name) }
+                    _ = next()
+                }
+                return missed
+            }
+        }
+        let first = await misses(audited.keys.sorted())
+        try? await Task.sleep(for: .seconds(60))
+        let second = first.isEmpty ? [] : await misses(first.sorted())
+        guard let broken = SherlockAudit.verdict(audited: audited.count, missedTwice: second) else {
+            app.logger.warning("[SherlockAudit] \(second.count) of \(audited.count) sites missed their known account; not applied")
+            return
+        }
+        await SherlockAudit.shared.record(.init(checkedAt: Date(), audited: audited.count, broken: broken))
+        app.logger.notice("[SherlockAudit] \(broken.count) of \(audited.count) sites cannot find their known account")
     }
 
     /// Asks every site that reported a hit about a name nobody has. A site
@@ -306,34 +344,35 @@ struct BulkUsernamePlugin: FootprintPlugin {
         userAgent: String
     ) async -> PluginResult? {
         let targetURL = siteData.url.replacingOccurrences(of: "{}", with: username)
+        guard let response = try? await fetch(siteData, username: username, app: app, userAgent: userAgent) else { return nil }
+        return evaluate(siteName: siteName, siteData: siteData, username: username,
+                        targetURL: targetURL, status: response.status,
+                        finalURL: response.finalURL, body: response.data)
+    }
+
+    /// The site's answer about `username`, asked the way the site wants.
+    static func fetch(_ siteData: SherlockSite, username: String, app: Application,
+                      userAgent: String) async throws -> OutboundHTTP.Response {
         let probe = siteData.request(for: username)
-        guard let url = URL(string: probe.url) else { return nil }
+        guard let url = URL(string: probe.url) else { throw OutboundHTTP.RequestError.invalidURL }
         // Only the message method needs the body; the rest decide on status +
-        // final URL, so skip downloading bodies we won't read.
+        // final URL, so skip downloading bodies we won't read. A long page is
+        // read up to the limit, not refused: the "not found" text is near the top.
         let needsBody = siteData.errorType == "message"
         let headers = [
             "User-Agent": userAgent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         ].merging(probe.headers) { _, site in site }
-        do {
-            let response = try await OutboundHTTP.request(
-                url,
-                method: probe.method,
-                headers: headers,
-                body: probe.body,
-                timeout: 10,
-                bodyMode: needsBody ? .complete(maxBytes: 512 * 1_024) : .prefix(maxBytes: 0),
-                maxRedirects: 3,
-                on: app
-            )
-            return evaluate(siteName: siteName, siteData: siteData, username: username,
-                            targetURL: targetURL, status: response.status,
-                            finalURL: response.finalURL, body: response.data)
-        } catch {
-            return nil
-        }
+        return try await OutboundHTTP.request(
+            url, method: probe.method, headers: headers, body: probe.body, timeout: 10,
+            bodyMode: .prefix(maxBytes: needsBody ? 512 * 1_024 : 0),
+            maxRedirects: 3, on: app
+        )
     }
+
+    /// Test seam: the loaded sites.
+    var siteTable: [String: SherlockSite] { sites }
 
     /// Pure detection: turn a fetched response into a hit (or nil). Split out so
     /// the anti-false-positive rules can be unit-tested without the network.
@@ -366,14 +405,27 @@ struct BulkUsernamePlugin: FootprintPlugin {
         let asked = siteData.request(for: username).url
         let trim = CharacterSet(charactersIn: "/")
         let unredirected = finalURL.absoluteString.trimmingCharacters(in: trim) == asked.trimmingCharacters(in: trim)
-        let mentionsUser = locus.contains(username.lowercased()) || unredirected
+        // A redirect within the site to a deeper page that is no login, search
+        // or error page is the profile under another key (`/users/35650715/profile`).
+        let generic = ["login", "signin", "sign-in", "sign_in", "register", "signup", "sign-up", "join", "error", "404",
+                       "notfound", "not-found", "search", "home", "index", "explore", "welcome", "challenge", "captcha",
+                       "auth", "account", "session", "redirect", "unavailable", "suspended", "banned"]
+        let bareHost = { (host: String?) in (host ?? "").lowercased().replacingOccurrences(of: "www.", with: "") }
+        let segments = finalURL.path.lowercased().split(separator: "/")
+        let deeperOnSite = !unredirected && bareHost(finalURL.host) == bareHost(URL(string: asked)?.host)
+            && segments.count >= 2 && !segments.contains { segment in generic.contains { segment.contains($0) } }
+        let mentionsUser = locus.contains(username.lowercased()) || unredirected || deeperOnSite
 
         switch siteData.errorType {
         case "response_url":
-            guard let errorURL = siteData.errorUrl, !errorURL.isEmpty else { return nil }
-            let errTrim = errorURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let finalTrim = finalURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            if finalTrim.hasPrefix(errTrim) { return nil } // bounced to the known "not found" URL
+            guard let errorURL = siteData.errorUrl?.replacingOccurrences(of: "{}", with: username), !errorURL.isEmpty,
+                  (200..<300).contains(status), mentionsUser else { return nil }
+            let errTrim = errorURL.lowercased().trimmingCharacters(in: trim)
+            let finalTrim = finalURL.absoluteString.lowercased().trimmingCharacters(in: trim)
+            // Bounced to the known "not found" page. A site's homepage as that
+            // page is matched exactly: every page of the site starts with it.
+            let errorIsRoot = (URL(string: errorURL)?.path ?? "").trimmingCharacters(in: trim).isEmpty
+            if finalTrim == errTrim || (!errorIsRoot && finalTrim.hasPrefix(errTrim)) { return nil }
             return hit(0.8, "redirect-based")
 
         case "status_code":
@@ -382,7 +434,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
             return hit(0.7, "HTTP 200")
 
         case "message":
-            guard status == 200, mentionsUser else { return nil }
+            guard (200..<300).contains(status), mentionsUser else { return nil }
             let html = String(decoding: body, as: UTF8.self)
             if let errorMsg = siteData.errorMsg {
                 switch errorMsg {

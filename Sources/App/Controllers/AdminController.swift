@@ -151,13 +151,16 @@ struct AdminController: RouteCollection {
         let canary: PluginCanary.Report?
         /// False when the plugin needs a secret this server lacks; it never runs.
         var configured = true
+        /// What else is known about it (the sweep's site audit).
+        var note: String?
 
-        private enum CodingKeys: String, CodingKey { case canary, configured }
+        private enum CodingKeys: String, CodingKey { case canary, configured, note }
 
-        init(health: PluginHealth.Report, canary: PluginCanary.Report?, configured: Bool = true) {
+        init(health: PluginHealth.Report, canary: PluginCanary.Report?, configured: Bool = true, note: String? = nil) {
             self.health = health
             self.canary = canary
             self.configured = configured
+            self.note = note
         }
 
         init(from decoder: Decoder) throws {
@@ -165,6 +168,7 @@ struct AdminController: RouteCollection {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             canary = try container.decodeIfPresent(PluginCanary.Report.self, forKey: .canary)
             configured = try container.decodeIfPresent(Bool.self, forKey: .configured) ?? true
+            note = try container.decodeIfPresent(String.self, forKey: .note)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -172,6 +176,7 @@ struct AdminController: RouteCollection {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(canary, forKey: .canary)
             try container.encode(configured, forKey: .configured)
+            try container.encodeIfPresent(note, forKey: .note)
         }
     }
 
@@ -186,9 +191,11 @@ struct AdminController: RouteCollection {
         let configured = Dictionary(ScanController.defaultPlugins.map { ($0.name, $0.isConfigured) },
                                     uniquingKeysWith: { first, _ in first })
         var entries: [PluginHealthEntry] = []
+        let audit = SherlockAudit.note(await SherlockAudit.shared.latest)
         for report in await PluginHealth.shared.reports(for: names) {
             entries.append(PluginHealthEntry(health: report, canary: await PluginCanaryStore.shared.report(for: report.plugin),
-                                             configured: configured[report.plugin] ?? true))
+                                             configured: configured[report.plugin] ?? true,
+                                             note: report.plugin == "BulkOSINT" ? audit : nil))
         }
         // A failed canary is as broken as a failing status, whatever the live
         // runs say: that is the case live runs cannot see.

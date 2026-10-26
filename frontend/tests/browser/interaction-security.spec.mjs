@@ -117,8 +117,11 @@ test('admin shows plugin health and top plugins as text, and a populated chart d
     await page.goto('/admin.html', { waitUntil: 'networkidle' });
 
     await expect(page.locator('#plugin-health-summary')).toHaveText('1 failing · 0 degraded · 1 healthy · 1 not run since restart · 1 canary failing · 1 not configured (missing API key)');
-    const rows = page.locator('#plugin-health-container tbody tr');
+    const rows = page.locator('#plugin-health-container tbody tr:not(.js-plugin-note)');
     await expect(rows).toHaveCount(3);
+    const note = page.locator('#plugin-health-container .js-plugin-note');
+    await expect(note).toHaveCount(1);
+    await expect(note).toHaveText(`Site audit: 1 of 400 sites cannot find their known account, left out of the sweep: ${fixture.malicious}`);
     await expect(rows.nth(0)).toContainText(fixture.malicious);
     await expect(rows.nth(0)).toContainText('3 / 3');
     await expect(rows.nth(0)).toContainText('failing · 2 skipped · next probe');
