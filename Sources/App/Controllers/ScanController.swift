@@ -117,6 +117,7 @@ struct ScanController: RouteCollection {
         WebPosturePlugin(),
         ExposedFilesPlugin(),
         SiteMetaPlugin(),
+        MicrosoftTenantPlugin(),
         BulkUsernamePlugin(),
         BulkEmailPlugin(),
         CrtShPlugin(),

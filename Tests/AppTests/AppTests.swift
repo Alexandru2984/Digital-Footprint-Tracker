@@ -8554,6 +8554,62 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(IdentityLinks.pivotableLinks(other.metadata ?? [:]).contains("anapop-recipes.com"))
     }
 
+    func testAMicrosoftTenantNamesTheOrganisationAndItsOtherDomains() throws {
+        let realm = try XCTUnwrap(MicrosoftTenantPlugin.realm(Data(#"""
+        {"State":3,"UserState":2,"NameSpaceType":"Federated","DomainName":"upb.ro",
+         "AuthURL":"https://login.upb.ro/auth/realms/UPB/protocol/saml?x=1","FederationBrandName":"Universitatea Politehnica Bucuresti"}
+        """#.utf8)))
+        XCTAssertEqual(realm, .init(namespace: "Federated", brand: "Universitatea Politehnica Bucuresti", federation: "login.upb.ro"))
+        XCTAssertNil(MicrosoftTenantPlugin.realm(Data(#"{"State":4,"NameSpaceType":"Unknown"}"#.utf8)), "no tenant claims it")
+        let tenant = try XCTUnwrap(MicrosoftTenantPlugin.tenant(Data(#"""
+        {"issuer":"https://sts.windows.net/2d8cc8ba-8dda-4334-9e5c-fac2092e9bac/","tenant_region_scope":"EU"}
+        """#.utf8)))
+        XCTAssertEqual(tenant.id, "2d8cc8ba-8dda-4334-9e5c-fac2092e9bac")
+        XCTAssertEqual(tenant.region, "EU")
+        XCTAssertNil(MicrosoftTenantPlugin.tenant(Data(#"{"error":"invalid_tenant"}"#.utf8)))
+
+        let xml = ["upb.ro", "stud.fils.upb.ro", "catedra.chfiz.pub.ro", "ctipub.mail.onmicrosoft.com", "pub.ro",
+                   "ctipub.onmicrosoft.com", "cs.pub.ro", "euronewsradio.ro", "<script>", "PUB.RO"]
+            .map { "<Domain>\($0)</Domain>" }.joined()
+        let domains = MicrosoftTenantPlugin.domains("<Domains>\(xml)</Domains>")
+        XCTAssertFalse(domains.contains("<script>"))
+        XCTAssertEqual(domains.filter { $0 == "pub.ro" }.count, 1)
+        XCTAssertTrue(MicrosoftTenantPlugin.federationRequest("upb.ro").contains("<Domain>upb.ro</Domain>"))
+
+        let found = try XCTUnwrap(MicrosoftTenantPlugin.evaluate(
+            domain: "upb.ro", realm: realm, tenantID: tenant.id, region: tenant.region, domains: domains))
+        XCTAssertEqual(found.type, "microsoft_tenant")
+        XCTAssertEqual(found.metadata?["org"], "Universitatea Politehnica Bucuresti")
+        XCTAssertEqual(found.metadata?["tenantName"], "ctipub")
+        XCTAssertEqual(found.metadata?["federation"], "login.upb.ro")
+        XCTAssertEqual(found.metadata?["domains"], "pub.ro,euronewsradio.ro",
+                       "its own subdomains, the tenant's names and a domain's subdomains are not other domains")
+        XCTAssertEqual(found.metadata?["linked"], "web:pub.ro,web:euronewsradio.ro")
+        XCTAssertEqual(found.metadata?["linkKind"], "verified")
+
+        let generic = try XCTUnwrap(MicrosoftTenantPlugin.evaluate(
+            domain: "geeksforgeeks.org", realm: .init(namespace: "Managed", brand: "geeksforgeeks.org", federation: nil),
+            tenantID: nil, region: nil, domains: ["geeksforgeeks.org", "geeksforgeeksorg.onmicrosoft.com"]))
+        XCTAssertNil(generic.metadata?["org"], "a brand that is only the domain names nobody")
+        XCTAssertNil(generic.metadata?["linked"])
+        let conglomerate = (1...30).map { "brand\($0).example" }
+        let big = try XCTUnwrap(MicrosoftTenantPlugin.evaluate(
+            domain: "a.example", realm: .init(namespace: "Managed", brand: "A", federation: nil),
+            tenantID: nil, region: nil, domains: ["a.example"] + conglomerate))
+        XCTAssertNil(big.metadata?["linked"], "a tenant of hundreds is listed, not followed")
+        XCTAssertTrue(big.metadata?["domains"]?.hasPrefix("brand1.example,brand2.example") ?? false)
+
+        // The scanned domain → its tenant's other domains, at the strength of a verified link.
+        let input = IdentitySynthesizer.Input(source: found.source, type: found.type, confidence: found.confidenceScore,
+                                              metadata: (found.metadata ?? [:]).merging(["queriedAs": "upb.ro"]) { $1 },
+                                              rawData: found.rawData)
+        let links = IdentityLinks.build(from: [input], target: "upb.ro")
+        let score = IdentityLinks.attribute(links, target: "upb.ro").first { $0.node == "web: euronewsradio.ro" }?.score
+        XCTAssertGreaterThanOrEqual(score ?? 0, 90)
+        let profile = IdentitySynthesizer.synthesize(from: [input], riskScore: 0, riskLevel: "Low")
+        XCTAssertEqual(profile.organizations, ["Universitatea Politehnica Bucuresti"])
+    }
+
     func testAHomepageSaysWhoRunsIt() throws {
         let html = """
         <html><head><meta name="author" content="Ana Popescu"><link rel="me" href="https://hachyderm.io/@ana"></head>

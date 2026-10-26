@@ -1837,6 +1837,7 @@
             const history = [];
             const trackers = {};
             const tracker = d => trackers[d] || (trackers[d] = { ids: [], shared: [] });
+            const tenants = {};
             const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
             const dom = d => posture[d] || (posture[d] = {});
 
@@ -1860,6 +1861,11 @@
                 if (r.type === 'dns_history' && m.domain) history.push({ domain: m.domain, addresses: splitCsv(m.addresses), origins: splitCsv(m.possibleOrigins) });
                 if (r.type === 'tracking_id' && m.domain) tracker(m.domain).ids = splitCsv(m.ids);
                 if (r.type === 'shared_tracker' && m.domain && m.username) tracker(m.domain).shared.push({ id: m.username, domains: splitCsv(m.domains), linked: !!m.linked });
+                if (r.type === 'microsoft_tenant' && m.domain) {
+                    const t = tenants[m.tenantID || m.domain] || (tenants[m.tenantID || m.domain] = { scanned: [], domains: new Set(), m });
+                    t.scanned.push(m.domain);
+                    splitCsv(m.domains).forEach(x => t.domains.add(x));
+                }
                 if (m.domain && r.type === 'security_headers') {
                     const d = dom(m.domain); d.grade = m.grade; d.missing = m.missing; d.present = m.present; d.https = m.https;
                 }
@@ -1871,7 +1877,8 @@
             const ipList = Object.keys(hosts);
             const domList = Object.keys(posture);
             const trackerList = Object.keys(trackers);
-            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length) {
+            const tenantList = Object.keys(tenants);
+            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length && !tenantList.length) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
@@ -1953,6 +1960,26 @@
                     const d = document.createElement('div'); d.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;word-break:break-all;'; d.textContent = h.domain; c.appendChild(d);
                     const w = chipWrap(); h.addresses.slice(0, 15).forEach(a => w.appendChild(chip(a, h.origins.includes(a) ? 'cve' : 'base'))); c.appendChild(w);
                     if (h.origins.length) c.appendChild(labelled('POSSIBLE ORIGIN BEHIND THE CDN: ' + h.origins.join(', '), '#fca5a5'));
+                    root.appendChild(c);
+                });
+            }
+
+            if (tenantList.length) {
+                // Microsoft verified each domain in a tenant by its DNS: one owner.
+                root.appendChild(sectionTitle('Microsoft 365 Tenant', 'the organisation and the other domains it owns'));
+                tenantList.sort().forEach(key => {
+                    const t = tenants[key]; const m = t.m; const c = card(); c.classList.add('js-tenant');
+                    const head = document.createElement('div'); head.style.cssText = 'font-weight:700;color:#e2e8f0;word-break:break-word;';
+                    head.textContent = m.org || t.scanned[0]; c.appendChild(head);
+                    const facts = [m.org ? t.scanned.join(', ') : null, m.namespace === 'Federated' && m.federation ? 'signs in through ' + m.federation : (m.namespace ? m.namespace.toLowerCase() + ' accounts' : null),
+                        m.tenantName ? 'tenant ' + m.tenantName : null, m.domainCount ? m.domainCount + ' domains' : null].filter(Boolean);
+                    const f = document.createElement('div'); f.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:4px;word-break:break-all;'; f.textContent = facts.join(' · '); c.appendChild(f);
+                    if (m.tenantID) { const id = document.createElement('div'); id.style.cssText = 'font-size:11px;color:#64748b;margin-top:2px;font-family:monospace;word-break:break-all;'; id.textContent = m.tenantID + (m.region ? ' (' + m.region + ')' : ''); c.appendChild(id); }
+                    const others = Array.from(t.domains).filter(x => !t.scanned.includes(x));
+                    if (others.length) {
+                        c.appendChild(labelled('OTHER DOMAINS IN THE TENANT'));
+                        const w = chipWrap(); w.classList.add('js-tenant-domains'); others.slice(0, 40).forEach(x => w.appendChild(chip(x, 'port'))); c.appendChild(w);
+                    }
                     root.appendChild(c);
                 });
             }

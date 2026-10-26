@@ -61,7 +61,7 @@ enum IdentityLinks {
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
         "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity", "avatar_match",
-        "tracking_id", "shared_tracker"
+        "tracking_id", "shared_tracker", "microsoft_tenant"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {

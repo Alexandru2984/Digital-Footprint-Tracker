@@ -55,6 +55,7 @@ enum PluginCanary {
         // A sample address that sits in hundreds of breach lists.
         Check(plugin: "XposedOrNot", input: "test@example.com", username: nil),
         Check(plugin: "LeakCheck", input: "test@example.com", username: nil),
+        Check(plugin: "MicrosoftTenant", input: "microsoft.com", username: nil),
         Check(plugin: "Lobsters", input: "pushcx", username: "pushcx"),
         // Duolingo's co-founder holds user id 14.
         Check(plugin: "Duolingo", input: "luis", username: "luis"),

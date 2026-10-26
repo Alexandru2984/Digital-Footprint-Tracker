@@ -295,6 +295,10 @@ test('the surface tab warns about a subdomain that can be taken over, as text', 
     await expect(warning).toContainText(fixture.malicious);
     const history = page.locator('#surface-tab-content .js-dns-history');
     await expect(history).toContainText('POSSIBLE ORIGIN BEHIND THE CDN: 203.0.113.9');
+    const tenant = page.locator('#surface-tab-content .js-tenant');
+    await expect(tenant).toContainText(fixture.malicious);
+    await expect(tenant).toContainText('signs in through login.example.com');
+    await expect(tenant.locator('.js-tenant-domains')).toContainText('example.net');
     const tracking = page.locator('#surface-tab-content .js-tracking');
     await expect(tracking).toContainText('Google AdSense pub-1234567890123456');
     await expect(tracking).toContainText('Google Tag Manager GTM-ABC123');
