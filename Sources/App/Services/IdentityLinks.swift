@@ -94,7 +94,7 @@ enum IdentityLinks {
             }
             for linked in parseLinked(meta["bioLinked"]) {
                 add(Link(from: node, to: linked, kind: .declared, source: input.source,
-                         reason: "written in this profile's bio"))
+                         reason: "written on this profile (bio or README)"))
             }
             if let site = websiteDomain(meta["blog"]) {
                 add(Link(from: node, to: "web: \(site)", kind: .declared, source: input.source,

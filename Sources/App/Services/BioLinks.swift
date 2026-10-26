@@ -7,9 +7,12 @@ import Foundation
 /// can be verified: text anyone typed is only declared.
 enum BioLinks {
     /// The `linked`-style value for `text`, nil when it names nothing.
-    static func linked(in text: String?, excluding own: String? = nil) -> String? {
+    /// `dropping`: platforms whose links in this text name others as often as
+    /// the owner (a README links other people's repositories).
+    static func linked(in text: String?, excluding own: String? = nil, limit: Int = 2_000,
+                       dropping: Set<String> = []) -> String? {
         guard let text, !text.isEmpty else { return nil }
-        let sample = String(text.prefix(2_000))
+        let sample = String(text.prefix(limit))
         var pairs: [(String, String?)] = []
         // Mastodon handles first, so their `@user@host` is not read as an address.
         var rest = sample
@@ -28,7 +31,15 @@ enum BioLinks {
             if let (platform, value) = IdentityLinks.account(at: url), platform != "web" { pairs.append((platform, value)) }
         }
         let ownKey = own?.lowercased()
-        let kept = pairs.filter { "\($0.0):\($0.1 ?? "")".lowercased() != ownKey }.prefix(10)
+        let kept = pairs.filter { !dropping.contains($0.0) && "\($0.0):\($0.1 ?? "")".lowercased() != ownKey }.prefix(10)
         return IdentityLinks.linked(Array(kept))
+    }
+
+    /// Two `linked` values as one, without repeats.
+    static func merged(_ values: String?...) -> String? {
+        var seen: Set<String> = []
+        let entries = values.compactMap { $0 }.flatMap { $0.split(separator: ",").map(String.init) }
+            .filter { seen.insert($0.lowercased()).inserted }
+        return entries.isEmpty ? nil : entries.prefix(16).joined(separator: ",")
     }
 }

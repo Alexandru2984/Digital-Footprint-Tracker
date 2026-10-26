@@ -72,7 +72,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
-            if let bio = BioLinks.linked(in: user?.bio, excluding: "github:\(cleanedUsername)") { meta["bioLinked"] = bio }
+            var written = BioLinks.linked(in: user?.bio, excluding: "github:\(cleanedUsername)")
             var linked: [(String, String?)] = []
             if let tw = user?.twitter_username, !tw.isEmpty {
                 meta["twitter"] = tw
@@ -112,6 +112,20 @@ struct UsernamePlugin: FootprintPlugin {
                     }
                 }
             }
+            // The profile README (the `name/name` repository): where developers
+            // put their contact address and other accounts. Links to GitHub in
+            // it name other people's projects as often as their own.
+            if headers["Authorization"] != nil,
+               let readmeURL = URL(string: "https://api.github.com/repos/\(cleanedUsername)/\(cleanedUsername)/readme"),
+               let readme = await PluginHTTP.request(
+                readmeURL, headers: headers.merging(["Accept": "application/vnd.github.raw"]) { _, raw in raw },
+                bodyMode: .complete(maxBytes: 256 * 1_024), on: app),
+               readme.status == 200,
+               let found = BioLinks.linked(in: String(decoding: readme.data, as: UTF8.self), limit: 40_000, dropping: ["github"]) {
+                parts.append("Profile README lists: " + found.replacingOccurrences(of: ",", with: ", "))
+                written = BioLinks.merged(written, found)
+            }
+            if let written { meta["bioLinked"] = written }
             if let joined = IdentityLinks.linked(linked) {
                 meta["linked"] = joined
                 meta["linkKind"] = "declared"

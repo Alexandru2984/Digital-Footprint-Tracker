@@ -4748,6 +4748,10 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(BioLinks.linked(in: bio, excluding: "github:anapop"),
                        "mastodon:ana@fosstodon.org,email:ana.pop@example.org,twitch:anastreams,twitter:anapop")
         XCTAssertNil(BioLinks.linked(in: "Just a person who likes chess."))
+        let readme = "Built [lib](https://github.com/someoneelse/lib). Reach me: [LinkedIn](https://www.linkedin.com/in/ana-pop/)"
+        XCTAssertEqual(BioLinks.linked(in: readme, dropping: ["github"]), "linkedin:ana-pop",
+                       "a README's GitHub links name other people's projects")
+        XCTAssertEqual(BioLinks.merged("email:a@b.dev,twitch:ana", "Twitch:ana,linkedin:ana"), "email:a@b.dev,twitch:ana,linkedin:ana")
         XCTAssertNil(BioLinks.linked(in: nil))
 
         // A bio's links are declared edges from the account, and leads to follow.
@@ -4757,7 +4761,7 @@ final class AppTests: XCTestCase {
         let links = IdentityLinks.build(from: inputs, target: "anapop")
         let edge = links.first { $0.from == "github: anapop" && $0.to == "ana.pop@example.org" }
         XCTAssertEqual(edge?.kind, .declared)
-        XCTAssertEqual(edge?.reason, "written in this profile's bio")
+        XCTAssertEqual(edge?.reason, "written on this profile (bio or README)")
         XCTAssertTrue(IdentityLinks.pivotableLinks(inputs[0].metadata).contains("ana.pop@example.org"))
     }
 
@@ -7084,7 +7088,8 @@ final class AppTests: XCTestCase {
         for attribution in profile.attributions.prefix(25) { print("E2E attr \(attribution.score) \(attribution.node)") }
         print("E2E dossier \(profile.dossier.headline) | sites=\(profile.dossier.sites.map(\.label)) sensitive=\(profile.dossier.sensitiveData)")
         for result in inputs where ["VirusTotal", "Instagram", "Venmo", "PyPi"].contains(result.source) || env["LIVE_E2E_ALL"] == "1" {
-            print("E2E sample \(result.source) \(result.type) \(result.confidence) \(result.rawData.prefix(160))")
+            print("E2E sample \(result.source) \(result.type) \(result.confidence) \(result.rawData.prefix(160))"
+                  + (result.metadata["bioLinked"].map { " written=\($0)" } ?? ""))
         }
         XCTAssertNotEqual(finished?.status, .pending, "the scan must finish")
         XCTAssertLessThan(elapsed, 400, "rounds are bounded: 120 s, then up to two 45 s pivot rounds")
