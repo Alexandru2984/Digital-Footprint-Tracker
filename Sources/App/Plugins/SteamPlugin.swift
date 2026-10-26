@@ -69,6 +69,7 @@ struct SteamPlugin: FootprintPlugin {
         ]
         if let location = extractTag("location", from: xml) { meta["location"] = location }
         if let memberSince { meta["since"] = memberSince }
+        if let avatar = extractTag("avatarFull", from: xml) { meta["avatar"] = avatar }
         if let linked = BioLinks.linked(in: summaryText, excluding: "steam:\(username)") { meta["bioLinked"] = linked }
 
         return [PluginResult(

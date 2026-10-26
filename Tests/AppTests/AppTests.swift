@@ -4765,6 +4765,118 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(IdentityLinks.pivotableLinks(inputs[0].metadata).contains("ana.pop@example.org"))
     }
 
+    func testTheSameProfilePictureTiesTwoAccounts() {
+        let results = [
+            PluginResult(source: "GitHub", type: "account_presence", confidenceScore: 1, rawData: "",
+                         metadata: ["platform": "github", "username": "AnaPop", "avatar": "https://avatars.example/u/1"]),
+            PluginResult(source: "Gravatar", type: "account_presence", confidenceScore: 1, rawData: "",
+                         metadata: ["platform": "gravatar", "email": "ana@pop.dev", "avatar": "https://gravatar.example/a"]),
+            PluginResult(source: "Mastodon", type: "social_media", confidenceScore: 1, rawData: "",
+                         metadata: ["platform": "mastodon", "username": "ana", "avatar": "https://m.example/avatars/original/missing.png"]),
+            PluginResult(source: "Bluesky", type: "social_media", confidenceScore: 1, rawData: "",
+                         metadata: ["platform": "bluesky", "username": "ana.bsky.social", "avatar": "http://plain.example/a"]),
+            PluginResult(source: "GitLab", type: "account_presence", confidenceScore: 1, rawData: "",
+                         metadata: ["platform": "gitlab", "username": "ana", "avatar": "https://gitlab.example/a"]),
+        ]
+        let avatars = AvatarMatch.avatars(in: results)
+        XCTAssertEqual(avatars.map(\.node), ["github: anapop", "ana@pop.dev", "gitlab: ana"],
+                       "a placeholder and a plain-http picture are left out")
+
+        let photo: UInt64 = 0xF0F0_3C3C_0F0F_C3C3
+        let matches = AvatarMatch.matches(avatars, fingerprints: [
+            "github: anapop": .init(hash: photo, spread: 50),
+            "ana@pop.dev": .init(hash: photo ^ 0b101, spread: 48),
+            "gitlab: ana": .init(hash: ~photo, spread: 50),
+        ])
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches.first?.2, 2)
+        let flat = AvatarMatch.matches(avatars, fingerprints: [
+            "github: anapop": .init(hash: 0, spread: 3), "gitlab: ana": .init(hash: 0, spread: 3),
+        ])
+        XCTAssertTrue(flat.isEmpty, "two plain placeholders prove nothing")
+        let identicons = AvatarMatch.matches(avatars, fingerprints: [
+            "github: anapop": .init(hash: photo, spread: 40, colors: 2), "gitlab: ana": .init(hash: photo, spread: 40, colors: 2),
+        ])
+        XCTAssertTrue(identicons.isEmpty, "generated avatars share their grid's shape")
+        let recoloured = AvatarMatch.matches(avatars, fingerprints: [
+            "github: anapop": .init(hash: photo, spread: 40, colors: nil, mean: [200, 60, 60]),
+            "gitlab: ana": .init(hash: photo, spread: 40, colors: nil, mean: [60, 60, 200]),
+        ])
+        XCTAssertTrue(recoloured.isEmpty, "the same shape in other colours is another picture")
+
+        // The address is the linked end; the finding is an observed link between the two.
+        let finding = AvatarMatch.result(for: (avatars[1], avatars[0], 2))
+        XCTAssertEqual(finding.metadata?["platform"], "github")
+        XCTAssertEqual(finding.metadata?["linked"], "email:ana@pop.dev")
+        let input = IdentitySynthesizer.Input(source: finding.source, type: finding.type, confidence: 0.8,
+                                              metadata: finding.metadata ?? [:], rawData: finding.rawData)
+        let links = IdentityLinks.build(from: [input], target: "anapop")
+        XCTAssertEqual(links.count, 1, "no edge from the target: the match says nothing about whose the account is")
+        XCTAssertEqual(links.first?.kind, .observed)
+        XCTAssertEqual(links.first?.to, "ana@pop.dev")
+
+        // Found by the handle on both platforms, the picture backs each account.
+        let byHandle = ["github", "gitlab"].map { platform in
+            IdentitySynthesizer.Input(source: platform, type: "account_presence", confidence: 1,
+                                      metadata: ["platform": platform, "username": "anapop"], rawData: "")
+        }
+        let pictured = AvatarMatch.result(for: (AvatarMatch.Avatar(node: "github: anapop", platform: "github", url: "https://a"),
+                                                AvatarMatch.Avatar(node: "gitlab: anapop", platform: "gitlab", url: "https://b"), 0))
+        let corroborated = IdentityLinks.build(from: byHandle + [IdentitySynthesizer.Input(
+            source: pictured.source, type: pictured.type, confidence: 0.8, metadata: pictured.metadata ?? [:], rawData: "")],
+            target: "anapop")
+        for account in ["github: anapop", "gitlab: anapop"] {
+            let edge = corroborated.first { $0.from == "anapop" && $0.to == account }
+            XCTAssertEqual(edge?.strength, 0.7, account)
+            XCTAssertEqual(edge?.reason, "the same handle and the same profile picture as another account found for it", account)
+        }
+
+        XCTAssertTrue(AvatarMatch.isImage(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0])))
+        XCTAssertTrue(AvatarMatch.isImage(Data("RIFF\0\0\0\0WEBP".utf8)))
+        XCTAssertFalse(AvatarMatch.isImage(Data("<!doctype html>".utf8)))
+        XCTAssertEqual(AvatarMatch.parse(Data(#"{"a":{"hash":"00000000000000ff","spread":31.5,"colors":null,"mean":[1,2,3]},"b":{"hash":"zz"}}"#.utf8)),
+                       ["a": .init(hash: 255, spread: 31.5, colors: nil, mean: [1, 2, 3])])
+    }
+
+    func testAvatarFingerprintsSurviveResizingAndRecompression() async throws {
+        let python = "/opt/swift-vapor-python/current/bin/python3"
+        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: python), "the report runtime is not installed here")
+        let generator = """
+        import base64, io, json
+        from PIL import Image, ImageDraw
+        def portrait(seed):
+            image = Image.new("RGB", (400, 400), (40 + seed, 90, 160))
+            draw = ImageDraw.Draw(image)
+            draw.ellipse((120, 60, 280, 220), fill=(230, 190, 160))
+            draw.rectangle((80, 240, 320, 400), fill=(200 - seed, 40, 40))
+            draw.line((0, 0, 400, 400 - seed * 3), fill=(255, 255, 0), width=12)
+            return image
+        def encode(image, kind, size):
+            out = io.BytesIO(); image.resize((size, size)).save(out, kind, quality=70); return base64.b64encode(out.getvalue()).decode()
+        other = Image.new("RGB", (300, 300), (250, 250, 250))
+        ImageDraw.Draw(other).polygon([(0, 300), (150, 0), (300, 300)], fill=(10, 10, 10))
+        print(json.dumps({"png": encode(portrait(0), "PNG", 460), "jpeg": encode(portrait(0), "JPEG", 96),
+                          "other": encode(other, "PNG", 200), "broken": base64.b64encode(b"GIF89a nonsense").decode()}))
+        """
+        let made = try await BoundedProcess.run(executable: python, arguments: ["-I", "-c", generator],
+                                                environment: ["PATH": "/usr/bin"], timeout: 30, maxOutputBytes: 4_000_000)
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: made.stdout) as? [String: String])
+        let images = encoded.compactMapValues { Data(base64Encoded: $0) }
+
+        setenv("REPORT_PYTHON_PATH", python, 1)
+        defer { unsetenv("REPORT_PYTHON_PATH") }
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let prints = await AvatarMatch.fingerprint(images, app: app)
+        XCTAssertNil(prints["broken"], "a picture that does not decode is left out")
+        let png = try XCTUnwrap(prints["png"]), jpeg = try XCTUnwrap(prints["jpeg"]), other = try XCTUnwrap(prints["other"])
+        XCTAssertLessThanOrEqual((png.hash ^ jpeg.hash).nonzeroBitCount, AvatarMatch.maximumDistance, "same picture, other size and format")
+        XCTAssertGreaterThan((png.hash ^ other.hash).nonzeroBitCount, AvatarMatch.maximumDistance)
+        XCTAssertGreaterThanOrEqual(png.spread, AvatarMatch.minimumSpread)
+        XCTAssertLessThanOrEqual(png.colourDistance(to: jpeg), AvatarMatch.maximumColourDistance)
+        XCTAssertFalse(png.isGenerated)
+    }
+
     func testSpeedrunReadsTheRegionAndTheLinkedChannels() throws {
         let body = Data(#"""
         {"data":[{"names":{"international":"cheese"},"weblink":"https://www.speedrun.com/users/cheese",

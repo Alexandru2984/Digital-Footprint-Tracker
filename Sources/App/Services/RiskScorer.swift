@@ -288,6 +288,7 @@ enum RiskScorer {
         "pgp_key_uid": .identity,
         "domain_registrant": .identity,
         "ssh_key_match": .identity,
+        "avatar_match": .identity,
         "site_identity": .identity,
         "developer_identity": .identity,
 

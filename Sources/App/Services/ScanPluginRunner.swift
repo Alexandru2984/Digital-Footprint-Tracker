@@ -98,6 +98,15 @@ enum ScanPluginRunner {
             app.logger.info("Scan \(scanID): pivot round scanned \(pivots.count) discovered entit(ies); \(levelsLeft) level(s) left")
         }
 
+        // The same picture on two platforms ties the two accounts. Only for the
+        // full scan (heavy plugins): it fetches every account's picture.
+        if plugins.contains(where: \.heavy), !Task.isCancelled {
+            let primary = TargetDeriver.Candidate(value: input, origin: .primary)
+            for match in await AvatarMatch.run(on: everything, app: app) {
+                _ = try? await persist(match, candidate: primary, scanID: scanID, dedup: dedup, on: db)
+            }
+        }
+
         let successCount = round1.success + pivotSuccess
         let timedOut = round1.timedOut
         // Shape gating means a round can legitimately run nothing at all (an

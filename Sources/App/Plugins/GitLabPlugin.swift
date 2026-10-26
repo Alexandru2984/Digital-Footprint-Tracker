@@ -36,6 +36,7 @@ struct GitLabPlugin: FootprintPlugin {
             let public_repos: Int?
             let created_at: String?
             let organization: String?
+            let avatar_url: String?
         }
 
         guard let users = try? JSONDecoder().decode([GitLabUser].self, from: data),
@@ -60,6 +61,7 @@ struct GitLabPlugin: FootprintPlugin {
         if let loc = user.location, !loc.isEmpty     { meta["location"] = loc }
         if let org = user.organization, !org.isEmpty { meta["company"] = org }
         if let web = user.website_url, !web.isEmpty  { meta["blog"] = web }
+        if let avatar = user.avatar_url, !avatar.isEmpty { meta["avatar"] = avatar }
         if let bio = BioLinks.linked(in: user.bio, excluding: "gitlab:\(user.username ?? username)") { meta["bioLinked"] = bio }
         if let joinedDate                            { meta["since"] = joinedDate }
 

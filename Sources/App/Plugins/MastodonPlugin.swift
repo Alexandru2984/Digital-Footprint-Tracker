@@ -57,6 +57,7 @@ struct MastodonPlugin: FootprintPlugin {
         // Mastodon is still identity signal, weighted and corroborated there.
         if !acct.displayName.isEmpty { meta["name"] = acct.displayName }
         if let joinedDate = acct.joinedDate { meta["since"] = joinedDate }
+        if let avatar = acct.avatar { meta["avatar"] = avatar }
         if let linked = BioLinks.linked(in: acct.bio, excluding: "mastodon:\(acct.acct)") { meta["bioLinked"] = linked }
         if let linked = IdentityLinks.linked(acct.verifiedLinks.compactMap(IdentityLinks.account(at:))) {
             parts.append("Verified links: " + acct.verifiedLinks.prefix(5).joined(separator: ", "))
@@ -86,6 +87,7 @@ struct MastodonPlugin: FootprintPlugin {
         let joinedDate: String?
         /// Profile links Mastodon checked: the page links back with `rel="me"`.
         var verifiedLinks: [String] = []
+        var avatar: String?
     }
 
     /// Decodes a `/accounts/lookup` JSON body. Pure + internal so the field
@@ -113,7 +115,8 @@ struct MastodonPlugin: FootprintPlugin {
                       let range = value.range(of: #"href="https://[^"]{1,300}""#, options: .regularExpression)
                 else { return nil }
                 return String(value[range].dropFirst(6).dropLast())
-            }
+            },
+            avatar: (json["avatar_static"] as? String ?? json["avatar"] as? String).flatMap { $0.hasPrefix("https://") ? $0 : nil }
         )
     }
 }

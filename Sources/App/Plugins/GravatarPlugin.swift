@@ -58,7 +58,7 @@ struct GravatarPlugin: FootprintPlugin {
         let profileUrl  = (entry["profileUrl"] as? String) ?? avatarURL
         let location    = (entry["currentLocation"] as? String) ?? ""
 
-        var meta: [String: String] = ["email": email, "profileURL": profileUrl, "platform": "gravatar",
+        var meta: [String: String] = ["email": email, "profileURL": profileUrl, "platform": "gravatar", "avatar": avatarURL,
                                       "matchKind": "verified",
                                       "matchReason": "the Gravatar profile is registered to this address"]
         if !displayName.isEmpty { meta["name"] = displayName }

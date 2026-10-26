@@ -35,6 +35,7 @@ struct DevToPlugin: FootprintPlugin {
         if let name = text("name") { parts.append("Name: \(name)"); meta["name"] = name }
         if let location = text("location") { parts.append("Location: \(location)"); meta["location"] = location }
         if let site = text("website_url") { parts.append("Website: \(site)"); meta["blog"] = site }
+        if let avatar = text("profile_image") { meta["avatar"] = avatar }
         if let joined = text("joined_at") { parts.append("Joined: \(joined)") }
         let linked = [("github", text("github_username")), ("twitter", text("twitter_username"))]
         if let declared = CommunityHandle.declare(linked, on: "DEV Community", into: &meta) {

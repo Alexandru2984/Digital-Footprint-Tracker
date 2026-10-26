@@ -24,6 +24,7 @@ export const roSourceGroups = [
         ['GitHub', 'Profilul, organizațiile, conturile sociale și adresele verificate de GitHub pe cheile GPG ale contului'],
         ['GitLab, Codeberg', 'Profiluri, nume, locații și site-uri'],
         ['Chei SSH', 'Aceeași cheie SSH publică pe conturile de GitHub, GitLab și Codeberg'],
+        ['Poze de profil', 'Aceeași fotografie pe două platforme, comparată printr-un hash perceptual care rezistă la redimensionare; avatarurile generate sunt ignorate'],
         ['Keybase', 'Dovezi semnate care leagă Twitter, Reddit, Hacker News, GitHub și domenii'],
         ['Mastodon, Bluesky', 'Profiluri, link-uri verificate rel=me și handle-uri pe domeniu propriu'],
         ['DEV Community, Lobsters', 'Profiluri și conturile GitHub, Twitter și Mastodon pe care le listează'],
@@ -107,13 +108,15 @@ export const roPages = [
 <p>Două conturi cu același nume pot fi ale unor străini. Scanerul caută dovezi care le leagă:</p>
 <ul>
 <li><strong>Aceeași cheie SSH</strong> pe conturile de GitHub, GitLab și Codeberg.</li>
+<li><strong>Aceeași poză de profil</strong> pe două platforme, comparată printr-un hash perceptual; avatarurile generate și imaginile uniforme nu contează.</li>
+<li><strong>Ce spune profilul despre proprietar</strong>: adresa de contact și celelalte conturi scrise în bio sau în README-ul de profil GitHub.</li>
 <li><strong>Dovezi Keybase</strong>: declarații semnate care leagă o identitate Keybase de Twitter, Reddit, Hacker News, GitHub și domenii.</li>
 <li><strong>Link-uri publicate de persoană</strong>: Twitter-ul de pe profilul GitHub, conturile de pe un profil DEV sau Lobsters, link-urile verificate rel=me de pe Mastodon.</li>
 </ul>
 <p>Conturile legate astfel apar confirmate; restul rămân separat, ca găsite doar după nume. <a href="/ro/cum-functioneaza/">Cum funcționează atribuirea</a>.</p>`,
         faq: [
             ['Câte site-uri sunt verificate?', 'Aproximativ 480, din datele proiectului Sherlock, plus vreo douăzeci de platforme citite prin API-ul lor de profil.'],
-            ['De ce unele conturi apar neconfirmate?', 'Un username identic dovedește doar că numele e luat. Dacă nimic nu leagă contul de celelalte — o cheie SSH comună, o dovadă semnată, un link publicat — rămâne neconfirmat.'],
+            ['De ce unele conturi apar neconfirmate?', 'Un username identic dovedește doar că numele e luat. Dacă nimic nu leagă contul de celelalte — o cheie SSH comună, o dovadă semnată, un link publicat, aceeași poză de profil — rămâne neconfirmat.'],
             ['Am nevoie de cont?', 'Căutarea pe 480 de site-uri cere un cont gratuit, verificat. Profilurile principalelor platforme se verifică anonim.'],
         ],
     },

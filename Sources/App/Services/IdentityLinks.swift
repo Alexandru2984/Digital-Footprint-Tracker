@@ -60,7 +60,7 @@ enum IdentityLinks {
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
-        "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity"
+        "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity", "avatar_match"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {
@@ -85,7 +85,10 @@ enum IdentityLinks {
             // A same-name edge is worth the same however the name was reached:
             // the derivation has its own edge, and counting it here too would
             // charge for it twice along one chain.
-            add(Link(from: from, to: node, kind: kind, source: input.source, reason: reason))
+            // A match between two accounts says nothing about whose the first one is.
+            if input.type != "avatar_match" {
+                add(Link(from: from, to: node, kind: kind, source: input.source, reason: reason))
+            }
 
             let linkKind = nonEmpty(meta["linkKind"]).flatMap(Kind.init(rawValue:)) ?? .declared
             let linkReason = nonEmpty(meta["linkReason"]) ?? "linked from this profile"
@@ -125,6 +128,20 @@ enum IdentityLinks {
             add(Link(from: entry.from, to: entry.node, kind: .inferred, source: "derived",
                      reason: "the same handle and the same full name (\(entry.display)) as on another platform",
                      via: "sameName"))
+        }
+
+        // The same picture on two accounts found by the same handle: like the
+        // same full name, better evidence than the handle alone, for both.
+        for input in inputs where input.type == "avatar_match" {
+            guard let first = node(for: input.metadata, from: "") else { continue }
+            for end in [first] + parseLinked(input.metadata["linked"]) {
+                let reached = order.compactMap { best[$0] }.filter { $0.to == end && $0.kind == .inferred }
+                for link in reached {
+                    add(Link(from: link.from, to: end, kind: .inferred, source: "derived",
+                             reason: "the same handle and the same profile picture as another account found for it",
+                             via: "samePicture"))
+                }
+            }
         }
 
         // Connect the identifiers the scan looked things up as. Without these
@@ -424,6 +441,8 @@ enum IdentityLinks {
             case "variant": return 0.35
             // The handle and a full name, both matching another platform's.
             case "sameName": return 0.7
+            // The handle and a picture, both matching another account found for it.
+            case "samePicture": return 0.7
             default: return 0.4
             }
         }

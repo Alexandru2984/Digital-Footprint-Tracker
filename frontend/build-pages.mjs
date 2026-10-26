@@ -42,6 +42,7 @@ const sourceGroups = [
         ['GitHub', 'Profile, organisations, social accounts, and addresses GitHub verified on the account’s GPG keys'],
         ['GitLab, Codeberg', 'Profiles, names, locations and websites'],
         ['SSH keys', 'The same public SSH key on GitHub, GitLab and Codeberg accounts'],
+        ['Profile pictures', 'The same photo on two platforms, compared by a perceptual hash that survives resizing; generated avatars are ignored'],
         ['Keybase', 'Signed proofs tying Twitter, Reddit, Hacker News, GitHub and domains together'],
         ['Mastodon, Bluesky', 'Profiles, verified rel=me links and DNS-verified domain handles'],
         ['DEV Community, Lobsters', 'Profiles and the GitHub, Twitter and Mastodon accounts they list'],
@@ -125,13 +126,15 @@ const pages = [
 <p>Two accounts with the same name may belong to strangers. The scanner looks for evidence that ties them:</p>
 <ul>
 <li><strong>The same SSH key</strong> on GitHub, GitLab and Codeberg accounts.</li>
+<li><strong>The same profile picture</strong> on two platforms, compared by a perceptual hash; generated avatars and plain placeholders never count.</li>
+<li><strong>What a profile says about its owner</strong>: the contact address and other accounts written in a bio or a GitHub profile README.</li>
 <li><strong>Keybase proofs</strong>: signed statements tying a Keybase identity to Twitter, Reddit, Hacker News, GitHub and domains.</li>
 <li><strong>Links the person published</strong>: the Twitter on a GitHub profile, the accounts on a DEV or Lobsters profile, the verified rel=me links on Mastodon.</li>
 </ul>
 <p>Accounts tied by such evidence are reported as confirmed; the rest are kept apart as found by name alone. <a href="/how-it-works/">How attribution works</a>.</p>`,
         faq: [
             ['How many sites are checked?', 'Around 480 through the Sherlock project’s site data, plus about twenty platforms read through their own profile APIs.'],
-            ['Why are some accounts marked unconfirmed?', 'A matching username proves only that the name is taken. Unless something ties the account to the others — a shared SSH key, a signed proof, a published link — it stays unconfirmed.'],
+            ['Why are some accounts marked unconfirmed?', 'A matching username proves only that the name is taken. Unless something ties the account to the others — a shared SSH key, a signed proof, a published link, the same profile picture — it stays unconfirmed.'],
             ['Do I need an account?', 'The 480-site sweep needs a free, verified account. The dedicated profile lookups run anonymously.'],
         ],
     },

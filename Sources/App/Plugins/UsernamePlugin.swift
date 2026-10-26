@@ -35,6 +35,7 @@ struct UsernamePlugin: FootprintPlugin {
         if resp.status == 200 {
             struct GitHubUser: Decodable {
                 let public_repos: Int?
+                let avatar_url: String?
                 let followers: Int?
                 let following: Int?
                 let name: String?
@@ -72,6 +73,7 @@ struct UsernamePlugin: FootprintPlugin {
             if let loc = user?.location, !loc.isEmpty    { meta["location"] = loc }
             if let co = user?.company, !co.isEmpty       { meta["company"] = co }
             if let blog = user?.blog, !blog.isEmpty      { meta["blog"] = blog }
+            if let avatar = user?.avatar_url, !avatar.isEmpty { meta["avatar"] = avatar }
             var written = BioLinks.linked(in: user?.bio, excluding: "github:\(cleanedUsername)")
             var linked: [(String, String?)] = []
             if let tw = user?.twitter_username, !tw.isEmpty {
