@@ -290,6 +290,8 @@ enum RiskScorer {
         "ssh_key_match": .identity,
         "avatar_match": .identity,
         "site_identity": .identity,
+        "tracking_id": .identity,
+        "shared_tracker": .identity,
         "developer_identity": .identity,
 
         // ── Direct PII ───────────────────────────────────────────────────────

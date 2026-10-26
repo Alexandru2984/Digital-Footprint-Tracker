@@ -60,6 +60,7 @@ const sourceGroups = [
         ['Certificate Transparency', 'Subdomains from issued certificates (crt.sh, with CertSpotter as fallback)'],
         ['Passive DNS', 'Historical resolutions and further subdomains'],
         ['Homepage', 'The owner’s accounts marked rel=me, profile links, contact address, phone and author'],
+        ['Tracking IDs', 'The Google Analytics, Tag Manager, AdSense and Meta Pixel IDs the site embeds, and the other sites that embed the same ones (HackerTarget)'],
         ['Web posture', 'TLS, HTTP security headers and server fingerprint'],
         ['Exposed files', 'Content-verified .env, .git, database dumps and backups left public'],
         ['Wayback Machine', 'First and last archive snapshot, and how many'],
@@ -150,6 +151,7 @@ const pages = [
         body: `
 <h2>Ownership</h2>
 <p>The registry’s RDAP record gives the registrar and the registration, update and expiry dates. For thin registries such as .com, the registrar’s own RDAP server is asked as well, where the registrant lives — and where it is not redacted, the name, organisation, email, phone and country are extracted. The registrant’s email and phone then become leads of their own.</p>
+<p>A site also gives its owner away through the analytics and advertising accounts it embeds: a Google Analytics, Tag Manager or AdSense ID, or a Meta Pixel. The same ID on another site is the same owner’s — AdSense pays one publisher. The scanner reads them from the homepage and asks HackerTarget which other sites embed them; an ID on dozens of sites belongs to an agency or a platform and ties nothing.</p>
 <h2>Infrastructure and services</h2>
 <ul>
 <li><strong>DNS</strong>: addresses, mail servers and TXT records.</li>

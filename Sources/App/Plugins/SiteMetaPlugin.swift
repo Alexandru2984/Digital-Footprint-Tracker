@@ -138,6 +138,77 @@ enum SiteMeta {
                             rawData: parts.joined(separator: " | "), metadata: meta)
     }
 
+    /// What each kind of tracking ID is, by its prefix.
+    static func trackerLabel(_ id: String) -> String {
+        let upper = id.uppercased()
+        if upper.hasPrefix("UA-") { return "Google Analytics" }
+        if upper.hasPrefix("GTM-") { return "Google Tag Manager" }
+        if upper.hasPrefix("G-") { return "Google Analytics 4" }
+        if upper.hasPrefix("PUB-") { return "Google AdSense" }
+        if upper.hasPrefix("FBPIXEL-") { return "Meta Pixel" }
+        return "Tracking"
+    }
+
+    /// The analytics and advertising account IDs a page embeds. The same ID on
+    /// two sites is one owner's: one Analytics account, one Tag Manager
+    /// container, one AdSense publisher (who gets paid), one Meta pixel. An
+    /// Analytics property keeps only its account (`UA-123-4` → `UA-123`).
+    static func trackingIDs(html: String) -> [String] {
+        var found: [String] = []
+        func add(_ id: String) { if !found.contains(id) { found.append(id) } }
+        for match in html.matches(of: #/\bUA-(\d{4,10})-\d{1,4}\b/#) { add("UA-\(match.output.1)") }
+        for match in html.matches(of: #/(?:gtag/js\?id=|['"]config['"]\s*,\s*['"])(G-[A-Z0-9]{6,12})\b/#) {
+            add(String(match.output.1))
+        }
+        for match in html.matches(of: #/\b(GTM-[A-Z0-9]{4,9})\b/#) { add(String(match.output.1)) }
+        for match in html.matches(of: #/\b(?:ca-)?pub-(\d{10,20})\b/#) { add("pub-\(match.output.1)") }
+        for match in html.matches(of: #/fbq\(\s*['"]init['"]\s*,\s*['"](\d{10,20})['"]/#) { add("fbpixel-\(match.output.1)") }
+        return Array(found.prefix(10))
+    }
+
+    static func trackingResult(ids: [String], domain: String) -> PluginResult? {
+        guard !ids.isEmpty else { return nil }
+        let described = ids.map { "\(trackerLabel($0)) \($0)" }
+        return PluginResult(
+            source: "SiteMeta", type: "tracking_id", confidenceScore: 0.8,
+            rawData: "\(domain) embeds \(described.joined(separator: ", ")): another site with the same ID has the same owner",
+            metadata: ["platform": "web", "account": domain, "domain": domain, "ids": ids.joined(separator: ","),
+                       "matchKind": "verified", "matchReason": "the website served at this domain",
+                       "linked": ids.map { "tracker:\($0)" }.joined(separator: ","), "linkKind": "observed",
+                       "linkReason": "the same analytics or advertising account ID, embedded in the site"])
+    }
+
+    /// Other sites hackertarget saw with `id`: one per line, the domain first.
+    /// Linked only when few share it; an ID on dozens of sites is an agency's
+    /// or a platform's, and says nothing about one owner.
+    static func sharedTracker(id: String, domain: String, body: String) -> PluginResult? {
+        guard !body.contains("API count exceeded"), !body.lowercased().hasPrefix("error") else { return nil }
+        var others: [String] = []
+        for line in body.split(whereSeparator: \.isNewline) {
+            guard let first = line.split(whereSeparator: { $0 == "\t" || $0 == "," }).first else { continue }
+            var host = first.trimmingCharacters(in: .whitespaces).lowercased()
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            guard host.range(of: #"^[a-z0-9.-]+\.[a-z]{2,}$"#, options: .regularExpression) != nil,
+                  host != domain, !host.hasSuffix(".\(domain)"), !domain.hasSuffix(".\(host)"),
+                  !others.contains(host) else { continue }
+            others.append(host)
+        }
+        guard !others.isEmpty else { return nil }
+        let label = trackerLabel(id)
+        var meta = ["platform": "tracker", "username": id, "domain": domain, "domains": others.prefix(25).joined(separator: ",")]
+        let raw: String
+        if others.count <= 10 {
+            meta["linked"] = others.map { "web:\($0)" }.joined(separator: ",")
+            meta["linkKind"] = "observed"
+            meta["linkReason"] = "the same \(label) ID (\(id)) is embedded there"
+            raw = "\(label) \(id) of \(domain) is also on: \(others.joined(separator: ", "))"
+        } else {
+            raw = "\(label) \(id) of \(domain) is on \(others.count)+ other sites (\(others.prefix(5).joined(separator: ", ")), …):"
+                + " an agency's or a platform's ID, not linked"
+        }
+        return PluginResult(source: "SiteMeta", type: "shared_tracker", confidenceScore: 0.75, rawData: raw, metadata: meta)
+    }
+
     /// Pull a bare email out of a security.txt Contact value (`mailto:x` or `x`).
     static func contactEmail(_ contacts: [String]) -> String? {
         for c in contacts {
@@ -150,12 +221,13 @@ enum SiteMeta {
 
 struct SiteMetaPlugin: FootprintPlugin {
     let name = "SiteMeta"
-    let description = "Declared-file recon — security.txt contact + robots.txt sensitive paths"
+    let description = "Declared-file recon — security.txt contact, robots.txt paths, homepage owner and tracking IDs"
     /// Fetches a hostname's homepage metadata.
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
     /// v2: the homepage's phone (`tel:` links).
-    let cacheVersion = 2
+    /// v3: analytics and advertising IDs, and the other sites that carry them.
+    let cacheVersion = 3
 
     private static let ipv4Pattern = #"^\d{1,3}(\.\d{1,3}){3}$"#
 
@@ -196,9 +268,24 @@ struct SiteMetaPlugin: FootprintPlugin {
         if let url = URL(string: base + "/"),
            let page = try? await OutboundHTTP.request(url, timeout: 8, bodyMode: .prefix(maxBytes: 512 * 1_024),
                                                       maxRedirects: 3, hostPreChecked: true, on: app),
-           page.status == 200,
-           let identity = SiteMeta.homepageIdentity(html: String(decoding: page.data, as: UTF8.self), domain: domain) {
-            out.append(identity)
+           page.status == 200 {
+            let html = String(decoding: page.data, as: UTF8.self)
+            if let identity = SiteMeta.homepageIdentity(html: html, domain: domain) { out.append(identity) }
+            let ids = SiteMeta.trackingIDs(html: html)
+            if let tracking = SiteMeta.trackingResult(ids: ids, domain: domain) { out.append(tracking) }
+            // Which other sites carry the same IDs: the publisher and Analytics
+            // accounts first, the strongest owner ties. Two lookups at most, from
+            // a small free daily quota.
+            let ordered = ids.filter { $0.hasPrefix("pub-") } + ids.filter { $0.hasPrefix("UA-") }
+                + ids.filter { $0.hasPrefix("GTM-") }
+            for id in ordered.prefix(2) {
+                guard let url = URL(string: "https://api.hackertarget.com/analyticslookup/?q=\(id)"),
+                      let response = await PluginHTTP.request(url, timeout: 12, bodyMode: .complete(maxBytes: 128 * 1_024), on: app),
+                      response.status == 200 else { continue }
+                if let shared = SiteMeta.sharedTracker(id: id, domain: domain, body: String(decoding: response.data, as: UTF8.self)) {
+                    out.append(shared)
+                }
+            }
         }
 
         // robots.txt

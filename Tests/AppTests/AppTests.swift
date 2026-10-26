@@ -8469,6 +8469,45 @@ final class AppTests: XCTestCase {
             status: 200, finalURL: try XCTUnwrap(URL(string: discord.url)), body: Data(#"{"taken":false}"#.utf8)))
     }
 
+    func testTheSameTrackingIDTiesTwoSites() throws {
+        let html = """
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-AB12CD34EF"></script>
+        <script>gtag('config', 'G-AB12CD34EF'); ga('create', 'UA-1234567-2', 'auto'); ga('create', 'UA-1234567-5');</script>
+        <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-K7X9PQ"></iframe></noscript>
+        <ins class="adsbygoogle" data-ad-client="ca-pub-9533373458094495"></ins>
+        <script>fbq('init', '123456789012345');</script>
+        <p>Order G-12345678 shipped; pub-123 is too short; MY-GTM-X is no container.</p>
+        """
+        XCTAssertEqual(SiteMeta.trackingIDs(html: html),
+                       ["UA-1234567", "G-AB12CD34EF", "GTM-K7X9PQ", "pub-9533373458094495", "fbpixel-123456789012345"])
+        XCTAssertEqual(SiteMeta.trackerLabel("pub-9533373458094495"), "Google AdSense")
+        XCTAssertEqual(SiteMeta.trackerLabel("GTM-K7X9PQ"), "Google Tag Manager")
+        XCTAssertNil(SiteMeta.trackingResult(ids: [], domain: "a.example"))
+
+        let other = try XCTUnwrap(SiteMeta.sharedTracker(
+            id: "pub-9533373458094495", domain: "anapop.dev",
+            body: "www.anapop.dev\tadsense\nblog.anapop.dev\tadsense\nanapop-recipes.com\tadsense\nANAPOP-RECIPES.COM,adsense\n"))
+        XCTAssertEqual(other.metadata?["linked"], "web:anapop-recipes.com", "its own domain and subdomains are not other sites")
+        XCTAssertNil(SiteMeta.sharedTracker(id: "UA-1", domain: "a.example", body: "API count exceeded - Increase Quota with Membership"))
+        XCTAssertNil(SiteMeta.sharedTracker(id: "UA-1", domain: "a.example", body: "no results found"))
+        let crowd = (1...14).map { "site\($0).example\tua" }.joined(separator: "\n")
+        let platform = try XCTUnwrap(SiteMeta.sharedTracker(id: "UA-1", domain: "a.example", body: crowd))
+        XCTAssertNil(platform.metadata?["linked"], "an ID on dozens of sites is an agency's, not an owner's")
+
+        // Two sites embedding one ID: the second is probably the first's owner's.
+        let mine = try XCTUnwrap(SiteMeta.trackingResult(ids: ["pub-9533373458094495"], domain: "anapop.dev"))
+        let inputs = [mine, other].map {
+            IdentitySynthesizer.Input(source: $0.source, type: $0.type, confidence: $0.confidenceScore,
+                                      metadata: ($0.metadata ?? [:]).merging(["queriedAs": "anapop.dev"]) { $1 }, rawData: $0.rawData)
+        }
+        let links = IdentityLinks.build(from: inputs, target: "anapop.dev")
+        let score = IdentityLinks.attribute(links, target: "anapop.dev").first { $0.node == "web: anapop-recipes.com" }?.score
+        XCTAssertEqual(score, 63, "verified site → its ID → the other site")
+        XCTAssertFalse(links.contains { $0.from == "anapop.dev" && $0.to.hasPrefix("tracker:") },
+                       "no edge from the target straight to the ID's lookup")
+        XCTAssertTrue(IdentityLinks.pivotableLinks(other.metadata ?? [:]).contains("anapop-recipes.com"))
+    }
+
     func testAHomepageSaysWhoRunsIt() throws {
         let html = """
         <html><head><meta name="author" content="Ana Popescu"><link rel="me" href="https://hachyderm.io/@ana"></head>

@@ -60,7 +60,8 @@ enum IdentityLinks {
     static let maxLinks = 80
     static let identityTypes: Set<String> = [
         "account_presence", "social_media", "identity_proof", "avatar_presence", "developer_identity", "email",
-        "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity", "avatar_match"
+        "pgp_key_uid", "domain_registrant", "ssh_key_match", "site_identity", "avatar_match",
+        "tracking_id", "shared_tracker"
     ]
 
     static func build(from inputs: [IdentitySynthesizer.Input], target: String?) -> [Link] {
@@ -85,8 +86,9 @@ enum IdentityLinks {
             // A same-name edge is worth the same however the name was reached:
             // the derivation has its own edge, and counting it here too would
             // charge for it twice along one chain.
-            // A match between two accounts says nothing about whose the first one is.
-            if input.type != "avatar_match" {
+            // A match between two accounts, or the sites an ID is on, says
+            // nothing about whose the first one is.
+            if !["avatar_match", "shared_tracker"].contains(input.type) {
                 add(Link(from: from, to: node, kind: kind, source: input.source, reason: reason))
             }
 

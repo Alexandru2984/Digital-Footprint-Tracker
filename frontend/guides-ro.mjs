@@ -42,6 +42,7 @@ export const roSourceGroups = [
         ['Certificate Transparency', 'Subdomenii din certificatele emise (crt.sh, cu CertSpotter ca rezervă)'],
         ['DNS pasiv', 'Rezoluții istorice și alte subdomenii'],
         ['Pagina principală', 'Conturile marcate rel=me, link-urile spre profiluri, emailul de contact, telefonul și autorul'],
+        ['ID-uri de tracking', 'ID-urile Google Analytics, Tag Manager, AdSense și Meta Pixel din site și celelalte site-uri care le folosesc pe aceleași (HackerTarget)'],
         ['Securitate web', 'TLS, header-e de securitate HTTP și serverul folosit'],
         ['Fișiere expuse', '.env, .git, dump-uri de baze de date și backup-uri lăsate publice, confirmate după conținut'],
         ['Wayback Machine', 'Prima și ultima arhivare și câte există'],
@@ -132,6 +133,7 @@ export const roPages = [
         body: `
 <h2>Deținătorul</h2>
 <p>Înregistrarea RDAP a registry-ului dă registrarul și datele de înregistrare, actualizare și expirare. Pentru registry-urile „subțiri”, cum e .com, se interoghează și serverul RDAP al registrarului, unde stau datele deținătorului — iar unde nu sunt ascunse, se extrag numele, organizația, emailul, telefonul și țara. Emailul și telefonul deținătorului devin apoi piste noi.</p>
+<p>Un site își trădează proprietarul și prin conturile de analytics și publicitate pe care le include: un ID Google Analytics, Tag Manager sau AdSense, ori un Meta Pixel. Același ID pe alt site înseamnă același proprietar — AdSense plătește un singur publisher. Scanerul le citește din pagina principală și întreabă HackerTarget ce alte site-uri le folosesc; un ID prezent pe zeci de site-uri e al unei agenții sau platforme și nu leagă nimic.</p>
 <h2>Infrastructură și servicii</h2>
 <ul>
 <li><strong>DNS</strong>: adrese, servere de mail și înregistrări TXT.</li>

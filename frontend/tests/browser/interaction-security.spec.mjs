@@ -295,6 +295,11 @@ test('the surface tab warns about a subdomain that can be taken over, as text', 
     await expect(warning).toContainText(fixture.malicious);
     const history = page.locator('#surface-tab-content .js-dns-history');
     await expect(history).toContainText('POSSIBLE ORIGIN BEHIND THE CDN: 203.0.113.9');
+    const tracking = page.locator('#surface-tab-content .js-tracking');
+    await expect(tracking).toContainText('Google AdSense pub-1234567890123456');
+    await expect(tracking).toContainText('Google Tag Manager GTM-ABC123');
+    await expect(tracking).toContainText('IS ALSO ON 2 SITES: LIKELY THE SAME OWNER');
+    await expect(tracking.locator('.js-tracking-shared')).toContainText(fixture.malicious);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });

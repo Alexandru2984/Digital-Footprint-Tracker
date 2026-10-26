@@ -49,6 +49,10 @@ export async function mockAPI(page, options = {}) {
                       metadata: { subdomain: 'old.example.com', service: 'Azure', cname: malicious, domain: 'example.com' } },
                     { id: null, source: 'PassiveDNS', type: 'dns_history', confidenceScore: 0.8, rawData: 'history',
                       metadata: { domain: 'example.com', addresses: '104.21.25.147, 203.0.113.9', possibleOrigins: '203.0.113.9' } },
+                    { id: null, source: 'SiteMeta', type: 'tracking_id', confidenceScore: 0.8, rawData: 'ids',
+                      metadata: { domain: 'example.com', ids: 'pub-1234567890123456,GTM-ABC123' } },
+                    { id: null, source: 'SiteMeta', type: 'shared_tracker', confidenceScore: 0.75, rawData: 'shared',
+                      metadata: { domain: 'example.com', username: 'pub-1234567890123456', domains: malicious + ',example.org', linked: 'web:example.org' } },
                 ],
             };
         } else if (pathname === '/api/identity/00000000-0000-4000-8000-0000000000bb') {

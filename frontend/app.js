@@ -1835,6 +1835,8 @@
             const subs = new Set();
             const takeovers = [];
             const history = [];
+            const trackers = {};
+            const tracker = d => trackers[d] || (trackers[d] = { ids: [], shared: [] });
             const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
             const dom = d => posture[d] || (posture[d] = {});
 
@@ -1856,6 +1858,8 @@
                 if ((r.type === 'subdomain' || r.type === 'subdomain_ip') && m.subdomain) subs.add(m.subdomain);
                 if (r.type === 'subdomain_takeover' && m.subdomain) takeovers.push({ sub: m.subdomain, service: m.service, cname: m.cname });
                 if (r.type === 'dns_history' && m.domain) history.push({ domain: m.domain, addresses: splitCsv(m.addresses), origins: splitCsv(m.possibleOrigins) });
+                if (r.type === 'tracking_id' && m.domain) tracker(m.domain).ids = splitCsv(m.ids);
+                if (r.type === 'shared_tracker' && m.domain && m.username) tracker(m.domain).shared.push({ id: m.username, domains: splitCsv(m.domains), linked: !!m.linked });
                 if (m.domain && r.type === 'security_headers') {
                     const d = dom(m.domain); d.grade = m.grade; d.missing = m.missing; d.present = m.present; d.https = m.https;
                 }
@@ -1866,7 +1870,8 @@
 
             const ipList = Object.keys(hosts);
             const domList = Object.keys(posture);
-            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length) {
+            const trackerList = Object.keys(trackers);
+            if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
@@ -1948,6 +1953,34 @@
                     const d = document.createElement('div'); d.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;word-break:break-all;'; d.textContent = h.domain; c.appendChild(d);
                     const w = chipWrap(); h.addresses.slice(0, 15).forEach(a => w.appendChild(chip(a, h.origins.includes(a) ? 'cve' : 'base'))); c.appendChild(w);
                     if (h.origins.length) c.appendChild(labelled('POSSIBLE ORIGIN BEHIND THE CDN: ' + h.origins.join(', '), '#fca5a5'));
+                    root.appendChild(c);
+                });
+            }
+
+            if (trackerList.length) {
+                // The same analytics or ad account ID on two sites is one owner's.
+                const trackerLabel = id => {
+                    const u = String(id).toUpperCase();
+                    if (u.startsWith('UA-')) return 'Google Analytics';
+                    if (u.startsWith('GTM-')) return 'Google Tag Manager';
+                    if (u.startsWith('G-')) return 'Google Analytics 4';
+                    if (u.startsWith('PUB-')) return 'Google AdSense';
+                    if (u.startsWith('FBPIXEL-')) return 'Meta Pixel';
+                    return 'Tracking';
+                };
+                root.appendChild(sectionTitle('Tracking IDs', 'the same ID on another site means the same owner'));
+                trackerList.sort().forEach(d => {
+                    const t = trackers[d]; const c = card(); c.classList.add('js-tracking');
+                    const name = document.createElement('div'); name.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;word-break:break-all;'; name.textContent = d; c.appendChild(name);
+                    const ids = t.ids.length ? t.ids : t.shared.map(s => s.id);
+                    const w = chipWrap(); ids.forEach(id => w.appendChild(chip(trackerLabel(id) + ' ' + id, 'port'))); c.appendChild(w);
+                    t.shared.forEach(s => {
+                        const shown = s.domains.slice(0, 15);
+                        c.appendChild(labelled(s.linked
+                            ? s.id + ' IS ALSO ON ' + s.domains.length + (s.domains.length === 1 ? ' SITE' : ' SITES') + ': LIKELY THE SAME OWNER'
+                            : s.id + ' IS ON MANY SITES: AN AGENCY\'S OR A PLATFORM\'S, NOT ONE OWNER\'S', s.linked ? '#fca5a5' : null));
+                        const o = chipWrap(); o.classList.add('js-tracking-shared'); shown.forEach(x => o.appendChild(chip(x, s.linked ? 'cve' : 'base'))); c.appendChild(o);
+                    });
                     root.appendChild(c);
                 });
             }
