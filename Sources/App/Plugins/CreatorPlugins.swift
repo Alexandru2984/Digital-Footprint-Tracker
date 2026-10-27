@@ -234,3 +234,55 @@ enum CreatorPage {
         }
     }
 }
+
+/// Mixcloud profile lookup through its official API (no key required): the
+/// name, city and country, bio and join date of a DJ or radio show.
+///
+/// API: GET https://api.mixcloud.com/{username}/ → 200 | 404
+struct MixcloudPlugin: FootprintPlugin {
+    let name = "Mixcloud"
+    let description = "Mixcloud profile, with the name, city, country and join date"
+    let accepts: Set<TargetShape> = [.username]
+
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        guard let username = CommunityHandle.validated(input),
+              let url = URL(string: "https://api.mixcloud.com/\(username)/"),
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 10,
+                bodyMode: .complete(maxBytes: 128 * 1_024), on: app
+              ), response.status == 200 else { return [] }
+        return Self.evaluate(username: username, body: response.data).map { [$0] } ?? []
+    }
+
+    static func evaluate(username: String, body: Data) -> PluginResult? {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let login = CommunityHandle.text(json["username"]), login.lowercased() == username.lowercased() else { return nil }
+        let text = { (key: String) in CommunityHandle.text(json[key]) }
+        let profileURL = "https://www.mixcloud.com/\(login)/"
+        var parts = ["Mixcloud account found: \(profileURL)"]
+        var meta = ["platform": "mixcloud", "username": login, "profileURL": profileURL]
+        if let name = text("name"), name.lowercased() != login.lowercased() {
+            parts.append("Name: \(name)")
+            meta["name"] = name
+        }
+        let place = [text("city"), text("country")].compactMap { $0 }.joined(separator: ", ")
+        if !place.isEmpty {
+            parts.append("Location: \(place)")
+            meta["location"] = place
+        }
+        if let created = text("created_time"), created.count >= 10,
+           TimelineIntelligence.normalizedDate(String(created.prefix(10))) != nil {
+            parts.append("Joined: \(created.prefix(10))")
+            meta["since"] = String(created.prefix(10))
+        }
+        if let shows = json["cloudcast_count"] as? Int, shows > 0 { parts.append("Shows: \(shows)") }
+        if let picture = CommunityHandle.text((json["pictures"] as? [String: Any])?["extra_large"]), picture.hasPrefix("https://") {
+            meta["avatar"] = picture
+        }
+        let bio = (json["biog"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let bio, !bio.isEmpty { parts.append("Bio: \(bio.prefix(160))") }
+        if let written = BioLinks.linked(in: bio, excluding: "mixcloud:\(login)") { meta["bioLinked"] = written }
+        return PluginResult(source: "Mixcloud", type: "account_presence", confidenceScore: 1.0,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
+    }
+}

@@ -180,7 +180,8 @@ struct BulkUsernamePlugin: FootprintPlugin {
     /// v3: platforms a dedicated plugin checks are left to it.
     /// v7: Codeforces, Gravatar, LeetCode and Wattpad have their own plugins.
     /// v8: so do TikTok, YouTube and Substack.
-    let cacheVersion = 8
+    /// v9: and Mixcloud and Wikipedia.
+    let cacheVersion = 9
     let heavy = true // 480 outbound requests per run — bound fan-out to one candidate
 
     // Load JSON into memory
@@ -208,7 +209,7 @@ struct BulkUsernamePlugin: FootprintPlugin {
     static let dedicatedPlatforms: Set<String> = [
         "bluesky", "codeberg", "codeforces", "crates.io", "devto", "dockerhub", "duolingo", "github", "gitlab",
         "gravatar", "hackernews", "huggingface", "keybase", "leetcode", "lichess", "linktree", "lobsters", "mastodon",
-        "npm", "pypi", "speedrun", "steam", "substack", "telegram", "tiktok", "wattpad", "youtube",
+        "mixcloud", "npm", "pypi", "speedrun", "steam", "substack", "telegram", "tiktok", "wattpad", "wikipedia", "youtube",
     ]
 
     static func checkedElsewhere(_ site: String) -> Bool {

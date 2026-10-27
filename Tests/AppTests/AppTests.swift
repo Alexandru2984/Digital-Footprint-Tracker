@@ -5238,6 +5238,32 @@ final class AppTests: XCTestCase {
         XCTAssertNil(SubstackPlugin.evaluate(username: "x", body: Data(#"{"error":"profile not found"}"#.utf8)))
     }
 
+    func testMixcloudAndWikimediaReadWhereAndSinceWhen() throws {
+        let mix = try XCTUnwrap(MixcloudPlugin.evaluate(username: "Spartacus", body: Data(#"""
+        {"username":"spartacus","name":"Spartacus","city":"London","country":"United Kingdom","created_time":"2009-03-10T07:32:56Z",
+         "biog":"Bookings: dj@example.org","cloudcast_count":12,"pictures":{"extra_large":"https://thumbnailer.mixcloud.com/x"}}
+        """#.utf8)))
+        XCTAssertNil(mix.metadata?["name"], "a name that only repeats the handle says nothing")
+        XCTAssertEqual(mix.metadata?["location"], "London, United Kingdom")
+        XCTAssertEqual(mix.metadata?["since"], "2009-03-10")
+        XCTAssertEqual(mix.metadata?["bioLinked"], "email:dj@example.org")
+        XCTAssertNil(MixcloudPlugin.evaluate(username: "x", body: Data(#"{"error":{"type":"ResourceNotFoundException"}}"#.utf8)))
+
+        let wiki = try XCTUnwrap(WikimediaPlugin.evaluate(username: "ana_pop", body: Data(#"""
+        {"query":{"globaluserinfo":{"name":"Ana pop","home":"rowiki","registration":"2011-05-02T10:00:00Z","editcount":420,
+         "merged":[{"wiki":"rowiki"},{"wiki":"commonswiki"},{"wiki":"enwiki"}]}}}
+        """#.utf8)))
+        XCTAssertEqual(wiki.metadata?["homeWiki"], "ro.wikipedia.org")
+        XCTAssertEqual(wiki.metadata?["profileURL"], "https://ro.wikipedia.org/wiki/User:Ana_pop")
+        XCTAssertEqual(wiki.metadata?["since"], "2011-05-02")
+        XCTAssertTrue(wiki.rawData.contains("Active on 3 wikis"))
+        XCTAssertNil(WikimediaPlugin.evaluate(username: "x", body: Data(#"{"query":{"globaluserinfo":{"missing":""}}}"#.utf8)))
+        XCTAssertEqual(WikimediaPlugin.host(of: "zh_min_nanwiki"), "zh-min-nan.wikipedia.org")
+        XCTAssertEqual(WikimediaPlugin.host(of: "dewiktionary"), "de.wiktionary.org")
+        XCTAssertEqual(WikimediaPlugin.host(of: "commonswiki"), "commons.wikimedia.org")
+        XCTAssertNil(WikimediaPlugin.host(of: "1234wiki"))
+    }
+
     func testCommunityProfilesDeclareTheOtherAccounts() throws {
         let dev = try XCTUnwrap(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"""
         {"username":"ben","name":"Ben Halpern","twitter_username":"bendhalpern","github_username":"benhalpern",

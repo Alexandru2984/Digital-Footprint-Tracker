@@ -71,6 +71,9 @@ enum PluginCanary {
         Check(plugin: "TikTok", input: "tiktok", username: "tiktok", alerts: false),
         Check(plugin: "YouTube", input: "mkbhd", username: "mkbhd"),
         Check(plugin: "Substack", input: "platformer", username: "platformer"),
+        Check(plugin: "Mixcloud", input: "spartacus", username: "spartacus"),
+        // Wikipedia's co-founder; the account is named with a space.
+        Check(plugin: "Wikimedia", input: "Jimbo_Wales", username: "Jimbo Wales"),
         // A Tor exit relay run by a German non-profit since 2019. Without a
         // key proxycheck.io answers 100 lookups a day: scans can spend them.
         Check(plugin: "ProxyCheck", input: "185.220.101.1", username: nil, alerts: false),

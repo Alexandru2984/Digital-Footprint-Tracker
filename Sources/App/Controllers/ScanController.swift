@@ -113,6 +113,8 @@ struct ScanController: RouteCollection {
         TikTokPlugin(),
         YouTubePlugin(),
         SubstackPlugin(),
+        MixcloudPlugin(),
+        WikimediaPlugin(),
         LichessPlugin(),
         SpeedrunPlugin(),
         LinktreePlugin(),

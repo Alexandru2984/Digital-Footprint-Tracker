@@ -255,6 +255,78 @@ struct WattpadPlugin: FootprintPlugin {
     }
 }
 
+/// A Wikimedia global account (no key required): one name across Wikipedia
+/// and its sister projects. When it was registered, the wiki it was made on —
+/// whose language hints at the editor's — how many edits it has and on how
+/// many wikis.
+///
+/// API: GET https://meta.wikimedia.org/w/api.php?action=query&meta=globaluserinfo&guiuser={name}&guiprop=merged|editcount
+struct WikimediaPlugin: FootprintPlugin {
+    let name = "Wikimedia"
+    let description = "Wikipedia and Wikimedia global account: home wiki, registration and edits"
+    let accepts: Set<TargetShape> = [.username]
+
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        guard let username = CommunityHandle.validated(input) else { return [] }
+        var components = URLComponents(string: "https://meta.wikimedia.org/w/api.php")
+        components?.queryItems = [
+            URLQueryItem(name: "action", value: "query"), URLQueryItem(name: "meta", value: "globaluserinfo"),
+            URLQueryItem(name: "guiuser", value: username), URLQueryItem(name: "guiprop", value: "merged|editcount"),
+            URLQueryItem(name: "format", value: "json"),
+        ]
+        guard let url = components?.url,
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 10,
+                bodyMode: .complete(maxBytes: 1_024 * 1_024), on: app
+              ), response.status == 200 else { return [] }
+        return Self.evaluate(username: username, body: response.data).map { [$0] } ?? []
+    }
+
+    static func evaluate(username: String, body: Data) -> PluginResult? {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let info = (json["query"] as? [String: Any])?["globaluserinfo"] as? [String: Any],
+              info["missing"] == nil,
+              let account = CommunityHandle.text(info["name"]),
+              account.replacingOccurrences(of: " ", with: "_").lowercased()
+                == username.replacingOccurrences(of: " ", with: "_").lowercased() else { return nil }
+        let home = CommunityHandle.text(info["home"])
+        let page = home.flatMap { host(of: $0) }.map { "https://\($0)/wiki/User:\(account.replacingOccurrences(of: " ", with: "_"))" }
+        let profileURL = page ?? "https://meta.wikimedia.org/wiki/Special:CentralAuth/\(account.replacingOccurrences(of: " ", with: "_"))"
+        var parts = ["Wikimedia account found: \(profileURL)"]
+        var meta = ["platform": "wikipedia", "username": account, "profileURL": profileURL]
+        if let home, let host = host(of: home) {
+            parts.append("Home wiki: \(host)")
+            meta["homeWiki"] = host
+        }
+        if let registered = CommunityHandle.text(info["registration"]), registered.count >= 10,
+           TimelineIntelligence.normalizedDate(String(registered.prefix(10))) != nil {
+            parts.append("Registered: \(registered.prefix(10))")
+            meta["since"] = String(registered.prefix(10))
+        }
+        if let edits = info["editcount"] as? Int { parts.append("Edits: \(edits)") }
+        let wikis = (info["merged"] as? [[String: Any]] ?? []).count
+        if wikis > 1 { parts.append("Active on \(wikis) wikis") }
+        if info["locked"] != nil { parts.append("Locked globally") }
+        return PluginResult(source: "Wikimedia", type: "account_presence", confidenceScore: 1.0,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
+    }
+
+    /// A wiki's database name as its host: `rowiki` → ro.wikipedia.org.
+    static func host(of database: String) -> String? {
+        let special = ["commonswiki": "commons.wikimedia.org", "metawiki": "meta.wikimedia.org",
+                       "wikidatawiki": "www.wikidata.org", "specieswiki": "species.wikimedia.org",
+                       "mediawikiwiki": "www.mediawiki.org"]
+        if let host = special[database] { return host }
+        for project in ["wiktionary", "wikibooks", "wikiquote", "wikisource", "wikinews", "wikivoyage", "wikiversity", "wiki"]
+        where database.hasSuffix(project) {
+            let language = database.dropLast(project.count).replacingOccurrences(of: "_", with: "-")
+            guard language.range(of: #"^[a-z]{2,3}(-[a-z]+)*$"#, options: .regularExpression) != nil else { return nil }
+            return "\(language).\(project == "wiki" ? "wikipedia" : project).org"
+        }
+        return nil
+    }
+}
+
 enum CommunityHandle {
     /// Letters, digits, `_`, `-` and `.`; not a bare number (a phone shape).
     static func validated(_ input: String) -> String? {
