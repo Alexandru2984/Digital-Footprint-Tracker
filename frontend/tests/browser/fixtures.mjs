@@ -52,6 +52,8 @@ export async function mockAPI(page, options = {}) {
                     { id: null, source: 'MicrosoftTenant', type: 'microsoft_tenant', confidenceScore: 0.9, rawData: 'tenant',
                       metadata: { domain: 'example.com', org: malicious, namespace: 'Federated', federation: 'login.example.com',
                                   tenantID: '2d8cc8ba-8dda-4334-9e5c-fac2092e9bac', region: 'EU', domains: 'example.org,example.net' } },
+                    { id: null, source: 'proxycheck.io', type: 'anonymizer', confidenceScore: 0.9, rawData: 'vpn',
+                      metadata: { ip: '203.0.113.9', proxy: 'yes', connection: 'VPN', service: malicious } },
                     { id: null, source: 'crt.sh', type: 'shared_certificate', confidenceScore: 0.8, rawData: 'certs',
                       metadata: { domain: 'example.com', domains: malicious + ',example-old.com', linked: 'web:example-old.com' } },
                     { id: null, source: 'SiteMeta', type: 'tracking_id', confidenceScore: 0.8, rawData: 'ids',

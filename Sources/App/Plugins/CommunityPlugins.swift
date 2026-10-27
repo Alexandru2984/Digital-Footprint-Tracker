@@ -194,6 +194,67 @@ struct SpeedrunPlugin: FootprintPlugin {
     }
 }
 
+/// Wattpad profile lookup (no key required): the name, location, join date,
+/// website and Facebook account a writer gives.
+///
+/// API: GET https://www.wattpad.com/api/v3/users/{username}?fields=… → 200 | 400 (not found)
+struct WattpadPlugin: FootprintPlugin {
+    let name = "Wattpad"
+    let description = "Wattpad profile, with the name, location, join date and links"
+    let accepts: Set<TargetShape> = [.username]
+
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        guard let username = CommunityHandle.validated(input) else { return [] }
+        var components = URLComponents(string: "https://www.wattpad.com/api/v3/users/\(username)")
+        components?.queryItems = [URLQueryItem(name: "fields",
+                                               value: "username,name,description,location,createDate,website,facebook,avatar")]
+        guard let url = components?.url,
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 10,
+                bodyMode: .complete(maxBytes: 128 * 1_024), on: app
+              ), response.status == 200 else { return [] }
+        return Self.evaluate(username: username, body: response.data).map { [$0] } ?? []
+    }
+
+    static func evaluate(username: String, body: Data) -> PluginResult? {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let login = CommunityHandle.text(json["username"]), login.lowercased() == username.lowercased() else { return nil }
+        let text = { (key: String) in CommunityHandle.text(json[key]) }
+        let profileURL = "https://www.wattpad.com/user/\(login)"
+        var parts = ["Wattpad account found: \(profileURL)"]
+        var meta = ["platform": "wattpad", "username": login, "profileURL": profileURL]
+        if let name = text("name"), name.lowercased() != login.lowercased() {
+            parts.append("Name: \(name)")
+            meta["name"] = name
+        }
+        if let location = text("location") {
+            parts.append("Location: \(location)")
+            meta["location"] = location
+        }
+        if let created = text("createDate"), created.count >= 10,
+           TimelineIntelligence.normalizedDate(String(created.prefix(10))) != nil {
+            parts.append("Joined: \(created.prefix(10))")
+            meta["since"] = String(created.prefix(10))
+        }
+        if let website = text("website"), IdentityLinks.websiteDomain(website) != nil {
+            parts.append("Website: \(website)")
+            meta["blog"] = website
+        }
+        // Facebook is a name or a whole profile address.
+        let facebook = text("facebook").map { $0.contains("/") ? CommunityHandle.accounts(in: [$0]) : [("facebook", $0)] } ?? []
+        if let declared = CommunityHandle.declare(facebook, on: "Wattpad", into: &meta) {
+            parts.append("Lists: \(declared)")
+        }
+        if let avatar = text("avatar"), avatar.hasPrefix("https://") { meta["avatar"] = avatar }
+        // The description comes HTML-escaped.
+        let bio = (json["description"] as? String).map(HuggingFacePlugin.unescape)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let bio, !bio.isEmpty { parts.append("Bio: \(bio.prefix(160))") }
+        if let written = BioLinks.linked(in: bio, excluding: "wattpad:\(login)") { meta["bioLinked"] = written }
+        return PluginResult(source: "Wattpad", type: "account_presence", confidenceScore: 1.0,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
+    }
+}
+
 enum CommunityHandle {
     /// Letters, digits, `_`, `-` and `.`; not a bare number (a phone shape).
     static func validated(_ input: String) -> String? {

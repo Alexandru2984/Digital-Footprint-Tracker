@@ -108,3 +108,62 @@ struct GravatarPlugin: FootprintPlugin {
         return results
     }
 }
+
+/// Gravatar profile by its username (no key required): the name, location,
+/// job, company and bio the owner filled in, and the accounts Gravatar
+/// verified by signing in to each (OAuth), not just the ones typed in.
+///
+/// API: GET https://api.gravatar.com/v3/profiles/{username} → 200 | 404
+struct GravatarProfilePlugin: FootprintPlugin {
+    let name = "GravatarProfile"
+    let description = "Gravatar profile by username, with the accounts Gravatar verified"
+    let accepts: Set<TargetShape> = [.username]
+
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        guard let username = CommunityHandle.validated(input),
+              let url = URL(string: "https://api.gravatar.com/v3/profiles/\(username)"),
+              let response = await PluginHTTP.request(
+                url, headers: ["Accept": "application/json"], timeout: 10,
+                bodyMode: .complete(maxBytes: 256 * 1_024), on: app
+              ), response.status == 200 else { return [] }
+        return Self.evaluate(username: username, body: response.data).map { [$0] } ?? []
+    }
+
+    static func evaluate(username: String, body: Data) -> PluginResult? {
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let profileURL = CommunityHandle.text(json["profile_url"]), profileURL.hasPrefix("https://"),
+              let slug = URL(string: profileURL)?.path.split(separator: "/").first.map(String.init),
+              slug.lowercased() == username.lowercased() else { return nil }
+        var parts = ["Gravatar profile found: \(profileURL)"]
+        var meta = ["platform": "gravatar", "username": slug, "profileURL": profileURL]
+        if let name = CommunityHandle.text(json["display_name"]), name.lowercased() != slug.lowercased() {
+            parts.append("Name: \(name)")
+            meta["name"] = name
+        }
+        if let location = CommunityHandle.text(json["location"]) {
+            parts.append("Location: \(location)")
+            meta["location"] = location
+        }
+        let job = CommunityHandle.text(json["job_title"])
+        if let company = CommunityHandle.text(json["company"]) {
+            parts.append("Works at: \(company)" + (job.map { " (\($0))" } ?? ""))
+            meta["company"] = company
+        } else if let job {
+            parts.append("Job: \(job)")
+        }
+        let bio = (json["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let bio, !bio.isEmpty { parts.append("Bio: \(bio.prefix(160))") }
+        if let avatar = CommunityHandle.text(json["avatar_url"]), avatar.hasPrefix("https://") { meta["avatar"] = avatar }
+        let verified = (json["verified_accounts"] as? [[String: Any]] ?? [])
+            .filter { $0["is_hidden"] as? Bool != true }.compactMap { $0["url"] as? String }
+        if let linked = IdentityLinks.linked(CommunityHandle.accounts(in: verified)) {
+            meta["linked"] = linked
+            meta["linkKind"] = "verified"
+            meta["linkReason"] = "verified by Gravatar, which had the owner sign in to each"
+            parts.append("Verified accounts: \(linked.replacingOccurrences(of: ",", with: ", "))")
+        }
+        if let written = BioLinks.linked(in: bio, excluding: "gravatar:\(slug)") { meta["bioLinked"] = written }
+        return PluginResult(source: "Gravatar", type: "account_presence", confidenceScore: 1.0,
+                            rawData: parts.joined(separator: " | "), metadata: meta)
+    }
+}

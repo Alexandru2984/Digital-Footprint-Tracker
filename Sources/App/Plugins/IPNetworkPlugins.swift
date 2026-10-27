@@ -179,3 +179,54 @@ enum IPv4Text {
         return octets.map(String.init).joined(separator: ".")
     }
 }
+
+/// What kind of connection an IP is, from proxycheck.io (no key: 100 lookups
+/// a day): a VPN and which service runs it, a proxy, Tor, or a residential,
+/// business, mobile or hosting line. A VPN or proxy address says who it routes
+/// for, not who connected through it.
+///
+/// API: GET https://proxycheck.io/v2/{ip}?vpn=1&asn=1
+/// → `{"status": "ok", "{ip}": {"proxy": "yes"|"no", "type", "provider", "operator": {"name"}}}`
+struct ProxyCheckPlugin: FootprintPlugin {
+    let name = "ProxyCheck"
+    let description = "Whether an IP is a VPN, proxy or Tor exit, and what kind of line it is (proxycheck.io)"
+    let accepts: Set<TargetShape> = [.ipv4]
+    let cacheTTL: TimeInterval = 86_400
+
+    func scan(input: String, on app: Application) async throws -> [PluginResult] {
+        guard let ip = IPv4Text.normalized(input),
+              let url = URL(string: "https://proxycheck.io/v2/\(ip)?vpn=1&asn=1"),
+              let response = await PluginHTTP.request(url, headers: ["Accept": "application/json"], timeout: 10,
+                                                      bodyMode: .complete(maxBytes: 64 * 1_024), on: app),
+              response.status == 200 else { return [] }
+        return Self.evaluate(ip: ip, body: response.data).map { [$0] } ?? []
+    }
+
+    static func evaluate(ip: String, body: Data) -> PluginResult? {
+        // "warning" still answers; "denied" (the day's lookups spent) and "error" do not.
+        guard let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              ["ok", "warning"].contains(json["status"] as? String ?? ""),
+              let entry = json[ip] as? [String: Any],
+              let proxy = entry["proxy"] as? String, ["yes", "no"].contains(proxy) else { return nil }
+        let kind = CommunityHandle.text(entry["type"])
+        let provider = CommunityHandle.text(entry["provider"])
+        let service = CommunityHandle.text((entry["operator"] as? [String: Any])?["name"])
+        var meta = ["ip": ip, "proxy": proxy]
+        if let kind { meta["connection"] = kind }
+        if let provider { meta["provider"] = provider }
+        if let service { meta["service"] = service }
+        guard proxy == "yes" else {
+            guard let kind else { return nil }
+            return PluginResult(source: "proxycheck.io", type: "ip_connection", confidenceScore: 0.8,
+                                rawData: "\(ip) is a \(kind.lowercased()) line" + (provider.map { " (\($0))" } ?? ""),
+                                metadata: meta)
+        }
+        let what = kind ?? "Proxy"
+        return PluginResult(
+            source: "proxycheck.io", type: "anonymizer", confidenceScore: 0.9,
+            rawData: "\(ip) is a \(what) address" + (service.map { " run by \($0)" } ?? "")
+                + (provider.map { ", on \($0)'s network" } ?? "")
+                + ": traffic from it is its users', not its operator's",
+            metadata: meta)
+    }
+}

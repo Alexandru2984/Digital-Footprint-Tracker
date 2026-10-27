@@ -5091,6 +5091,86 @@ final class AppTests: XCTestCase {
                              "another address's breaches still count")
     }
 
+    func testGravatarByUsernameReadsTheAccountsGravatarVerified() throws {
+        let body = Data(#"""
+        {"hash":"2720","display_name":"Beau Lebens","profile_url":"https://gravatar.com/beau",
+         "avatar_url":"https://0.gravatar.com/avatar/2720","location":"Golden, CO",
+         "description":"Lead of WooCommerce. Mail me: beau@example.org","job_title":"Lead, WooCommerce","company":"Automattic",
+         "verified_accounts":[{"service_type":"twitter","url":"https://x.com/beaulebens","is_hidden":false},
+                              {"service_type":"github","url":"https://github.com/beaulebens","is_hidden":false},
+                              {"service_type":"instagram","url":"https://instagram.com/hidden","is_hidden":true}]}
+        """#.utf8)
+        let found = try XCTUnwrap(GravatarProfilePlugin.evaluate(username: "Beau", body: body))
+        XCTAssertEqual(found.metadata?["username"], "beau")
+        XCTAssertEqual(found.metadata?["name"], "Beau Lebens")
+        XCTAssertEqual(found.metadata?["company"], "Automattic")
+        XCTAssertEqual(found.metadata?["location"], "Golden, CO")
+        XCTAssertEqual(found.metadata?["linked"], "twitter:beaulebens,github:beaulebens", "a hidden account stays hidden")
+        XCTAssertEqual(found.metadata?["linkKind"], "verified")
+        XCTAssertEqual(found.metadata?["bioLinked"], "email:beau@example.org")
+        XCTAssertNil(GravatarProfilePlugin.evaluate(username: "other", body: body), "another profile is not this name's")
+    }
+
+    func testCodeforcesAndLeetCodeReadTheNameAndWhereTheyWork() throws {
+        let codeforces = try XCTUnwrap(CodeforcesPlugin.evaluate(username: "tourist", body: Data(#"""
+        {"status":"OK","result":[{"lastName":"Korotkevich","country":"Belarus","city":"Gomel","rating":3382,
+         "titlePhoto":"https://userpic.codeforces.org/422/title/50a.jpg","handle":"tourist","firstName":"Gennady",
+         "organization":"ITMO University","rank":"legendary grandmaster","registrationTimeSeconds":1265987288}]}
+        """#.utf8)))
+        XCTAssertEqual(codeforces.metadata?["name"], "Gennady Korotkevich")
+        XCTAssertEqual(codeforces.metadata?["location"], "Gomel, Belarus")
+        XCTAssertEqual(codeforces.metadata?["company"], "ITMO University")
+        XCTAssertEqual(codeforces.metadata?["since"], "2010-02-12")
+        XCTAssertNil(CodeforcesPlugin.evaluate(username: "x", body: Data(#"{"status":"FAILED","comment":"not found"}"#.utf8)))
+
+        let leetcode = try XCTUnwrap(LeetCodePlugin.evaluate(username: "neal_wu", body: Data(#"""
+        {"data":{"matchedUser":{"username":"neal_wu","githubUrl":"https://github.com/nealwu","twitterUrl":"https://twitter.com/WuNeal",
+         "linkedinUrl":null,"profile":{"realName":"Neal Wu","aboutMe":"","countryName":"United States","company":"Acme",
+         "school":"Harvard University","jobTitle":"Engineer","websites":["https://www.youtube.com/@NealWuProgramming","nealwu.com"],
+         "userAvatar":"https://assets.leetcode.com/users/default_avatar.jpg"}}}}
+        """#.utf8)))
+        XCTAssertEqual(leetcode.metadata?["name"], "Neal Wu")
+        XCTAssertEqual(leetcode.metadata?["company"], "Acme")
+        XCTAssertEqual(leetcode.metadata?["org"], "Harvard University")
+        XCTAssertEqual(leetcode.metadata?["linked"], "github:nealwu,twitter:WuNeal,youtube:NealWuProgramming")
+        XCTAssertEqual(leetcode.metadata?["blog"], "nealwu.com")
+        XCTAssertTrue(AvatarMatch.avatars(in: [leetcode]).isEmpty, "the default picture is nobody's")
+        XCTAssertNil(LeetCodePlugin.evaluate(username: "x", body: Data(#"{"data":{"matchedUser":null}}"#.utf8)))
+    }
+
+    func testWattpadReadsTheProfileAndItsEscapedBio() throws {
+        let found = try XCTUnwrap(WattpadPlugin.evaluate(username: "ana_writes", body: Data(#"""
+        {"username":"Ana_Writes","avatar":"https://img.wattpad.com/useravatar/Ana_Writes.128.1.jpg","name":"Ana Pop",
+         "description":"&lt;b&gt;Hi&lt;/b&gt; find me on instagram.com/ana.pop","createDate":"2015-03-02T10:00:00Z",
+         "location":"Cluj","facebook":"https://www.facebook.com/ana.pop.7","website":"anapop.ro"}
+        """#.utf8)))
+        XCTAssertEqual(found.metadata?["name"], "Ana Pop")
+        XCTAssertEqual(found.metadata?["since"], "2015-03-02")
+        XCTAssertEqual(found.metadata?["linked"], "facebook:ana.pop.7")
+        XCTAssertEqual(found.metadata?["blog"], "anapop.ro")
+        XCTAssertEqual(found.metadata?["bioLinked"], "instagram:ana.pop")
+        XCTAssertNil(WattpadPlugin.evaluate(username: "x", body: Data(#"{"error_code":1014,"error_type":"NotFound"}"#.utf8)))
+    }
+
+    func testProxyCheckNamesTheVPNAndTheLineType() throws {
+        let vpn = try XCTUnwrap(ProxyCheckPlugin.evaluate(ip: "45.83.91.1", body: Data(#"""
+        {"status":"ok","45.83.91.1":{"asn":"AS9009","provider":"M247 Europe SRL","proxy":"yes","type":"VPN",
+         "operator":{"name":"NordVPN","url":"https://nordvpn.com/"}}}
+        """#.utf8)))
+        XCTAssertEqual(vpn.type, "anonymizer")
+        XCTAssertEqual(vpn.metadata?["service"], "NordVPN")
+        XCTAssertTrue(vpn.rawData.contains("VPN address run by NordVPN"))
+        let home = try XCTUnwrap(ProxyCheckPlugin.evaluate(ip: "86.120.1.1", body: Data(#"""
+        {"status":"ok","86.120.1.1":{"provider":"Digi Romania","proxy":"no","type":"Residential"}}
+        """#.utf8)))
+        XCTAssertEqual(home.type, "ip_connection")
+        XCTAssertEqual(home.metadata?["connection"], "Residential")
+        XCTAssertNil(ProxyCheckPlugin.evaluate(ip: "1.2.3.4", body: Data(#"{"status":"denied","message":"1000 free queries exhausted"}"#.utf8)),
+                     "a spent quota says nothing about the address")
+        XCTAssertEqual(RiskScorer.compute(raw: [(confidence: 0.9, type: "anonymizer")]).factors.map(\.category),
+                       RiskScorer.compute(raw: [(confidence: 0.9, type: "tor_exit")]).factors.map(\.category))
+    }
+
     func testCommunityProfilesDeclareTheOtherAccounts() throws {
         let dev = try XCTUnwrap(DevToPlugin.evaluate(username: "ben", status: 200, body: Data(#"""
         {"username":"ben","name":"Ben Halpern","twitter_username":"bendhalpern","github_username":"benhalpern",

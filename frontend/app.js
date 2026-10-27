@@ -1839,7 +1839,7 @@
             const tracker = d => trackers[d] || (trackers[d] = { ids: [], shared: [] });
             const tenants = {};
             const certified = [];
-            const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '' });
+            const host = ip => hosts[ip] || (hosts[ip] = { names: new Set(), ports: new Set(), cves: new Set(), geo: '', line: '', hidden: '' });
             const dom = d => posture[d] || (posture[d] = {});
 
             results.forEach(r => {
@@ -1852,6 +1852,9 @@
                     splitCsv(m.hostnames).forEach(n => h.names.add(n));
                     if (m.subdomain) h.names.add(m.subdomain);
                     if (r.type === 'cohosted_domain') splitCsv(m.domains).forEach(n => h.names.add(n));
+                    if (r.type === 'ip_connection' && m.connection) h.line = m.connection;
+                    if (r.type === 'anonymizer') h.hidden = (m.connection || 'Proxy') + (m.service ? ' · ' + m.service : '');
+                    if (r.type === 'tor_exit') h.hidden = 'Tor exit';
                     if (r.type === 'ip_geolocation') {
                         const bits = [m.country, m.org].filter(Boolean);
                         if (bits.length) h.geo = bits.join(' · ');
@@ -1929,6 +1932,7 @@
                     const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;';
                     const ipEl = document.createElement('span'); ipEl.style.cssText = 'font-family:monospace;font-weight:700;color:#e2e8f0;'; ipEl.textContent = ip; head.appendChild(ipEl);
                     if (h.geo) { const g = document.createElement('span'); g.style.cssText = 'font-size:12px;color:#94a3b8;'; g.textContent = h.geo; head.appendChild(g); }
+                    if (h.hidden || h.line) { const t = chip(h.hidden || h.line, h.hidden ? 'cve' : 'base'); t.classList.add('js-host-line'); head.appendChild(t); }
                     c.appendChild(head);
                     if (h.names.size) { const n = document.createElement('div'); n.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:4px;word-break:break-all;'; n.textContent = Array.from(h.names).slice(0, 12).join(', '); c.appendChild(n); }
                     if (h.ports.size) { c.appendChild(labelled('OPEN PORTS')); const w = chipWrap(); Array.from(h.ports).sort((a, b) => (+a || 0) - (+b || 0)).forEach(p => w.appendChild(chip(p, 'port'))); c.appendChild(w); }

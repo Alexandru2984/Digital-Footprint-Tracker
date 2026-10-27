@@ -106,6 +106,10 @@ struct ScanController: RouteCollection {
         DevToPlugin(),
         LobstersPlugin(),
         DuolingoPlugin(),
+        WattpadPlugin(),
+        CodeforcesPlugin(),
+        LeetCodePlugin(),
+        GravatarProfilePlugin(),
         LichessPlugin(),
         SpeedrunPlugin(),
         LinktreePlugin(),
@@ -130,6 +134,7 @@ struct ScanController: RouteCollection {
         RIPEStatPlugin(),
         GreyNoisePlugin(),
         TorExitPlugin(),
+        ProxyCheckPlugin(),
         VirusTotalPlugin(),
         AbuseIPDBPlugin(),
         PassiveDNSPlugin()

@@ -63,6 +63,13 @@ enum PluginCanary {
         Check(plugin: "Speedrun", input: "cheese", username: "cheese"),
         Check(plugin: "Linktree", input: "selenagomez", username: "selenagomez"),
         Check(plugin: "HuggingFace", input: "julien-c", username: "julien-c"),
+        Check(plugin: "GravatarProfile", input: "beau", username: "beau"),
+        Check(plugin: "Codeforces", input: "tourist", username: "tourist"),
+        Check(plugin: "LeetCode", input: "neal_wu", username: "neal_wu"),
+        Check(plugin: "Wattpad", input: "Wattpad", username: "Wattpad"),
+        // A Tor exit relay run by a German non-profit since 2019. Without a
+        // key proxycheck.io answers 100 lookups a day: scans can spend them.
+        Check(plugin: "ProxyCheck", input: "185.220.101.1", username: nil, alerts: false),
         Check(plugin: "CratesPackages", input: "dtolnay", username: "dtolnay"),
         Check(plugin: "CertificateTransparency", input: "example.com", username: nil, alerts: false),
         Check(plugin: "DomainOSINT", input: "example.com", username: nil),

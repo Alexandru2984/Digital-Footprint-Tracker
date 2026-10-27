@@ -291,6 +291,7 @@ enum RiskScorer {
         // traffic is anonymous by design.
         "ip_scanner": .threat,
         "tor_exit": .threat,
+        "anonymizer": .threat,
 
         // ── Cross-platform identity linkage ──────────────────────────────────
         "identity_proof": .identity,
@@ -345,6 +346,7 @@ enum RiskScorer {
         // Who routes an address, and research scanners (Shodan, Censys) seen
         // probing: facts about the network, not a weakness of the target.
         "ip_network": .infra,
+        "ip_connection": .infra,
         "domain_services": .infra,
         "web_service": .infra,
         "ip_scanner_benign": .infra

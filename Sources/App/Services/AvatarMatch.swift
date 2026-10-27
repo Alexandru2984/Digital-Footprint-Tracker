@@ -50,7 +50,7 @@ enum AvatarMatch {
     static let maximumColourDistance = 30.0
 
     /// URLs of pictures every account without one gets.
-    private static let placeholderMarkers = ["missing", "default", "placeholder", "no_avatar", "blank", "anonymous"]
+    private static let placeholderMarkers = ["missing", "default", "placeholder", "no_avatar", "no-avatar", "no-title", "blank", "anonymous"]
 
     /// The accounts in `results` that show a picture, one per account.
     static func avatars(in results: [PluginResult]) -> [Avatar] {

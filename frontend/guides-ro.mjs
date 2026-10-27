@@ -34,6 +34,9 @@ export const roSourceGroups = [
         ['speedrun.com', 'Regiunea, data înscrierii și conturile Twitch, YouTube și Twitter legate de un speedrunner'],
         ['Linktree', 'Toate conturile sociale listate pe o pagină Linktree, data creării și țara'],
         ['Hugging Face', 'Numele complet, organizațiile, site-ul și conturile GitHub, Twitter, LinkedIn și Bluesky de pe un profil'],
+        ['Gravatar', 'Numele, locația, jobul și compania de pe un profil, plus conturile verificate de Gravatar prin autentificare'],
+        ['Codeforces, LeetCode', 'Numele, orașul sau țara, compania și școala unui programator, plus conturile pe care le listează'],
+        ['Wattpad', 'Numele, locația, data înscrierii, site-ul și Facebook-ul unui autor'],
         ['Telegram, Hacker News, Steam', 'Profiluri publice'],
         ['npm, PyPI, crates.io, Docker Hub', 'Pachete și imagini publicate'],
     ]],
@@ -56,6 +59,7 @@ export const roSourceGroups = [
         ['RIPEstat', 'Prefixul rutat, AS-ul de origine și operatorul rețelei'],
         ['RDAP / WHOIS', 'Rețeaua căreia îi aparține adresa'],
         ['Tor Project', 'Dacă adresa e un nod de ieșire Tor activ'],
+        ['proxycheck.io', 'Dacă adresa e un VPN sau proxy și ce serviciu îl operează, ori ce tip de conexiune e (rezidențială, business, hosting)'],
         ['GreyNoise', 'Dacă adresa scanează internetul și cum e clasificată'],
         ['Shodan, AbuseIPDB, VirusTotal', 'Servicii, rapoarte de abuz și reputație (chei API opționale)'],
     ]],
@@ -108,7 +112,7 @@ export const roPages = [
 <p>Majoritatea instrumentelor de căutare după username cer fiecărui site pagina de profil și raportează orice pagină care se încarcă. Multe site-uri răspund „200 OK” pentru orice nume — o pagină de login, una generică — așa că rezultatul e o listă lungă de conturi care nu există.</p>
 <p>Scanerul întreabă fiecare site care raportează un cont și despre un nume aleator, pe care nu-l are nimeni. Un site care „găsește” și numele acela nu poate deosebi conturile reale de cele inexistente, iar rezultatul lui e eliminat. La o scanare obișnuită, asta elimină peste jumătate din rezultatele brute.</p>
 <h2>Profiluri citite direct</h2>
-<p>Pentru platformele importante se citește profilul prin API, nu doar un cod HTTP: GitHub (profil, organizații, conturi sociale și adresele verificate pe cheile GPG), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, Linktree, Hugging Face, npm, PyPI, crates.io și Docker Hub.</p>
+<p>Pentru platformele importante se citește profilul prin API, nu doar un cod HTTP: GitHub (profil, organizații, conturi sociale și adresele verificate pe cheile GPG), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, Linktree, Hugging Face, Gravatar, Codeforces, LeetCode, Wattpad, npm, PyPI, crates.io și Docker Hub.</p>
 <h2>E aceeași persoană?</h2>
 <p>Două conturi cu același nume pot fi ale unor străini. Scanerul caută dovezi care le leagă:</p>
 <ul>
