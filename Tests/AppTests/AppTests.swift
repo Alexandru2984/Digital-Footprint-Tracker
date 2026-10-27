@@ -5216,6 +5216,9 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(found.metadata?["avatar"], "https://yt3.ggpht.com/s900", "the largest picture")
         XCTAssertEqual(found.metadata?["bioLinked"], "email:business@mkbhd.com")
         XCTAssertNil(YouTubePlugin.evaluate(username: "other", html: html))
+        XCTAssertEqual(IdentityLinks.identifier(of: "tiktok: anapop"), "anapop", "a handle on a video platform is worth scanning")
+        XCTAssertEqual(IdentityLinks.identifier(of: "instagram: ana.pop"), "ana.pop")
+        XCTAssertNil(IdentityLinks.identifier(of: "facebook: ana.pop.7"), "a Facebook name is seldom anyone's handle elsewhere")
     }
 
     func testSubstackTellsConnectedAccountsFromListedOnes() throws {

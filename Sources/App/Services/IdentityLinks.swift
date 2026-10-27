@@ -262,7 +262,10 @@ enum IdentityLinks {
     /// Platforms whose linked value is a domain, and those whose value is a
     /// handle worth scanning by name.
     static let domainPlatforms: Set<String> = ["dns", "generic_web_site", "web"]
-    static let handlePlatforms: Set<String> = ["github", "twitter", "reddit", "hackernews", "gitlab", "linktree"]
+    static let handlePlatforms: Set<String> = [
+        "github", "twitter", "reddit", "hackernews", "gitlab", "linktree", "instagram", "tiktok", "youtube", "twitch",
+        "substack",
+    ]
 
     /// The scannable identifier behind a `platform: value` node: the domain
     /// for a website or proven domain, the handle for an account on a
