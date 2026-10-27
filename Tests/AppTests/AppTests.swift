@@ -4753,6 +4753,11 @@ final class AppTests: XCTestCase {
                        "a README's GitHub links name other people's projects")
         XCTAssertEqual(BioLinks.merged("email:a@b.dev,twitch:ana", "Twitch:ana,linkedin:ana"), "email:a@b.dev,twitch:ana,linkedin:ana")
         XCTAssertNil(BioLinks.linked(in: nil))
+        XCTAssertEqual(BioLinks.linked(in: "leetcode.com/u/ana_p codeforces.com/profile/anap lichess.org/@/anachess "
+                                           + "substack.com/@anawrites gravatar.com/anapop discord.gg/anaserver"),
+                       "leetcode:ana_p,codeforces:anap,lichess:anachess,substack:anawrites,gravatar:anapop",
+                       "an invite to a server is no account and no site of hers")
+        XCTAssertNil(IdentityLinks.account(at: "https://leetcode.com/problems/two-sum/"))
 
         // A bio's links are declared edges from the account, and leads to follow.
         let inputs = [IdentitySynthesizer.Input(source: "GitHub", type: "account_presence", confidence: 1.0, metadata: [
@@ -5169,6 +5174,65 @@ final class AppTests: XCTestCase {
                      "a spent quota says nothing about the address")
         XCTAssertEqual(RiskScorer.compute(raw: [(confidence: 0.9, type: "anonymizer")]).factors.map(\.category),
                        RiskScorer.compute(raw: [(confidence: 0.9, type: "tor_exit")]).factors.map(\.category))
+    }
+
+    func testTikTokReadsTheProfileThePageEmbeds() throws {
+        func page(_ detail: String) -> String {
+            #"<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{"__DEFAULT_SCOPE__":{"webapp.user-detail":"#
+                + detail + "}}</script></html>"
+        }
+        let found = try XCTUnwrap(TikTokPlugin.evaluate(username: "SelenaGomez", html: page(#"""
+        {"statusCode":0,"userInfo":{"user":{"uniqueId":"selenagomez","nickname":"Selena Gomez","createTime":1463644662,
+         "verified":true,"signature":"mail: team@example.com","bioLink":{"link":"https://linktr.ee/selenagomez"},
+         "avatarLarger":"https://p16.tiktokcdn.com/a.jpeg?x-expires=1"}}}
+        """#)))
+        XCTAssertEqual(found.metadata?["name"], "Selena Gomez")
+        XCTAssertEqual(found.metadata?["since"], "2016-05-19")
+        XCTAssertEqual(found.metadata?["linked"], "linktree:selenagomez", "a Linktree in the bio is the owner's")
+        XCTAssertEqual(found.metadata?["bioLinked"], "email:team@example.com")
+        XCTAssertTrue(found.rawData.contains("Verified by TikTok"))
+        XCTAssertNil(TikTokPlugin.evaluate(username: "x", html: page(#"{"statusCode":10221,"userInfo":{}}"#)), "no such user")
+        XCTAssertNil(TikTokPlugin.evaluate(username: "x", html: "<html>challenge</html>"))
+    }
+
+    func testYouTubeReadsTheChannelsAboutPage() throws {
+        let data = #"""
+        {"metadata":{"channelMetadataRenderer":{"title":"Marques Brownlee","vanityChannelUrl":"http://www.youtube.com/@mkbhd",
+          "description":"Tech videos. business@MKBHD.com","avatar":{"thumbnails":[{"url":"https://yt3.ggpht.com/s88"},{"url":"https://yt3.ggpht.com/s900"}]}}},
+         "onResponseReceivedEndpoints":[{"x":{"aboutChannelViewModel":{"country":"United States",
+          "joinedDateText":{"content":"Joined Mar 21, 2008"},"subscriberCountText":"21.4M subscribers",
+          "links":[{"channelExternalLinkViewModel":{"link":{"content":"twitter.com/MKBHD"}}},
+                   {"channelExternalLinkViewModel":{"link":{"content":"reddit.com/r/MKBHD"}}},
+                   {"channelExternalLinkViewModel":{"link":{"content":"mkbhd.com"}}}]}}}]}
+        """#
+        let html = "<script>var ytInitialData = \(data);</script><script>var other = 1;</script>"
+        let found = try XCTUnwrap(YouTubePlugin.evaluate(username: "MKBHD", html: html))
+        XCTAssertEqual(found.metadata?["username"], "mkbhd")
+        XCTAssertEqual(found.metadata?["name"], "Marques Brownlee")
+        XCTAssertEqual(found.metadata?["location"], "United States")
+        XCTAssertEqual(found.metadata?["since"], "2008-03-21")
+        XCTAssertEqual(found.metadata?["linked"], "twitter:MKBHD", "a subreddit is not an account")
+        XCTAssertEqual(found.metadata?["blog"], "mkbhd.com")
+        XCTAssertEqual(found.metadata?["avatar"], "https://yt3.ggpht.com/s900", "the largest picture")
+        XCTAssertEqual(found.metadata?["bioLinked"], "email:business@mkbhd.com")
+        XCTAssertNil(YouTubePlugin.evaluate(username: "other", html: html))
+    }
+
+    func testSubstackTellsConnectedAccountsFromListedOnes() throws {
+        let found = try XCTUnwrap(SubstackPlugin.evaluate(username: "noahpinion", body: Data(#"""
+        {"name":"Noah Smith","handle":"noahpinion","bio":"Economist.","photo_url":"https://substack-post-media.s3.amazonaws.com/a.png",
+         "profile_set_up_at":"2021-04-20T04:22:21.972Z","twitterAccount":{"screen_name":"Noahpinion"},
+         "userLinks":[{"type":"twitter","url":"https://x.com/Noahpinion","is_connected_account":true},
+                      {"type":"instagram","url":"https://instagram.com/noah.s","is_connected_account":false}],
+         "primaryPublication":{"name":"Noahpinion","custom_domain":"www.noahpinion.blog"}}
+        """#.utf8)))
+        XCTAssertEqual(found.metadata?["name"], "Noah Smith")
+        XCTAssertEqual(found.metadata?["linked"], "twitter:Noahpinion")
+        XCTAssertEqual(found.metadata?["linkKind"], "verified")
+        XCTAssertEqual(found.metadata?["bioLinked"], "instagram:noah.s", "typed in, not signed in to")
+        XCTAssertEqual(found.metadata?["blog"], "www.noahpinion.blog")
+        XCTAssertEqual(found.metadata?["since"], "2021-04-20")
+        XCTAssertNil(SubstackPlugin.evaluate(username: "x", body: Data(#"{"error":"profile not found"}"#.utf8)))
     }
 
     func testCommunityProfilesDeclareTheOtherAccounts() throws {

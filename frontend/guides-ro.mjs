@@ -37,6 +37,9 @@ export const roSourceGroups = [
         ['Gravatar', 'Numele, locația, jobul și compania de pe un profil, plus conturile verificate de Gravatar prin autentificare'],
         ['Codeforces, LeetCode', 'Numele, orașul sau țara, compania și școala unui programator, plus conturile pe care le listează'],
         ['Wattpad', 'Numele, locația, data înscrierii, site-ul și Facebook-ul unui autor'],
+        ['TikTok', 'Numele afișat, bio-ul și link-ul din bio, plus data creării contului'],
+        ['YouTube', 'Numele, descrierea, țara, data înscrierii și link-urile unui canal'],
+        ['Substack', 'Numele și bio-ul unui autor, conturile conectate prin autentificare și domeniul publicației'],
         ['Telegram, Hacker News, Steam', 'Profiluri publice'],
         ['npm, PyPI, crates.io, Docker Hub', 'Pachete și imagini publicate'],
     ]],
@@ -112,7 +115,7 @@ export const roPages = [
 <p>Majoritatea instrumentelor de căutare după username cer fiecărui site pagina de profil și raportează orice pagină care se încarcă. Multe site-uri răspund „200 OK” pentru orice nume — o pagină de login, una generică — așa că rezultatul e o listă lungă de conturi care nu există.</p>
 <p>Scanerul întreabă fiecare site care raportează un cont și despre un nume aleator, pe care nu-l are nimeni. Un site care „găsește” și numele acela nu poate deosebi conturile reale de cele inexistente, iar rezultatul lui e eliminat. La o scanare obișnuită, asta elimină peste jumătate din rezultatele brute.</p>
 <h2>Profiluri citite direct</h2>
-<p>Pentru platformele importante se citește profilul prin API, nu doar un cod HTTP: GitHub (profil, organizații, conturi sociale și adresele verificate pe cheile GPG), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, Linktree, Hugging Face, Gravatar, Codeforces, LeetCode, Wattpad, npm, PyPI, crates.io și Docker Hub.</p>
+<p>Pentru platformele importante se citește profilul prin API, nu doar un cod HTTP: GitHub (profil, organizații, conturi sociale și adresele verificate pe cheile GPG), GitLab, Codeberg, Keybase, Mastodon, Bluesky, Telegram, Hacker News, Steam, DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, Linktree, Hugging Face, Gravatar, Codeforces, LeetCode, Wattpad, TikTok, YouTube, Substack, npm, PyPI, crates.io și Docker Hub.</p>
 <h2>E aceeași persoană?</h2>
 <p>Două conturi cu același nume pot fi ale unor străini. Scanerul caută dovezi care le leagă:</p>
 <ul>

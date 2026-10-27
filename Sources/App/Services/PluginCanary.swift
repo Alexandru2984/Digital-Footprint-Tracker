@@ -67,6 +67,10 @@ enum PluginCanary {
         Check(plugin: "Codeforces", input: "tourist", username: "tourist"),
         Check(plugin: "LeetCode", input: "neal_wu", username: "neal_wu"),
         Check(plugin: "Wattpad", input: "Wattpad", username: "Wattpad"),
+        // TikTok serves its page to some visitors as a challenge instead.
+        Check(plugin: "TikTok", input: "tiktok", username: "tiktok", alerts: false),
+        Check(plugin: "YouTube", input: "mkbhd", username: "mkbhd"),
+        Check(plugin: "Substack", input: "platformer", username: "platformer"),
         // A Tor exit relay run by a German non-profit since 2019. Without a
         // key proxycheck.io answers 100 lookups a day: scans can spend them.
         Check(plugin: "ProxyCheck", input: "185.220.101.1", username: nil, alerts: false),

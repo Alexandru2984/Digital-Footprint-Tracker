@@ -308,6 +308,11 @@ enum IdentityLinks {
         "huggingface.co", "hf.co", "hf.space",
         "pages.dev", "herokuapp.com", "stackoverflow.com", "npmjs.com", "pypi.org", "crates.io", "docs.rs",
         "docker.com", "sourceforge.net", "wikipedia.org", "carrd.co", "wixsite.com", "squarespace.com",
+        // Invites, tip jars, stores and short links: pages on others' sites.
+        "discord.gg", "discord.com", "patreon.com", "ko-fi.com", "buymeacoffee.com", "paypal.me", "paypal.com",
+        "amazon.com", "amzn.to", "bit.ly", "spotify.com", "apple.com", "soundcloud.com", "snapchat.com",
+        "threads.net", "pinterest.com", "linkin.bio", "beacons.ai", "solo.to", "wattpad.com", "leetcode.com",
+        "codeforces.com", "gravatar.com", "lichess.org", "speedrun.com",
     ]
 
     /// The account or site a profile link stands for: `github.com/ana` is
@@ -332,7 +337,7 @@ enum IdentityLinks {
             "github.com": "github", "gitlab.com": "gitlab", "codeberg.org": "codeberg", "twitter.com": "twitter",
             "x.com": "twitter", "keybase.io": "keybase", "instagram.com": "instagram", "facebook.com": "facebook",
             "twitch.tv": "twitch", "news.ycombinator.com": "hackernews", "t.me": "telegram", "tiktok.com": "tiktok",
-            "linktr.ee": "linktree", "huggingface.co": "huggingface",
+            "linktr.ee": "linktree", "huggingface.co": "huggingface", "gravatar.com": "gravatar",
         ]
         switch bare {
         case _ where firstSegment[bare] != nil:
@@ -340,7 +345,8 @@ enum IdentityLinks {
                                          "intent", "share", "i", "hashtag", "p", "reel", "watch", "groups",
                                          "sharer", "sharer.php", "dialog", "plugins", "login", "signup", "about",
                                          "features", "pricing", "join", "tos", "privacy", "policies", "legal",
-                                         "datasets", "spaces", "models", "docs", "blog", "papers", "collections", "posts"]
+                                         "datasets", "spaces", "models", "docs", "blog", "papers", "collections", "posts",
+                                         "avatar"]
             guard let first = path.first, !reserved.contains(first.lowercased()) else { return nil }
             let handle = name(0).map { $0.hasPrefix("@") ? String($0.dropFirst()) : $0 } ?? name(0, dropping: "@")
             return handle.map { (firstSegment[bare] ?? bare, $0) }
@@ -349,6 +355,12 @@ enum IdentityLinks {
         case "bsky.app": return path.first == "profile" ? name(1).map { ("bluesky", $0) } : nil
         case "youtube.com": return name(0, dropping: "@").map { ("youtube", $0) }
         case "npmjs.com": return name(0, dropping: "~").map { ("npm", $0) }
+        case "leetcode.com": return path.first == "u" ? name(1).map { ("leetcode", $0) } : nil
+        case "codeforces.com": return path.first == "profile" ? name(1).map { ("codeforces", $0) } : nil
+        case "wattpad.com": return path.first == "user" ? name(1).map { ("wattpad", $0) } : nil
+        case "lichess.org": return path.first == "@" ? name(1).map { ("lichess", $0) } : nil
+        case "speedrun.com": return path.first == "users" ? name(1).map { ("speedrun", $0) } : nil
+        case "substack.com": return name(0, dropping: "@").map { ("substack", $0) }
         default:
             // A Mastodon-style profile on any instance: https://instance/@name.
             // Medium, Substack and the like use the same shape for their own users.
