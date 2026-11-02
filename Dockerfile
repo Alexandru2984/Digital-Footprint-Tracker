@@ -2,7 +2,7 @@
 
 # ─── Stage 1: Build ──────────────────────────────────────────────────────────
 # Statically link the Swift runtime so the final image only needs system C libs.
-FROM swift:6.2-jammy@sha256:af5d222ef7e25779bfc52b078c1e92b2e0c4e1ab29d24ace4533e25f8c3ec8c8 AS builder
+FROM swift:6.2-jammy@sha256:7889980d84f47447d109990a6763f3a7997acf2d1059bbd7c56f7e0af6243f73 AS builder
 WORKDIR /build
 
 # Resolve deps in a layer that only invalidates when the manifest changes.
@@ -35,7 +35,7 @@ RUN --mount=type=cache,id=swift-vapor-spm-6.2,target=/build/.build,sharing=locke
 # need the system C libraries it dynamically depends on. A newer release than
 # the builder's is fine (glibc is backward compatible) and brings Python 3.12,
 # which the locked report/holehe runtime needs (Pillow 13 requires 3.11+).
-FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS runtime
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS runtime
 
 # Runtime dependencies:
 #   libatomic1 libcurl4t64 libxml2 — required by the Vapor binary
