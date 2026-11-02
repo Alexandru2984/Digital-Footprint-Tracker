@@ -25,8 +25,8 @@
   },
   "9GAG": {
     "errorType": "status_code",
-    "url": "https://www.9gag.com/u/{}",
-    "urlMain": "https://www.9gag.com/",
+    "url": "https://9gag.com/u/{}",
+    "urlMain": "https://9gag.com/",
     "username_claimed": "blue"
   },
   "APClips": {
@@ -324,13 +324,6 @@
     "url": "https://community.brave.com/u/{}/",
     "urlMain": "https://community.brave.com/",
     "username_claimed": "blue"
-  },
-  "BreachSta.rs Forum": {
-    "errorMsg": "<title>Error - BreachStars</title>",
-    "errorType": "message",
-    "url": "https://breachsta.rs/profile/{}",
-    "urlMain": "https://breachsta.rs/",
-    "username_claimed": "Sleepybubble"
   },
   "BugCrowd": {
     "errorType": "status_code",
@@ -1577,14 +1570,6 @@
     "urlProbe": "https://api.monkeytype.com/users/{}/profile",
     "username_claimed": "Lost_Arrow"
   },
-  "Motherless": {
-    "errorMsg": "no longer a member",
-    "errorType": "message",
-    "isNSFW": true,
-    "url": "https://motherless.com/m/{}",
-    "urlMain": "https://motherless.com/",
-    "username_claimed": "hacker"
-  },
   "Motorradfrage": {
     "errorType": "status_code",
     "url": "https://www.motorradfrage.net/nutzer/{}",
@@ -1887,12 +1872,6 @@
     "username_claimed": "blue",
     "request_method": "GET"
   },
-  "Periscope": {
-    "errorType": "status_code",
-    "url": "https://www.periscope.tv/{}/",
-    "urlMain": "https://www.periscope.tv/",
-    "username_claimed": "blue"
-  },
   "Pinkbike": {
     "errorType": "status_code",
     "regexCheck": "^[^.]*?$",
@@ -1980,8 +1959,7 @@
     "username_claimed": "pylapp"
   },
   "Pychess": {
-    "errorType": "message",
-    "errorMsg": "404",
+    "errorType": "status_code",
     "url": "https://www.pychess.org/@/{}",
     "urlMain": "https://www.pychess.org",
     "username_claimed": "gbtami"
@@ -2495,7 +2473,7 @@
   "TrashboxRU": {
     "errorType": "status_code",
     "regexCheck": "^[A-Za-z0-9_-]{3,16}$",
-    "url": "https://trashbox.ru/users/{}",
+    "url": "https://trashbox.ru/users/{}/",
     "urlMain": "https://trashbox.ru/",
     "username_claimed": "blue"
   },
@@ -2541,13 +2519,6 @@
     "url": "https://www.twitch.tv/{}",
     "urlMain": "https://www.twitch.tv",
     "username_claimed": "xqc"
-  },
-  "Trovo": {
-    "errorMsg": "Uh Ohhh...",
-    "errorType": "message",
-    "url": "https://trovo.live/s/{}/",
-    "urlMain": "https://trovo.live",
-    "username_claimed": "Aimilios"
   },
   "Twitter": {
     "errorMsg": [
@@ -2922,7 +2893,7 @@
     "errorType": "status_code",
     "url": "https://www.freecodecamp.org/{}",
     "urlMain": "https://www.freecodecamp.org/",
-    "urlProbe": "https://api.freecodecamp.org/api/users/get-public-profile?username={}",
+    "urlProbe": "https://api.freecodecamp.org/users/get-public-profile?username={}",
     "username_claimed": "naveennamani"
   },
   "furaffinity": {
