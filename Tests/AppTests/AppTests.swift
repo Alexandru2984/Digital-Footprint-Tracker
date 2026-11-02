@@ -7429,6 +7429,34 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(quietReport?.alerts, false)
     }
 
+    func testAQuotaLimitedCanaryReusesItsAnswerAcrossRuns() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        await PluginCanaryStore.shared.reset()
+        addTeardownBlock { await PluginCanaryStore.shared.reset() }
+        let found = PluginResult(source: "x", type: "t", confidenceScore: 1, rawData: "x", metadata: nil)
+        let sparse = ScriptedPlugin(name: "CanarySparse") { _ in [found] }
+        let limited = ScriptedPlugin(name: "CanaryLimited") { _ in [] }
+        let checks = [
+            PluginCanary.Check(plugin: "CanarySparse", input: "203.0.113.7", username: nil, alerts: false, reuseFor: 7 * 86_400),
+            PluginCanary.Check(plugin: "CanaryLimited", input: "203.0.113.8", username: nil, alerts: false, reuseFor: 7 * 86_400),
+        ]
+        // Two boots in a row, as two deploys in a day would do.
+        for _ in 0..<2 {
+            await PluginCanaryStore.shared.reset()
+            await PluginCanary.runAll(plugins: [sparse, limited], app: app, checks: checks, timeout: 1, retryDelays: [0, 0])
+        }
+        XCTAssertEqual(sparse.counter.next(), 2, "asked once; the second boot reused the kept answer")
+        XCTAssertEqual(limited.counter.next(), 2, "a miss is neither retried nor asked again the same day")
+        let passed = await PluginCanaryStore.shared.report(for: "CanarySparse")
+        XCTAssertEqual(passed?.passed, true)
+        let missed = await PluginCanaryStore.shared.report(for: "CanaryLimited")
+        XCTAssertEqual(missed?.passed, false)
+        XCTAssertEqual(missed?.detail, "no result")
+        let kept = await PluginCacheStore.lookup(pluginName: "CanarySparse", input: "203.0.113.7", on: app.db, logger: app.logger)
+        XCTAssertNil(kept, "kept apart from the cache real scans read")
+    }
+
     func testEveryCanaryNamesAShippingPluginThatCanTakeItsInput() {
         let shipping = Dictionary(uniqueKeysWithValues: ScanController.defaultPlugins.map { ($0.name, $0) })
         for check in PluginCanary.checks {

@@ -30,6 +30,13 @@ enum PluginCanary {
         /// 502s for minutes at a time): its failures show on the admin page
         /// but do not page anyone, because there is nothing to fix here.
         var alerts = true
+        /// For a source with a small quota shared with real scans (GreyNoise's
+        /// keyless API: 25 lookups a week per address). Its answer is kept in
+        /// the plugin cache, so it survives the restarts that rerun every
+        /// canary on each deploy, and reused for this long after a pass (a
+        /// day after a miss). A miss is not retried. Asked on every boot with
+        /// retries, the check alone used most of the week's lookups.
+        var reuseFor: TimeInterval?
     }
 
     static let checks: [Check] = [
@@ -93,7 +100,7 @@ enum PluginCanary {
         // out of GreyNoise's window on 2026-11-01 and failed this check daily.
         // Shown, never alerted on: the keyless API allows a few dozen lookups
         // a week per address, so a daily check with retries can exhaust it.
-        Check(plugin: "GreyNoise", input: "71.6.199.23", username: nil, alerts: false),
+        Check(plugin: "GreyNoise", input: "71.6.199.23", username: nil, alerts: false, reuseFor: 7 * 86_400),
         Check(plugin: "MailSecurity", input: "google.com", username: nil),
         Check(plugin: "SiteMeta", input: "github.com", username: nil),
         Check(plugin: "Wayback", input: "rfc-editor.org", username: nil),
@@ -131,10 +138,15 @@ enum PluginCanary {
             // An unconfigured plugin never runs in a scan either; its missing
             // key is shown on the admin page, not paged on.
             guard let plugin = plugins.first(where: { $0.name == check.plugin }), plugin.isConfigured else { continue }
-            var report = await run(check, plugin: plugin, app: app, timeout: timeout)
-            for delay in retryDelays where !report.passed {
-                try? await Task.sleep(for: .seconds(delay))
+            var report: Report
+            if let reuse = check.reuseFor {
+                report = await runSparingly(check, plugin: plugin, app: app, timeout: timeout, reuseFor: reuse)
+            } else {
                 report = await run(check, plugin: plugin, app: app, timeout: timeout)
+                for delay in retryDelays where !report.passed {
+                    try? await Task.sleep(for: .seconds(delay))
+                    report = await run(check, plugin: plugin, app: app, timeout: timeout)
+                }
             }
             report.alerts = check.alerts
             await PluginCanaryStore.shared.record(report)
@@ -153,9 +165,36 @@ enum PluginCanary {
         }
     }
 
+    /// A quota-limited check: a recent answer from the plugin cache when there
+    /// is one, otherwise one live attempt whose answer is kept for next time.
+    static func runSparingly(_ check: Check, plugin: any FootprintPlugin, app: Application,
+                             timeout: Double, reuseFor: TimeInterval) async -> Report {
+        let key = "canary:" + check.plugin
+        if let kept = await PluginCacheStore.lookup(pluginName: key, input: check.input, on: app.db, logger: app.logger) {
+            return report(check, outcome: .success(kept), started: Date(), timeout: timeout)
+        }
+        let started = Date()
+        let outcome = await attempt(check, plugin: plugin, app: app, timeout: timeout)
+        let report = report(check, outcome: outcome, started: started, timeout: timeout)
+        // Timeouts and errors are not kept: they rarely spend a lookup.
+        if case .success(let results)? = outcome {
+            await PluginCacheStore.store(pluginName: key, input: check.input, results: results,
+                                         ttl: report.passed ? reuseFor : min(reuseFor, 86_400),
+                                         on: app.db, logger: app.logger)
+        }
+        return report
+    }
+
     static func run(_ check: Check, plugin: any FootprintPlugin, app: Application, timeout: Double) async -> Report {
         let started = Date()
-        let outcome: Swift.Result<[PluginResult], Error>? = await withTaskGroup(of: Swift.Result<[PluginResult], Error>?.self) { group in
+        return report(check, outcome: await attempt(check, plugin: plugin, app: app, timeout: timeout),
+                      started: started, timeout: timeout)
+    }
+
+    /// One scan of the check's input, or nil when it outlasted `timeout`.
+    static func attempt(_ check: Check, plugin: any FootprintPlugin, app: Application,
+                        timeout: Double) async -> Swift.Result<[PluginResult], Error>? {
+        await withTaskGroup(of: Swift.Result<[PluginResult], Error>?.self) { group in
             group.addTask {
                 do { return .success(try await plugin.scan(input: check.input, on: app)) } catch { return .failure(error) }
             }
@@ -167,6 +206,10 @@ enum PluginCanary {
             group.cancelAll()
             return first
         }
+    }
+
+    static func report(_ check: Check, outcome: Swift.Result<[PluginResult], Error>?,
+                       started: Date, timeout: Double) -> Report {
         switch outcome {
         case .none:
             return Report(plugin: check.plugin, input: check.input, passed: false, results: 0,
