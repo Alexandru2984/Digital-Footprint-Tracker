@@ -88,10 +88,12 @@ enum PluginCanary {
         Check(plugin: "VirusTotal", input: "8.8.8.8", username: nil),
         Check(plugin: "AbuseIPDB", input: "8.8.8.8", username: nil),
         Check(plugin: "PhoneOSINT", input: "+14152007986", username: nil),
-        // Shodan's own long-lived scanner: GreyNoise has classified it for years.
+        // One of Shodan's census scanners, which GreyNoise classifies while it
+        // keeps scanning. Scanner addresses do retire: 71.6.135.131 dropped
+        // out of GreyNoise's window on 2026-11-01 and failed this check daily.
         // Shown, never alerted on: the keyless API allows a few dozen lookups
         // a week per address, so a daily check with retries can exhaust it.
-        Check(plugin: "GreyNoise", input: "71.6.135.131", username: nil, alerts: false),
+        Check(plugin: "GreyNoise", input: "71.6.199.23", username: nil, alerts: false),
         Check(plugin: "MailSecurity", input: "google.com", username: nil),
         Check(plugin: "SiteMeta", input: "github.com", username: nil),
         Check(plugin: "Wayback", input: "rfc-editor.org", username: nil),
