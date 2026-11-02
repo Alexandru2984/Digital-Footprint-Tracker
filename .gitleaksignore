@@ -61,3 +61,6 @@ c2c12027eb7228dc68690db40d2404268774fa42:scripts/run-security-gates.sh:generic-a
 
 # Throttle test fixture password (pending 2FA login), reviewed 2026-10-07.
 f9933d9879e2e5bea11ffef036d6af8c54d154f4:Tests/AppTests/AppTests.swift:generic-api-key:4015
+
+# Domain-verification token fixture (a sequential hex string, not a credential), reviewed 2026-11-02.
+0a6f2c4f0d462f305dff0263b68555718c1e634b:Tests/AppTests/AppTests.swift:generic-api-key:9689

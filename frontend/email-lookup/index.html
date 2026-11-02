@@ -84,7 +84,7 @@
           "name": "Is the email lookup free?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes. Account registration checks and the 480-site username sweep need a free, verified account; everything else runs anonymously."
+            "text": "Yes. The 480-site username sweep needs a free, verified account, and account registration checks run only on an address you have proven is yours; everything else runs anonymously."
           }
         }
       ]
@@ -121,7 +121,7 @@
 <li><strong>GitHub</strong> links commits to an account only through a verified email, so a commit authored with the address names its owner. A public profile email is checked too.</li>
 <li><strong>Gravatar</strong> returns the profile behind the address and the social accounts Gravatar verified for it.</li>
 <li><strong>OpenPGP keys</strong>: keys.openpgp.org lists only addresses whose owner confirmed them, so the other addresses on the same key belong to the same person.</li>
-<li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite.</li>
+<li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite. It runs only on an address you have proven is yours: your account email, or one confirmed with a code.</li>
 <li><strong>Data breaches</strong> from XposedOrNot and LeakCheck (both free) and, optionally, Have I Been Pwned: which breaches, when, and what was exposed.</li>
 <li><strong>The address’s own domain</strong>: for a mailbox on a domain of its own (not Gmail or Outlook), the domain is scanned too — its registrant, website and the services it uses.</li>
 </ul>
@@ -133,7 +133,7 @@
 <h2>Questions</h2>
 <details><summary>Can I find who owns an email address?</summary><p>Often. When a platform has verified the address — a GitHub commit, a Gravatar profile, an OpenPGP key — the account and the name on it are attributed with high confidence. Addresses that were never used publicly reveal little.</p></details>
 <details><summary>Does the lookup alert the owner?</summary><p>No. Every source is queried passively; nothing is sent to the address. Account-recovery checks never complete a reset.</p></details>
-<details><summary>Is the email lookup free?</summary><p>Yes. Account registration checks and the 480-site username sweep need a free, verified account; everything else runs anonymously.</p></details>
+<details><summary>Is the email lookup free?</summary><p>Yes. The 480-site username sweep needs a free, verified account, and account registration checks run only on an address you have proven is yours; everything else runs anonymously.</p></details>
 <div class="cta"><a class="button" href="/?q=name%40example.com">Run a free scan</a></div>
 </main>
 <footer class="site-footer"><div class="wrap">
