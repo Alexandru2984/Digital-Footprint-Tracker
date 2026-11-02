@@ -1926,6 +1926,8 @@
                     const copy = document.createElement('button'); copy.type = 'button';
                     copy.style.cssText = 'margin-top:6px;font-size:11px;color:#7dd3fc;background:none;border:none;padding:0;cursor:pointer;';
                     copy.textContent = 'Copy';
+                    // Every fix has one; say which, for screen readers.
+                    copy.setAttribute('aria-label', 'Copy the snippet: ' + String(f.title || ''));
                     copy.addEventListener('click', () => {
                         if (!navigator.clipboard) return;
                         navigator.clipboard.writeText(String(f.snippet)).then(() => { copy.textContent = 'Copied'; }).catch(() => {});
