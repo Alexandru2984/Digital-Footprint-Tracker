@@ -358,8 +358,8 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                             </button>
                         </div>
-                        <div class="bg-[#0b1120] rounded-sm p-3 text-xs text-brand-500 overflow-x-auto border border-dark-900">
-                            <pre><code class="js-json"></code></pre>
+                        <div class="bg-[#0b1120] rounded-sm p-3 text-xs text-brand-500 border border-dark-900">
+                            <pre class="whitespace-pre-wrap break-all"><code class="js-json"></code></pre>
                         </div>
                     </div>
                 </div>
@@ -412,7 +412,7 @@
                     const chip = document.createElement('span');
                     chip.style.cssText = 'font-size:11px;padding:1px 8px;border-radius:4px;background:#1f2937;border:1px solid #374151;color:#cbd5e1;';
                     const key = document.createElement('span');
-                    key.style.color = '#64748b';
+                    key.style.color = '#8492a6';
                     key.textContent = k + ': ';
                     chip.appendChild(key);
                     chip.appendChild(document.createTextNode(String(v).slice(0, 60)));
@@ -619,7 +619,7 @@
                     const line = document.createElement('div');
                     line.className = 'js-dossier-tier';
                     line.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;font-size:12px;';
-                    const l = document.createElement('span'); l.style.cssText = 'color:#64748b;min-width:120px;'; l.textContent = label;
+                    const l = document.createElement('span'); l.style.cssText = 'color:#8492a6;min-width:120px;'; l.textContent = label;
                     line.appendChild(l);
                     entries.slice(0, 25).forEach(e => {
                         const c = document.createElement('span');
@@ -665,7 +665,7 @@
             }
             function row(label, node) {
                 const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:8px;align-items:flex-start;';
-                const l = document.createElement('span'); l.style.cssText = 'color:#64748b;flex-shrink:0;min-width:64px;'; l.textContent = label;
+                const l = document.createElement('span'); l.style.cssText = 'color:#8492a6;flex-shrink:0;min-width:64px;'; l.textContent = label;
                 r.appendChild(l); r.appendChild(node); grid.appendChild(r);
             }
             function chipRow(label, items) {
@@ -756,7 +756,7 @@
                     badge.style.cssText = 'font-size:10px;padding:0 6px;border-radius:4px;border:1px solid ' + colour + '66;color:' + colour + ';';
                     badge.textContent = label;
                     const why = document.createElement('div');
-                    why.style.cssText = 'color:#64748b;font-size:11px;';
+                    why.style.cssText = 'color:#8492a6;font-size:11px;';
                     why.textContent = `${String(link.reason ?? '')} · ${String(link.source ?? '')}`;
                     item.appendChild(path); item.appendChild(badge); item.appendChild(why);
                     list.appendChild(item);
@@ -764,7 +764,7 @@
                 sec.appendChild(list);
                 if (links.length > shown) {
                     const more = document.createElement('div');
-                    more.style.cssText = 'color:#64748b;font-size:11px;margin-top:4px;';
+                    more.style.cssText = 'color:#8492a6;font-size:11px;margin-top:4px;';
                     more.textContent = `+${links.length - shown} more connection(s) in the exported report.`;
                     sec.appendChild(more);
                 }
@@ -786,7 +786,7 @@
                 headingWrap.appendChild(lbl);
                 const summary = p.timelineSummary || {};
                 const summaryText = document.createElement('div');
-                summaryText.style.cssText = 'color:#64748b;font-size:11px;margin-top:2px;';
+                summaryText.style.cssText = 'color:#8492a6;font-size:11px;margin-top:2px;';
                 const total = Number.isFinite(Number(summary.totalEventCount))
                     ? Number(summary.totalEventCount) : timelineEvents.length;
                 const conflicts = Math.max(0, Number(summary.conflictGroups) || 0);
@@ -831,7 +831,7 @@
                 const footer = document.createElement('div');
                 footer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;';
                 const shown = document.createElement('span');
-                shown.style.cssText = 'color:#64748b;font-size:11px;';
+                shown.style.cssText = 'color:#8492a6;font-size:11px;';
                 const toggle = document.createElement('button');
                 toggle.type = 'button';
                 toggle.style.cssText = 'min-height:32px;padding:4px 10px;border-radius:6px;border:1px solid #374151;background:#1f2937;color:#cbd5e1;font-size:11px;';
@@ -895,7 +895,7 @@
                     }
                     const axis = document.createElement('div');
                     axis.setAttribute('aria-hidden', 'true');
-                    axis.style.cssText = 'flex:0 0 auto;align-self:flex-end;color:#64748b;font-size:10px;padding:0 0 12px 6px;white-space:nowrap;font-variant-numeric:tabular-nums;';
+                    axis.style.cssText = 'flex:0 0 auto;align-self:flex-end;color:#8492a6;font-size:10px;padding:0 0 12px 6px;white-space:nowrap;font-variant-numeric:tabular-nums;';
                     axis.textContent = first + '–' + last + (breaches.size ? ' · ⚠ breach' : '');
                     years.appendChild(axis);
                 }
@@ -937,7 +937,7 @@
                         const sources = Array.isArray(ev.sources) ? ev.sources.slice(0, 4).map(source => String(source).slice(0, 80)) : [];
                         if (sources.length) {
                             const provenance = document.createElement('div');
-                            provenance.style.cssText = 'color:#64748b;font-size:10px;margin-top:2px;word-break:break-word;';
+                            provenance.style.cssText = 'color:#8492a6;font-size:10px;margin-top:2px;word-break:break-word;';
                             provenance.textContent = 'Sources: ' + sources.join(', ') +
                                 (Number(ev.evidenceCount) > 1 ? ' · ' + Number(ev.evidenceCount) + ' observations' : '');
                             body.appendChild(provenance);
@@ -1702,7 +1702,7 @@
             document.querySelectorAll('#graph-mode [data-graph-mode]').forEach(button => {
                 const active = button.dataset.graphMode === graphMode;
                 button.setAttribute('aria-pressed', String(active));
-                button.style.color = active ? '#e2e8f0' : '#64748b';
+                button.style.color = active ? '#e2e8f0' : '#8492a6';
                 button.style.borderColor = active ? '#10b981' : '';
             });
         }
@@ -1894,7 +1894,7 @@
             head.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
             const title = document.createElement('span'); title.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;';
             title.textContent = 'What to fix'; head.appendChild(title);
-            const sub = document.createElement('span'); sub.style.cssText = 'color:#64748b;font-size:12px;';
+            const sub = document.createElement('span'); sub.style.cssText = 'color:#8492a6;font-size:12px;';
             sub.textContent = fixes.length + (fixes.length === 1 ? ' fix' : ' fixes') + ', most urgent first'; head.appendChild(sub);
             box.appendChild(head);
             fixes.forEach(f => {
@@ -2003,7 +2003,7 @@
             const tenantList = Object.keys(tenants);
             if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length && !tenantList.length && !certified.length) {
                 const empty = document.createElement('div');
-                empty.style.cssText = 'text-align:center;padding:40px 16px;color:#64748b;border:1px dashed #334155;border-radius:12px;';
+                empty.style.cssText = 'text-align:center;padding:40px 16px;color:#8492a6;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
                 root.appendChild(empty);
                 return;
@@ -2025,11 +2025,11 @@
             function sectionTitle(t, sub) {
                 const h = document.createElement('div'); h.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
                 const s = document.createElement('span'); s.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;'; s.textContent = t; h.appendChild(s);
-                if (sub) { const c = document.createElement('span'); c.style.cssText = 'color:#64748b;font-size:12px;'; c.textContent = sub; h.appendChild(c); }
+                if (sub) { const c = document.createElement('span'); c.style.cssText = 'color:#8492a6;font-size:12px;'; c.textContent = sub; h.appendChild(c); }
                 return h;
             }
             function labelled(text, color) {
-                const l = document.createElement('div'); l.style.cssText = 'font-size:11px;color:' + (color || '#64748b') + ';margin-top:8px;'; l.textContent = text; return l;
+                const l = document.createElement('div'); l.style.cssText = 'font-size:11px;color:' + (color || '#8492a6') + ';margin-top:8px;'; l.textContent = text; return l;
             }
 
             if (takeovers.length) {
@@ -2098,7 +2098,7 @@
                     const facts = [m.org ? t.scanned.join(', ') : null, m.namespace === 'Federated' && m.federation ? 'signs in through ' + m.federation : (m.namespace ? m.namespace.toLowerCase() + ' accounts' : null),
                         m.tenantName ? 'tenant ' + m.tenantName : null, m.domainCount ? m.domainCount + ' domains' : null].filter(Boolean);
                     const f = document.createElement('div'); f.style.cssText = 'font-size:12px;color:#94a3b8;margin-top:4px;word-break:break-all;'; f.textContent = facts.join(' · '); c.appendChild(f);
-                    if (m.tenantID) { const id = document.createElement('div'); id.style.cssText = 'font-size:11px;color:#64748b;margin-top:2px;font-family:monospace;word-break:break-all;'; id.textContent = m.tenantID + (m.region ? ' (' + m.region + ')' : ''); c.appendChild(id); }
+                    if (m.tenantID) { const id = document.createElement('div'); id.style.cssText = 'font-size:11px;color:#8492a6;margin-top:2px;font-family:monospace;word-break:break-all;'; id.textContent = m.tenantID + (m.region ? ' (' + m.region + ')' : ''); c.appendChild(id); }
                     const others = Array.from(t.domains).filter(x => !t.scanned.includes(x));
                     if (others.length) {
                         c.appendChild(labelled('OTHER DOMAINS IN THE TENANT'));
@@ -2152,7 +2152,7 @@
                 const c = card(); const w = chipWrap(); w.style.marginTop = '0';
                 Array.from(subs).sort().slice(0, 60).forEach(s => w.appendChild(chip(s, 'base')));
                 c.appendChild(w);
-                if (subs.size > 60) { const more = document.createElement('div'); more.style.cssText = 'font-size:11px;color:#64748b;margin-top:6px;'; more.textContent = '+' + (subs.size - 60) + ' more'; c.appendChild(more); }
+                if (subs.size > 60) { const more = document.createElement('div'); more.style.cssText = 'font-size:11px;color:#8492a6;margin-top:6px;'; more.textContent = '+' + (subs.size - 60) + ' more'; c.appendChild(more); }
                 root.appendChild(c);
             }
         }

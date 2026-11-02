@@ -77,3 +77,43 @@ test('mobile interactive targets meet the WCAG 2.2 minimum size', async ({ page 
         })));
     expect(undersized, JSON.stringify(undersized, null, 2)).toEqual([]);
 });
+
+// The results view is built at runtime, so the page sweep above never sees it:
+// open a scan and check each tab, the expanded fixes, and the settings panel.
+test('the results view, each tab and the settings panel are WCAG 2.2 AA', async ({ page }) => {
+    test.slow(); // six full axe passes over a populated page
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await mockAPI(page, { authenticated: true });
+    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+    await expect(page.locator('#results-panel')).toBeVisible();
+
+    const audit = async state => {
+        const results = await new AxeBuilder({ page })
+            .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+            .analyze();
+        const violations = formatViolations(results.violations);
+        expect(violations, state + ': ' + JSON.stringify(violations, null, 2)).toEqual([]);
+    };
+
+    await audit('results tab');
+    for (const tab of ['graph', 'map', 'surface']) {
+        await page.locator('#tab-' + tab).click();
+        await page.waitForLoadState('networkidle');
+        await audit(tab + ' tab');
+    }
+    const fixes = page.locator('#surface-fixes .js-fix');
+    await expect(fixes.first()).toBeVisible();
+    for (const fix of await fixes.all()) {
+        if (!(await fix.getAttribute('open'))) await fix.locator('summary').click();
+    }
+    await audit('surface tab, fixes open');
+
+    const menu = page.locator('#hamburger-btn');
+    if (await menu.isVisible()) await menu.click();
+    await page.locator('#settings-toggle-btn').click();
+    await expect(page.locator('#settings-panel')).toBeVisible();
+    await expect(page.locator('#verified-targets-list .js-verified-target').first()).toBeVisible();
+    await audit('settings panel');
+    expect(pageErrors).toEqual([]);
+});
