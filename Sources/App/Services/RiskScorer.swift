@@ -287,6 +287,8 @@ enum RiskScorer {
         // A host served over plain HTTP is a real weakness, not a neutral
         // infrastructure fact.
         "insecure_transport": .threat,
+        // The site's certificate is about to lapse with no renewal logged.
+        "certificate_expiring": .threat,
         // Seen attacking or probing the internet, or a Tor exit relay whose
         // traffic is anonymous by design.
         "ip_scanner": .threat,

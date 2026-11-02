@@ -65,6 +65,9 @@ func routes(_ app: Application) throws {
     let timelineController = TimelineController()
     try app.register(collection: timelineController)
 
+    let remediationController = RemediationController()
+    try app.register(collection: remediationController)
+
     let diffController = DiffController()
     try app.register(collection: diffController)
 

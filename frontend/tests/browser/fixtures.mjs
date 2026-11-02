@@ -63,6 +63,15 @@ export async function mockAPI(page, options = {}) {
                       metadata: { domain: 'example.com', username: 'pub-1234567890123456', domains: malicious + ',example.org', linked: 'web:example.org' } },
                 ],
             };
+        } else if (pathname === '/api/scans/00000000-0000-4000-8000-0000000000bb/remediation') {
+            body = [
+                { id: 'takeover:old.example.com', priority: 'critical', target: 'old.example.com',
+                  title: 'Remove the dangling DNS record for old.example.com', why: malicious,
+                  steps: ['If the subdomain is no longer used, delete its CNAME record.', malicious],
+                  snippet: '; delete this record\nold.example.com. CNAME ' + malicious },
+                { id: 'caa:example.com', priority: malicious, target: 'example.com',
+                  title: malicious, why: 'A CAA record names the authorities allowed to issue.', steps: [], snippet: null },
+            ];
         } else if (pathname === '/api/identity/00000000-0000-4000-8000-0000000000bb') {
             body = {
                 likelyName: null, emails: ['alice@example.com'], handles: [], confirmedAccounts: [], breaches: [], phones: [],

@@ -14,11 +14,13 @@ struct CrtShPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
     /// v2: the other domains the same certificates name.
-    let cacheVersion = 2
+    /// v3: a certificate about to expire without a logged renewal.
+    let cacheVersion = 3
 
     private struct CrtEntry: Decodable {
         let name_value: String
         let not_before: String?
+        let not_after: String?
         let entry_timestamp: String?
         let issuer_name: String?
     }
@@ -46,7 +48,54 @@ struct CrtShPlugin: FootprintPlugin {
         if let shared = Self.sharedCertificateResult(domain: domain, others: found.coCertified, provider: found.provider) {
             out.append(shared)
         }
+        if let expiring = Self.certificateExpiryResult(domain: domain, newest: found.newestExpiry, provider: found.provider) {
+            out.append(expiring)
+        }
         return out
+    }
+
+    /// Days ahead of expiry at which a certificate with no logged successor is
+    /// flagged. Automatic renewal (Let's Encrypt, cloud providers) replaces a
+    /// certificate about thirty days ahead, so one still newest this close to
+    /// its end means renewal has stopped.
+    static let expiryWarningDays = 21
+
+    /// When the newest certificate naming `domain` (itself, or a wildcard on
+    /// its parent) expires. Nil when no certificate names it.
+    static func newestExpiry(_ certificates: [(names: [String], notAfter: String?)], domain: String) -> Date? {
+        let host = domain.lowercased()
+        let wildcard = host.split(separator: ".").count > 2
+            ? "*." + host.split(separator: ".").dropFirst().joined(separator: ".") : nil
+        return certificates.compactMap { certificate -> Date? in
+            let names = certificate.names.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+            guard names.contains(host) || (wildcard.map(names.contains) ?? false) else { return nil }
+            return certificate.notAfter.flatMap(day)
+        }.max()
+    }
+
+    /// A finding when the newest certificate for `domain` ends within
+    /// `expiryWarningDays`, or ended in the last two weeks (a site that stopped
+    /// serving HTTPS long ago is not a renewal to fix).
+    static func certificateExpiryResult(domain: String, newest: Date?, provider: String, now: Date = Date()) -> PluginResult? {
+        guard let newest else { return nil }
+        let days = Int((newest.timeIntervalSince(now) / 86_400).rounded(.down))
+        guard (-14...expiryWarningDays).contains(days) else { return nil }
+        let date = ISO8601DateFormatter.string(from: newest, timeZone: .gmt, formatOptions: [.withFullDate])
+        let raw = days < 0
+            ? "The newest TLS certificate for \(domain) expired on \(date), and no renewal has been logged"
+            : "The newest TLS certificate for \(domain) expires on \(date) (\(days) day\(days == 1 ? "" : "s")), "
+                + "and no renewal has been logged"
+        return PluginResult(source: provider, type: "certificate_expiring", confidenceScore: 0.85, rawData: raw,
+                            metadata: ["domain": domain, "expires": date, "days": String(days)])
+    }
+
+    private static func day(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        let trimmed = String(value.prefix(19))
+        return formatter.date(from: trimmed)
     }
 
     /// Strips scheme and path down to the bare host.
@@ -75,14 +124,27 @@ struct CrtShPlugin: FootprintPlugin {
         return (found.evidence, found.provider)
     }
 
-    /// The subdomains, and the other domains the same certificates name.
-    static func fetchCertificates(domain: String, limit: Int, app: Application)
-        async -> (evidence: [CertificateEvidence], provider: String, coCertified: [String]) {
+    /// What the certificate logs say about a domain.
+    struct CertificateFetch {
+        /// The subdomains, with when each was first certified.
+        let evidence: [CertificateEvidence]
+        let provider: String
+        /// Other domains named on the same certificates.
+        let coCertified: [String]
+        /// When the newest certificate naming the domain expires.
+        let newestExpiry: Date?
+    }
+
+    static func fetchCertificates(domain: String, limit: Int, app: Application) async -> CertificateFetch {
         if let data = await fetchCrtSh(domain: domain, app: app) {
-            let certificates = (try? JSONDecoder().decode([CrtEntry].self, from: data))?.prefix(maximumEntries).map {
+            let entries = (try? JSONDecoder().decode([CrtEntry].self, from: data))?.prefix(maximumEntries) ?? []
+            let certificates = entries.map {
                 (names: $0.name_value.split(separator: "\n").map(String.init), issuer: $0.issuer_name)
-            } ?? []
-            return (parseEvidence(data, limit: limit, domain: domain), "crt.sh", coCertified(certificates, domain: domain))
+            }
+            let expiries = entries.map { (names: $0.name_value.split(separator: "\n").map(String.init), notAfter: $0.not_after) }
+            return CertificateFetch(evidence: parseEvidence(data, limit: limit, domain: domain), provider: "crt.sh",
+                                    coCertified: coCertified(certificates, domain: domain),
+                                    newestExpiry: newestExpiry(expiries, domain: domain))
         }
         var components = URLComponents(string: "https://api.certspotter.com/v1/issuances")
         components?.queryItems = [
@@ -96,13 +158,17 @@ struct CrtShPlugin: FootprintPlugin {
                 bodyMode: .complete(maxBytes: 8 * 1_024 * 1_024), on: app
               ),
               response.status == 200
-        else { return ([], "crt.sh", []) }
+        else { return CertificateFetch(evidence: [], provider: "crt.sh", coCertified: [], newestExpiry: nil) }
         let issuances = (try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]]) ?? []
         let certificates = issuances.prefix(maximumEntries).map {
             (names: $0["dns_names"] as? [String] ?? [], issuer: String?.none)
         }
-        return (parseCertSpotter(response.data, limit: limit, domain: domain), "CertSpotter",
-                coCertified(certificates, domain: domain))
+        let expiries = issuances.prefix(maximumEntries).map {
+            (names: $0["dns_names"] as? [String] ?? [], notAfter: $0["not_after"] as? String)
+        }
+        return CertificateFetch(evidence: parseCertSpotter(response.data, limit: limit, domain: domain), provider: "CertSpotter",
+                                coCertified: coCertified(certificates, domain: domain),
+                                newestExpiry: newestExpiry(expiries, domain: domain))
     }
 
     /// Names on one certificate were each proved by whoever asked for it, so

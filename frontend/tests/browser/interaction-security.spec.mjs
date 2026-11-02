@@ -315,6 +315,16 @@ test('the surface tab warns about a subdomain that can be taken over, as text', 
     await expect(tracking).toContainText('Google Tag Manager GTM-ABC123');
     await expect(tracking).toContainText('IS ALSO ON 2 SITES: LIKELY THE SAME OWNER');
     await expect(tracking.locator('.js-tracking-shared')).toContainText(fixture.malicious);
+    const fixes = page.locator('#surface-fixes .js-fix');
+    await expect(fixes).toHaveCount(2);
+    await expect(fixes.first()).toHaveAttribute('data-priority', 'critical');
+    await expect(fixes.first()).toHaveAttribute('open', '');
+    await expect(fixes.first()).toContainText('Remove the dangling DNS record for old.example.com');
+    await expect(fixes.first().locator('pre')).toContainText('CNAME ' + fixture.malicious);
+    await expect(fixes.first().locator('ol li')).toHaveCount(2);
+    // An unknown priority is shown as low, never as a class or style the server chose.
+    await expect(fixes.nth(1)).toHaveAttribute('data-priority', 'low');
+    await expect(fixes.nth(1).locator('summary')).toContainText(fixture.malicious);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });

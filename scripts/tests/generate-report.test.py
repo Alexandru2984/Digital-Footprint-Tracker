@@ -23,6 +23,11 @@ document = {
                 'probable': [], 'unconfirmedCount': 0, 'sites': [], 'emails': ['ștefan@example.ro'], 'phones': [],
                 'locations': ['Cluj-Napoca, România'], 'organizations': [], 'breachCount': 0, 'sensitiveData': []},
     'unavailableSources': ['GreyNoise'],
+    'fixes': [{'id': 'dmarc:example.ro', 'priority': 'high', 'target': 'example.ro',
+               'title': 'Publish a DMARC record for example.ro', 'why': 'Forged mail is not rejected — ștefan',
+               'steps': ['Add the TXT record below.'], 'snippet': '_dmarc.example.ro. TXT "v=DMARC1; p=none"'},
+              {'id': 'caa:example.ro', 'priority': 'low', 'target': 'example.ro', 'title': 'CAA',
+               'why': '', 'steps': [], 'snippet': None}],
     'results': [{'source': 'GitHub', 'type': 'account_presence', 'confidenceScore': 0.9,
                  'rawData': 'Name: Ștefan Țăranu 🚀 — bio ✓ 日本語'}],
 }

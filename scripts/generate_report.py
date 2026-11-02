@@ -209,6 +209,34 @@ def make_report(data: dict) -> bytes:
         pdf.set_text_color(60, 60, 60)
         pdf.ln(3)
 
+    # What to fix, most urgent first, with the record or configuration to
+    # copy. Built by the server (Remediation); rendered here as text only.
+    fixes = [f for f in (data.get('fixes') or []) if isinstance(f, dict)][:40]
+    if fixes:
+        pdf.set_font('Helvetica', 'B', 12)
+        pdf.set_text_color(20, 20, 20)
+        pdf.cell(0, 7, f'What to fix ({len(fixes)})', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(1)
+        colours = {'critical': (170, 20, 20), 'high': (190, 80, 0), 'medium': (140, 110, 0), 'low': (80, 80, 80)}
+        for index, fix in enumerate(fixes, 1):
+            priority = str(fix.get('priority', '')).lower()
+            pdf.set_font('Helvetica', 'B', 9)
+            pdf.set_text_color(*colours.get(priority, (60, 60, 60)))
+            pdf.multi_cell(0, 5, f"{index}. [{priority.upper()}] {fix.get('title', '')}",
+                           new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font('Helvetica', '', 8)
+            pdf.set_text_color(60, 60, 60)
+            pdf.multi_cell(0, 4.5, str(fix.get('why', '')), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            for step in (fix.get('steps') or [])[:6]:
+                pdf.multi_cell(0, 4.5, '- ' + str(step), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            snippet = fix.get('snippet')
+            if snippet:
+                pdf.set_fill_color(244, 246, 250)
+                pdf.set_font('Helvetica', '', 7)
+                pdf.multi_cell(0, 4, str(snippet)[:1200], fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+        pdf.ln(2)
+
     if not results:
         pdf.set_font('Helvetica', 'I', 10)
         pdf.cell(0, 8, 'No findings recorded for this scan.', new_x=XPos.LMARGIN, new_y=YPos.NEXT)

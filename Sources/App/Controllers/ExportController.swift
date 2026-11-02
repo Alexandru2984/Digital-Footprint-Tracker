@@ -78,7 +78,8 @@ struct ExportController: RouteCollection {
 
         let (profile, surface) = try Self.reportModel(for: scan)
         let md = ExecutiveReport.markdown(input: input, profile: profile, surface: surface, generatedAt: Date(),
-                                          unavailableSources: scan.unavailableSources)
+                                          unavailableSources: scan.unavailableSources,
+                                          fixes: try Remediation.fixes(for: scan.results))
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
         headers.add(name: .contentDisposition, value: "attachment; filename=\"report-\(Self.safeName(input)).md\"")
@@ -95,7 +96,8 @@ struct ExportController: RouteCollection {
 
         let (profile, surface) = try Self.reportModel(for: scan)
         let html = ExecutiveReportHTML.html(input: input, profile: profile, surface: surface, generatedAt: Date(),
-                                            unavailableSources: scan.unavailableSources)
+                                            unavailableSources: scan.unavailableSources,
+                                            fixes: try Remediation.fixes(for: scan.results))
         var headers = HTTPHeaders()
         headers.add(name: .contentType, value: "text/html; charset=utf-8")
         // This document needs only its embedded CSS. A report contains data from

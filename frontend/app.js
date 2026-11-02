@@ -1875,10 +1875,76 @@
         // hostnames, open ports and CVEs; web-posture grade per domain; discovered
         // subdomains. Built entirely from the results payload (inline-styled because
         // the precompiled tailwind build is purged of arbitrary classes).
+        // "What to fix": the server turns the scan's security findings into a
+        // prioritised list. Readable to whoever can read the scan; anything else
+        // (a shared view, an error) just leaves the list out.
+        function loadRemediation(box, scanID) {
+            if (!box || !scanID) return;
+            fetch('/api/scans/' + encodeURIComponent(scanID) + '/remediation', { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null)
+                .then(fixes => { if (box.isConnected && Array.isArray(fixes)) renderRemediation(box, fixes); })
+                .catch(() => {});
+        }
+
+        function renderRemediation(box, fixes) {
+            box.innerHTML = '';
+            if (!fixes.length) return;
+            const colors = { critical: '#ef4444', high: '#f97316', medium: '#facc15', low: '#94a3b8' };
+            const head = document.createElement('div');
+            head.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
+            const title = document.createElement('span'); title.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;';
+            title.textContent = 'What to fix'; head.appendChild(title);
+            const sub = document.createElement('span'); sub.style.cssText = 'color:#64748b;font-size:12px;';
+            sub.textContent = fixes.length + (fixes.length === 1 ? ' fix' : ' fixes') + ', most urgent first'; head.appendChild(sub);
+            box.appendChild(head);
+            fixes.forEach(f => {
+                const priority = Object.prototype.hasOwnProperty.call(colors, f.priority) ? f.priority : 'low';
+                const c = document.createElement('details');
+                c.className = 'js-fix';
+                c.dataset.priority = priority;
+                c.style.cssText = 'background:#111827;border:1px solid #1f2937;border-left:3px solid ' + colors[priority] + ';border-radius:12px;padding:12px 14px;';
+                if (priority === 'critical') c.open = true;
+                const summary = document.createElement('summary');
+                summary.style.cssText = 'cursor:pointer;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;';
+                const badge = document.createElement('span');
+                badge.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:4px;border:1px solid ' + colors[priority] + '66;color:' + colors[priority] + ';';
+                badge.textContent = priority; summary.appendChild(badge);
+                const name = document.createElement('span'); name.style.cssText = 'font-weight:600;color:#e2e8f0;word-break:break-word;';
+                name.textContent = String(f.title || ''); summary.appendChild(name);
+                c.appendChild(summary);
+                const why = document.createElement('p'); why.style.cssText = 'font-size:12px;color:#94a3b8;margin:8px 0 0;';
+                why.textContent = String(f.why || ''); c.appendChild(why);
+                if (Array.isArray(f.steps) && f.steps.length) {
+                    const ol = document.createElement('ol'); ol.style.cssText = 'font-size:12px;color:#cbd5e1;margin:8px 0 0;padding-left:18px;list-style:decimal;';
+                    f.steps.forEach(s => { const li = document.createElement('li'); li.style.marginTop = '2px'; li.textContent = String(s); ol.appendChild(li); });
+                    c.appendChild(ol);
+                }
+                if (f.snippet) {
+                    const pre = document.createElement('pre');
+                    pre.style.cssText = 'margin:8px 0 0;padding:8px 10px;background:#0b1220;border:1px solid #1f2937;border-radius:8px;font-size:11px;color:#e2e8f0;white-space:pre-wrap;word-break:break-all;';
+                    pre.textContent = String(f.snippet); c.appendChild(pre);
+                    const copy = document.createElement('button'); copy.type = 'button';
+                    copy.style.cssText = 'margin-top:6px;font-size:11px;color:#7dd3fc;background:none;border:none;padding:0;cursor:pointer;';
+                    copy.textContent = 'Copy';
+                    copy.addEventListener('click', () => {
+                        if (!navigator.clipboard) return;
+                        navigator.clipboard.writeText(String(f.snippet)).then(() => { copy.textContent = 'Copied'; }).catch(() => {});
+                    });
+                    c.appendChild(copy);
+                }
+                box.appendChild(c);
+            });
+        }
+
         function renderAttackSurface(scanData) {
             const root = document.getElementById('surface-tab-content');
             if (!root) return;
             root.innerHTML = '';
+            const fixesBox = document.createElement('div');
+            fixesBox.id = 'surface-fixes';
+            fixesBox.style.cssText = 'display:flex;flex-direction:column;gap:12px;';
+            root.appendChild(fixesBox);
+            loadRemediation(fixesBox, scanData && scanData.scanID);
             const results = (scanData && scanData.results) || [];
             const splitCsv = s => (s || '').split(',').map(x => x.trim()).filter(Boolean);
 

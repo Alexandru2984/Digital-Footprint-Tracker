@@ -63,6 +63,8 @@ enum ExportArtifactBuilder {
         let completedAt: Double?
         /// Sources the scan skipped because they were failing.
         let unavailableSources: [String]
+        /// What to fix, most urgent first; see `Remediation`.
+        let fixes: [Remediation.Fix]
         let results: [Finding]
         let provenance: Provenance
     }
@@ -231,6 +233,9 @@ enum ExportArtifactBuilder {
         app: Application
     ) async throws -> ArtifactPayload {
         let safeName = filenameFragment(input)
+        let fixes = Remediation.fixes(for: findings.map {
+            Remediation.Input(type: $0.type, metadata: $0.metadata ?? [:], rawData: $0.rawData)
+        }, now: generatedAt)
         let document = JSONDocument(
             scanID: scanID,
             input: input,
@@ -242,6 +247,7 @@ enum ExportArtifactBuilder {
             scannedAt: scan.createdAt?.timeIntervalSince1970,
             completedAt: scan.completedAt?.timeIntervalSince1970,
             unavailableSources: scan.unavailableSources,
+            fixes: fixes,
             results: findings,
             provenance: Provenance(
                 schemaVersion: 1,
@@ -269,7 +275,7 @@ enum ExportArtifactBuilder {
         case .markdown:
             var markdown = ExecutiveReport.markdown(
                 input: input, profile: profile, surface: surface, generatedAt: generatedAt,
-                unavailableSources: scan.unavailableSources
+                unavailableSources: scan.unavailableSources, fixes: fixes
             )
             markdown += "\n\n## Export provenance\n\n"
             markdown += "- Complete source snapshot: \(sourceComplete ? "yes" : "no")\n"
@@ -283,7 +289,7 @@ enum ExportArtifactBuilder {
         case .html:
             let html = ExecutiveReportHTML.html(
                 input: input, profile: profile, surface: surface, generatedAt: generatedAt,
-                unavailableSources: scan.unavailableSources
+                unavailableSources: scan.unavailableSources, fixes: fixes
             )
             return ArtifactPayload(
                 data: Data(html.utf8),

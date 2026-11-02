@@ -13,7 +13,7 @@ const frontendDir = dirname(fileURLToPath(import.meta.url));
 const origin = 'https://swift.micutu.com';
 const siteName = 'Digital Footprint Tracker';
 // Bumped by hand when the guides' content changes; drives <lastmod>.
-const contentDate = '2026-10-19';
+const contentDate = '2026-11-02';
 
 const escapeHTML = text => String(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -180,7 +180,10 @@ const pages = [
 <li><strong>Mail security</strong>: whether mail from the domain can be spoofed (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Lookalike domains</strong> that resolve — candidates for phishing.</li>
 <li><strong>Subdomain takeover</strong>: subdomains whose CNAME points at GitHub Pages, S3, Heroku, Azure and other services where nothing is claimed any more — anyone could claim the name and serve content on the subdomain.</li>
+<li><strong>Renewals</strong>: a registration close to lapsing, and a TLS certificate near its end with no successor in the certificate logs — automatic renewal has likely stopped.</li>
 </ul>
+<h2>What to fix</h2>
+<p>The findings become a list of fixes, most urgent first: what to change, why it matters, and where one applies the exact DNS record or server configuration to add — a DMARC or SPF record (a “send nothing” one for a domain that receives no mail), the firewall rules for a database left open, the security headers to set. The list is on the Surface tab and in the executive report.</p>
 <h2>The people behind it</h2>
 <p>The homepage is read for the accounts its owner marks with rel=me, the profiles it links, a contact address and phone. Keybase and Bluesky are asked who proved control of the domain. The Wayback Machine shows how long it has existed.</p>`,
         faq: [

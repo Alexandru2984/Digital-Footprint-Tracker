@@ -162,7 +162,10 @@ export const roPages = [
 <li><strong>Securitatea emailului</strong>: dacă se pot trimite emailuri false în numele domeniului (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Domenii-capcană</strong> asemănătoare care rezolvă — candidate pentru phishing.</li>
 <li><strong>Preluare de subdomenii</strong> (subdomain takeover): subdomenii al căror CNAME trimite la GitHub Pages, S3, Heroku, Azure sau alte servicii unde numele nu mai e revendicat — oricine l-ar putea revendica și ar servi conținut pe subdomeniu.</li>
+<li><strong>Reînnoiri</strong>: o înregistrare de domeniu aproape de expirare și un certificat TLS aproape de final fără succesor în jurnalele de certificate — reînnoirea automată probabil s-a oprit.</li>
 </ul>
+<h2>Ce trebuie reparat</h2>
+<p>Constatările devin o listă de remedieri, cele mai urgente primele: ce trebuie schimbat, de ce contează și, unde se aplică, înregistrarea DNS sau configurația de server exactă de adăugat — o înregistrare DMARC sau SPF (una care interzice orice trimitere pentru un domeniu care nu primește email), regulile de firewall pentru o bază de date lăsată deschisă, header-ele de securitate de setat. Lista apare în tab-ul Surface și în raportul executiv.</p>
 <h2>Oamenii din spate</h2>
 <p>Pagina principală e citită pentru conturile marcate rel=me, profilurile spre care trimite, un email și un telefon de contact. Keybase și Bluesky sunt întrebate cine a dovedit controlul asupra domeniului. Wayback Machine arată de cât timp există.</p>`,
         faq: [

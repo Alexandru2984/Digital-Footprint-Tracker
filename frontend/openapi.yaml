@@ -170,6 +170,22 @@ components:
           uniqueItems: true
           items: { type: integer, minimum: 1970, maximum: 2100 }
 
+    RemediationFix:
+      type: object
+      required: [id, priority, target, title, why, steps]
+      properties:
+        id: { type: string, description: 'Stable key: the kind of fix and its target' }
+        priority: { type: string, enum: [critical, high, medium, low] }
+        target: { type: string, description: The host, domain or IP address the fix applies to }
+        title: { type: string }
+        why: { type: string }
+        steps:
+          type: array
+          items: { type: string }
+        snippet:
+          type: string
+          nullable: true
+          description: A DNS record or server configuration block to copy
     TimelineReport:
       type: object
       required: [schemaVersion, events, summary]
@@ -1058,6 +1074,42 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TimelineReport' }
+        '400':
+          description: Invalid scan ID
+        '403':
+          description: Access denied for an owned scan
+        '404':
+          description: Scan not found
+
+  /scans/{id}/remediation:
+    get:
+      operationId: getScanRemediation
+      summary: Prioritised fixes for the scan's security findings
+      description: >
+        Turns exposed files, dangling DNS records, known CVEs, risky open ports,
+        missing or weak SPF/DMARC, plain HTTP, missing security headers, a lapsing
+        domain registration or TLS certificate, and missing DNSSEC/CAA into a list
+        of fixes, most urgent first, each with the steps and, where one applies,
+        the DNS record or server configuration to add. Same owner/capability
+        authorization as the identity endpoint. The executive reports carry the
+        same list.
+      tags: [Scan]
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Fixes, most urgent first (empty when nothing needs fixing)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RemediationFix' }
         '400':
           description: Invalid scan ID
         '403':

@@ -2245,6 +2245,7 @@ final class AppTests: XCTestCase {
             Probe(.GET, "/export/\(ownerScanID)/report.html", .forbidden),
             Probe(.GET, "/identity/\(ownerScanID)", .forbidden),
             Probe(.GET, "/scans/\(ownerScanID)/timeline", .forbidden),
+            Probe(.GET, "/scans/\(ownerScanID)/remediation", .forbidden),
             Probe(.GET, "/scans/\(ownerScanID)/exposure-diff", .notFound),
             Probe(.GET, "/scans/\(ownerScanID)/diff/\(attackerScanID)", .notFound),
             Probe(.GET, "/scans/\(attackerScanID)/diff/\(ownerScanID)", .notFound),
@@ -9968,5 +9969,163 @@ extension AppTests {
         XCTAssertEqual(leaders.first?.thirdPartyScans, 2)
         XCTAssertEqual(leaders.first?.totalScans, 3)
         XCTAssertEqual(leaders.first?.verifiedTargets, 0)
+    }
+}
+
+// MARK: - Remediation
+
+extension AppTests {
+    private func fixInput(_ type: String, _ metadata: [String: String]) -> Remediation.Input {
+        Remediation.Input(type: type, metadata: metadata, rawData: "x")
+    }
+
+    func testRemediationOrdersFixesByUrgencyAndWritesTheRecords() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000) // 2027-01-15T08:00Z
+        let fixes = Remediation.fixes(for: [
+            fixInput("email_auth_spf_missing", ["domain": "quiet.example", "spoofable": "yes"]),
+            fixInput("email_auth_dmarc_missing", ["domain": "quiet.example", "enforced": "no"]),
+            fixInput("email_auth_spf", ["domain": "mail.example", "spoofable": "yes",
+                                        "record": "v=spf1 include:_spf.google.com ~all"]),
+            fixInput("dns_mx_record", ["domain": "mail.example"]),
+            fixInput("email_auth_dmarc", ["domain": "mail.example", "enforced": "no",
+                                          "record": "v=DMARC1; p=none; rua=mailto:d@mail.example"]),
+            fixInput("dnssec_enabled", ["domain": "mail.example"]),
+            fixInput("exposed_file", ["url": "https://mail.example/.env", "path": "/.env", "domain": "mail.example"]),
+            fixInput("exposed_file", ["url": "https://mail.example/.env", "path": "/.env", "domain": "mail.example"]),
+            fixInput("exposed_service", ["ip": "203.0.113.5", "ports": "22, 443, 6379, 3389"]),
+            fixInput("exposed_service", ["ip": "203.0.113.6", "ports": "80, 443"]),
+            fixInput("vulnerability", ["ip": "203.0.113.5", "cves": "CVE-2023-0001,CVE-2023-0002", "cve_count": "2"]),
+            fixInput("security_headers", ["domain": "mail.example", "missing": "HSTS, X-Frame-Options, Unknown", "https": "no"]),
+            fixInput("insecure_transport", ["domain": "mail.example"]),
+            fixInput("domain_registration", ["domain": "mail.example", "expirationDate": "2027-01-20T00:00:00Z"]),
+            fixInput("domain_registration", ["domain": "far.example", "expirationDate": "2028-01-20"]),
+            fixInput("certificate_expiring", ["domain": "mail.example", "expires": "2027-01-25", "days": "10"]),
+            fixInput("account_presence", ["domain": "mail.example"]),
+        ], now: now)
+
+        XCTAssertEqual(fixes.map(\.id), [
+            "domain-expiry:mail.example", "exposed-file:https://mail.example/.env",
+            "cve:203.0.113.5", "ports:203.0.113.5", "certificate:mail.example", "https:mail.example",
+            "dmarc:quiet.example", "spf:quiet.example",
+            "dmarc:mail.example", "spf:mail.example",
+            "caa:mail.example", "headers:mail.example", "caa:quiet.example", "dnssec:quiet.example",
+        ], "most urgent first, one fix per problem, nothing for open web ports or a distant renewal")
+        XCTAssertEqual(fixes.map(\.priority.rawValue), [
+            "critical", "critical", "high", "high", "high", "high", "high", "high",
+            "medium", "medium", "low", "low", "low", "low",
+        ])
+        func fix(_ id: String) throws -> Remediation.Fix { try XCTUnwrap(fixes.first { $0.id == id }, id) }
+
+        XCTAssertEqual(try fix("dmarc:quiet.example").snippet, #"_dmarc.quiet.example. TXT "v=DMARC1; p=reject;""#,
+                       "a domain that receives no mail should reject all of it")
+        XCTAssertEqual(try fix("spf:quiet.example").snippet, #"quiet.example. TXT "v=spf1 -all""#)
+        XCTAssertEqual(try fix("spf:mail.example").snippet, #"mail.example. TXT "v=spf1 include:_spf.google.com -all""#)
+        XCTAssertEqual(try fix("dmarc:mail.example").snippet,
+                       #"_dmarc.mail.example. TXT "v=DMARC1; p=quarantine; rua=mailto:d@mail.example""#)
+        XCTAssertEqual(try fix("ports:203.0.113.5").snippet, "ufw deny 3389/tcp\nufw deny 6379/tcp")
+        XCTAssertEqual(try fix("ports:203.0.113.5").title, "Close Remote Desktop (3389), Redis (6379) to the internet")
+        XCTAssertEqual(try fix("domain-expiry:mail.example").title, "Renew mail.example before 2027-01-20 (4 days left)")
+        let headers = try fix("headers:mail.example")
+        XCTAssertTrue(headers.snippet?.contains("X-Frame-Options") == true)
+        XCTAssertFalse(headers.snippet?.contains("Strict-Transport-Security") == true,
+                       "HSTS waits until the site serves HTTPS")
+        XCTAssertTrue(try fix("exposed-file:https://mail.example/.env").steps.contains { $0.contains("rotate") })
+    }
+
+    func testRemediationVariantsFollowTheFinding() throws {
+        XCTAssertTrue(Remediation.dmarcMissing(domain: "a.example", receivesMail: true).snippet?.contains("p=none") == true)
+        XCTAssertEqual(Remediation.vulnerable(ip: "203.0.113.1", cves: "", count: 12).priority, .critical)
+        XCTAssertEqual(Remediation.vulnerable(ip: "203.0.113.1", cves: "CVE-2024-1", count: 1).title,
+                       "Update the software on 203.0.113.1 (1 known vulnerability)")
+        XCTAssertNil(Remediation.riskyServices(ip: "203.0.113.1", ports: "80,443,8080"))
+        XCTAssertNil(Remediation.headers(domain: "a.example", missing: ["HSTS"], https: false))
+        XCTAssertEqual(Remediation.headers(domain: "a.example", missing: ["CSP"], https: true)?.priority, .medium)
+        XCTAssertEqual(Remediation.headers(domain: "a.example", missing: ["Referrer-Policy"], https: true)?.priority, .low)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let lapsed = try XCTUnwrap(Remediation.domainExpiry(domain: "a.example", expiry: "2027-01-01", now: now))
+        XCTAssertEqual(lapsed.priority, .critical)
+        XCTAssertTrue(lapsed.title.contains("lapsed on 2027-01-01"))
+        XCTAssertNil(Remediation.domainExpiry(domain: "a.example", expiry: "not a date", now: now))
+        XCTAssertEqual(Remediation.certificateExpiring(domain: "a.example", expiry: "2027-01-17", days: 2).priority, .critical)
+        XCTAssertNil(Remediation.takeover(host: "old.a.example", cname: "", service: nil).snippet)
+        XCTAssertTrue(Remediation.fixes(for: [fixInput("dnssec_enabled", ["domain": "a.example"])]).isEmpty,
+                      "DNSSEC and CAA are only advised where the mail-posture check graded the domain")
+    }
+
+    func testCrtShFlagsACertificateThatIsNotBeingRenewed() throws {
+        func date(_ value: String) throws -> Date { try XCTUnwrap(ISO8601DateFormatter().date(from: value)) }
+        let certificates: [(names: [String], notAfter: String?)] = [
+            (["example.com", "www.example.com"], "2027-01-10T12:00:00"),
+            (["*.example.com"], "2027-02-01T00:00:00Z"),
+            (["example.com"], nil),
+            (["other.example"], "2030-01-01T00:00:00"),
+        ]
+        XCTAssertEqual(CrtShPlugin.newestExpiry(certificates, domain: "Example.com"), try date("2027-01-10T12:00:00Z"))
+        XCTAssertEqual(CrtShPlugin.newestExpiry(certificates, domain: "www.example.com"), try date("2027-02-01T00:00:00Z"),
+                       "a wildcard on the parent covers the host")
+        XCTAssertNil(CrtShPlugin.newestExpiry(certificates, domain: "nothing.test"))
+
+        let now = try date("2027-01-01T00:00:00Z")
+        let soon = try XCTUnwrap(CrtShPlugin.certificateExpiryResult(
+            domain: "example.com", newest: try date("2027-01-10T12:00:00Z"), provider: "crt.sh", now: now))
+        XCTAssertEqual(soon.type, "certificate_expiring")
+        XCTAssertEqual(soon.metadata?["expires"], "2027-01-10")
+        XCTAssertEqual(soon.metadata?["days"], "9")
+        let lapsed = try XCTUnwrap(CrtShPlugin.certificateExpiryResult(
+            domain: "example.com", newest: try date("2026-12-27T00:00:00Z"), provider: "crt.sh", now: now))
+        XCTAssertTrue(lapsed.rawData.contains("expired on 2026-12-27"))
+        XCTAssertNil(CrtShPlugin.certificateExpiryResult(
+            domain: "example.com", newest: try date("2027-03-01T00:00:00Z"), provider: "crt.sh", now: now), "renewal not due")
+        XCTAssertNil(CrtShPlugin.certificateExpiryResult(
+            domain: "example.com", newest: try date("2026-11-01T00:00:00Z"), provider: "crt.sh", now: now),
+            "long expired: the site moved on, not a renewal to fix")
+        XCTAssertNil(CrtShPlugin.certificateExpiryResult(domain: "example.com", newest: nil, provider: "crt.sh", now: now))
+        XCTAssertEqual(RiskScorer.explicitCategories["certificate_expiring"], .threat)
+    }
+
+    func testReportsListTheFixesAsText() {
+        let profile = IdentitySynthesizer.synthesize(from: [], riskScore: 0, riskLevel: "Low")
+        let surface = ExposureDiff.snapshot(from: [])
+        let date = Date(timeIntervalSince1970: 0)
+        let fix = Remediation.Fix(id: "x", priority: .high, target: "a.example", title: "Fix <b>a</b>_b",
+                                  why: "Because *x*", steps: ["Do [this](y)"], snippet: "a ``` b\n<script>")
+        let md = ExecutiveReport.markdown(input: "a.example", profile: profile, surface: surface, generatedAt: date, fixes: [fix])
+        XCTAssertTrue(md.contains("## What to fix (1)\n\n### 1. [HIGH] Fix &lt;b&gt;a&lt;/b&gt;\\_b\n"), md)
+        XCTAssertTrue(md.contains("\n```````\na ``` b\n<script>\n```````\n"), "the fence outlasts the snippet's backticks")
+        let html = ExecutiveReportHTML.html(input: "a.example", profile: profile, surface: surface, generatedAt: date, fixes: [fix])
+        XCTAssertTrue(html.contains("<strong>[HIGH] Fix &lt;b&gt;a&lt;/b&gt;_b</strong>"), html)
+        XCTAssertTrue(html.contains("<pre>a ``` b\n&lt;script&gt;</pre>"))
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertFalse(ExecutiveReport.markdown(input: "a.example", profile: profile, surface: surface, generatedAt: date)
+            .contains("What to fix"))
+    }
+
+    func testRemediationEndpointAndReportsCarryTheScansFixes() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let scan = Scan(input: "fix-target.example", status: .completed)
+        try await scan.save(on: app.db)
+        let scanID = try XCTUnwrap(scan.id)
+        try await Result(scanID: scanID, source: "MailSecurity", type: "email_auth_dmarc_missing", confidenceScore: 0.9,
+                         rawData: "No DMARC", metadata: #"{"domain":"fix-target.example","enforced":"no"}"#).save(on: app.db)
+
+        try await app.test(.GET, "/scans/\(scanID.uuidString)/remediation") { res in
+            XCTAssertEqual(res.status, .ok)
+            let fixes = try res.content.decode([Remediation.Fix].self)
+            XCTAssertEqual(fixes.map(\.id), ["dmarc:fix-target.example"])
+            XCTAssertEqual(fixes.first?.priority, .high)
+        }
+        try await app.test(.GET, "/scans/not-a-uuid/remediation") { res in
+            XCTAssertEqual(res.status, .badRequest)
+        }
+        try await app.test(.GET, "/export/\(scanID.uuidString)/report") { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(res.body.string.contains("## What to fix (1)"))
+            XCTAssertTrue(res.body.string.contains(#"_dmarc.fix-target.example. TXT "v=DMARC1; p=reject;""#))
+        }
+        try await app.test(.GET, "/export/\(scanID.uuidString)/report.html") { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(res.body.string.contains("What to fix (1)"))
+        }
     }
 }
