@@ -181,6 +181,7 @@ private func finishScheduledScan(
                 current: try allResults.map(toInput)
             )
             let exposureLine = exposureDelta.hasExposureChange ? exposureDelta.headline : ""
+            let newFixes = try MonitorFingerprint.newUrgentFixes(current: allResults, baseline: baselineResults)
             if !newResults.isEmpty {
                 var seen = Set<String>()
                 let distinctSources = newResults
@@ -189,9 +190,16 @@ private func finishScheduledScan(
                 let preview = distinctSources.prefix(5).joined(separator: ", ")
                 let remainder = max(0, distinctSources.count - 5)
                 let sourceLine = remainder > 0 ? "\(preview), +\(remainder) more" : preview
-                let message = exposureLine.isEmpty
-                    ? "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)"
-                    : "🚨 New exposure for \u{201C}\(String(input.prefix(30)))\u{201D}: \(exposureLine)"
+                let message: String
+                if let first = newFixes.first {
+                    message = "🔧 New fix needed for \u{201C}\(String(input.prefix(30)))\u{201D}: \(first.title)"
+                        + (newFixes.count > 1 ? " (+\(newFixes.count - 1) more)" : "")
+                } else if exposureLine.isEmpty {
+                    message = "🆕 \(newResults.count) new finding\(newResults.count == 1 ? "" : "s") "
+                        + "for \u{201C}\(String(input.prefix(30)))\u{201D}: \(sourceLine)"
+                } else {
+                    message = "🚨 New exposure for \u{201C}\(String(input.prefix(30)))\u{201D}: \(exposureLine)"
+                }
                 let notification = ScanNotification(
                     userID: userID,
                     scanID: scanID,
@@ -204,10 +212,16 @@ private func finishScheduledScan(
                     let risk = try RiskScorer.compute(results: allResults)
                     var body = "Your monitored target '\(input)' has \(newResults.count) new result(s).\n"
                     if !exposureLine.isEmpty { body += "New exposure: \(exposureLine)\n" }
+                    body += MonitorFingerprint.fixLines(newFixes)
                     body += "Sources: \(sourceLine)\nRisk: \(risk.level.rawValue) (\(risk.value)/100)."
-                    let title = exposureLine.isEmpty
-                        ? "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
-                        : "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
+                    let title: String
+                    if let first = newFixes.first {
+                        title = "🔧 Fix needed [\(first.priority.rawValue.capitalized)]: \(String(input.prefix(30)))"
+                    } else if exposureLine.isEmpty {
+                        title = "Monitor Alert [\(risk.level.rawValue)]: \(newResults.count) new for \(String(input.prefix(30)))"
+                    } else {
+                        title = "🚨 Exposure Alert [\(risk.level.rawValue)]: \(String(input.prefix(30)))"
+                    }
                     _ = try await NotificationOutbox.enqueue(
                         userID: userID,
                         title: title,
@@ -219,7 +233,7 @@ private func finishScheduledScan(
                     firedDiffAlert = true
                 }
                 let logMessage = "[ScheduledScanRunner] Schedule \(scheduleID): "
-                    + "\(newResults.count) new finding(s); "
+                    + "\(newResults.count) new finding(s); \(newFixes.count) new urgent fix(es); "
                     + "exposure_changed=\(!exposureLine.isEmpty)"
                 app.logger.info("\(logMessage)")
             }
@@ -274,9 +288,33 @@ enum MonitorFingerprint {
             identity = (metadata["profileURL"] ?? metadata["username"]).map { $0.lowercased() }
         } else if type == "subdomain" {
             identity = metadata["subdomain"]?.lowercased()
+        } else if type == "certificate_expiring" {
+            // The text counts the days down; the certificate is the same one.
+            identity = metadata["domain"].map { "\($0.lowercased())|\(metadata["expires"] ?? "")" }
         } else {
             identity = nil
         }
         return "\(source):\(type):" + (identity.map { "id=\($0)" } ?? String(rawData.prefix(200)))
+    }
+
+    /// Critical and high fixes the current run calls for that none of the
+    /// baseline runs did: what the alert leads with. Keyed by `Fix.id`, so a
+    /// fix whose wording moves (days left, a count) is not new.
+    static func newUrgentFixes(current: [App.Result], baseline: [App.Result]) throws -> [Remediation.Fix] {
+        let before = Set(try Remediation.fixes(for: baseline).map(\.id))
+        return try Remediation.fixes(for: current).filter {
+            ($0.priority == .critical || $0.priority == .high) && !before.contains($0.id)
+        }
+    }
+
+    /// The alert body's list: at most three fixes, then how many more.
+    static func fixLines(_ fixes: [Remediation.Fix]) -> String {
+        guard !fixes.isEmpty else { return "" }
+        var out = "What to fix now:\n"
+        for fix in fixes.prefix(3) {
+            out += "- [\(fix.priority.rawValue.uppercased())] \(fix.title)\n"
+        }
+        if fixes.count > 3 { out += "- and \(fixes.count - 3) more in the scan's Surface tab\n" }
+        return out
     }
 }

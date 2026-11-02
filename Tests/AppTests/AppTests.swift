@@ -10157,3 +10157,76 @@ extension AppTests {
         }
     }
 }
+
+// MARK: - Monitoring a proven domain
+
+extension AppTests {
+    func testAMonitoredProvenDomainGetsItsAttackSurfaceChecked() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let (_, user) = try await verifiedUser(app, username: "monitor-owner")
+        let userID = try XCTUnwrap(user.id)
+        let proven = VerifiedTarget(userID: userID, kind: .domain, value: "owned.example")
+        proven.verifiedAt = Date()
+        proven.method = "dns_txt"
+        try await proven.save(on: app.db)
+        let address = VerifiedTarget(userID: userID, kind: .email, value: "me@gmail.example")
+        address.verifiedAt = Date()
+        address.method = "email_code"
+        try await address.save(on: app.db)
+
+        let heavyDomain = Set(TargetOwnership.monitoredDomainChecks.map(\.name))
+        XCTAssertEqual(heavyDomain, ["AttackSurface", "ExposedFiles", "Typosquat"].reduce(into: Set<String>()) { set, name in
+            if ScanController.defaultPlugins.contains(where: { $0.name == name }) { set.insert(name) }
+        })
+        XCTAssertFalse(heavyDomain.isEmpty)
+
+        let owned = await TargetOwnership.backgroundPlan(input: "owned.example", owner: user, on: app.db)
+        XCTAssertTrue(heavyDomain.isSubset(of: Set(owned.plugins.map(\.name))))
+        XCTAssertFalse(owned.plugins.contains { $0.accepts.contains(.username) && $0.heavy }, "never the username sweeps")
+        XCTAssertTrue(owned.skipped.isEmpty)
+
+        let sub = await TargetOwnership.backgroundPlan(input: "shop.owned.example", owner: user, on: app.db)
+        XCTAssertTrue(heavyDomain.isSubset(of: Set(sub.plugins.map(\.name))), "a proven domain covers its subdomains")
+
+        let other = await TargetOwnership.backgroundPlan(input: "someone-else.example", owner: user, on: app.db)
+        XCTAssertFalse(other.plugins.contains(where: \.heavy))
+
+        let mailbox = await TargetOwnership.backgroundPlan(input: "me@gmail.example", owner: user, on: app.db)
+        XCTAssertFalse(mailbox.plugins.contains(where: \.heavy), "a proven address does not make its domain the account's")
+        XCTAssertTrue(mailbox.plugins.contains { $0.requiresOwnership }, "but its own ownership-only checks run")
+    }
+
+    func testMonitorAlertsLeadWithNewUrgentFixes() throws {
+        func result(_ type: String, _ metadata: String, raw: String = "x") -> App.Result {
+            App.Result(scanID: UUID(), source: "S", type: type, confidenceScore: 0.9, rawData: raw, metadata: metadata)
+        }
+        let baseline = [
+            result("email_auth_dmarc_missing", #"{"domain":"owned.example"}"#),
+            result("email_auth_spf", #"{"domain":"owned.example","spoofable":"no"}"#),
+        ]
+        let current = baseline + [
+            result("exposed_file", #"{"domain":"owned.example","path":"/.env","url":"https://owned.example/.env"}"#),
+            result("certificate_expiring", #"{"domain":"owned.example","expires":"2027-01-10","days":"12"}"#),
+        ]
+        let fresh = try MonitorFingerprint.newUrgentFixes(current: current, baseline: baseline)
+        XCTAssertEqual(fresh.map(\.id), ["exposed-file:https://owned.example/.env", "certificate:owned.example"],
+                       "only what is new and urgent: DMARC was already listed, DNSSEC and CAA are low")
+        let lines = MonitorFingerprint.fixLines(fresh)
+        XCTAssertTrue(lines.hasPrefix("What to fix now:\n- [CRITICAL] Remove the file exposed at https://owned.example/.env\n"), lines)
+        XCTAssertEqual(MonitorFingerprint.fixLines([]), "")
+        let many = Array(repeating: fresh[0], count: 5)
+        XCTAssertTrue(MonitorFingerprint.fixLines(many).hasSuffix("- and 2 more in the scan's Surface tab\n"))
+
+        let countdown = { (days: Int) in
+            MonitorFingerprint.of(source: "crt.sh", type: "certificate_expiring",
+                                  metadata: ["domain": "owned.example", "expires": "2027-01-10", "days": String(days)],
+                                  rawData: "The newest TLS certificate for owned.example expires on 2027-01-10 (\(days) days)")
+        }
+        XCTAssertEqual(countdown(12), countdown(11), "the same certificate counting down is not news every day")
+        XCTAssertNotEqual(countdown(12), MonitorFingerprint.of(
+            source: "crt.sh", type: "certificate_expiring",
+            metadata: ["domain": "owned.example", "expires": "2027-04-10", "days": "12"], rawData: "x"),
+            "a renewed certificate that is again near its end is")
+    }
+}

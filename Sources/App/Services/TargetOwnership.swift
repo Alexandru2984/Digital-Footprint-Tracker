@@ -187,10 +187,24 @@ enum TargetOwnership {
 
     /// The plan for recurring work (scheduled scans, watched boards): the
     /// light checks, with the ownership-only ones only when `owner` has proven
-    /// the target. Recurring scans do not count toward the daily allowance.
+    /// the target. A proven domain also gets `monitoredDomainChecks`: its
+    /// attack surface is what its owner monitors it for. Recurring scans do
+    /// not count toward the daily allowance.
     static func backgroundPlan(input: String, owner: User?, on db: Database) async -> Plan {
         let owned = (try? await isOwned(input: input, by: owner, on: db)) ?? false
-        return plan(ScanController.backgroundPlugins, input: input, owned: owned)
+        var plugins = ScanController.backgroundPlugins
+        if owned, claim(input)?.kind == .domain {
+            plugins += monitoredDomainChecks
+        }
+        return plan(plugins, input: input, owned: owned)
+    }
+
+    /// The heavy checks that act on a domain (attack surface, exposed files,
+    /// lookalikes). On a schedule they run only for a domain the owner has
+    /// proven, at most daily; never the username sweeps, and never for a
+    /// proven address, which does not make its domain the account's.
+    static var monitoredDomainChecks: [any FootprintPlugin] {
+        ScanController.defaultPlugins.filter { $0.heavy && $0.accepts == [.domain] }
     }
 
     /// The plan for an interactive or bulk scan by `user` (nil when anonymous):
