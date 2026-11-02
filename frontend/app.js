@@ -1892,9 +1892,11 @@
             const colors = { critical: '#ef4444', high: '#f97316', medium: '#facc15', low: '#94a3b8' };
             const head = document.createElement('div');
             head.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
-            const title = document.createElement('span'); title.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;';
+            // The theme classes let the light theme recolour text that sits on
+            // the page rather than on a dark card; inline colours win in dark.
+            const title = document.createElement('span'); title.className = 'text-white'; title.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;';
             title.textContent = 'What to fix'; head.appendChild(title);
-            const sub = document.createElement('span'); sub.style.cssText = 'color:#8492a6;font-size:12px;';
+            const sub = document.createElement('span'); sub.className = 'text-slate-400'; sub.style.cssText = 'color:#8492a6;font-size:12px;';
             sub.textContent = fixes.length + (fixes.length === 1 ? ' fix' : ' fixes') + ', most urgent first'; head.appendChild(sub);
             box.appendChild(head);
             fixes.forEach(f => {
@@ -2005,6 +2007,7 @@
             const tenantList = Object.keys(tenants);
             if (!ipList.length && !domList.length && !subs.size && !takeovers.length && !history.length && !trackerList.length && !tenantList.length && !certified.length) {
                 const empty = document.createElement('div');
+                empty.className = 'text-slate-400';
                 empty.style.cssText = 'text-align:center;padding:40px 16px;color:#8492a6;border:1px dashed #334155;border-radius:12px;';
                 empty.textContent = 'No infrastructure surface — scan a domain or IP to map exposed hosts, ports and CVEs.';
                 root.appendChild(empty);
@@ -2026,8 +2029,8 @@
             }
             function sectionTitle(t, sub) {
                 const h = document.createElement('div'); h.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;';
-                const s = document.createElement('span'); s.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;'; s.textContent = t; h.appendChild(s);
-                if (sub) { const c = document.createElement('span'); c.style.cssText = 'color:#8492a6;font-size:12px;'; c.textContent = sub; h.appendChild(c); }
+                const s = document.createElement('span'); s.className = 'text-white'; s.style.cssText = 'font-weight:700;color:#e2e8f0;font-size:14px;'; s.textContent = t; h.appendChild(s);
+                if (sub) { const c = document.createElement('span'); c.className = 'text-slate-400'; c.style.cssText = 'color:#8492a6;font-size:12px;'; c.textContent = sub; h.appendChild(c); }
                 return h;
             }
             function labelled(text, color) {

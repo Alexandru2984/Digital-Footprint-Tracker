@@ -2,6 +2,13 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { formatViolations, mockAPI } from './fixtures.mjs';
 
+// The page background is a CSS grid image, and axe cannot measure text
+// against an image: it files such text as "needs review" and passes it. With
+// the image gone it measures against the colour beneath, as a reader sees it.
+async function auditable(page) {
+    await page.addStyleTag({ content: '*, *::before, *::after { background-image: none !important; }' });
+}
+
 const pages = [
     { path: '/', heading: /OSINT.*FOOTPRINT TRACKER/i, authenticated: false },
     { path: '/login.html', heading: /OSINT.*TRACKER/i, authenticated: false },
@@ -23,6 +30,7 @@ for (const pageCase of pages) {
         await page.goto(pageCase.path, { waitUntil: 'networkidle' });
         await expect(page.getByRole('heading', { name: pageCase.heading }).first()).toBeVisible();
 
+        await auditable(page);
         const results = await new AxeBuilder({ page })
             .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
             .analyze();
@@ -79,41 +87,47 @@ test('mobile interactive targets meet the WCAG 2.2 minimum size', async ({ page 
 });
 
 // The results view is built at runtime, so the page sweep above never sees it:
-// open a scan and check each tab, the expanded fixes, and the settings panel.
-test('the results view, each tab and the settings panel are WCAG 2.2 AA', async ({ page }) => {
-    test.slow(); // six full axe passes over a populated page
-    const pageErrors = [];
-    page.on('pageerror', error => pageErrors.push(error.message));
-    await mockAPI(page, { authenticated: true });
-    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
-    await expect(page.locator('#results-panel')).toBeVisible();
+// open a scan and check each tab, the expanded fixes, and the settings panel,
+// in both themes.
+for (const theme of ['dark', 'light']) {
+    test(`the results view, each tab and the settings panel are WCAG 2.2 AA in the ${theme} theme`, async ({ page }) => {
+        test.slow(); // six full axe passes over a populated page
+        const pageErrors = [];
+        page.on('pageerror', error => pageErrors.push(error.message));
+        await page.addInitScript(value => { try { localStorage.setItem('theme', value); } catch { /* storage off */ } }, theme);
+        await mockAPI(page, { authenticated: true });
+        await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+        await expect(page.locator('#results-panel')).toBeVisible();
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
-    const audit = async state => {
-        const results = await new AxeBuilder({ page })
-            .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-            .analyze();
-        const violations = formatViolations(results.violations);
-        expect(violations, state + ': ' + JSON.stringify(violations, null, 2)).toEqual([]);
-    };
+        const audit = async state => {
+            await auditable(page);
+            const results = await new AxeBuilder({ page })
+                .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+                .analyze();
+            const violations = formatViolations(results.violations);
+            expect(violations, `${theme} ${state}: ` + JSON.stringify(violations, null, 2)).toEqual([]);
+        };
 
-    await audit('results tab');
-    for (const tab of ['graph', 'map', 'surface']) {
-        await page.locator('#tab-' + tab).click();
-        await page.waitForLoadState('networkidle');
-        await audit(tab + ' tab');
-    }
-    const fixes = page.locator('#surface-fixes .js-fix');
-    await expect(fixes.first()).toBeVisible();
-    for (const fix of await fixes.all()) {
-        if (!(await fix.getAttribute('open'))) await fix.locator('summary').click();
-    }
-    await audit('surface tab, fixes open');
+        await audit('results tab');
+        for (const tab of ['graph', 'map', 'surface']) {
+            await page.locator('#tab-' + tab).click();
+            await page.waitForLoadState('networkidle');
+            await audit(tab + ' tab');
+        }
+        const fixes = page.locator('#surface-fixes .js-fix');
+        await expect(fixes.first()).toBeVisible();
+        for (const fix of await fixes.all()) {
+            if ((await fix.getAttribute('open')) === null) await fix.locator('summary').click();
+        }
+        await audit('surface tab, fixes open');
 
-    const menu = page.locator('#hamburger-btn');
-    if (await menu.isVisible()) await menu.click();
-    await page.locator('#settings-toggle-btn').click();
-    await expect(page.locator('#settings-panel')).toBeVisible();
-    await expect(page.locator('#verified-targets-list .js-verified-target').first()).toBeVisible();
-    await audit('settings panel');
-    expect(pageErrors).toEqual([]);
-});
+        const menu = page.locator('#hamburger-btn');
+        if (await menu.isVisible()) await menu.click();
+        await page.locator('#settings-toggle-btn').click();
+        await expect(page.locator('#settings-panel')).toBeVisible();
+        await expect(page.locator('#verified-targets-list .js-verified-target').first()).toBeVisible();
+        await audit('settings panel');
+        expect(pageErrors).toEqual([]);
+    });
+}

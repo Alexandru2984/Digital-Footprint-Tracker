@@ -109,16 +109,46 @@
         html[data-theme="light"] .text-white   { color: #1e293b !important; }
         html[data-theme="light"] .text-slate-200 { color: #334155 !important; }
         html[data-theme="light"] .text-slate-300 { color: #475569 !important; }
-        html[data-theme="light"] .text-slate-400 { color: #64748b !important; }
-        html[data-theme="light"] .text-slate-500 { color: #94a3b8 !important; }
-        html[data-theme="light"] .text-slate-600 { color: #94a3b8 !important; }
-        html[data-theme="light"] footer { border-color: var(--border) !important; color: #94a3b8 !important; }
+        /* Muted greys and accents darkened for light surfaces: each passes
+           4.5:1 on every light background the theme uses (#fff to #e2e8f0).
+           The dark-theme shades are tuned for dark cards and fall to 1.6–2.6
+           here. */
+        html[data-theme="light"] .text-slate-400 { color: #526077 !important; }
+        html[data-theme="light"] .text-slate-500,
+        html[data-theme="light"] .text-slate-600,
+        html[data-theme="light"] .text-slate-700 { color: #56657c !important; }
+        html[data-theme="light"] .text-brand-400,
+        html[data-theme="light"] .text-brand-500 { color: #065f46 !important; }
+        html[data-theme="light"] .text-green-400,
+        html[data-theme="light"] .text-green-500 { color: #166534 !important; }
+        html[data-theme="light"] .text-red-300,
+        html[data-theme="light"] .text-red-400,
+        html[data-theme="light"] .text-red-500 { color: #b91c1c !important; }
+        html[data-theme="light"] .text-yellow-300,
+        html[data-theme="light"] .text-yellow-400,
+        html[data-theme="light"] .text-yellow-500 { color: #854d0e !important; }
+        html[data-theme="light"] .text-amber-200,
+        html[data-theme="light"] .text-amber-300,
+        html[data-theme="light"] .text-amber-400,
+        html[data-theme="light"] .text-amber-500 { color: #92400e !important; }
+        html[data-theme="light"] .text-orange-400 { color: #9a3412 !important; }
+        html[data-theme="light"] .text-purple-300,
+        html[data-theme="light"] .text-purple-400 { color: #7e22ce !important; }
+        html[data-theme="light"] .text-sky-300 { color: #0369a1 !important; }
+        html[data-theme="light"] .text-blue-300 { color: #1d4ed8 !important; }
+        /* White text on a solid coloured button stays white: the .text-white
+           override above is for text on the light cards. */
+        html[data-theme="light"] .bg-brand-600.text-white,
+        html[data-theme="light"] .bg-amber-600.text-white,
+        html[data-theme="light"] .bg-amber-700.text-white,
+        html[data-theme="light"] .bg-purple-600.text-white,
+        html[data-theme="light"] .bg-red-500.text-white,
+        html[data-theme="light"] .bg-red-700.text-white,
+        html[data-theme="light"] .bg-red-700\/70.text-white,
+        html[data-theme="light"] .bg-red-700\/80.text-white { color: #ffffff !important; }
+        html[data-theme="light"] .bg-red-900\/70.text-red-100 { color: #fef2f2 !important; }
+        html[data-theme="light"] footer { border-color: var(--border) !important; color: #56657c !important; }
         html[data-theme="light"] #status-terminal { background: #f0f4f8 !important; border-color: #e2e8f0 !important; }
-
-        body {
-            background-color: #0f172a;
-            color: #f8fafc;
-        }
         /* ── Mobile hamburger ─────────────────────────────────────────────── */
         #hamburger-btn { display: none; }
         @media (max-width: 767px) {
@@ -924,7 +954,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=6db27201a714" integrity="sha384-7EmvstXM5ILulUQlR/9/k/Vkg1Y1ZldpITAV3lV0Fl9lLPn6ibfyfeGX2R8Xdboo"></script>
+    <script src="/app.js?v=845b5f00dadd" integrity="sha384-rsJsERr2NcP/KLhVCVLx3tKI7teOa7j4ylD6rE29yJEQZ6ugZoGJ+cg4ClS9D2AS"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>
