@@ -16,6 +16,7 @@ enum AppMigrations {
         // model, which selects every field it declares. A database that already
         // ran those simply applies this one as new.
         migrations.add(AddUnavailableSourcesToScans())
+        migrations.add(AddOwnershipToScans())
         migrations.add(AddResultMetadata())
         migrations.add(CreateScanResultEvents())
         migrations.add(AddInputIndex())
@@ -60,5 +61,6 @@ enum AppMigrations {
         migrations.add(AddSessionCreatedAt())
         migrations.add(IndexForeignKeys())
         migrations.add(CascadeScansOnUserDelete())
+        migrations.add(CreateVerifiedTargets())
     }
 }

@@ -110,14 +110,16 @@ private func checkBoard(_ board: Investigation, app: Application, now: Date) asy
         do { input = try InputValidator.validateScanInput(node.id) }
         catch { continue } // skip anything that no longer validates as a target
 
+        let plan = await TargetOwnership.backgroundPlan(input: input, owner: owner, on: db)
         let scan = Scan(input: input, userID: userID)
+        scan.skippedChecks = plan.skipped
         do { try await scan.save(on: db) } catch { continue }
         guard let scanID = scan.id else { continue }
         lastScanID = scanID
 
         // Fresh data (bypass cache) so net-new findings actually surface.
         await ScanPluginRunner.run(scanID: scanID, input: input,
-                                   plugins: ScanController.backgroundPlugins, app: app,
+                                   plugins: plan.plugins, app: app,
                                    useCache: false, pivotDepth: 0)
 
         let results = (try? await App.Result.query(on: db).filter(\.$scan.$id == scanID).all()) ?? []

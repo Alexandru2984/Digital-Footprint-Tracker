@@ -29,6 +29,22 @@ struct ScanResponse: Content {
     let scannedAt: Double?    // Unix timestamp of scan creation
     /// Plugins that were failing and skipped checking the target live.
     let unavailableSources: [String]
+    /// Checks withheld from this scan; see `Scan.skippedChecks`.
+    var skippedChecks: [String] = []
+    /// Why they were withheld: `ownership` (the target is not one the account
+    /// has proven it controls) or `daily_limit` (the day's full scans of other
+    /// people's targets are used up). Nil when nothing was withheld.
+    var skipReason: String?
+    /// False when the target was not proven to be the scanning account's own.
+    /// Nil for scans from before this was recorded.
+    var targetVerified: Bool?
+
+    /// Copies what the scan recorded about ownership into the response.
+    mutating func describeOwnership(of scan: Scan) {
+        skippedChecks = scan.skippedChecks
+        skipReason = TargetOwnership.skipReason(for: scan.skippedChecks)
+        targetVerified = scan.thirdParty.map { !$0 }
+    }
 }
 
 /// Process-wide counter of active SSE connections. Prevents a burst of open streams
@@ -206,14 +222,23 @@ struct ScanController: RouteCollection {
         let eligiblePlugins = currentUser?.emailVerified == true
             ? self.plugins
             : self.plugins.filter { !$0.heavy }
-        let activePlugins: [any FootprintPlugin]
+        let selectedPlugins: [any FootprintPlugin]
         if requestedPlugins.isEmpty {
-            activePlugins = eligiblePlugins
+            selectedPlugins = eligiblePlugins
         } else {
-            activePlugins = eligiblePlugins.filter { requestedPlugins.contains($0.name.lowercased()) }
-            guard !activePlugins.isEmpty else {
+            selectedPlugins = eligiblePlugins.filter { requestedPlugins.contains($0.name.lowercased()) }
+            guard !selectedPlugins.isEmpty else {
                 throw Abort(.badRequest, reason: "No eligible plugins specified. Heavy plugins require a verified account.")
             }
+        }
+        // Checks that reach into the target's own servers or sign-up flows run
+        // only on a target the account has proven it controls, and full scans
+        // of other people's targets are bounded per day. See TargetOwnership.
+        let plan = try await TargetOwnership.plan(selectedPlugins, input: input, user: currentUser, on: req.db)
+        let activePlugins = plan.plugins
+        guard !activePlugins.isEmpty else {
+            throw Abort(.forbidden, reason: "These checks run only on a target you have proven is yours. "
+                        + "Add it under Settings → Verified targets.")
         }
 
         // Dedupe: if an *in-flight* pending scan already exists for this input AND
@@ -234,7 +259,7 @@ struct ScanController: RouteCollection {
             }
             if let pendingScan = try await pendingQuery.sort(\.$createdAt, .descending).first() {
                 if let createdAt = pendingScan.createdAt, createdAt > inFlightCutoff {
-                    return ScanResponse(
+                    var response = ScanResponse(
                         scanID: pendingScan.id!,
                         input: try pendingScan.input,
                         status: pendingScan.status.rawValue,
@@ -243,6 +268,8 @@ struct ScanController: RouteCollection {
                         scannedAt: pendingScan.createdAt.map { $0.timeIntervalSince1970 },
                         unavailableSources: []
                     )
+                    response.describeOwnership(of: pendingScan)
+                    return response
                 }
                 // Orphaned: the runner is gone. Reap so it stops blocking this input and
                 // stops surfacing as a perpetually-pending scan, then fall through to start fresh.
@@ -266,8 +293,12 @@ struct ScanController: RouteCollection {
                 .sort(\.$createdAt, .descending)
                 .first(),
                let createdAt = existingScan.createdAt,
-               createdAt > staleThreshold {
-                return ScanResponse(
+               createdAt > staleThreshold,
+               // A scan that withheld checks this one would run (the target has
+               // since been proven, or the day's allowance has reset) is not
+               // reused: the caller would get less than they are now allowed.
+               Set(existingScan.skippedChecks).isSubset(of: Set(plan.skipped)) {
+                var response = ScanResponse(
                     scanID: existingScan.id!,
                     input: try existingScan.input,
                     status: existingScan.status.rawValue,
@@ -276,11 +307,15 @@ struct ScanController: RouteCollection {
                     scannedAt: existingScan.createdAt.map { $0.timeIntervalSince1970 },
                     unavailableSources: existingScan.unavailableSources
                 )
+                response.describeOwnership(of: existingScan)
+                return response
             }
         }
 
         let normalized = input
         let newScan = Scan(input: normalized, userID: userID)
+        newScan.thirdParty = !plan.owned
+        newScan.skippedChecks = plan.skipped
         try await newScan.save(on: req.db)
         await AuditLogger.log(req: req, action: "scan_start", target: String(normalized.prefix(100)))
         guard let scanID = newScan.id else {
@@ -302,15 +337,17 @@ struct ScanController: RouteCollection {
             await ScanPluginRunner.run(scanID: scanID, input: input, plugins: activePlugins, app: app, pivotDepth: pivotDepth)
         }
 
-        return ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil,
-                            scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 }, unavailableSources: [])
+        var response = ScanResponse(scanID: scanID, input: input, status: newScan.status.rawValue, results: [], completedAt: nil,
+                                    scannedAt: newScan.createdAt.map { $0.timeIntervalSince1970 }, unavailableSources: [])
+        response.describeOwnership(of: newScan)
+        return response
     }
 
     @Sendable
     func getResults(req: Request) async throws -> ScanResponse {
         let scan = try await Scan.readableWithResults(req)
 
-        return ScanResponse(
+        var response = ScanResponse(
             scanID: scan.id!,
             input: try scan.input,
             status: scan.status.rawValue,
@@ -319,6 +356,8 @@ struct ScanController: RouteCollection {
             scannedAt: scan.createdAt.map { $0.timeIntervalSince1970 },
             unavailableSources: scan.unavailableSources
         )
+        response.describeOwnership(of: scan)
+        return response
     }
 
     // SSE stream: replays durable, per-scan result events after Last-Event-ID and

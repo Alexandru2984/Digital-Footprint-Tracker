@@ -50,6 +50,9 @@ func routes(_ app: Application) throws {
     let tagController = TagController()
     try app.register(collection: tagController)
 
+    let targetController = TargetController()
+    try app.register(collection: targetController)
+
     let scheduledScanController = ScheduledScanController()
     try app.register(collection: scheduledScanController)
 

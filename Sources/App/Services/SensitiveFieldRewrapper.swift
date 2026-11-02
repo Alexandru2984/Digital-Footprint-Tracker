@@ -30,6 +30,7 @@ enum SensitiveFieldRewrapper {
         case notificationOutbox = "notification_outbox"
         case exportJobs = "export_jobs"
         case pluginCache = "plugin_cache"
+        case verifiedTargets = "verified_targets"
     }
 
     enum Status: String, Codable, Sendable {
@@ -550,6 +551,17 @@ private extension SensitiveFieldRewrapper {
                 catch { throw recordFailure(.rewrite, phase, row.id) }
             }
             return progress(rows)
+        case .verifiedTargets:
+            let rows = try await verifiedTargetBatch(
+                after: cursor, limit: limit, lockForUpdate: true, on: database
+            )
+            for row in rows {
+                do {
+                    row.setValue(try row.value)
+                    try await row.update(on: database)
+                } catch { throw recordFailure(.rewrite, phase, row.id) }
+            }
+            return progress(rows)
         }
     }
 
@@ -738,6 +750,21 @@ private extension SensitiveFieldRewrapper {
             let rows = try await pluginCacheBatch(after: cursor, limit: limit, on: database)
             for row in rows {
                 try verify(row.payload, field: .pluginCachePayload, stage: .verify, phase: phase, id: row.id)
+            }
+            return progress(rows)
+        case .verifiedTargets:
+            let rows = try await verifiedTargetBatch(after: cursor, limit: limit, on: database)
+            for row in rows {
+                let plaintext = try decryptCurrent(
+                    row.valueCipher,
+                    field: .verifiedTargetValue,
+                    stage: .verify,
+                    phase: phase,
+                    id: row.id
+                )
+                guard row.valueHash == FieldCrypto.blindIndex(plaintext) else {
+                    throw recordFailure(.verify, phase, row.id)
+                }
             }
             return progress(rows)
         }
@@ -1006,6 +1033,22 @@ private extension SensitiveFieldRewrapper {
                 .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
         }
         let query = DarkWebInvestigation.query(on: db).sort(\.$id, .ascending).limit(limit)
+        if let cursor { query.filter(\.$id > cursor) }
+        return try await query.all()
+    }
+
+    private static func verifiedTargetBatch(
+        after cursor: UUID?, limit: Int, lockForUpdate: Bool = false, on db: Database
+    ) async throws -> [VerifiedTarget] {
+        if let ids = try await lockedRowIDs(
+            schema: VerifiedTarget.schema, after: cursor, limit: limit,
+            lockForUpdate: lockForUpdate, on: db
+        ) {
+            guard !ids.isEmpty else { return [] }
+            return try await VerifiedTarget.query(on: db)
+                .filter(\.$id ~~ ids).sort(\.$id, .ascending).all()
+        }
+        let query = VerifiedTarget.query(on: db).sort(\.$id, .ascending).limit(limit)
         if let cursor { query.filter(\.$id > cursor) }
         return try await query.all()
     }

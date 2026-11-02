@@ -41,6 +41,13 @@ protocol FootprintPlugin: Sendable {
     /// is typed shows up only once the old entries expire, up to a day later).
     var cacheVersion: Int { get }
 
+    /// True for checks that should only run on a target the scanning account
+    /// has proven it controls (see `TargetOwnership`): ones that probe the
+    /// target's own servers for files that may hold secrets, or that test an
+    /// address against sign-up flows on many services. On anyone else's target
+    /// the check is skipped and listed as skipped, never silently dropped.
+    var requiresOwnership: Bool { get }
+
     // Using Application instead of Request allows safe background execution
     func scan(input: String, on app: Application) async throws -> [PluginResult]
 }
@@ -52,6 +59,7 @@ extension FootprintPlugin {
     var accepts: Set<TargetShape> { TargetShape.all }
     var requiredSecret: String? { nil }
     var cacheVersion: Int { 1 }
+    var requiresOwnership: Bool { false }
 
     /// The plugin cache key: the name, plus the version once it has moved.
     var cacheKey: String { cacheVersion == 1 ? name : "\(name)#v\(cacheVersion)" }

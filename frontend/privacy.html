@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/tailwind.css?v=af8de122ad37">
+    <link rel="stylesheet" href="/tailwind.css?v=fa1e7fe9080b">
     <style>
         body { background-color: #0f172a; color: #f8fafc; }
         .prose h2 { margin-top: 2rem; margin-bottom: 0.75rem; font-size: 1.125rem; font-weight: 700; color: #fff; }
@@ -28,7 +28,7 @@
         <nav class="mb-8 text-sm"><a href="/" class="text-brand-500 hover:underline">&larr; Back to the scanner</a></nav>
 
         <h1 class="text-2xl sm:text-3xl font-bold text-white mb-2">Privacy Notice</h1>
-        <p class="text-slate-400 text-sm mb-8">Last updated: 30 August 2026</p>
+        <p class="text-slate-400 text-sm mb-8">Last updated: 2 November 2026</p>
 
         <div class="prose text-sm">
             <p>This notice explains what personal data this service handles and why. It
@@ -58,7 +58,11 @@
                     authentication secrets and notification destinations (webhook, Discord,
                     Slack or Telegram).</li>
                 <li><strong class="text-white">Usage data:</strong> your scans, their results, saved investigations,
-                    tags and exports.</li>
+                    tags and exports, and whether each scan's target was one you had proven is yours.</li>
+                <li><strong class="text-white">Verified targets:</strong> the addresses and domains you claim under
+                    Settings → Verified targets, stored encrypted, with how control was proven. A code sent to a
+                    claimed address is stored only as a salted hash and expires after 15 minutes; the email
+                    carrying it does not name your account.</li>
                 <li><strong class="text-white">Technical logs:</strong> an audit trail of security-relevant actions.
                     IP addresses are truncated to a network prefix (/24 for IPv4, /48 for
                     IPv6) before being recorded, and the truncated value is stored
@@ -84,6 +88,11 @@
                     adds no inference about health, beliefs, sexuality, or any other special
                     category of data.</li>
             </ul>
+            <p>Checks that go beyond published records — fetching well-known paths on a website where
+            credentials are often left exposed, and asking password-recovery pages about an address — run
+            only on targets the scanning account has proven it controls. Full scans of anyone else's
+            targets are limited per account per day, and the operator reviews accounts that scan many
+            targets they have not proven.</p>
             <p><strong class="text-white">If you are the subject of a scan</strong> and want to know whether your
             data is held here, or want it erased, write to the privacy contact in section 1.
             See section 8 for what we can and cannot do.</p>
@@ -111,13 +120,16 @@
                     VirusTotal, AbuseIPDB, Shodan / InternetDB.</li>
                 <li><strong class="text-white">Account presence:</strong> GitHub, GitLab, Keybase, Mastodon,
                     Bluesky, Telegram, Steam, npm, PyPI, crates.io, Docker Hub, Codeberg, public SSH keys (GitHub, GitLab, Codeberg), DEV Community, Lobsters, Duolingo, Lichess, speedrun.com, Linktree, Hugging Face, Codeforces, LeetCode, Wattpad, TikTok, YouTube, Substack, Mixcloud, Wikimedia, Hacker News, Gravatar, Pastebin, GitHub commit and user search (by email), keys.openpgp.org, keyserver.ubuntu.com,
-                    the public platform list used by the bulk username sweep, and — for signed-in users
-                    only — the password-recovery pages of online services (Holehe), which are asked whether
-                    they know an email address without any reset being completed. For signed-in users, the
+                    the public platform list used by the bulk username sweep, and — only for an address the
+                    signed-in account has proven it controls (its own account address, or one confirmed with a
+                    code under Verified targets) — the password-recovery pages of online services (Holehe), which
+                    are asked whether they know an email address without any reset being completed. For signed-in users, the
                     profile pictures of the accounts found are downloaded from those platforms to compare them;
                     only whether two match is kept, never the pictures.</li>
                 <li><strong class="text-white">Infrastructure:</strong> crt.sh and CertSpotter, RDAP/WHOIS registries
-                    and registrars, the scanned domain's own website (its homepage, security.txt and robots.txt),
+                    and registrars, the scanned domain's own website (its homepage, security.txt and robots.txt;
+                    well-known paths where secrets are often left exposed are checked only on a domain the
+                    signed-in account has proven it controls),
                     the Wayback Machine,
                     HackerTarget passive DNS and analytics lookup (the analytics or advertising IDs the scanned site embeds), Microsoft's public sign-in and autodiscover endpoints (for a scanned domain), mnemonic passive DNS, RIPEstat, GreyNoise, proxycheck.io (for a scanned IP address), the Tor Project's exit list
                     (downloaded and checked locally, so no address is sent), and public DNS-over-HTTPS resolvers.</li>

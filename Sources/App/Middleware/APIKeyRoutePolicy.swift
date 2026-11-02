@@ -95,6 +95,13 @@ enum APIKeyRoutePolicy {
         Rule(.DELETE, "/scans/:scanID/tags/:tagID", .require(.scansWrite)),
         Rule(.GET, "/scans/:scanID/tags", .require(.scansRead)),
 
+        // Proving control of an address or domain unlocks checks on it, so it
+        // takes a signed-in session, never a key that may have leaked.
+        Rule(.GET, "/targets", .deny),
+        Rule(.POST, "/targets", .deny),
+        Rule(.POST, "/targets/:id/verify", .deny),
+        Rule(.DELETE, "/targets/:id", .deny),
+
         Rule(.GET, "/scheduled-scans", .require(.automationRead)),
         Rule(.POST, "/scheduled-scans", .require(.automationWrite)),
         Rule(.DELETE, "/scheduled-scans/:id", .require(.automationWrite)),

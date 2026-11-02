@@ -42,6 +42,7 @@ export async function mockAPI(page, options = {}) {
             body = {
                 scanID: '00000000-0000-4000-8000-0000000000bb', input: 'alice@example.com', status: 'completed',
                 completedAt: 1787000000, scannedAt: 1787000000, unavailableSources: [],
+                skippedChecks: ['ExposedFiles', malicious], skipReason: 'ownership', targetVerified: false,
                 results: [
                     { id: null, source: 'GitHub', type: 'developer_identity', confidenceScore: 1, rawData: 'verified', metadata: null },
                     { id: null, source: 'Steam', type: 'account_presence', confidenceScore: 0.75, rawData: 'same name', metadata: null },
@@ -88,6 +89,11 @@ export async function mockAPI(page, options = {}) {
             body = {
                 totalScans: 3, totalUsers: 1, totalResults: 7, scansPerDay: [],
                 topPlugins: [{ source: malicious, hitCount: 5 }, { source: 'Reddit', hitCount: 2 }],
+                thirdPartyScans24h: 31,
+                thirdPartyLeaders: [
+                    { username: malicious, thirdPartyScans: 27, totalScans: 30, verifiedTargets: 0 },
+                    { username: 'careful-user', thirdPartyScans: 4, totalScans: 12, verifiedTargets: 2 },
+                ],
             };
         } else if (pathname === '/api/admin/plugin-health') {
             body = [
@@ -138,6 +144,22 @@ export async function mockAPI(page, options = {}) {
             }];
         } else if (pathname === '/api/tags' || pathname === '/api/scheduled-scans' || pathname === '/api/auth/api-keys') {
             body = [];
+        } else if (pathname === '/api/targets') {
+            body = {
+                accountEmail: 'browser-tester@example.test',
+                accountEmailVerified: true,
+                dailyThirdPartyFullScans: 25,
+                targets: [
+                    { id: '00000000-0000-4000-8000-0000000000c1', kind: 'email', value: malicious, verified: false,
+                      method: null, verifiedAt: null, expiresAt: 1787000900, createdAt: 1787000000, instructions: null },
+                    { id: '00000000-0000-4000-8000-0000000000c2', kind: 'domain', value: 'example.org', verified: false,
+                      method: null, verifiedAt: null, expiresAt: 1787600000, createdAt: 1787000000,
+                      instructions: { txtName: '_dft-verify.example.org', txtValue: 'dft-verify=' + malicious,
+                                      fileURL: 'https://example.org/.well-known/dft-verify.txt', fileContent: 'dft-verify=abc' } },
+                    { id: '00000000-0000-4000-8000-0000000000c3', kind: 'domain', value: 'owned.example', verified: true,
+                      method: 'dns_txt', verifiedAt: 1787000000, expiresAt: null, createdAt: 1787000000, instructions: null },
+                ],
+            };
         } else if (pathname === '/api/auth/2fa/status') {
             body = { enabled: false };
         } else {

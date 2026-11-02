@@ -98,6 +98,21 @@ components:
             Plugins that were failing during this scan and did not check the
             target live. An empty result from one of these says nothing about
             the target.
+        skippedChecks:
+          type: array
+          items: { type: string }
+          description: >
+            Checks withheld from this scan: those that run only on a target the
+            account has proven it controls, or every heavy check once the day's
+            full scans of unproven targets are used up.
+        skipReason:
+          type: string
+          nullable: true
+          enum: [ownership, daily_limit]
+        targetVerified:
+          type: boolean
+          nullable: true
+          description: False when the target was not proven to be the scanning account's own.
 
     TimelineEvent:
       type: object
@@ -1471,6 +1486,86 @@ paths:
         '422': { description: No bot token saved }
         '502': { description: Telegram could not be reached }
 
+  /targets:
+    get:
+      summary: The caller's verified targets
+      description: |
+        Addresses and domains the account has claimed, and whether each is
+        proven. The account's own address counts as proven once verified.
+        Session only; API keys are refused.
+      tags: [Account]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Account address and claimed targets
+        '401':
+          description: Not authenticated
+    post:
+      summary: Claim an email address or a domain
+      description: |
+        An address is sent a six-digit code (valid 15 minutes, 5 attempts);
+        a domain gets a token to publish as a TXT record at
+        `_dft-verify.<domain>` (or the apex), or in
+        `https://<domain>/.well-known/dft-verify.txt`. Claiming the same
+        value again resends the code (once a minute, 5 times in all) or
+        returns the same token. Needs a verified account email.
+      tags: [Account]
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: string, example: example.com }
+      responses:
+        '200':
+          description: The claim, with instructions for a domain
+        '400':
+          description: Not an email address or domain, or the account's own address
+        '403':
+          description: Account email not verified
+        '429':
+          description: Too many claims, pending claims or codes
+  /targets/{id}/verify:
+    post:
+      summary: Prove a claim
+      description: Checks the mailed code, or looks for the domain's token in DNS and on the site.
+      tags: [Account]
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code: { type: string, example: '123456' }
+      responses:
+        '200':
+          description: Proven
+        '400':
+          description: Wrong code
+        '409':
+          description: Token not found yet
+        '410':
+          description: Code or token expired
+  /targets/{id}:
+    delete:
+      summary: Remove a claim
+      tags: [Account]
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204':
+          description: Removed
+        '404':
+          description: Not found
+
   /account/export:
     get:
       summary: Export the caller's entire account data (GDPR)
@@ -1490,11 +1585,12 @@ paths:
                 type: object
                 properties:
                   exportedAt:    { type: integer, format: int64 }
-                  formatVersion: { type: integer, example: 4 }
+                  formatVersion: { type: integer, example: 5 }
                   profile:       { type: object }
                   scans:         { type: array,  items: { $ref: '#/components/schemas/Scan' } }
                   scheduled:     { type: array,  items: { type: object } }
                   tags:          { type: array,  items: { type: object } }
+                  verifiedTargets: { type: array, items: { type: object } }
                   notifications: { type: array,  items: { type: object } }
                   notificationOutbox: { type: array, items: { type: object } }
                   exportJobs:     { type: array, items: { type: object } }

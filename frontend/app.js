@@ -287,6 +287,46 @@
                 + 'No result from these does not mean no account there; scan again later.';
         }
 
+        // Checks withheld from a scan: some run only on a target the account has
+        // proven is its own, and full scans of other people's targets are
+        // bounded per day. Says which and how to unlock them.
+        function renderSkippedChecks(data) {
+            let note = document.getElementById('skipped-checks-note');
+            const list = data && Array.isArray(data.skippedChecks) ? data.skippedChecks.map(String).filter(Boolean) : [];
+            if (!list.length) {
+                note?.classList.add('hidden');
+                return;
+            }
+            if (!note) {
+                note = document.createElement('div');
+                note.id = 'skipped-checks-note';
+                note.setAttribute('role', 'note');
+                resultsGrid.parentNode.insertBefore(note, resultsGrid);
+            }
+            let known = [];
+            try { known = Array.isArray(availablePlugins) ? availablePlugins : []; } catch (_) {}
+            const described = list.map(name => {
+                const plugin = known.find(p => p && p.name === name);
+                return plugin && plugin.description ? `${name} (${plugin.description})` : name;
+            });
+            note.className = 'js-skipped-checks text-[11px] text-sky-300 border border-sky-500/30 bg-sky-500/5 rounded-sm px-3 py-2 mb-2';
+            const text = document.createElement('p');
+            const action = document.createElement('p');
+            action.className = 'mt-1 text-slate-400';
+            if (data.skipReason === 'daily_limit') {
+                text.textContent = 'Light scan: today\'s full scans of targets you have not proven are yours are used up, '
+                    + `so these checks did not run: ${described.join(', ')}.`;
+                action.textContent = 'Full scans of your own targets are not limited. The allowance resets over the next 24 hours.';
+            } else {
+                text.textContent = `Not run — these checks run only on a target you have proven is yours: ${described.join(', ')}.`;
+                action.textContent = currentUser
+                    ? 'If this is your address or domain, add it under Settings → Verified targets and scan again.'
+                    : 'Sign in and add your address or domain under Settings → Verified targets to run them.';
+            }
+            note.replaceChildren(text, action);
+            note.classList.remove('hidden');
+        }
+
         // Returns a DOM element; all API values set via textContent/classList — never innerHTML.
         function createResultCard(result) {
             const card = document.createElement('div');
@@ -934,6 +974,7 @@
             setScanningState(false);
             lastScanData = data;
             renderUnavailableSources(data.unavailableSources);
+            renderSkippedChecks(data);
             resultsPanel.classList.remove('hidden');
             scanIdDisplay.textContent = data.scanID;
 
@@ -1205,15 +1246,25 @@
                 const scheduleCheck = document.getElementById('schedule-check');
                 if (scheduleCheck && scheduleCheck.checked && currentUser) {
                     const interval = document.getElementById('schedule-interval').value;
-                    await fetch('/api/scheduled-scans', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ input: target, interval })
-                    }).catch(() => {});
-                    logStatus('Scheduled ' + interval + ' scan created.');
+                    try {
+                        const scheduled = await fetch('/api/scheduled-scans', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ input: target, interval })
+                        });
+                        if (scheduled.ok) {
+                            logStatus('Scheduled ' + interval + ' scan created.');
+                        } else {
+                            const failure = await scheduled.json().catch(() => ({}));
+                            logStatus('Not scheduled: ' + String(failure.reason || 'HTTP ' + scheduled.status), 'text-yellow-400');
+                        }
+                    } catch (_) {
+                        logStatus('Not scheduled: network error.', 'text-yellow-400');
+                    }
                 }
                 startStreaming(data.scanID);
+                renderSkippedChecks(data);
             } catch (error) {
                 logStatus('Error initiating scan: ' + error.message, 'text-red-500');
                 setScanningState(false);
@@ -1323,6 +1374,7 @@
                 const data = await response.json();
                 logStatus('New scan queued: ' + data.scanID);
                 startStreaming(data.scanID);
+                renderSkippedChecks(data);
             } catch (error) {
                 logStatus('Error: ' + error.message, 'text-red-500');
                 setScanningState(false);
@@ -2456,6 +2508,7 @@
             panel.classList.toggle('hidden');
             if (wasHidden && currentUser) {
                 loadAPIKeys();
+                loadVerifiedTargets();
                 const retSel = document.getElementById('retention-select');
                 if (retSel && currentUser.retentionDays) {
                     retSel.value = String(currentUser.retentionDays);
@@ -3171,6 +3224,184 @@
         }
 
         // ── API Keys ──────────────────────────────────────────────────────
+        // ─── VERIFIED TARGETS ──────────────────────────────────────────────────────
+        // Addresses and domains the account has proven it controls. They unlock
+        // the checks that run only on one's own targets, and monitoring.
+        function verifiedTargetsMessage(text, cls) {
+            const msg = document.getElementById('verified-targets-msg');
+            if (!msg) return;
+            msg.textContent = text;
+            msg.className = 'text-[10px] mt-1 ' + (cls || 'text-slate-400');
+            msg.classList.toggle('hidden', !text);
+        }
+        async function apiReason(res) {
+            const body = await res.json().catch(() => ({}));
+            return String(body.reason || 'HTTP ' + res.status);
+        }
+        async function loadVerifiedTargets() {
+            const container = document.getElementById('verified-targets-list');
+            if (!container) return;
+            try {
+                const res = await fetch('/api/targets', { credentials: 'include' });
+                if (!res.ok) { container.textContent = 'Sign in to manage verified targets.'; return; }
+                renderVerifiedTargets(await res.json(), container);
+            } catch (_) {
+                container.textContent = 'Could not load verified targets.';
+            }
+        }
+        function renderVerifiedTargets(data, container) {
+            container.replaceChildren();
+            const own = document.createElement('div');
+            own.className = 'flex items-center gap-2 bg-dark-900 rounded-sm px-2 py-1 js-verified-target';
+            const ownValue = document.createElement('span');
+            ownValue.className = 'text-[11px] text-slate-200 font-mono wrap-anywhere grow';
+            ownValue.textContent = String(data.accountEmail || '');
+            const ownState = document.createElement('span');
+            ownState.className = 'text-[10px] ' + (data.accountEmailVerified ? 'text-green-400' : 'text-amber-400');
+            ownState.textContent = data.accountEmailVerified ? 'account email · verified' : 'account email · verify it first';
+            own.append(ownValue, ownState);
+            container.appendChild(own);
+            const limit = document.getElementById('verified-targets-limit');
+            if (limit && data.dailyThirdPartyFullScans) {
+                limit.textContent = `Full scans of targets you have not proven are limited to ${Number(data.dailyThirdPartyFullScans)} a day; `
+                    + 'your own targets are not limited.';
+            }
+            for (const target of Array.isArray(data.targets) ? data.targets : []) {
+                container.appendChild(verifiedTargetRow(target));
+            }
+        }
+        function verifiedTargetRow(target) {
+            const id = String(target.id || '');
+            const value = String(target.value || '');
+            const row = document.createElement('div');
+            row.className = 'bg-dark-900 rounded-sm px-2 py-1.5 js-verified-target';
+            const line = document.createElement('div');
+            line.className = 'flex items-center gap-2';
+            const label = document.createElement('span');
+            label.className = 'text-[11px] text-slate-200 font-mono wrap-anywhere grow';
+            label.textContent = value;
+            const state = document.createElement('span');
+            state.className = 'text-[10px] ' + (target.verified ? 'text-green-400' : 'text-amber-400');
+            const how = { email_code: 'code by email', dns_txt: 'DNS TXT record', well_known_file: 'file on the site' };
+            state.textContent = target.verified
+                ? 'verified · ' + (how[target.method] || String(target.method || ''))
+                : (target.kind === 'email' ? 'waiting for the code' : 'waiting for the token');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'text-red-400 hover:text-red-300 text-[10px] min-h-6 px-1';
+            remove.setAttribute('aria-label', 'Remove ' + value);
+            remove.textContent = '✕';
+            remove.addEventListener('click', async () => {
+                if (!confirm('Remove ' + value + '? Checks that need proof stop running on it.')) return;
+                const res = await fetch('/api/targets/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'include' });
+                if (!res.ok) verifiedTargetsMessage(await apiReason(res), 'text-red-400');
+                loadVerifiedTargets();
+            });
+            line.append(label, state, remove);
+            row.appendChild(line);
+            if (!target.verified) row.appendChild(pendingTargetControls(target));
+            return row;
+        }
+        function pendingTargetControls(target) {
+            const id = String(target.id || '');
+            const box = document.createElement('div');
+            box.className = 'mt-1.5 space-y-1.5';
+            const verify = async (body) => {
+                const res = await fetch('/api/targets/' + encodeURIComponent(id) + '/verify', {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body || {})
+                });
+                if (res.ok) {
+                    verifiedTargetsMessage('Verified: ' + String(target.value || '') + '.', 'text-green-400');
+                    loadVerifiedTargets();
+                } else {
+                    verifiedTargetsMessage(await apiReason(res), 'text-red-400');
+                }
+            };
+            if (target.kind === 'email') {
+                const hint = document.createElement('p');
+                hint.className = 'text-[10px] text-slate-500';
+                hint.textContent = 'Enter the 6-digit code we emailed to this address.';
+                const form = document.createElement('div');
+                form.className = 'flex gap-2';
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.inputMode = 'numeric';
+                input.autocomplete = 'one-time-code';
+                input.maxLength = 6;
+                input.placeholder = '123456';
+                input.setAttribute('aria-label', 'Code for ' + String(target.value || ''));
+                input.className = 'w-28 bg-dark-800 border border-dark-700 text-white text-center tracking-[0.2em] text-xs rounded-sm px-2 py-1 focus:outline-hidden focus:border-brand-500';
+                const confirmBtn = document.createElement('button');
+                confirmBtn.type = 'button';
+                confirmBtn.className = 'text-xs px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-sm';
+                confirmBtn.textContent = 'Confirm';
+                confirmBtn.addEventListener('click', () => verify({ code: input.value.trim() }));
+                const resend = document.createElement('button');
+                resend.type = 'button';
+                resend.className = 'text-xs px-3 py-1 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm';
+                resend.textContent = 'Send a new code';
+                resend.addEventListener('click', () => claimTarget(String(target.value || '')));
+                form.append(input, confirmBtn, resend);
+                box.append(hint, form);
+                return box;
+            }
+            const steps = target.instructions || {};
+            const intro = document.createElement('p');
+            intro.className = 'text-[10px] text-slate-500';
+            intro.textContent = 'Publish this token in one of two ways, then press Check:';
+            const dns = document.createElement('p');
+            dns.className = 'text-[10px] text-slate-400 wrap-anywhere';
+            dns.append(document.createTextNode('DNS: a TXT record named '));
+            const dnsName = document.createElement('code');
+            dnsName.className = 'bg-dark-800 px-1 rounded-sm text-brand-400 select-all';
+            dnsName.textContent = String(steps.txtName || '');
+            const dnsValue = document.createElement('code');
+            dnsValue.className = 'bg-dark-800 px-1 rounded-sm text-brand-400 select-all';
+            dnsValue.textContent = String(steps.txtValue || '');
+            dns.append(dnsName, document.createTextNode(' with the value '), dnsValue);
+            const file = document.createElement('p');
+            file.className = 'text-[10px] text-slate-400 wrap-anywhere';
+            file.append(document.createTextNode('or a file at '));
+            const fileURL = document.createElement('code');
+            fileURL.className = 'bg-dark-800 px-1 rounded-sm text-brand-400 select-all';
+            fileURL.textContent = String(steps.fileURL || '');
+            const fileContent = document.createElement('code');
+            fileContent.className = 'bg-dark-800 px-1 rounded-sm text-brand-400 select-all';
+            fileContent.textContent = String(steps.fileContent || '');
+            file.append(fileURL, document.createTextNode(' containing '), fileContent);
+            const check = document.createElement('button');
+            check.type = 'button';
+            check.className = 'text-xs px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-sm';
+            check.textContent = 'Check';
+            check.addEventListener('click', () => verify({}));
+            box.append(intro, dns, file, check);
+            return box;
+        }
+        async function claimTarget(value) {
+            if (!value) return;
+            const res = await fetch('/api/targets', {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value })
+            });
+            if (!res.ok) { verifiedTargetsMessage(await apiReason(res), 'text-red-400'); return; }
+            const target = await res.json();
+            verifiedTargetsMessage(target.verified
+                ? 'Already verified.'
+                : (target.kind === 'email' ? 'Code sent to ' + String(target.value || '') + '.' : 'Token ready for ' + String(target.value || '') + '.'),
+                'text-slate-300');
+            loadVerifiedTargets();
+        }
+        document.getElementById('add-verified-target-btn')?.addEventListener('click', () => {
+            const input = document.getElementById('verified-target-input');
+            const value = input.value.trim();
+            if (!value) return;
+            input.value = '';
+            claimTarget(value);
+        });
+
         async function loadAPIKeys() {
             const container = document.getElementById('api-keys-list');
             if (!container) return;
@@ -3301,7 +3532,10 @@
                 progressFill.classList.remove('bg-red-500');
                 progressFill.classList.add('bg-purple-500');
                 resultsList.innerHTML = '';
-                showToast(`✓ ${results.length} scan${results.length !== 1 ? 's' : ''} queued successfully`);
+                const queued = results.filter(r => r && r.status !== 'skipped').length;
+                const skipped = results.length - queued;
+                showToast(`✓ ${queued} scan${queued !== 1 ? 's' : ''} queued successfully`
+                    + (skipped ? ` · ${skipped} skipped (the selected checks run only on targets you have proven are yours)` : ''));
             } catch(err) {
                 statusText.textContent = 'Error: ' + err.message;
                 progressFill.classList.add('bg-red-500');

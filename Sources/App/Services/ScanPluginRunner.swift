@@ -196,7 +196,10 @@ enum ScanPluginRunner {
 
     /// The candidates `plugin` will actually be run against: those whose shape
     /// it declares it can act on (`FootprintPlugin.accepts`), and — for heavy
-    /// plugins — only the origins that bound their fan-out.
+    /// plugins — only the origins that bound their fan-out. A plugin that
+    /// `requiresOwnership` runs on the input itself only: ownership is proven
+    /// for what the account typed, never for an address or domain derived from
+    /// it or discovered along the way.
     ///
     /// Filtering here rather than inside each plugin's `scan` is what makes the
     /// saving real: a skipped pair costs no cache lookup, no `scan` call, and no
@@ -211,6 +214,7 @@ enum ScanPluginRunner {
         let accepts = plugin.accepts
         return candidates.filter { candidate in
             guard !plugin.heavy || candidate.origin.heavyEligible else { return false }
+            guard !plugin.requiresOwnership || candidate.origin == .primary else { return false }
             return !accepts.isDisjoint(with: TargetShape.shapes(of: candidate.value))
         }
     }

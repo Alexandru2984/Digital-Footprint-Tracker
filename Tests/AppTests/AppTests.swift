@@ -3,6 +3,7 @@ import XCTVapor
 import Fluent
 import FluentSQLiteDriver
 import NIOCore
+import NIOConcurrencyHelpers
 import SQLKit
 @testable import App
 #if canImport(Glibc)
@@ -2316,7 +2317,7 @@ final class AppTests: XCTestCase {
         }
 
         let collectionPaths = [
-            "/my-scans", "/tags", "/scheduled-scans", "/notifications",
+            "/my-scans", "/tags", "/scheduled-scans", "/notifications", "/targets",
             "/auth/api-keys", "/investigations", "/investigations/index",
             "/dark-web/investigations", "/export-jobs", "/correlations",
             "/account/export",
@@ -3016,6 +3017,8 @@ final class AppTests: XCTestCase {
         try await exportJob.save(on: app.db)
         try await Tag(userID: userID, name: "Sensitive tag", colour: "#123456")
             .save(on: app.db)
+        try await VerifiedTarget(userID: userID, kind: .domain, value: "owned.example.test")
+            .save(on: app.db)
         try await AuditLog(
             userID: userID,
             action: "rewrap_test",
@@ -3076,6 +3079,12 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(completed.rewrittenRows["notification_outbox"], 1)
         XCTAssertEqual(completed.rewrittenRows["export_jobs"], 1)
         XCTAssertEqual(completed.rewrittenRows["plugin_cache"], 1)
+        XCTAssertEqual(completed.rewrittenRows["verified_targets"], 1)
+        let targetRow = try await VerifiedTarget.query(on: app.db).first()
+        let storedTarget = try XCTUnwrap(targetRow)
+        XCTAssertTrue(storedTarget.valueCipher.hasPrefix("enc:v2:epoch-b:"))
+        XCTAssertEqual(try storedTarget.value, "owned.example.test")
+        XCTAssertEqual(storedTarget.valueHash, FieldCrypto.blindIndex("owned.example.test"))
         let remainingCacheRows = try await PluginCacheEntry.query(on: app.db).count()
         XCTAssertEqual(remainingCacheRows, 0)
 
@@ -8436,6 +8445,10 @@ final class AppTests: XCTestCase {
         exportJob.completedAt = Date()
         try await exportJob.save(on: app.db)
 
+        let claim = VerifiedTarget(userID: userID, kind: .domain, value: "claimed.example.test")
+        claim.challenge = "pending-token"
+        try await claim.save(on: app.db)
+
         try await app.test(.GET, "/account/export", beforeRequest: { request in
             request.headers.replaceOrAdd(name: .cookie, value: cookie)
         }, afterResponse: { response in
@@ -8444,7 +8457,11 @@ final class AppTests: XCTestCase {
                 JSONSerialization.jsonObject(with: Data(response.body.readableBytesView))
                     as? [String: Any]
             )
-            XCTAssertEqual(root["formatVersion"] as? Int, 4)
+            XCTAssertEqual(root["formatVersion"] as? Int, 5)
+            let claims = try XCTUnwrap(root["verifiedTargets"] as? [[String: Any]])
+            XCTAssertEqual(claims.first?["value"] as? String, "claimed.example.test")
+            XCTAssertNil(claims.first?["challenge"])
+            XCTAssertFalse(response.body.string.contains("pending-token"))
             let notificationOutbox = try XCTUnwrap(
                 root["notificationOutbox"] as? [[String: Any]]
             )
@@ -9595,5 +9612,360 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(SiteMeta.interesting(r.disallowed), ["/admin/"], "only the sensitive path is flagged")
         // HTML masquerading as robots.txt yields nothing.
         XCTAssertEqual(SiteMeta.parseRobots("<html><body>nope</body></html>").disallowed.count, 0)
+    }
+}
+
+// MARK: - Target ownership
+
+private func verifiedUser(_ app: Application, username: String) async throws -> (cookie: String, user: User) {
+    let cookie = try await registerAndLogin(app, username: username)
+    let stored = try await User.query(on: app.db).filter(\.$username == username).first()
+    let user = try XCTUnwrap(stored)
+    user.emailVerified = true
+    try await user.save(on: app.db)
+    return (cookie, user)
+}
+
+extension AppTests {
+    func testTargetClaimsNormalizeAndCoverTheRightInputs() {
+        XCTAssertEqual(TargetOwnership.claim(" Alice@Example.ORG "), .init(kind: .email, value: "alice@example.org"))
+        XCTAssertEqual(TargetOwnership.claim("Example.ORG."), .init(kind: .domain, value: "example.org"))
+        XCTAssertNil(TargetOwnership.claim("alice"), "a username cannot be proven")
+        XCTAssertNil(TargetOwnership.claim("203.0.113.7"), "an IP address cannot be proven")
+        XCTAssertNil(TargetOwnership.claim("+40712345678"))
+
+        let domain = TargetOwnership.Claim(kind: .domain, value: "example.org")
+        XCTAssertTrue(TargetOwnership.covers(domain, input: "example.org"))
+        XCTAssertTrue(TargetOwnership.covers(domain, input: "mail.example.org"))
+        XCTAssertTrue(TargetOwnership.covers(domain, input: "bob@example.org"))
+        XCTAssertTrue(TargetOwnership.covers(domain, input: "bob@eu.example.org"))
+        XCTAssertFalse(TargetOwnership.covers(domain, input: "badexample.org"), "a suffix is not a subdomain")
+        XCTAssertFalse(TargetOwnership.covers(domain, input: "example.org.evil.test"))
+
+        let email = TargetOwnership.Claim(kind: .email, value: "alice@example.org")
+        XCTAssertTrue(TargetOwnership.covers(email, input: "ALICE@example.org"))
+        XCTAssertFalse(TargetOwnership.covers(email, input: "bob@example.org"))
+        XCTAssertFalse(TargetOwnership.covers(email, input: "example.org"), "an address does not prove its domain")
+
+        XCTAssertEqual(TargetOwnership.coveringClaims(for: "bob@eu.example.org").map(\.value),
+                       ["bob@eu.example.org", "eu.example.org", "example.org"])
+    }
+
+    func testOwnershipChecksAreWithheldFromUnprovenTargetsAndListed() {
+        let plugins = ScanController.defaultPlugins
+        let email = TargetOwnership.plan(plugins, input: "someone@example.org", owned: false)
+        XCTAssertTrue(email.skipped.contains("BulkEmailOSINT"))
+        XCTAssertFalse(email.plugins.contains { $0.requiresOwnership })
+        XCTAssertEqual(TargetOwnership.skipReason(for: email.skipped), "ownership")
+
+        let domain = TargetOwnership.plan(plugins, input: "example.org", owned: false)
+        XCTAssertEqual(domain.skipped, ["ExposedFiles"], "only checks that could act on a domain are listed")
+
+        let owned = TargetOwnership.plan(plugins, input: "someone@example.org", owned: true)
+        XCTAssertTrue(owned.skipped.isEmpty)
+        XCTAssertTrue(owned.plugins.contains { $0.name == "BulkEmailOSINT" })
+
+        let throttled = TargetOwnership.plan(plugins, input: "alice", owned: false, heavyAllowed: false)
+        XCTAssertTrue(throttled.throttled)
+        XCTAssertTrue(throttled.skipped.contains("BulkOSINT"))
+        XCTAssertFalse(throttled.plugins.contains(where: \.heavy))
+        XCTAssertEqual(TargetOwnership.skipReason(for: throttled.skipped), "daily_limit")
+        XCTAssertNil(TargetOwnership.skipReason(for: []))
+    }
+
+    func testOwnershipChecksNeverRunOnDerivedOrPivotedCandidates() {
+        let candidates = [
+            TargetDeriver.Candidate(value: "me@example.org", origin: .primary),
+            TargetDeriver.Candidate(value: "someone-else@example.net", origin: .pivoted),
+        ]
+        let applicable = ScanPluginRunner.applicableCandidates(for: BulkEmailPlugin(), from: candidates)
+        XCTAssertEqual(applicable.map(\.value), ["me@example.org"])
+        // A light plugin without the flag still follows pivots.
+        let light = ScanPluginRunner.applicableCandidates(for: GravatarPlugin(), from: candidates)
+        XCTAssertEqual(light.count, 2)
+    }
+
+    func testDomainTokensAndFilesAreMatchedExactly() {
+        let token = "0123456789abcdef0123456789abcdef"
+        XCTAssertTrue(TargetOwnership.txtMatches(["v=spf1 -all", "dft-verify=\(token)"], token: token))
+        XCTAssertTrue(TargetOwnership.txtMatches(["\"dft-verify=0123456789abcdef\" \"0123456789abcdef\""], token: token))
+        XCTAssertFalse(TargetOwnership.txtMatches(["dft-verify=\(token)x"], token: token))
+        XCTAssertFalse(TargetOwnership.txtMatches(["dft-verify=ffff"], token: token))
+        XCTAssertTrue(TargetOwnership.fileMatches("\(token)\n", token: token))
+        XCTAssertTrue(TargetOwnership.fileMatches("# proof\ndft-verify=\(token)\n", token: token))
+        XCTAssertFalse(TargetOwnership.fileMatches("<html>\(token)</html>", token: token))
+        XCTAssertEqual(TargetOwnership.newToken().count, 32)
+        XCTAssertEqual(TargetOwnership.newCode().count, 6)
+    }
+
+    func testEmailTargetIsProvenWithTheMailedCode() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let (cookie, user) = try await verifiedUser(app, username: "claims-email")
+
+        var targetID = ""
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": "Other@Example.ORG"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let dto = try res.content.decode(VerifiedTargetDTO.self)
+            XCTAssertEqual(dto.kind, "email")
+            XCTAssertEqual(dto.value, "other@example.org")
+            XCTAssertFalse(dto.verified)
+            XCTAssertNil(dto.instructions)
+            targetID = dto.id
+        })
+        // Asking again at once is refused: one code a minute.
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": "other@example.org"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .tooManyRequests) })
+
+        // The code itself is only in the email; plant a known one.
+        let stored = try await VerifiedTarget.find(UUID(uuidString: targetID), on: app.db)
+        let target = try XCTUnwrap(stored)
+        XCTAssertNotNil(target.challenge)
+        XCTAssertEqual(target.sends, 1)
+        target.challenge = TargetOwnership.codeDigest("424242", claimID: try XCTUnwrap(target.id))
+        try await target.save(on: app.db)
+
+        let ownerRow = try await User.find(user.id, on: app.db)
+        let owner = try XCTUnwrap(ownerRow)
+        let ownedBefore = try await TargetOwnership.isOwned(input: "other@example.org", by: owner, on: app.db)
+        XCTAssertFalse(ownedBefore)
+
+        try await app.test(.POST, "/targets/\(targetID)/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["code": "000000"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .badRequest)
+            XCTAssertTrue(res.body.string.contains("4 attempt"))
+        })
+        try await app.test(.POST, "/targets/\(targetID)/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["code": "424 242"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let dto = try res.content.decode(VerifiedTargetDTO.self)
+            XCTAssertTrue(dto.verified)
+            XCTAssertEqual(dto.method, "email_code")
+        })
+
+        let ownedAfter = try await TargetOwnership.isOwned(input: "other@example.org", by: owner, on: app.db)
+        XCTAssertTrue(ownedAfter)
+        let accountEmail = try await TargetOwnership.isOwned(input: owner.email, by: owner, on: app.db)
+        XCTAssertTrue(accountEmail, "the verified account address counts as proven")
+        let domainOfIt = try await TargetOwnership.isOwned(input: "example.org", by: owner, on: app.db)
+        XCTAssertFalse(domainOfIt, "an address never proves its domain")
+
+        try await app.test(.GET, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let list = try res.content.decode(VerifiedTargetsResponse.self)
+            XCTAssertEqual(list.targets.map(\.value), ["other@example.org"])
+            XCTAssertTrue(list.accountEmailVerified)
+        })
+
+        // Someone else can neither verify nor remove it.
+        let (otherCookie, _) = try await verifiedUser(app, username: "claims-other")
+        try await app.test(.DELETE, "/targets/\(targetID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: otherCookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .notFound) })
+        try await app.test(.DELETE, "/targets/\(targetID)", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .noContent) })
+        let ownedAfterRemoval = try await TargetOwnership.isOwned(input: "other@example.org", by: owner, on: app.db)
+        XCTAssertFalse(ownedAfterRemoval)
+    }
+
+    func testWrongCodesRunOutAndClaimsNeedAVerifiedAccount() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let unverifiedCookie = try await registerAndLogin(app, username: "claims-unverified")
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: unverifiedCookie)
+            try req.content.encode(["value": "x@example.org"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+
+        let (cookie, user) = try await verifiedUser(app, username: "claims-guess")
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": user.email], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest, "the account address needs no claim") })
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": "alice"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+
+        var targetID = ""
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": "guess@example.org"], as: .json)
+        }, afterResponse: { res in targetID = try res.content.decode(VerifiedTargetDTO.self).id })
+        for _ in 0..<TargetOwnership.maxAttempts {
+            try await app.test(.POST, "/targets/\(targetID)/verify", beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+                try req.content.encode(["code": "111111"], as: .json)
+            }, afterResponse: { res in XCTAssertEqual(res.status, .badRequest) })
+        }
+        // The code is gone after the last wrong guess; even the right one fails.
+        let stored = try await VerifiedTarget.find(UUID(uuidString: targetID), on: app.db)
+        XCTAssertNil(try XCTUnwrap(stored).challenge)
+        try await app.test(.POST, "/targets/\(targetID)/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["code": "111111"], as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .gone) })
+    }
+
+    func testDomainTargetIsProvenWithThePublishedToken() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let published = NIOLockedValueBox<String?>(nil)
+        app.storage[TargetOwnership.ProbeKey.self] = { domain, token, _ in
+            guard domain == "example.org", published.withLockedValue({ $0 }) == token else { return nil }
+            return "dns_txt"
+        }
+        let (cookie, user) = try await verifiedUser(app, username: "claims-domain")
+
+        var dto: VerifiedTargetDTO?
+        try await app.test(.POST, "/targets", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["value": "Example.ORG"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            dto = try res.content.decode(VerifiedTargetDTO.self)
+        })
+        let pending = try XCTUnwrap(dto)
+        let steps = try XCTUnwrap(pending.instructions)
+        XCTAssertEqual(steps.txtName, "_dft-verify.example.org")
+        XCTAssertEqual(steps.fileURL, "https://example.org/.well-known/dft-verify.txt")
+        XCTAssertTrue(steps.txtValue.hasPrefix("dft-verify="))
+
+        try await app.test(.POST, "/targets/\(pending.id)/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .conflict, "not published yet") })
+
+        published.withLockedValue { $0 = String(steps.txtValue.dropFirst("dft-verify=".count)) }
+        try await app.test(.POST, "/targets/\(pending.id)/verify", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let verified = try res.content.decode(VerifiedTargetDTO.self)
+            XCTAssertTrue(verified.verified)
+            XCTAssertEqual(verified.method, "dns_txt")
+            XCTAssertNil(verified.instructions)
+        })
+
+        let ownerRow = try await User.find(user.id, on: app.db)
+        let owner = try XCTUnwrap(ownerRow)
+        for input in ["example.org", "shop.example.org", "anyone@example.org"] {
+            let owned = try await TargetOwnership.isOwned(input: input, by: owner, on: app.db)
+            XCTAssertTrue(owned, input)
+        }
+        for input in ["example.com", "notexample.org", "alice"] {
+            let owned = try await TargetOwnership.isOwned(input: input, by: owner, on: app.db)
+            XCTAssertFalse(owned, input)
+        }
+    }
+
+    func testScansOfUnprovenTargetsSayWhichChecksWereLeftOut() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(ScanRequest(input: "someone@example.org", force: true, plugins: nil), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertTrue(body.skippedChecks.contains("BulkEmailOSINT"))
+            XCTAssertEqual(body.skipReason, "ownership")
+            XCTAssertEqual(body.targetVerified, false)
+            let scan = try await Scan.find(body.scanID, on: app.db)
+            XCTAssertEqual(scan?.thirdParty, true)
+            XCTAssertEqual(scan?.skippedChecks, body.skippedChecks)
+        })
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            try req.content.encode(ScanRequest(input: "someone@example.org", force: true, plugins: ["BulkEmailOSINT"]), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .forbidden) })
+
+        // The same request on the account's own verified address runs it.
+        let (cookie, user) = try await verifiedUser(app, username: "scans-own")
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScanRequest(input: user.email, force: true, plugins: ["BulkEmailOSINT"]), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertTrue(body.skippedChecks.isEmpty)
+            XCTAssertNil(body.skipReason)
+            XCTAssertEqual(body.targetVerified, true)
+        })
+    }
+
+    func testFullScansOfOthersAreLimitedPerDay() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let (cookie, user) = try await verifiedUser(app, username: "scans-many")
+        for index in 0..<TargetOwnership.dailyThirdPartyFullScans {
+            let scan = Scan(input: "person\(index)", userID: user.id)
+            scan.thirdParty = true
+            try await scan.save(on: app.db)
+        }
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScanRequest(input: "alice", force: true, plugins: nil), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            let body = try res.content.decode(ScanResponse.self)
+            XCTAssertTrue(body.skippedChecks.contains("BulkOSINT"))
+            XCTAssertEqual(body.skipReason, "daily_limit")
+        })
+        // The account's own targets are not limited.
+        try await app.test(.POST, "/scan", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScanRequest(input: user.email, force: true, plugins: nil), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertTrue(try res.content.decode(ScanResponse.self).skippedChecks.isEmpty)
+        })
+    }
+
+    func testMonitoringNeedsAProvenTarget() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let (cookie, user) = try await verifiedUser(app, username: "monitor-own")
+        struct ScheduleBody: Content { let input: String; let interval: String }
+        try await app.test(.POST, "/scheduled-scans", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScheduleBody(input: "someone@example.org", interval: "daily"), as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .forbidden)
+            XCTAssertTrue(res.body.string.contains("Verified targets"))
+        })
+        try await app.test(.POST, "/scheduled-scans", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(ScheduleBody(input: user.email, interval: "weekly"), as: .json)
+        }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
+    }
+
+    func testAdminSeesAccountsScanningUnprovenTargets() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let (_, user) = try await verifiedUser(app, username: "watched-account")
+        var scans: [Scan] = []
+        for index in 0..<3 {
+            let scan = Scan(input: "target\(index)", userID: user.id)
+            scan.thirdParty = index < 2
+            try await scan.save(on: app.db)
+            scans.append(scan)
+        }
+        let (leaders, total) = try await AdminController.thirdPartyActivity(scans, on: app.db)
+        XCTAssertEqual(total, 2)
+        XCTAssertEqual(leaders.first?.username, "watched-account")
+        XCTAssertEqual(leaders.first?.thirdPartyScans, 2)
+        XCTAssertEqual(leaders.first?.totalScans, 3)
+        XCTAssertEqual(leaders.first?.verifiedTargets, 0)
     }
 }

@@ -66,7 +66,7 @@
       ]
     }
     </script>
-    <link rel="stylesheet" href="/tailwind.css?v=af8de122ad37">
+    <link rel="stylesheet" href="/tailwind.css?v=fa1e7fe9080b">
     <style>
         /* ── Theme custom properties (dark default) ───────────────────────── */
         :root {
@@ -382,6 +382,20 @@
                     <button id="create-tag-btn" class="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">+ Add</button>
                 </div>
                 <div id="tags-list" class="flex flex-wrap gap-1.5 text-xs"></div>
+            </div>
+            <!-- Verified targets -->
+            <div class="mt-3 border-t border-dark-700 pt-3">
+              <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🛡 Verified targets</p>
+              <p class="text-[10px] text-slate-500 mb-2">Prove an address or domain is yours to run the checks that only run on your own targets (exposed files on your site, account checks on your address) and to monitor it. A domain also covers its subdomains and every address at it.</p>
+              <p id="verified-targets-limit" class="text-[10px] text-slate-500 mb-2"></p>
+              <div id="verified-targets-list" class="flex flex-col gap-1 mb-2 text-xs text-slate-500">Loading…</div>
+              <div class="flex gap-2">
+                <label for="verified-target-input" class="sr-only">Email address or domain to verify</label>
+                <input id="verified-target-input" type="text" placeholder="you@example.com or example.com" autocapitalize="none" spellcheck="false"
+                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus:border-brand-500">
+                <button id="add-verified-target-btn" type="button" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Verify</button>
+              </div>
+              <p id="verified-targets-msg" role="status" aria-live="polite" class="text-[10px] mt-1 hidden"></p>
             </div>
             <!-- API Keys -->
             <div class="mt-3 border-t border-dark-700 pt-3">
@@ -910,7 +924,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=5bc5e4cb1918" integrity="sha384-yjZzST3rzdRBYopmT2Z19v0+lB45L5FqAkLUweRiGmJS4O8wcsBRbJoPPefM+h7H"></script>
+    <script src="/app.js?v=ddc090313fc8" integrity="sha384-Ck34epZ0EV07pAkITJwnCReY45jSBm0Cq5F9PsxMyvgDZkR/Q2DBGJaJS/oCaE7d"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>

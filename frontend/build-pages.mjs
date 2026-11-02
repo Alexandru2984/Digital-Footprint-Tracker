@@ -31,7 +31,7 @@ const sourceGroups = [
         ['GitHub commits and profiles', 'The GitHub account and author name behind an address, from its commits or public profile email'],
         ['keys.openpgp.org', 'Other addresses verified on the same OpenPGP key'],
         ['Ubuntu keyserver', 'Names on public PGP keys that mention the address (unverified, weighed accordingly)'],
-        ['Holehe', 'Sites whose account recovery recognises the address (verified accounts)'],
+        ['Holehe', 'Sites whose account recovery recognises the address (only for an address you have proven is yours)'],
         ['XposedOrNot', 'Data breaches the address appears in, what each exposed and when (free)'],
         ['LeakCheck', 'A second breach index, merged with the first: one breach is counted once, whatever each calls it (free)'],
         ['Have I Been Pwned', 'Breaches and pastes (optional, needs an API key)'],
@@ -72,7 +72,7 @@ const sourceGroups = [
         ['Microsoft 365 tenant', 'The organisation’s name, its tenant and identity provider, and the other domains Microsoft verified for the same owner'],
         ['Tracking IDs', 'The Google Analytics, Tag Manager, AdSense and Meta Pixel IDs the site embeds, and the other sites that embed the same ones (HackerTarget)'],
         ['Web posture', 'TLS, HTTP security headers and server fingerprint'],
-        ['Exposed files', 'Content-verified .env, .git, database dumps and backups left public'],
+        ['Exposed files', 'Content-verified .env, .git, database dumps and backups left public (only on a domain you have proven is yours)'],
         ['Wayback Machine', 'First and last archive snapshot, and how many'],
         ['Typosquats', 'Lookalike domains that resolve'],
         ['Keybase, Bluesky', 'Accounts that proved control of the domain'],
@@ -108,7 +108,7 @@ const pages = [
 <li><strong>GitHub</strong> links commits to an account only through a verified email, so a commit authored with the address names its owner. A public profile email is checked too.</li>
 <li><strong>Gravatar</strong> returns the profile behind the address and the social accounts Gravatar verified for it.</li>
 <li><strong>OpenPGP keys</strong>: keys.openpgp.org lists only addresses whose owner confirmed them, so the other addresses on the same key belong to the same person.</li>
-<li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite.</li>
+<li><strong>Account registrations</strong>: Holehe asks sites’ password-recovery flows whether they know the address, revealing accounts on services such as Spotify, Office 365 or Eventbrite. It runs only on an address you have proven is yours: your account email, or one confirmed with a code.</li>
 <li><strong>Data breaches</strong> from XposedOrNot and LeakCheck (both free) and, optionally, Have I Been Pwned: which breaches, when, and what was exposed.</li>
 <li><strong>The address’s own domain</strong>: for a mailbox on a domain of its own (not Gmail or Outlook), the domain is scanned too — its registrant, website and the services it uses.</li>
 </ul>
@@ -120,7 +120,7 @@ const pages = [
         faq: [
             ['Can I find who owns an email address?', 'Often. When a platform has verified the address — a GitHub commit, a Gravatar profile, an OpenPGP key — the account and the name on it are attributed with high confidence. Addresses that were never used publicly reveal little.'],
             ['Does the lookup alert the owner?', 'No. Every source is queried passively; nothing is sent to the address. Account-recovery checks never complete a reset.'],
-            ['Is the email lookup free?', 'Yes. Account registration checks and the 480-site username sweep need a free, verified account; everything else runs anonymously.'],
+            ['Is the email lookup free?', 'Yes. The 480-site username sweep needs a free, verified account, and account registration checks run only on an address you have proven is yours; everything else runs anonymously.'],
         ],
     },
     {
@@ -175,7 +175,7 @@ const pages = [
 </ul>
 <h2>Exposure</h2>
 <ul>
-<li><strong>Exposed files</strong>: .env files, .git directories, database dumps and backups, confirmed by their content, not just a 200.</li>
+<li><strong>Exposed files</strong>: .env files, .git directories, database dumps and backups, confirmed by their content, not just a 200. Checked only on a domain you have proven is yours, with a DNS TXT record or a file on the site.</li>
 <li><strong>Web posture</strong>: TLS and HTTP security headers, graded.</li>
 <li><strong>Mail security</strong>: whether mail from the domain can be spoofed (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Lookalike domains</strong> that resolve — candidates for phishing.</li>
@@ -305,6 +305,8 @@ ${rows.map(([name, what]) => `<tr><td>${escapeHTML(name)}</td><td>${escapeHTML(w
 <p>The report opens with the profile at a glance: the likely name, accounts confirmed (80% and up), probable (50–79%) and unconfirmed, the target’s websites and domains, contact details, and what has leaked.</p>
 <h2>6. Risk</h2>
 <p>The risk score adds up categories — breaches, exposed services, linked identities, contact details, accounts — each saturating so that volume alone cannot max it out. A breach report counts for what it holds: how many breaches, whether passwords, payment or identity data leaked, and how recent. Clean verdicts add nothing.</p>
+<h2>7. Checks that need proof</h2>
+<p>Most checks read what public sources already publish, and run on any target. Two go further and run only on a target you have proven is yours: probing a website for exposed files, and asking password-recovery pages about an address. Your account email counts as yours once it is verified; another address is proven with a code sent to it, and a domain with a token published in its DNS or on the site, which also covers its subdomains and every address at it. Monitoring needs a proven target too, and full scans of targets you have not proven are limited per day. A scan always says which checks it left out and why.</p>
 <h2>Privacy</h2>
 <p>Scan inputs and results are encrypted at rest, anonymous scans expire after 30 days, and there are no third-party scripts or analytics on this site. See the <a href="/privacy.html">privacy notice</a>.</p>`,
         faq: [],
@@ -520,8 +522,8 @@ ${footer(l)}
 `);
 }
 
-const legal = [['privacy.html', '2026-08-30', 'yearly', '0.3'], ['terms.html', '2026-08-30', 'yearly', '0.3'],
-               ['acceptable-use.html', '2026-08-30', 'yearly', '0.3']];
+const legal = [['privacy.html', '2026-11-02', 'yearly', '0.3'], ['terms.html', '2026-08-30', 'yearly', '0.3'],
+               ['acceptable-use.html', '2026-11-02', 'yearly', '0.3']];
 const entry = (loc, lastmod, freq, priority, alternates = []) => `  <url>
     <loc>${loc}</loc>
 ${alternates.map(([lang, href]) => `    <xhtml:link rel="alternate" hreflang="${lang}" href="${href}"/>`).join('\n')}${alternates.length ? '\n' : ''}    <lastmod>${lastmod}</lastmod>

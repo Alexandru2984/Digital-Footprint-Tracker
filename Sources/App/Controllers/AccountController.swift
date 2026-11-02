@@ -137,6 +137,18 @@ struct AccountController: RouteCollection {
 
         let investigationExport = try await investigationPayloads(userID: userID, on: req.db)
 
+        // Claimed addresses and domains with how each was proven. Never the
+        // pending code's hash or the blind index.
+        let claims = try await VerifiedTarget.query(on: req.db).filter(\.$user.$id == userID).all()
+        let claimsPayload: [[String: Any]] = try claims.map { c in [
+            "id":         c.id?.uuidString ?? "",
+            "kind":       c.kind.rawValue,
+            "value":      try c.value,
+            "method":     c.method as Any,
+            "verifiedAt": c.verifiedAt.map { $0.timeIntervalSince1970 } as Any,
+            "createdAt":  c.createdAt.map { $0.timeIntervalSince1970 } as Any
+        ] }
+
         // API keys — metadata only. Never include the hashed key column; an
         // attacker with the hash can still brute-force short keys offline.
         let apiKeys = try await APIKey.query(on: req.db).filter(\.$user.$id == userID).all()
@@ -162,11 +174,12 @@ struct AccountController: RouteCollection {
 
         let bundle: [String: Any] = [
             "exportedAt":    Date().timeIntervalSince1970,
-            "formatVersion": 4,
+            "formatVersion": 5,
             "profile":       profile,
             "scans":         scansPayload,
             "scheduled":     scheduledPayload,
             "tags":          tagsPayload,
+            "verifiedTargets": claimsPayload,
             "notifications": notificationsPayload,
             "notificationOutbox": outboxPayload,
             "exportJobs": exportJobsPayload,

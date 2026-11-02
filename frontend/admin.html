@@ -8,8 +8,8 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="color-scheme" content="dark light">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/tailwind.css?v=af8de122ad37"
-          integrity="sha384-I+fSPLgF1r3tAOCrJ2eNu8Z7bhwfLbDL3xiTtjrMaQqoMSAFN0c+63Y7RH1c0Bbb"
+    <link rel="stylesheet" href="/tailwind.css?v=fa1e7fe9080b"
+          integrity="sha384-iF521LMs0mSqEqticiwAhm0/v7PxL96oKM0OTtIOv7Pm3y9JfPAd7TzOl2HkSRj3"
           crossorigin="anonymous">
     <style>
         body { background-color: #0f172a; color: #f8fafc; }
@@ -81,6 +81,17 @@
                     Top Plugins by Findings
                 </h2>
                 <div id="top-plugins-chart" style="min-height:200px;"></div>
+            </div>
+
+            <!-- Scans of other people's targets -->
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-5 shadow-xl">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Scans of Unproven Targets (24h)
+                </h2>
+                <p class="text-[11px] text-slate-500 mb-3">Scans of targets the account had not proven it controls. A high count with no verified targets is the first place to look for someone being tracked.</p>
+                <p id="third-party-total" role="status" class="mb-3 text-[11px] text-slate-400">—</p>
+                <div id="third-party-container"></div>
             </div>
 
             <!-- Plugin health -->

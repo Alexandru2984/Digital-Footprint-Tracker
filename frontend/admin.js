@@ -189,6 +189,46 @@
         document.getElementById('top-plugins-chart').textContent = 'No plugin data available.';
     }
 
+    // Scans of targets the account had not proven it controls, last 24h.
+    (function renderThirdParty(leaders, total) {
+        const summary = document.getElementById('third-party-total');
+        const container = document.getElementById('third-party-container');
+        summary.textContent = `${total} scan${total === 1 ? '' : 's'} of unproven targets in the last 24 hours`;
+        if (!leaders.length) {
+            container.textContent = 'No signed-in account scanned an unproven target.';
+            return;
+        }
+        const table = document.createElement('table');
+        table.className = 'w-full text-[10px] border-collapse';
+        const head = table.createTHead().insertRow();
+        head.className = 'border-b border-dark-700 text-slate-400';
+        for (const label of ['Account', 'Unproven', 'All scans', 'Verified targets']) {
+            const th = document.createElement('th');
+            th.className = 'text-left align-bottom py-1 pr-2';
+            th.textContent = label;
+            head.appendChild(th);
+        }
+        const body = table.createTBody();
+        for (const entry of leaders) {
+            const row = body.insertRow();
+            row.className = 'border-b border-dark-800 js-third-party-row';
+            const unproven = Number(entry.thirdPartyScans) || 0;
+            const proven = Number(entry.verifiedTargets) || 0;
+            const cells = [
+                [String(entry.username ?? ''), 'text-slate-200'],
+                [String(unproven), unproven >= 25 && proven === 0 ? 'text-red-400' : 'text-slate-300'],
+                [String(Number(entry.totalScans) || 0), 'text-slate-400'],
+                [String(proven), 'text-slate-400'],
+            ];
+            for (const [text, cls] of cells) {
+                const td = row.insertCell();
+                td.className = 'align-top py-1 pr-2 wrap-anywhere ' + cls;
+                td.textContent = text;
+            }
+        }
+        container.replaceChildren(table);
+    })(Array.isArray(data.thirdPartyLeaders) ? data.thirdPartyLeaders : [], Number(data.thirdPartyScans24h) || 0);
+
     // Plugin health
     document.getElementById('refresh-plugin-health-btn')?.addEventListener('click', loadPluginHealth);
 

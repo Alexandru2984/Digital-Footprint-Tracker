@@ -60,6 +60,13 @@ struct ScheduledScanController: RouteCollection {
         guard let interval = ScheduledScan.Interval(rawValue: body.interval) else {
             throw Abort(.badRequest, reason: "Interval must be 'daily' or 'weekly'.")
         }
+        // Recurring monitoring is for one's own footprint: your account address,
+        // or an address or domain proven under Settings → Verified targets.
+        // Watching someone else on a timer is the pattern this rules out.
+        guard try await TargetOwnership.isOwned(input: input, by: user, on: req.db) else {
+            throw Abort(.forbidden, reason: "Monitoring is only available for targets you have proven are yours: "
+                        + "your account email, or an address or domain added under Settings → Verified targets.")
+        }
         let nextRun: Date = interval == .daily
             ? Date().addingTimeInterval(86400)
             : Date().addingTimeInterval(604800)

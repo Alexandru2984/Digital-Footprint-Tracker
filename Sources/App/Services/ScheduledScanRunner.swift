@@ -85,8 +85,10 @@ func runDueScheduledScansOnce(app: Application) async {
         let scheduleID = ss.id?.uuidString ?? "unknown"
         app.logger.info("[ScheduledScanRunner] Running schedule \(scheduleID).")
 
+        let plan = await TargetOwnership.backgroundPlan(input: input, owner: owner, on: db)
         let newScan = Scan(input: input)
         newScan.$user.id = userID
+        newScan.skippedChecks = plan.skipped
         do {
             try await newScan.save(on: db)
         } catch {
@@ -108,6 +110,7 @@ func runDueScheduledScansOnce(app: Application) async {
             await finishScheduledScan(
                 scanID: scanID,
                 input: input,
+                plugins: plan.plugins,
                 userID: userID,
                 scheduleID: scheduleID,
                 app: app
@@ -119,6 +122,7 @@ func runDueScheduledScansOnce(app: Application) async {
 private func finishScheduledScan(
     scanID: UUID,
     input: String,
+    plugins: [any FootprintPlugin],
     userID: UUID,
     scheduleID: String,
     app: Application
@@ -126,7 +130,6 @@ private func finishScheduledScan(
     let db = app.db
     // Hand plugin execution off to the shared runner: same deadline, registry,
     // persistence and terminal status behavior as interactive scans.
-    let plugins = ScanController.backgroundPlugins
     let runnableCount = ScanPluginRunner.applicablePlugins(plugins, for: input).count
     await ScanProgressTracker.shared.start(scanID: scanID, total: runnableCount)
     // Monitor mode deliberately bypasses cache so upstream changes remain visible.

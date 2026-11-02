@@ -132,6 +132,12 @@ test('admin shows plugin health and top plugins as text, and a populated chart d
     await expect(rows.nth(1)).toContainText('healthy');
     await expect(page.locator('#top-plugins-chart svg text').first()).toHaveText(/^<img data-browser-/);
     await expect(page.locator('#audit-integrity-status')).toContainText('Valid signed ledger');
+    await expect(page.locator('#third-party-total')).toHaveText('31 scans of unproven targets in the last 24 hours');
+    const leaders = page.locator('#third-party-container .js-third-party-row');
+    await expect(leaders).toHaveCount(2);
+    await expect(leaders.nth(0)).toContainText(fixture.malicious);
+    await expect(leaders.nth(0).locator('td').nth(1)).toHaveClass(/text-red-400/);
+    await expect(leaders.nth(1).locator('td').nth(1)).not.toHaveClass(/text-red-400/);
 
     expect(errors).toEqual([]);
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
@@ -368,4 +374,37 @@ test('a board seeded from a scan loads d3 with it and draws the graph', async ({
     await expect(page.locator('#board-overlay')).toBeVisible();
     await expect(page.locator('#board-svg circle').first()).toBeAttached();
     expect(requested.indexOf('/d3.min.js')).toBeLessThan(requested.indexOf('/investigation.js'));
+});
+
+test('verified targets show how to prove each one, and a scan says which checks it left out', async ({ page }) => {
+    const fixture = await mockAPI(page, { authenticated: true });
+    const errors = [];
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+
+    const skipped = page.locator('#skipped-checks-note');
+    await expect(skipped).toBeVisible();
+    await expect(skipped).toContainText('these checks run only on a target you have proven is yours: ExposedFiles');
+    await expect(skipped).toContainText(fixture.malicious);
+    await expect(skipped).toContainText('Settings → Verified targets');
+
+    const menu = page.locator('#hamburger-btn');
+    if (await menu.isVisible()) await menu.click();
+    await page.locator('#settings-toggle-btn').click();
+    const rows = page.locator('#verified-targets-list .js-verified-target');
+    await expect(rows).toHaveCount(4);
+    await expect(rows.nth(0)).toContainText('browser-tester@example.test');
+    await expect(rows.nth(0)).toContainText('account email · verified');
+    await expect(rows.nth(1)).toContainText(fixture.malicious);
+    await expect(rows.nth(1)).toContainText('waiting for the code');
+    await expect(rows.nth(1).getByRole('button', { name: 'Confirm' })).toBeVisible();
+    await expect(rows.nth(2)).toContainText('_dft-verify.example.org');
+    await expect(rows.nth(2)).toContainText('https://example.org/.well-known/dft-verify.txt');
+    await expect(rows.nth(2).getByRole('button', { name: 'Check' })).toBeVisible();
+    await expect(rows.nth(3)).toContainText('verified · DNS TXT record');
+    await expect(page.locator('#verified-targets-limit')).toContainText('limited to 25 a day');
+
+    expect(errors).toEqual([]);
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });

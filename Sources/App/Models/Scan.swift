@@ -84,6 +84,33 @@ final class Scan: Model, Content {
     @Siblings(through: ScanTag.self, from: \.$scan, to: \.$tag)
     var tags: [Tag]
 
+    /// True when the account that ran the scan had not proven it controls the
+    /// target (always true for anonymous scans). Nil on rows from before this
+    /// was recorded.
+    @OptionalField(key: "third_party")
+    var thirdParty: Bool?
+
+    /// JSON array of plugin names skipped because the target was not one the
+    /// account had proven it controls; see `skippedChecks`.
+    @OptionalField(key: "skipped_checks")
+    var skippedChecksJSON: String?
+
+    /// Checks that would have run but were withheld from this scan, either
+    /// because the target was not proven to be the account's own or because
+    /// the account's daily allowance of full scans on others was used up.
+    var skippedChecks: [String] {
+        get {
+            guard let json = skippedChecksJSON,
+                  let names = try? JSONDecoder().decode([String].self, from: Data(json.utf8)) else { return [] }
+            return names
+        }
+        set {
+            skippedChecksJSON = newValue.isEmpty
+                ? nil
+                : (try? JSONEncoder().encode(newValue)).flatMap { String(bytes: $0, encoding: .utf8) }
+        }
+    }
+
     init() { }
 
     init(id: UUID? = nil, input: String, status: ScanStatus = .pending, userID: UUID? = nil) {

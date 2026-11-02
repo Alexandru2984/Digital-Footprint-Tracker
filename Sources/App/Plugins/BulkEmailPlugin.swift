@@ -10,7 +10,9 @@ struct BulkEmailPlugin: FootprintPlugin {
     /// v2: a module's extra detail is no longer read as part of the site name.
     /// v3: each account is a node tied to the address.
     let cacheVersion = 3
-    
+    /// Tests the address against sign-up and recovery flows on many services.
+    let requiresOwnership = true
+
     func scan(input: String, on app: Application) async throws -> [PluginResult] {
         guard input.contains("@") else { return [] }
         

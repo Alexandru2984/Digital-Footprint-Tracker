@@ -13,7 +13,7 @@ export const roSourceGroups = [
         ['Commit-uri și profiluri GitHub', 'Contul GitHub și numele autorului din spatele adresei, din commit-uri sau din emailul public al profilului'],
         ['keys.openpgp.org', 'Alte adrese verificate pe aceeași cheie OpenPGP'],
         ['Keyserver Ubuntu', 'Numele de pe cheile PGP publice care menționează adresa (neverificate, cântărite ca atare)'],
-        ['Holehe', 'Site-urile la care recuperarea contului recunoaște adresa'],
+        ['Holehe', 'Site-urile la care recuperarea contului recunoaște adresa (doar pentru o adresă dovedită ca fiind a ta)'],
         ['XposedOrNot', 'Breșele de date în care apare adresa, ce s-a scurs și când (gratuit)'],
         ['LeakCheck', 'Un al doilea index de breșe, unit cu primul: o breșă se numără o dată, oricum ar numi-o fiecare (gratuit)'],
         ['Have I Been Pwned', 'Breșe și paste-uri (opțional, cu cheie API)'],
@@ -54,7 +54,7 @@ export const roSourceGroups = [
         ['Tenant Microsoft 365', 'Numele organizației, tenantul și furnizorul de identitate, plus celelalte domenii verificate de Microsoft pentru același proprietar'],
         ['ID-uri de tracking', 'ID-urile Google Analytics, Tag Manager, AdSense și Meta Pixel din site și celelalte site-uri care le folosesc pe aceleași (HackerTarget)'],
         ['Securitate web', 'TLS, header-e de securitate HTTP și serverul folosit'],
-        ['Fișiere expuse', '.env, .git, dump-uri de baze de date și backup-uri lăsate publice, confirmate după conținut'],
+        ['Fișiere expuse', '.env, .git, dump-uri de baze de date și backup-uri lăsate publice, confirmate după conținut (doar pe un domeniu dovedit ca fiind al tău)'],
         ['Wayback Machine', 'Prima și ultima arhivare și câte există'],
         ['Domenii-capcană', 'Domenii asemănătoare care rezolvă (posibil phishing)'],
         ['Keybase, Bluesky', 'Conturi care au dovedit controlul asupra domeniului'],
@@ -90,7 +90,7 @@ export const roPages = [
 <li><strong>GitHub</strong> leagă un commit de un cont doar printr-un email verificat, deci un commit semnat cu adresa numește proprietarul. Se verifică și emailul public al profilului.</li>
 <li><strong>Gravatar</strong> întoarce profilul asociat adresei și conturile sociale verificate de Gravatar.</li>
 <li><strong>Cheile OpenPGP</strong>: keys.openpgp.org listează doar adrese confirmate de proprietar, deci celelalte adrese de pe aceeași cheie sunt ale aceleiași persoane.</li>
-<li><strong>Conturi înregistrate</strong>: Holehe întreabă formularele de recuperare a parolei dacă recunosc adresa și descoperă conturi pe Spotify, Office 365, Eventbrite și altele.</li>
+<li><strong>Conturi înregistrate</strong>: Holehe întreabă formularele de recuperare a parolei dacă recunosc adresa și descoperă conturi pe Spotify, Office 365, Eventbrite și altele. Rulează doar pe o adresă dovedită ca fiind a ta: emailul contului sau una confirmată cu un cod.</li>
 <li><strong>Breșe de date</strong> din XposedOrNot și LeakCheck (ambele gratuite) și, opțional, Have I Been Pwned: ce breșe, când și ce s-a scurs.</li>
 <li><strong>Domeniul adresei</strong>: pentru o adresă pe un domeniu propriu (nu Gmail sau Yahoo), se scanează și domeniul — deținătorul, site-ul și serviciile folosite.</li>
 </ul>
@@ -102,7 +102,7 @@ export const roPages = [
         faq: [
             ['Pot afla cine deține o adresă de email?', 'Deseori, da. Când o platformă a verificat adresa — un commit GitHub, un profil Gravatar, o cheie OpenPGP — contul și numele de pe el sunt atribuite cu încredere mare. Adresele nefolosite public dezvăluie puțin.'],
             ['Proprietarul adresei află că a fost căutat?', 'Nu. Toate sursele sunt interogate pasiv; nu se trimite nimic către adresă. Verificările de recuperare a contului nu finalizează nicio resetare.'],
-            ['Căutarea e gratuită?', 'Da. Verificarea conturilor înregistrate și căutarea pe 480 de site-uri cer un cont gratuit, verificat; restul merge anonim.'],
+            ['Căutarea e gratuită?', 'Da. Căutarea pe 480 de site-uri cere un cont gratuit, verificat, iar verificarea conturilor înregistrate rulează doar pe o adresă dovedită ca fiind a ta; restul merge anonim.'],
         ],
     },
     {
@@ -157,7 +157,7 @@ export const roPages = [
 </ul>
 <h2>Expunere</h2>
 <ul>
-<li><strong>Fișiere expuse</strong>: .env, directoare .git, dump-uri de baze de date și backup-uri, confirmate după conținut, nu doar după un cod 200.</li>
+<li><strong>Fișiere expuse</strong>: .env, directoare .git, dump-uri de baze de date și backup-uri, confirmate după conținut, nu doar după un cod 200. Verificate doar pe un domeniu dovedit ca fiind al tău, printr-o înregistrare DNS TXT sau un fișier pe site.</li>
 <li><strong>Securitate web</strong>: TLS și header-e HTTP de securitate, cu notă.</li>
 <li><strong>Securitatea emailului</strong>: dacă se pot trimite emailuri false în numele domeniului (SPF, DMARC, DKIM, MTA-STS).</li>
 <li><strong>Domenii-capcană</strong> asemănătoare care rezolvă — candidate pentru phishing.</li>
@@ -280,6 +280,8 @@ export const roPages = [
 <p>Raportul începe cu profilul pe scurt: numele probabil, conturile confirmate (80% sau mai mult), probabile (50–79%) și neconfirmate, site-urile și domeniile țintei, datele de contact și ce s-a scurs.</p>
 <h2>6. Riscul</h2>
 <p>Scorul de risc adună categorii — breșe, servicii expuse, identități legate, date de contact, conturi — fiecare saturându-se, ca volumul singur să nu-l poată umfla la maximum. Un raport de breșe contează după conținut: câte breșe, dacă s-au scurs parole, date de plată sau de identitate și cât de recente sunt. Verdictele curate nu adaugă nimic.</p>
+<h2>7. Verificări care cer dovadă</h2>
+<p>Majoritatea verificărilor citesc ce publică deja sursele publice și rulează pe orice țintă. Două merg mai departe și rulează doar pe o țintă dovedită ca fiind a ta: căutarea fișierelor expuse pe un site și întrebarea formularelor de recuperare a parolei despre o adresă. Emailul contului contează ca al tău după ce e verificat; o altă adresă se dovedește cu un cod trimis pe ea, iar un domeniu cu un token publicat în DNS sau pe site, care acoperă și subdomeniile și toate adresele de pe el. Monitorizarea cere tot o țintă dovedită, iar scanările complete ale țintelor nedovedite sunt limitate pe zi. Fiecare scanare spune ce verificări a omis și de ce.</p>
 <h2>Confidențialitate</h2>
 <p>Inputurile și rezultatele scanărilor sunt criptate, scanările anonime expiră după 30 de zile, iar site-ul nu are scripturi terțe sau analytics. Vezi <a href="/privacy.html">politica de confidențialitate</a>.</p>`,
         faq: [],

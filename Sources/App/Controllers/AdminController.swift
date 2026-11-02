@@ -16,6 +16,16 @@ struct DashboardResponse: Content {
     let totalResults: Int
     let scansPerDay: [DayCount]
     let topPlugins: [PluginStat]
+    /// Accounts by scans of targets they had not proven were theirs in the
+    /// last 24 hours: the first place to look for someone being tracked.
+    struct ThirdPartyActivity: Content {
+        let username: String
+        let thirdPartyScans: Int
+        let totalScans: Int
+        let verifiedTargets: Int
+    }
+    var thirdPartyLeaders: [ThirdPartyActivity] = []
+    var thirdPartyScans24h = 0
 }
 
 struct AuditLogDTO: Content {
@@ -132,13 +142,52 @@ struct AdminController: RouteCollection {
             topPlugins = rows.map { DashboardResponse.PluginStat(source: $0.source, hitCount: $0.hit_count) }
         }
 
-        return DashboardResponse(
+        var response = DashboardResponse(
             totalScans: totalScans,
             totalUsers: totalUsers,
             totalResults: totalResults,
             scansPerDay: scansPerDay,
             topPlugins: topPlugins
         )
+        (response.thirdPartyLeaders, response.thirdPartyScans24h) = try await Self.thirdPartyActivity(recentScans, on: db)
+        return response
+    }
+
+    /// The ten accounts with the most scans of targets they had not proven
+    /// were theirs in the last 24 hours, from the scans already loaded.
+    static func thirdPartyActivity(
+        _ recentScans: [Scan], on db: Database
+    ) async throws -> ([DashboardResponse.ThirdPartyActivity], Int) {
+        let since = Date().addingTimeInterval(-24 * 3600)
+        let lastDay = recentScans.filter { ($0.createdAt ?? .distantPast) >= since }
+        var thirdParty: [UUID: Int] = [:]
+        var total: [UUID: Int] = [:]
+        for scan in lastDay {
+            guard let owner = scan.$user.id else { continue }
+            total[owner, default: 0] += 1
+            if scan.thirdParty == true { thirdParty[owner, default: 0] += 1 }
+        }
+        let anonymous = lastDay.filter { $0.$user.id == nil && $0.thirdParty == true }.count
+        let top = thirdParty.sorted { $0.value > $1.value }.prefix(10)
+        guard !top.isEmpty else { return ([], anonymous) }
+        let ids = top.map(\.key)
+        let users = try await User.query(on: db).filter(\.$id ~~ ids).all()
+        let names = Dictionary(uniqueKeysWithValues: users.compactMap { user in user.id.map { ($0, user.username) } })
+        let proven = try await VerifiedTarget.query(on: db)
+            .filter(\.$user.$id ~~ ids)
+            .filter(\.$verifiedAt != nil)
+            .all()
+        var provenCount: [UUID: Int] = [:]
+        for row in proven { provenCount[row.$user.id, default: 0] += 1 }
+        let leaders = top.map { id, count in
+            DashboardResponse.ThirdPartyActivity(
+                username: names[id] ?? "(deleted)",
+                thirdPartyScans: count,
+                totalScans: total[id] ?? count,
+                verifiedTargets: provenCount[id] ?? 0
+            )
+        }
+        return (leaders, thirdParty.values.reduce(0, +) + anonymous)
     }
 
     /// Live-run health of every registered plugin since the process started;

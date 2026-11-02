@@ -67,6 +67,8 @@ struct ExposedFilesPlugin: FootprintPlugin {
     let accepts: Set<TargetShape> = [.domain]
     let cacheTTL: TimeInterval = 14_400 // 4 h
     let heavy = true                    // ~11 fetches per host
+    /// Fetches paths that may hold credentials from the target's own server.
+    let requiresOwnership = true
 
     private static let ipv4Pattern = #"^\d{1,3}(\.\d{1,3}){3}$"#
 

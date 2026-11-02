@@ -38,6 +38,7 @@ enum FieldCrypto {
         case userSlackWebhookURL = "users.slack_webhook_url"
         case userTOTPSecret = "users.totp_secret"
         case pluginCachePayload = "plugin_cache.payload"
+        case verifiedTargetValue = "verified_targets.value"
     }
 
     enum DecryptionReason: String, CaseIterable, Hashable, Sendable {

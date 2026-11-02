@@ -70,14 +70,24 @@ struct BulkScanController: RouteCollection {
         var results: [BulkScanResult] = []
 
         for target in targets {
+            // Same ownership rules as a single scan, per target: each one is
+            // saved before the next is planned, so the daily allowance of full
+            // scans on other people's targets counts the batch as it goes.
+            let plan = try await TargetOwnership.plan(activePlugins, input: target, user: user, on: req.db)
+            guard !plan.plugins.isEmpty else {
+                results.append(BulkScanResult(target: target, scanID: "", status: "skipped"))
+                continue
+            }
             let scan = Scan(input: target, userID: userID)
+            scan.thirdParty = !plan.owned
+            scan.skippedChecks = plan.skipped
             try await scan.save(on: req.db)
             guard let scanID = scan.id else { continue }
             await AuditLogger.log(req: req, action: "bulk_scan_start", target: String(target.prefix(100)))
-            let runnableCount = ScanPluginRunner.applicablePlugins(activePlugins, for: target).count
+            let runnableCount = ScanPluginRunner.applicablePlugins(plan.plugins, for: target).count
             await ScanProgressTracker.shared.start(scanID: scanID, total: runnableCount)
 
-            let pluginsCopy = activePlugins
+            let pluginsCopy = plan.plugins
             Task {
                 await ScanPluginRunner.run(scanID: scanID, input: target, plugins: pluginsCopy, app: app, pivotDepth: 0)
             }
