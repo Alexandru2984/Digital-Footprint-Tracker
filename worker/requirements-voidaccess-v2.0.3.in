@@ -20,8 +20,8 @@ python-dotenv==1.2.4
 python-socks[asyncio]==3.1.1
 requests==2.34.2
 rich==15.0.0
-spacy==3.8.16
-sqlalchemy[asyncio]==2.1.4
+spacy==3.8.18
+sqlalchemy[asyncio]==2.1.8
 tldextract==5.4.0
 trafilatura==2.3.1
 typer==0.27.3
