@@ -251,15 +251,27 @@ struct AuthController: RouteCollection {
     @Sendable
     func reauthenticate(req: Request) async throws -> HTTPStatus {
         let user = try await req.requireSessionUser()
+        let passwordKey = AccountThrottle.usernameKey(user.username)
+        if let retry = await AccountThrottle.passwords.retryAfter(passwordKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
+        let secondFactorKey = user.id?.uuidString ?? passwordKey
+        if user.totpEnabled, let retry = await AccountThrottle.secondFactor.retryAfter(secondFactorKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
         let body = try req.content.decode(ReauthenticateRequest.self)
         guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
+            await AccountThrottle.passwords.recordFailure(passwordKey)
             throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
+        await AccountThrottle.passwords.recordSuccess(passwordKey)
         if user.totpEnabled {
             guard let code = body.code,
                   try await TwoFactorController.verifySecondFactor(code, user: user, db: req.db) else {
+                await AccountThrottle.secondFactor.recordFailure(secondFactorKey)
                 throw Abort(.unauthorized, reason: "A valid two-factor code is required.")
             }
+            await AccountThrottle.secondFactor.recordSuccess(secondFactorKey)
         }
         SessionSecurity.markReauthenticated(on: req)
         await AuditLogger.log(req: req, action: "reauthenticate", target: user.username)
@@ -268,7 +280,7 @@ struct AuthController: RouteCollection {
 
     @Sendable
     func logout(req: Request) async throws -> HTTPStatus {
-        req.session.destroy()
+        try await SessionSecurity.invalidate(on: req)
         return .noContent
     }
 

@@ -1951,6 +1951,41 @@ final class AppTests: XCTestCase {
         }, afterResponse: { res in XCTAssertEqual(res.status, .ok) })
     }
 
+    func testReauthenticateThrottlesPerAccountAndLogoutPurgesSessionRow() async throws {
+        let app = try await makeApp()
+        addTeardownBlock { try await app.asyncShutdown() }
+        let username = "reauth-throttle-\(UUID().uuidString.prefix(8).lowercased())"
+        let cookie = try await registerAndLogin(app, username: username)
+
+        let key = AccountThrottle.usernameKey(username)
+        await AccountThrottle.passwords.recordSuccess(key)
+        for _ in 0..<10 {
+            await AccountThrottle.passwords.recordFailure(key)
+        }
+
+        try await app.test(.POST, "/auth/reauth", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+            try req.content.encode(["password": "Xk9mQ2vLp7wZ"], as: .json)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .tooManyRequests,
+                           "Reauthentication must enforce per-account password throttling.")
+            XCTAssertNotNil(res.headers.first(name: "Retry-After"))
+        })
+
+        await AccountThrottle.passwords.recordSuccess(key)
+
+        let sessionsBeforeLogout = try await SessionRecord.query(on: app.db).count()
+        XCTAssertGreaterThan(sessionsBeforeLogout, 0)
+        try await app.test(.POST, "/auth/logout", beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "Cookie", value: cookie)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .noContent)
+        })
+        let sessionsAfterLogout = try await SessionRecord.query(on: app.db).count()
+        XCTAssertLessThan(sessionsAfterLogout, sessionsBeforeLogout,
+                          "Logout must immediately delete the backing session record.")
+    }
+
     func testTwoFactorPendingTimestampFailsClosedWhenMissing() async throws {
         let app = try await makeApp()
         addTeardownBlock { try await app.asyncShutdown() }

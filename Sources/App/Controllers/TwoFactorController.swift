@@ -90,13 +90,25 @@ struct TwoFactorController: RouteCollection {
         guard user.totpEnabled else {
             throw Abort(.conflict, reason: "Two-factor authentication is not enabled.")
         }
+        let passwordKey = AccountThrottle.usernameKey(user.username)
+        if let retry = await AccountThrottle.passwords.retryAfter(passwordKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
+        let secondFactorKey = user.id?.uuidString ?? passwordKey
+        if let retry = await AccountThrottle.secondFactor.retryAfter(secondFactorKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
         let body = try req.content.decode(DisableBody.self)
         guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
+            await AccountThrottle.passwords.recordFailure(passwordKey)
             throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
+        await AccountThrottle.passwords.recordSuccess(passwordKey)
         guard try await Self.verifySecondFactor(body.code, user: user, db: req.db) else {
+            await AccountThrottle.secondFactor.recordFailure(secondFactorKey)
             throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
+        await AccountThrottle.secondFactor.recordSuccess(secondFactorKey)
         user.totpEnabled = false
         user.setTOTPSecret(nil)
         user.totpRecoveryCodes = nil

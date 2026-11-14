@@ -317,9 +317,15 @@ struct AccountController: RouteCollection {
         guard body.confirmUsername.caseInsensitiveCompare(user.username) == .orderedSame else {
             throw Abort(.badRequest, reason: "confirmUsername does not match the current account.")
         }
+        let passwordKey = AccountThrottle.usernameKey(user.username)
+        if let retry = await AccountThrottle.passwords.retryAfter(passwordKey) {
+            throw AccountThrottle.tooManyAttempts(retryAfter: retry)
+        }
         guard try await req.password.async.verify(body.password, created: user.passwordHash) else {
+            await AccountThrottle.passwords.recordFailure(passwordKey)
             throw Abort(.unauthorized, reason: "Invalid credentials.")
         }
+        await AccountThrottle.passwords.recordSuccess(passwordKey)
 
         // Belt-and-braces: the admin seeded from ADMIN_USERNAME/ADMIN_PASSWORD
         // would lock the operator out of their own box if it were deletable
@@ -392,7 +398,7 @@ struct AccountController: RouteCollection {
             try await user.delete(on: database)
         }
 
-        req.session.destroy()
+        try await SessionSecurity.invalidate(on: req)
         return .noContent
     }
 }
