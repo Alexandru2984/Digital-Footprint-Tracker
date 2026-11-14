@@ -64,3 +64,6 @@ f9933d9879e2e5bea11ffef036d6af8c54d154f4:Tests/AppTests/AppTests.swift:generic-a
 
 # Domain-verification token fixture (a sequential hex string, not a credential), reviewed 2026-11-02.
 0a6f2c4f0d462f305dff0263b68555718c1e634b:Tests/AppTests/AppTests.swift:generic-api-key:9689
+
+# Step-up re-authentication throttle test fixture password, reviewed 2026-11-15.
+af2995e7cb9a19bb5464fb53c36deacd11e472cb:Tests/AppTests/AppTests.swift:generic-api-key:1968

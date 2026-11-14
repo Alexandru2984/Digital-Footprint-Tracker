@@ -66,7 +66,7 @@
       ]
     }
     </script>
-    <link rel="stylesheet" href="/tailwind.css?v=6a28c54624d6">
+    <link rel="stylesheet" href="/tailwind.css?v=5f8178a9b83f">
     <style>
         /* ── Theme custom properties (dark default) ───────────────────────── */
         :root {
@@ -458,13 +458,13 @@
               </div>
               <fieldset class="text-[10px] text-slate-400">
                 <legend class="text-[10px] text-slate-500 mb-1">Key scopes (leave all checked for full API access):</legend>
-                <div id="api-key-scopes" class="flex flex-wrap gap-x-3 gap-y-1">
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="scans:read" checked class="accent-brand-500 js-apikey-scope"><span>scans:read</span></label>
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="scans:write" checked class="accent-brand-500 js-apikey-scope"><span>scans:write</span></label>
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="automation:read" checked class="accent-brand-500 js-apikey-scope"><span>automation:read</span></label>
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="automation:write" checked class="accent-brand-500 js-apikey-scope"><span>automation:write</span></label>
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="investigations:read" checked class="accent-brand-500 js-apikey-scope"><span>investigations:read</span></label>
-                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="investigations:write" checked class="accent-brand-500 js-apikey-scope"><span>investigations:write</span></label>
+                <div id="api-key-scopes" class="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="scans:read" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>scans:read</span></label>
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="scans:write" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>scans:write</span></label>
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="automation:read" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>automation:read</span></label>
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="automation:write" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>automation:write</span></label>
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="investigations:read" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>investigations:read</span></label>
+                  <label class="inline-flex items-center gap-1.5 min-h-6 py-1 cursor-pointer"><input type="checkbox" value="investigations:write" checked class="w-4 h-4 accent-brand-500 js-apikey-scope"><span>investigations:write</span></label>
                 </div>
               </fieldset>
               <p id="api-keys-msg" role="status" aria-live="polite" class="text-[10px] mt-1 hidden"></p>
