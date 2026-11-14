@@ -35,17 +35,18 @@ let rewritten = 0;
 let attributes = 0;
 let versions = 0;
 
-// Scripts app.js loads on demand carry the same content version, in the
-// loadScriptOnce('/file.js?v=...') calls, so an edge cache holding the previous
-// file cannot answer for the new one. Rewritten before the pages, because
-// app.js's own version in index.html depends on these bytes.
+// Scripts and stylesheets app.js loads on demand carry the same content version,
+// in the loadScriptOnce('/file.js?v=...') and loadStylesheetOnce('/file.css?v=...')
+// calls, so an edge cache holding the previous file cannot answer for the new
+// one. Rewritten before the pages, because app.js's own version in index.html
+// depends on these bytes.
 {
     const file = join(frontendDir, 'app.js');
     const original = readFileSync(file, 'utf8');
-    const lazy = /loadScriptOnce\((["'])(\/[^"'?#]+)\?v=[0-9a-f]*\1\)/g;
-    const updated = original.replace(lazy, (whole, quote, assetPath) => {
+    const lazy = /(loadScriptOnce|loadStylesheetOnce)\((["'])(\/[^"'?#]+)\?v=[0-9a-f]*\2\)/g;
+    const updated = original.replace(lazy, (whole, fn, quote, assetPath) => {
         versions += 1;
-        return `loadScriptOnce(${quote}${assetPath}?v=${contentVersion(assetPath)}${quote})`;
+        return `${fn}(${quote}${assetPath}?v=${contentVersion(assetPath)}${quote})`;
     });
     if (updated !== original) {
         writeFileSync(file, updated);

@@ -35,13 +35,21 @@ for (const page of pages) {
         }
     }
 
-    const localScript = /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi;
+    const localScript = /<script\b([^>]*\bsrc=["']([^"']+)["'][^>]*)>/gi;
     let scriptMatch;
     while ((scriptMatch = localScript.exec(html))) {
-        const assetPath = scriptMatch[1].split(/[?#]/, 1)[0];
+        const tagAttrs = scriptMatch[1];
+        const rawSrc = scriptMatch[2];
+        const assetPath = rawSrc.split(/[?#]/, 1)[0];
         if (!assetPath.startsWith('/')) fail(`${page}: script path must be origin-relative`);
         if (!existsSync(join(frontendDir, assetPath.slice(1)))) {
             fail(`${page}: missing script ${assetPath}`);
+        }
+        if (!/\?v=[0-9a-f]{12}$/.test(rawSrc)) {
+            fail(`${page}: script ${assetPath} must carry a content-version query (?v=...)`);
+        }
+        if (!/\bintegrity=["']sha384-[^"']+["']/i.test(tagAttrs)) {
+            fail(`${page}: script ${assetPath} must carry a sha384 integrity attribute`);
         }
     }
 
@@ -84,13 +92,14 @@ for (const page of pages) {
     }
 }
 
-// On-demand scripts are versioned in app.js the way pages version theirs, and
-// every one of them must be: an unversioned URL is the stale-edge failure again.
+// On-demand scripts and stylesheets are versioned in app.js the way pages
+// version theirs, and every one of them must be: an unversioned URL is the
+// stale-edge failure again.
 {
     const appSource = readFileSync(join(frontendDir, 'app.js'), 'utf8');
-    for (const call of appSource.matchAll(/loadScriptOnce\((["'])([^"']*)\1\)/g)) {
+    for (const call of appSource.matchAll(/(?:loadScriptOnce|loadStylesheetOnce)\((["'])([^"']*)\1\)/g)) {
         const match = /^(\/[^"'?#]+)\?v=([0-9a-f]{12})$/.exec(call[2]);
-        if (!match) fail(`app.js: on-demand script ${call[2]} is not content-versioned`);
+        if (!match) fail(`app.js: on-demand asset ${call[2]} is not content-versioned`);
         const expected = createHash('sha256').update(readFileSync(join(frontendDir, match[1].slice(1)))).digest('hex').slice(0, 12);
         if (match[2] !== expected) {
             fail(`app.js: ${match[1]} is versioned ?v=${match[2]} but its content hashes to ${expected}`);

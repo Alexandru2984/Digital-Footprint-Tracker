@@ -85,6 +85,7 @@
         document.addEventListener('click', () => {
             document.getElementById('type-filter-dropdown').classList.add('hidden');
             document.getElementById('sort-dropdown').classList.add('hidden');
+            document.getElementById('async-export-dropdown')?.classList.add('hidden');
         });
 
         // Sort logic
@@ -2183,6 +2184,25 @@
             return lazyScripts.get(src);
         }
 
+        const lazyStylesheets = new Map();
+        function loadStylesheetOnce(href) {
+            if (!lazyStylesheets.has(href)) {
+                lazyStylesheets.set(href, new Promise((resolve, reject) => {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = href;
+                    link.addEventListener('load', resolve);
+                    link.addEventListener('error', () => {
+                        lazyStylesheets.delete(href);
+                        link.remove();
+                        reject(new Error('Could not load ' + href));
+                    });
+                    document.head.appendChild(link);
+                }));
+            }
+            return lazyStylesheets.get(href);
+        }
+
         // Investigation boards draw with d3 and only open on request, so both
         // load then, d3 first: render() in investigation.js draws nothing
         // without it. dark-web.js reaches the boards through this too.
@@ -2476,9 +2496,95 @@
             }
             document.getElementById('twofa-msg').classList.add('hidden');
         }
+        // ─── STEP-UP RE-AUTHENTICATION ────────────────────────────────────────────
+        let pendingReauthResolver = null;
+        function closeReauthModal(confirmed) {
+            const modal = document.getElementById('reauth-modal');
+            if (modal) modal.classList.add('hidden');
+            const passInput = document.getElementById('reauth-password-input');
+            const codeInput = document.getElementById('reauth-code-input');
+            const errEl = document.getElementById('reauth-error-msg');
+            if (passInput) passInput.value = '';
+            if (codeInput) codeInput.value = '';
+            if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+            if (pendingReauthResolver) {
+                const resolve = pendingReauthResolver;
+                pendingReauthResolver = null;
+                resolve(Boolean(confirmed));
+            }
+        }
+        function requestStepUpReauth() {
+            const modal = document.getElementById('reauth-modal');
+            if (!modal) return Promise.resolve(false);
+            const totpGroup = document.getElementById('reauth-totp-group');
+            if (totpGroup) {
+                totpGroup.classList.toggle('hidden', !(currentUser && currentUser.twoFactorEnabled));
+            }
+            modal.classList.remove('hidden');
+            setTimeout(() => document.getElementById('reauth-password-input')?.focus(), 20);
+            return new Promise(resolve => {
+                pendingReauthResolver = resolve;
+            });
+        }
+        document.getElementById('reauth-modal-close')?.addEventListener('click', () => closeReauthModal(false));
+        document.getElementById('reauth-cancel-btn')?.addEventListener('click', () => closeReauthModal(false));
+        document.getElementById('reauth-modal')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('reauth-modal')) closeReauthModal(false);
+        });
+        document.getElementById('reauth-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('reauth-password-input')?.value || '';
+            const code = document.getElementById('reauth-code-input')?.value.trim() || '';
+            const errEl = document.getElementById('reauth-error-msg');
+            const submitBtn = document.getElementById('reauth-submit-btn');
+            if (!password) return;
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'CONFIRMING…'; }
+            try {
+                const payload = { password };
+                if (code) payload.code = code;
+                const res = await fetch('/api/auth/reauth', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    closeReauthModal(true);
+                    return;
+                }
+                const data = await res.json().catch(() => ({}));
+                const reason = String(data.reason || ('HTTP ' + res.status));
+                if (/two-factor/i.test(reason)) {
+                    document.getElementById('reauth-totp-group')?.classList.remove('hidden');
+                }
+                if (errEl) {
+                    errEl.textContent = reason;
+                    errEl.classList.remove('hidden');
+                }
+            } catch {
+                if (errEl) {
+                    errEl.textContent = 'Network error while confirming credentials.';
+                    errEl.classList.remove('hidden');
+                }
+            } finally {
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'CONFIRM & CONTINUE'; }
+            }
+        });
+
+        async function fetchWithStepUp(url, options) {
+            const res = await fetch(url, options);
+            if (res.status !== 401 || !currentUser) return res;
+            const cloned = res.clone();
+            const data = await cloned.json().catch(() => ({}));
+            if (!/recent authentication/i.test(String(data.reason || ''))) return res;
+            const confirmed = await requestStepUpReauth();
+            if (!confirmed) return res;
+            return fetch(url, options);
+        }
+
         document.getElementById('twofa-start-btn')?.addEventListener('click', async () => {
             try {
-                const res = await fetch('/api/auth/2fa/setup', { method: 'POST', credentials: 'include' });
+                const res = await fetchWithStepUp('/api/auth/2fa/setup', { method: 'POST', credentials: 'include' });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) return twofaMsg(data.reason || 'Setup failed.', false);
                 document.getElementById('twofa-secret').textContent = data.secret;
@@ -2503,7 +2609,7 @@
         document.getElementById('twofa-confirm-btn')?.addEventListener('click', async () => {
             const code = document.getElementById('twofa-confirm-code').value.trim();
             try {
-                const res = await fetch('/api/auth/2fa/enable', {
+                const res = await fetchWithStepUp('/api/auth/2fa/enable', {
                     method: 'POST', credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ code })
@@ -2580,6 +2686,7 @@
             if (wasHidden && currentUser) {
                 loadAPIKeys();
                 loadVerifiedTargets();
+                loadExportJobs();
                 const retSel = document.getElementById('retention-select');
                 if (retSel && currentUser.retentionDays) {
                     retSel.value = String(currentUser.retentionDays);
@@ -2591,10 +2698,12 @@
                     const telegramTokenInput = document.getElementById('telegram-token-input');
                     const telegramChatInput = document.getElementById('telegram-chatid-input');
                     const slackInput = document.getElementById('slack-webhook-input');
+                    const verboseCheck = document.getElementById('notif-verbose-alerts');
                     if (discordInput) discordInput.placeholder = currentUser.discordConfigured ? '(configured — enter new value to change)' : 'https://discord.com/api/webhooks/...';
                     if (telegramTokenInput) telegramTokenInput.placeholder = currentUser.telegramConfigured ? '(configured — enter new value to change)' : 'bot token';
                     if (telegramChatInput) telegramChatInput.value = currentUser.telegramChatID || '';
                     if (slackInput) slackInput.placeholder = currentUser.slackConfigured ? '(configured — enter new value to change)' : 'https://hooks.slack.com/services/...';
+                    if (verboseCheck) verboseCheck.checked = Boolean(currentUser.verboseAlerts);
                 }
             }
         });
@@ -2607,7 +2716,7 @@
             const url = document.getElementById('webhook-url-input').value.trim();
             const msg = document.getElementById('webhook-save-msg');
             try {
-                const res = await fetch('/api/auth/webhook', {
+                const res = await fetchWithStepUp('/api/auth/webhook', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
@@ -2640,8 +2749,9 @@
                     telegramBotToken:  document.getElementById('telegram-token-input').value.trim() || null,
                     telegramChatID:    document.getElementById('telegram-chatid-input').value.trim() || null,
                     slackWebhookURL:   document.getElementById('slack-webhook-input').value.trim() || null,
+                    verboseAlerts:     Boolean(document.getElementById('notif-verbose-alerts')?.checked),
                 };
-                const resp = await fetch('/api/auth/settings', {
+                const resp = await fetchWithStepUp('/api/auth/settings', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
@@ -3473,6 +3583,13 @@
             claimTarget(value);
         });
 
+        function apiKeysMessage(text, cls) {
+            const el = document.getElementById('api-keys-msg');
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'text-[10px] mt-1 ' + (cls || 'text-slate-400');
+            el.classList.toggle('hidden', !text);
+        }
         async function loadAPIKeys() {
             const container = document.getElementById('api-keys-list');
             if (!container) return;
@@ -3488,41 +3605,81 @@
             container.replaceChildren();
             for (const key of keys) {
                 const row = document.createElement('div');
-                row.className = 'flex items-center justify-between gap-2 mb-1 bg-dark-900 rounded px-2 py-1';
+                row.className = 'mb-1.5 bg-dark-900 border border-dark-700 rounded-sm px-2.5 py-1.5 js-api-key';
+
+                const top = document.createElement('div');
+                top.className = 'flex items-center justify-between gap-2';
 
                 const label = document.createElement('span');
-                label.className = 'text-[10px] text-slate-300 font-mono truncate';
+                label.className = 'text-[11px] text-slate-200 font-mono truncate';
                 label.append(document.createTextNode(String(key.label || 'Unnamed') + ' — '));
                 const preview = document.createElement('code');
+                preview.className = 'text-brand-400';
                 preview.textContent = String(key.keyPreview || '');
                 label.appendChild(preview);
 
                 const remove = document.createElement('button');
                 remove.type = 'button';
-                remove.className = 'text-red-400 hover:text-red-300 text-[10px]';
+                remove.className = 'text-red-400 hover:text-red-300 text-[10px] min-h-6 px-1';
                 remove.setAttribute('aria-label', 'Delete API key ' + String(key.label || 'Unnamed'));
                 remove.textContent = '✕';
                 remove.addEventListener('click', () => deleteAPIKey(String(key.id || '')));
-                row.append(label, remove);
+                top.append(label, remove);
+                row.appendChild(top);
+
+                const meta = document.createElement('div');
+                meta.className = 'flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[10px] text-slate-500';
+                const scopes = Array.isArray(key.scopes) && key.scopes.length ? key.scopes.join(', ') : 'full access';
+                const scopeSpan = document.createElement('span');
+                scopeSpan.className = 'font-mono text-slate-400';
+                scopeSpan.textContent = 'Scopes: ' + scopes;
+                meta.appendChild(scopeSpan);
+
+                if (key.expiresAt) {
+                    const expSpan = document.createElement('span');
+                    const expDate = typeof key.expiresAt === 'number' ? new Date(key.expiresAt * 1000) : new Date(key.expiresAt);
+                    expSpan.textContent = '· Expires ' + (isNaN(expDate) ? '' : expDate.toLocaleDateString());
+                    meta.appendChild(expSpan);
+                }
+                if (key.lastUsedAt) {
+                    const usedSpan = document.createElement('span');
+                    usedSpan.textContent = '· Used ' + timeAgo(key.lastUsedAt);
+                    meta.appendChild(usedSpan);
+                }
+                row.appendChild(meta);
                 container.appendChild(row);
             }
         }
         async function generateAPIKey() {
             const label = document.getElementById('api-key-label').value.trim() || 'Unnamed';
-            const res = await fetch('/api/auth/api-keys', {
+            const expiryVal = document.getElementById('api-key-expiry')?.value || '';
+            const scopes = [...document.querySelectorAll('.js-apikey-scope:checked')].map(el => el.value);
+            const payload = { label, scopes };
+            if (expiryVal) payload.expiresInDays = parseInt(expiryVal, 10);
+            const res = await fetchWithStepUp('/api/auth/api-keys', {
                 method: 'POST', credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ label })
+                body: JSON.stringify(payload)
             });
-            if (!res.ok) { alert('Failed to create API key. You may have reached the limit (5 max).'); return; }
+            if (!res.ok) {
+                apiKeysMessage(await apiReason(res), 'text-red-400');
+                return;
+            }
             const key = await res.json();
-            prompt('Copy your new API key now — it will NOT be shown again:', key.key);
+            const rawToken = String(key.token || key.key || '');
+            const banner = document.getElementById('api-key-created-banner');
+            const tokenEl = document.getElementById('api-key-created-value');
+            if (banner && tokenEl && rawToken) {
+                tokenEl.textContent = rawToken;
+                banner.classList.remove('hidden');
+            }
+            apiKeysMessage('✓ API key generated.', 'text-green-400');
             document.getElementById('api-key-label').value = '';
             loadAPIKeys();
         }
         async function deleteAPIKey(id) {
             if (!confirm('Delete this API key?')) return;
-            const response = await fetch(`/api/auth/api-keys/${encodeURIComponent(id)}`, {
+            const response = await fetchWithStepUp(`/api/auth/api-keys/${encodeURIComponent(id)}`, {
                 method: 'DELETE', credentials: 'include'
             });
             if (!response.ok) {
@@ -3532,6 +3689,233 @@
             loadAPIKeys();
         }
         document.getElementById('generate-api-key-btn')?.addEventListener('click', generateAPIKey);
+        document.getElementById('api-key-copy-btn')?.addEventListener('click', () => {
+            const token = document.getElementById('api-key-created-value')?.textContent || '';
+            if (!token) return;
+            navigator.clipboard?.writeText(token).then(() => {
+                showToast('✓ API key copied to clipboard.');
+            }).catch(() => {});
+        });
+        document.getElementById('api-key-dismiss-btn')?.addEventListener('click', () => {
+            const banner = document.getElementById('api-key-created-banner');
+            const tokenEl = document.getElementById('api-key-created-value');
+            if (tokenEl) tokenEl.textContent = '';
+            if (banner) banner.classList.add('hidden');
+        });
+
+        // ─── ASYNC EXPORT JOBS & GDPR SELF-SERVICE ────────────────────────────────
+        function exportJobsMessage(text, cls) {
+            const el = document.getElementById('export-jobs-msg');
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'text-[10px] mt-1 ' + (cls || 'text-slate-400');
+            el.classList.toggle('hidden', !text);
+        }
+        async function loadExportJobs() {
+            const container = document.getElementById('export-jobs-list');
+            if (!container || !currentUser) return;
+            try {
+                const res = await fetch('/api/export-jobs?limit=10', { credentials: 'include' });
+                if (!res.ok) { container.textContent = 'Sign in to view export jobs.'; return; }
+                const jobs = await res.json();
+                renderExportJobs(Array.isArray(jobs) ? jobs : [], container);
+            } catch {
+                container.textContent = 'Could not load export jobs.';
+            }
+        }
+        function renderExportJobs(jobs, container) {
+            container.replaceChildren();
+            if (!jobs.length) {
+                container.textContent = 'No export jobs queued yet.';
+                return;
+            }
+            for (const job of jobs) {
+                const id = String(job.id || '');
+                const status = String(job.status || 'pending');
+                const fmt = String(job.format || 'json').toUpperCase();
+                const row = document.createElement('div');
+                row.className = 'flex flex-wrap items-center justify-between gap-2 bg-dark-900 border border-dark-700 rounded-sm px-2.5 py-1.5 js-export-job';
+
+                const info = document.createElement('div');
+                info.className = 'flex items-center gap-2 min-w-0';
+                const fmtBadge = document.createElement('span');
+                fmtBadge.className = 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-sm bg-dark-700 text-brand-400 font-mono';
+                fmtBadge.textContent = fmt;
+                const statusEl = document.createElement('span');
+                const statusColor = status === 'completed' ? 'text-green-400'
+                    : (status === 'failed' || status === 'cancelled' ? 'text-red-400' : 'text-amber-400');
+                statusEl.className = 'text-[10px] uppercase font-mono ' + statusColor;
+                statusEl.textContent = status;
+                const scanShort = document.createElement('span');
+                scanShort.className = 'text-[10px] text-slate-500 font-mono truncate';
+                scanShort.textContent = 'scan ' + String(job.scanID || '').slice(0, 8);
+                info.append(fmtBadge, statusEl, scanShort);
+
+                const actions = document.createElement('div');
+                actions.className = 'flex items-center gap-1.5';
+                if (status === 'completed') {
+                    const dl = document.createElement('a');
+                    dl.href = '/api/export-jobs/' + encodeURIComponent(id) + '/download';
+                    dl.className = 'min-h-6 inline-flex items-center text-[10px] px-2 py-0.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm';
+                    dl.textContent = '⬇ Download';
+                    const mf = document.createElement('button');
+                    mf.type = 'button';
+                    mf.className = 'min-h-6 text-[10px] px-2 py-0.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm';
+                    mf.textContent = 'Manifest';
+                    mf.addEventListener('click', () => inspectExportManifest(id));
+                    actions.append(dl, mf);
+                } else if (status === 'pending' || status === 'processing') {
+                    const cancel = document.createElement('button');
+                    cancel.type = 'button';
+                    cancel.className = 'min-h-6 text-[10px] px-2 py-0.5 bg-red-900/50 hover:bg-red-800 text-red-200 rounded-sm';
+                    cancel.textContent = 'Cancel';
+                    cancel.addEventListener('click', async () => {
+                        await fetch('/api/export-jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST', credentials: 'include' });
+                        loadExportJobs();
+                    });
+                    actions.appendChild(cancel);
+                }
+                row.append(info, actions);
+                container.appendChild(row);
+            }
+        }
+        async function inspectExportManifest(jobID) {
+            const view = document.getElementById('export-job-manifest-view');
+            if (!view) return;
+            try {
+                const res = await fetch('/api/export-jobs/' + encodeURIComponent(jobID) + '/manifest', { credentials: 'include' });
+                if (!res.ok) {
+                    exportJobsMessage(await apiReason(res), 'text-red-400');
+                    return;
+                }
+                const manifest = await res.json();
+                view.textContent = JSON.stringify(manifest, null, 2);
+                view.classList.remove('hidden');
+            } catch {
+                exportJobsMessage('Could not load manifest.', 'text-red-400');
+            }
+        }
+        async function queueExportJob(format) {
+            if (!currentUser) {
+                showToast('Sign in to queue background export jobs.', 'warning');
+                return;
+            }
+            if (!lastScanData || !lastScanData.scanID) {
+                showToast('Run or open a scan first.', 'warning');
+                return;
+            }
+            try {
+                const res = await fetchWithStepUp('/api/export-jobs', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scanID: lastScanData.scanID, format })
+                });
+                if (!res.ok) {
+                    showToast(await apiReason(res), 'error');
+                    return;
+                }
+                const job = await res.json();
+                showToast(`✓ Queued ${String(format).toUpperCase()} export job (${String(job.status || 'pending')}).`);
+                const panel = document.getElementById('settings-panel');
+                if (panel && panel.classList.contains('hidden')) {
+                    panel.classList.remove('hidden');
+                    loadAPIKeys();
+                    loadVerifiedTargets();
+                }
+                loadExportJobs();
+                setTimeout(loadExportJobs, 2000);
+            } catch {
+                showToast('Failed to queue export job.', 'error');
+            }
+        }
+        document.getElementById('refresh-export-jobs-btn')?.addEventListener('click', loadExportJobs);
+        document.getElementById('async-export-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('async-export-dropdown')?.classList.toggle('hidden');
+        });
+        document.querySelectorAll('.async-export-opt').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('async-export-dropdown')?.classList.add('hidden');
+                queueExportJob(btn.dataset.format);
+            });
+        });
+
+        function gdprMessage(text, cls) {
+            const el = document.getElementById('account-gdpr-msg');
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'text-[10px] mt-1 ' + (cls || 'text-slate-400');
+            el.classList.toggle('hidden', !text);
+        }
+        document.getElementById('account-export-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('account-export-btn');
+            if (btn) btn.disabled = true;
+            gdprMessage('Preparing encrypted account archive…', 'text-slate-400');
+            try {
+                const res = await fetchWithStepUp('/api/account/export', { credentials: 'include' });
+                if (!res.ok) {
+                    gdprMessage(await apiReason(res), 'text-red-400');
+                    return;
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `digital-footprint-account-${(currentUser && currentUser.username) || 'export'}.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                gdprMessage('✓ Account data archive downloaded.', 'text-green-400');
+            } catch {
+                gdprMessage('Network error while exporting account data.', 'text-red-400');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        });
+        document.getElementById('account-delete-toggle-btn')?.addEventListener('click', () => {
+            document.getElementById('account-delete-block')?.classList.toggle('hidden');
+        });
+        document.getElementById('account-delete-cancel-btn')?.addEventListener('click', () => {
+            document.getElementById('account-delete-block')?.classList.add('hidden');
+            const u = document.getElementById('account-delete-username');
+            const p = document.getElementById('account-delete-password');
+            if (u) u.value = '';
+            if (p) p.value = '';
+        });
+        document.getElementById('account-delete-confirm-btn')?.addEventListener('click', async () => {
+            const confirmUsername = document.getElementById('account-delete-username')?.value.trim() || '';
+            const password = document.getElementById('account-delete-password')?.value || '';
+            if (!confirmUsername || !password) {
+                gdprMessage('Enter both your username and your current password to confirm erasure.', 'text-red-400');
+                return;
+            }
+            try {
+                const res = await fetchWithStepUp('/api/account', {
+                    method: 'DELETE',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirmUsername, password })
+                });
+                if (!res.ok) {
+                    gdprMessage(await apiReason(res), 'text-red-400');
+                    return;
+                }
+                currentUser = null;
+                userTags = [];
+                clearInterval(window._notifInterval);
+                window._notifInterval = null;
+                document.getElementById('auth-logged-out')?.classList.remove('hidden');
+                document.getElementById('auth-logged-in')?.classList.add('hidden');
+                document.getElementById('settings-panel')?.classList.add('hidden');
+                document.getElementById('my-scans-panel')?.classList.add('hidden');
+                document.getElementById('account-delete-block')?.classList.add('hidden');
+                showToast('Your account and associated scan data have been permanently deleted.');
+            } catch {
+                gdprMessage('Network error while deleting account.', 'text-red-400');
+            }
+        });
 
         // ── Data Retention ────────────────────────────────────────────────
         document.getElementById('save-retention-btn')?.addEventListener('click', async () => {
@@ -3553,9 +3937,33 @@
         });
 
         // ─── E1: BULK SCAN ────────────────────────────────────────────────────────
+        function parseUniqueBulkTargets() {
+            const raw = document.getElementById('bulk-targets-textarea')?.value || '';
+            const seen = new Set();
+            const unique = [];
+            for (const line of raw.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const key = trimmed.toLowerCase();
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.push(trimmed);
+                }
+            }
+            return unique;
+        }
+        function updateBulkTargetCount() {
+            const countEl = document.getElementById('bulk-target-count');
+            if (!countEl) return;
+            const count = parseUniqueBulkTargets().length;
+            countEl.textContent = `${count} / 10`;
+            countEl.className = 'text-[10px] font-mono ' + (count > 10 ? 'text-red-400 font-bold' : 'text-slate-400');
+        }
+        document.getElementById('bulk-targets-textarea')?.addEventListener('input', updateBulkTargetCount);
         document.getElementById('bulk-scan-open-btn').addEventListener('click', () => {
-            document.getElementById('bulk-results-list').innerHTML = '';
+            document.getElementById('bulk-results-list').replaceChildren();
             document.getElementById('bulk-progress-section').classList.add('hidden');
+            updateBulkTargetCount();
             document.getElementById('bulk-scan-modal').classList.remove('hidden');
         });
         document.getElementById('bulk-modal-close').addEventListener('click', () => {
@@ -3565,21 +3973,30 @@
             if (e.target === document.getElementById('bulk-scan-modal')) document.getElementById('bulk-scan-modal').classList.add('hidden');
         });
         document.getElementById('bulk-scan-submit-btn').addEventListener('click', async () => {
-            const raw = document.getElementById('bulk-targets-textarea').value;
-            const targets = raw.split('\n').map(t => t.trim()).filter(t => t.length > 0);
-            if (targets.length === 0) { alert('Please enter at least one target.'); return; }
-            if (targets.length > 50) { alert('Maximum 50 targets allowed.'); return; }
-            const btn = document.getElementById('bulk-scan-submit-btn');
+            const targets = parseUniqueBulkTargets();
             const progressSection = document.getElementById('bulk-progress-section');
             const progressFill = document.getElementById('bulk-progress-fill');
             const statusText = document.getElementById('bulk-status-text');
             const resultsList = document.getElementById('bulk-results-list');
+            if (targets.length === 0) {
+                progressSection.classList.remove('hidden');
+                statusText.textContent = 'Enter at least one target.';
+                return;
+            }
+            if (targets.length > 10) {
+                progressSection.classList.remove('hidden');
+                statusText.textContent = 'Maximum 10 unique targets allowed per bulk scan.';
+                return;
+            }
+            const btn = document.getElementById('bulk-scan-submit-btn');
             btn.disabled = true;
             btn.textContent = 'Scanning…';
             progressSection.classList.remove('hidden');
-            progressFill.style.width = '10%';
+            progressFill.style.width = '20%';
+            progressFill.classList.remove('bg-red-500');
+            progressFill.classList.add('bg-purple-500');
             statusText.textContent = 'Submitting…';
-            resultsList.innerHTML = '';
+            resultsList.replaceChildren();
             try {
                 const selectedPlugins = getSelectedPlugins();
                 const body = { targets };
@@ -3591,22 +4008,44 @@
                     body: JSON.stringify(body)
                 });
                 if (!resp.ok) {
-                    const err = await resp.text().catch(() => 'HTTP ' + resp.status);
-                    throw new Error(err);
+                    throw new Error(await apiReason(resp));
                 }
                 const results = await resp.json();
-                // Close modal and show success toast
-                document.getElementById('bulk-scan-modal').classList.add('hidden');
+                progressFill.style.width = '100%';
+                const items = Array.isArray(results) ? results : [];
+                const queued = items.filter(r => r && r.status === 'started').length;
+                const skipped = items.filter(r => r && r.status === 'skipped').length;
+                statusText.textContent = `✓ ${queued} started` + (skipped ? ` · ${skipped} skipped` : '');
+                for (const item of items) {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center justify-between gap-2 bg-dark-900 border border-dark-700 rounded-sm px-2.5 py-1.5 js-bulk-result';
+                    const targetSpan = document.createElement('span');
+                    targetSpan.className = 'font-mono text-slate-200 truncate';
+                    targetSpan.textContent = String(item.target || '');
+                    const right = document.createElement('div');
+                    right.className = 'flex items-center gap-2 shrink-0';
+                    const state = document.createElement('span');
+                    state.className = 'text-[10px] uppercase font-mono ' + (item.status === 'started' ? 'text-green-400' : item.status === 'skipped' ? 'text-amber-400' : 'text-red-400');
+                    state.textContent = String(item.status || 'unknown');
+                    right.appendChild(state);
+                    if (item.scanID) {
+                        const openBtn = document.createElement('button');
+                        openBtn.type = 'button';
+                        openBtn.className = 'min-h-6 text-[10px] px-2 py-0.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm font-bold';
+                        openBtn.textContent = 'Open →';
+                        openBtn.addEventListener('click', () => {
+                            document.getElementById('bulk-scan-modal').classList.add('hidden');
+                            loadScanByID(String(item.scanID));
+                        });
+                        right.appendChild(openBtn);
+                    }
+                    row.append(targetSpan, right);
+                    resultsList.appendChild(row);
+                }
                 document.getElementById('bulk-targets-textarea').value = '';
-                progressSection.classList.add('hidden');
-                progressFill.style.width = '0%';
-                progressFill.classList.remove('bg-red-500');
-                progressFill.classList.add('bg-purple-500');
-                resultsList.innerHTML = '';
-                const queued = results.filter(r => r && r.status !== 'skipped').length;
-                const skipped = results.length - queued;
+                updateBulkTargetCount();
                 showToast(`✓ ${queued} scan${queued !== 1 ? 's' : ''} queued successfully`
-                    + (skipped ? ` · ${skipped} skipped (the selected checks run only on targets you have proven are yours)` : ''));
+                    + (skipped ? ` · ${skipped} skipped (ownership required)` : ''));
             } catch(err) {
                 statusText.textContent = 'Error: ' + err.message;
                 progressFill.classList.add('bg-red-500');
@@ -3639,20 +4078,13 @@
             if (!ips.length) { noData.classList.remove('hidden'); wrapper.classList.add('hidden'); loading.classList.add('hidden'); return; }
             noData.classList.add('hidden'); loading.classList.remove('hidden'); wrapper.classList.add('hidden');
 
-            // Load Leaflet CSS+JS on demand. Served from the same origin
-            // (frontend/leaflet.*) — no third-party CDN, no SRI required,
-            // CSP can drop the unpkg.com allowlist entirely.
+            // Load Leaflet CSS+JS on demand from the same origin with content-versioned URLs.
             if (!leafletLoaded) {
-                await new Promise((resolve, reject) => {
-                    const lnk = document.createElement('link');
-                    lnk.rel = 'stylesheet'; lnk.href = '/leaflet.css';
-                    document.head.appendChild(lnk);
-                    const scr = document.createElement('script');
-                    scr.src = '/leaflet.js';
-                    scr.onload = () => { leafletLoaded = true; resolve(); };
-                    scr.onerror = reject;
-                    document.head.appendChild(scr);
-                });
+                await Promise.all([
+                    loadStylesheetOnce('/leaflet.css?v=a78371028241'),
+                    loadScriptOnce('/leaflet.js?v=db49d009c841')
+                ]);
+                leafletLoaded = true;
             }
 
             // Batch geo-lookup (max 100 per ip-api.com free tier)

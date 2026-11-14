@@ -66,7 +66,7 @@
       ]
     }
     </script>
-    <link rel="stylesheet" href="/tailwind.css?v=fa1e7fe9080b">
+    <link rel="stylesheet" href="/tailwind.css?v=0b65ad8f65e0">
     <style>
         /* ── Theme custom properties (dark default) ───────────────────────── */
         :root {
@@ -430,13 +430,44 @@
             <!-- API Keys -->
             <div class="mt-3 border-t border-dark-700 pt-3">
               <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🔑 API Keys</p>
-              <p class="text-[10px] text-slate-500 mb-2">Use <code class="bg-dark-900 px-1 rounded-sm">Authorization: Bearer &lt;key&gt;</code> for programmatic access.</p>
-              <div id="api-keys-list" class="mb-2"></div>
-              <div class="flex gap-2">
-                <input id="api-key-label" type="text" placeholder="Key label (e.g. My Script)"
-                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus:border-brand-500">
-                <button id="generate-api-key-btn" type="button" class="px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Generate</button>
+              <p class="text-[10px] text-slate-500 mb-2">Use <code class="bg-dark-900 px-1 rounded-sm">Authorization: Bearer &lt;key&gt;</code> for programmatic access (up to 5 active keys).</p>
+              <div id="api-key-created-banner" role="status" aria-live="polite" class="hidden mb-2 rounded-sm border border-brand-500/50 bg-dark-900 p-2.5">
+                <p class="text-[10px] text-brand-400 font-bold uppercase tracking-wide mb-1">Copy your new API key now — it will not be shown again</p>
+                <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                  <code id="api-key-created-value" class="grow bg-dark-800 border border-dark-700 rounded-sm px-2 py-1 text-[11px] text-slate-200 font-mono break-all select-all"></code>
+                  <div class="flex gap-1.5 shrink-0">
+                    <button id="api-key-copy-btn" type="button" class="min-h-6 px-2.5 py-1 text-[10px] bg-brand-600 hover:bg-brand-500 text-white rounded-sm font-bold">Copy</button>
+                    <button id="api-key-dismiss-btn" type="button" class="min-h-6 px-2 py-1 text-[10px] bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">Dismiss</button>
+                  </div>
+                </div>
               </div>
+              <div id="api-keys-list" class="mb-2"></div>
+              <div class="flex flex-col sm:flex-row gap-2 mb-2">
+                <label for="api-key-label" class="sr-only">API key label</label>
+                <input id="api-key-label" type="text" placeholder="Key label (e.g. CI Pipeline)"
+                       class="flex-1 min-w-0 bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-200 focus:outline-hidden focus:border-brand-500">
+                <label for="api-key-expiry" class="sr-only">API key expiration</label>
+                <select id="api-key-expiry" aria-label="API key expiration" class="bg-dark-900 border border-dark-700 rounded-sm px-2 py-1 text-xs text-slate-300 focus:outline-hidden focus:border-brand-500">
+                  <option value="">No expiry</option>
+                  <option value="30">Expires in 30d</option>
+                  <option value="90" selected>Expires in 90d</option>
+                  <option value="180">Expires in 180d</option>
+                  <option value="365">Expires in 365d</option>
+                </select>
+                <button id="generate-api-key-btn" type="button" class="min-h-6 px-3 py-1 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-sm">Generate</button>
+              </div>
+              <fieldset class="text-[10px] text-slate-400">
+                <legend class="text-[10px] text-slate-500 mb-1">Key scopes (leave all checked for full API access):</legend>
+                <div id="api-key-scopes" class="flex flex-wrap gap-x-3 gap-y-1">
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="scans:read" checked class="accent-brand-500 js-apikey-scope"><span>scans:read</span></label>
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="scans:write" checked class="accent-brand-500 js-apikey-scope"><span>scans:write</span></label>
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="automation:read" checked class="accent-brand-500 js-apikey-scope"><span>automation:read</span></label>
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="automation:write" checked class="accent-brand-500 js-apikey-scope"><span>automation:write</span></label>
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="investigations:read" checked class="accent-brand-500 js-apikey-scope"><span>investigations:read</span></label>
+                  <label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" value="investigations:write" checked class="accent-brand-500 js-apikey-scope"><span>investigations:write</span></label>
+                </div>
+              </fieldset>
+              <p id="api-keys-msg" role="status" aria-live="polite" class="text-[10px] mt-1 hidden"></p>
             </div>
             <!-- Data Retention -->
             <div class="mt-3 border-t border-dark-700 pt-3">
@@ -459,11 +490,11 @@
               <p class="text-[10px] text-slate-500 mb-2">Configure where to receive scan alerts.</p>
               <div class="space-y-2">
                 <div>
-                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Discord Webhook URL</label>
+                  <label for="discord-webhook-input" class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Discord Webhook URL</label>
                   <input type="url" id="discord-webhook-input" placeholder="https://discord.com/api/webhooks/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
                 </div>
                 <div>
-                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Bot Token</label>
+                  <label for="telegram-token-input" class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Telegram Bot Token</label>
                   <input type="text" id="telegram-token-input" placeholder="123456:ABC-DEF…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
                 </div>
                 <div>
@@ -475,9 +506,13 @@
                   <p class="text-[10px] text-slate-500 mt-1">1. Create a bot with @BotFather and save its token here. 2. Send /start to your bot. 3. Press Detect.</p>
                 </div>
                 <div>
-                  <label class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Slack Webhook URL</label>
+                  <label for="slack-webhook-input" class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Slack Webhook URL</label>
                   <input type="url" id="slack-webhook-input" placeholder="https://hooks.slack.com/services/…" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-600">
                 </div>
+                <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer pt-1">
+                  <input type="checkbox" id="notif-verbose-alerts" class="accent-brand-500">
+                  <span>Include full finding details in outbound alerts (verbose mode)</span>
+                </label>
               </div>
               <div class="flex gap-2 mt-2">
                 <button id="save-notification-settings-btn" class="grow text-xs py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors">Save Channels</button>
@@ -528,6 +563,42 @@
                 <button id="twofa-disable-btn" class="text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded-sm">Disable 2FA</button>
               </div>
               <p id="twofa-msg" class="text-[10px] mt-1 hidden"></p>
+            </div>
+            <!-- Async Export Jobs -->
+            <div class="mt-3 border-t border-dark-700 pt-3">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <p class="text-xs text-slate-400 font-semibold uppercase tracking-wide">📦 Encrypted Export Jobs</p>
+                <button id="refresh-export-jobs-btn" type="button" class="min-h-6 text-[10px] px-2 py-0.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">↻ Refresh</button>
+              </div>
+              <p class="text-[10px] text-slate-500 mb-2">Durable background exports encrypted at rest with SHA-256 integrity manifests.</p>
+              <div id="export-jobs-list" class="space-y-1.5 text-xs text-slate-500 mb-2">No export jobs queued yet.</div>
+              <pre id="export-job-manifest-view" class="hidden bg-dark-900 border border-dark-700 rounded-sm p-2 text-[10px] text-slate-300 overflow-x-auto whitespace-pre-wrap mb-2"></pre>
+              <p id="export-jobs-msg" role="status" aria-live="polite" class="text-[10px] mt-1 hidden"></p>
+            </div>
+            <!-- GDPR Self-Service: Account Export & Erasure -->
+            <div class="mt-3 border-t border-dark-700 pt-3">
+              <p class="text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">🗂 Privacy &amp; Account Data (GDPR)</p>
+              <p class="text-[10px] text-slate-500 mb-2">Download a machine-readable JSON archive of all data associated with your account, or permanently erase your account and scans.</p>
+              <div class="flex flex-wrap gap-2">
+                <button id="account-export-btn" type="button" class="min-h-6 text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-200 rounded-sm transition-colors">⬇ Download Account Archive (JSON)</button>
+                <button id="account-delete-toggle-btn" type="button" class="min-h-6 text-xs px-3 py-1.5 bg-red-700/80 hover:bg-red-600 text-white rounded-sm transition-colors">Delete Account…</button>
+              </div>
+              <div id="account-delete-block" class="hidden mt-2 p-3 bg-dark-900 border border-red-700/50 rounded-sm space-y-2">
+                <p class="text-[10px] text-red-300">Permanent erasure: deletes your account, scans, boards, tags, API keys, and pseudonymizes retained audit logs.</p>
+                <div>
+                  <label for="account-delete-username" class="block text-[10px] text-slate-400 uppercase tracking-wide mb-1">Type your username to confirm</label>
+                  <input type="text" id="account-delete-username" autocomplete="username" class="w-full bg-dark-800 border border-dark-700 text-white text-xs rounded-sm px-2.5 py-1.5 focus:outline-hidden focus:border-red-500">
+                </div>
+                <div>
+                  <label for="account-delete-password" class="block text-[10px] text-slate-400 uppercase tracking-wide mb-1">Current password</label>
+                  <input type="password" id="account-delete-password" autocomplete="current-password" class="w-full bg-dark-800 border border-dark-700 text-white text-xs rounded-sm px-2.5 py-1.5 focus:outline-hidden focus:border-red-500">
+                </div>
+                <div class="flex gap-2">
+                  <button id="account-delete-confirm-btn" type="button" class="min-h-6 text-xs px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded-sm font-bold">Permanently Delete Account</button>
+                  <button id="account-delete-cancel-btn" type="button" class="min-h-6 text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm">Cancel</button>
+                </div>
+              </div>
+              <p id="account-gdpr-msg" role="status" aria-live="polite" class="text-[10px] mt-1 hidden"></p>
             </div>
         </section>
 
@@ -592,7 +663,8 @@
                     Schedule this scan
                 </label>
                 <select id="schedule-interval" aria-label="Scan interval" class="bg-dark-900 border border-dark-700 text-slate-300 text-xs rounded-sm px-2 py-1 outline-hidden focus:border-brand-500">
-                    <option value="daily">Daily</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="daily" selected>Daily</option>
                     <option value="weekly">Weekly</option>
                 </select>
             </div>
@@ -725,6 +797,18 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
                         PDF
                     </button>
+                    <div class="relative">
+                        <button id="async-export-btn" type="button" title="Queue an encrypted background export job with SHA-256 manifest" class="text-xs px-2 py-1 bg-dark-700 border border-dark-600 rounded-sm text-slate-400 hover:text-brand-500 hover:border-brand-500/50 transition-colors flex items-center gap-1">
+                            📦 ASYNC EXPORT
+                        </button>
+                        <div id="async-export-dropdown" class="hidden absolute right-0 top-full mt-1 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 min-w-[190px] py-1">
+                            <button type="button" class="async-export-opt w-full text-left text-xs px-3 py-1.5 hover:bg-dark-700 transition-colors text-slate-300" data-format="pdf">Queue PDF Dossier</button>
+                            <button type="button" class="async-export-opt w-full text-left text-xs px-3 py-1.5 hover:bg-dark-700 transition-colors text-slate-300" data-format="html">Queue HTML Report</button>
+                            <button type="button" class="async-export-opt w-full text-left text-xs px-3 py-1.5 hover:bg-dark-700 transition-colors text-slate-300" data-format="markdown">Queue Markdown Report</button>
+                            <button type="button" class="async-export-opt w-full text-left text-xs px-3 py-1.5 hover:bg-dark-700 transition-colors text-slate-300" data-format="graphml">Queue GraphML</button>
+                            <button type="button" class="async-export-opt w-full text-left text-xs px-3 py-1.5 hover:bg-dark-700 transition-colors text-slate-300" data-format="json">Queue Full JSON</button>
+                        </div>
+                    </div>
                     <div class="text-xs px-2 py-1 bg-dark-700 rounded-sm text-slate-300 shadow-inner flex items-center gap-2">
                         SCAN ID: <span id="scan-id-display" class="text-white selection:bg-brand-500 break-all"></span>
                         <button id="copy-scan-id" title="Copy Scan ID" class="text-slate-400 hover:text-brand-500 transition-colors ml-1" aria-label="Copy scan ID">
@@ -825,7 +909,7 @@
                 <div id="map-loading" class="hidden text-center py-8 text-slate-500 text-sm">Loading geolocation data…</div>
                 <div id="leaflet-map-wrapper" class="hidden flex-col gap-2">
                     <div id="leaflet-map"></div>
-                    <p class="text-[10px] text-slate-600">Geolocation via ip-api.com · Map tiles © OpenStreetMap contributors</p>
+                    <p class="text-[10px] text-slate-600">Offline first-party GeoIP database · Map tiles © OpenStreetMap contributors</p>
                 </div>
             </div>
         </section>
@@ -878,18 +962,47 @@
                     <h3 id="bulk-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Bulk Scan</h3>
                     <button id="bulk-modal-close" aria-label="Close bulk scan dialog" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
                 </div>
-                <p class="text-xs text-slate-500 mb-3">Enter one target per line (max 50). Scans run in parallel.</p>
-                <textarea id="bulk-targets-textarea" rows="8" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-2 focus:outline-hidden focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <label for="bulk-targets-textarea" class="text-xs text-slate-500">Enter one target per line (max 10 unique targets).</label>
+                    <span id="bulk-target-count" class="text-[10px] font-mono text-slate-400">0 / 10</span>
+                </div>
+                <textarea id="bulk-targets-textarea" rows="6" placeholder="user@example.com&#10;johndoe&#10;192.168.1.1" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-2 focus:outline-hidden focus:border-brand-500 placeholder-slate-600 resize-y font-mono"></textarea>
                 <div id="bulk-progress-section" class="hidden mt-2">
                     <div id="bulk-progress-bar" class="w-full bg-dark-700 rounded-full h-1.5 overflow-hidden mb-1">
                         <div id="bulk-progress-fill" class="bg-purple-500 h-1.5 rounded-full transition-all duration-300" style="width:0%"></div>
                     </div>
                     <p id="bulk-status-text" class="text-[10px] text-slate-500 text-center">Starting…</p>
                 </div>
-                <div id="bulk-results-list" class="mt-2 space-y-1 max-h-40 overflow-y-auto text-xs"></div>
+                <div id="bulk-results-list" class="mt-2 space-y-1.5 max-h-48 overflow-y-auto text-xs" aria-live="polite"></div>
                 <div class="flex gap-2 mt-4">
                     <button id="bulk-scan-submit-btn" class="grow text-xs py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-sm transition-colors font-bold">START BULK SCAN</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Step-Up Re-Authentication Modal -->
+        <div id="reauth-modal" role="dialog" aria-modal="true" aria-labelledby="reauth-modal-title" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4">
+            <div class="bg-dark-800 border border-dark-700 rounded-t-2xl sm:rounded-xl p-4 sm:p-6 w-full max-w-md shadow-2xl max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 id="reauth-modal-title" class="text-sm font-bold text-white uppercase tracking-widest">Confirm Your Identity</h3>
+                    <button id="reauth-modal-close" type="button" aria-label="Close re-authentication dialog" class="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none">✕</button>
+                </div>
+                <p class="text-xs text-slate-400 mb-3">This sensitive action requires a recent login. Confirm your password to continue.</p>
+                <form id="reauth-form" class="space-y-3">
+                    <div>
+                        <label for="reauth-password-input" class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">Password</label>
+                        <input type="password" id="reauth-password-input" autocomplete="current-password" required class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
+                    </div>
+                    <div id="reauth-totp-group" class="hidden">
+                        <label for="reauth-code-input" class="block text-[10px] text-slate-500 uppercase tracking-wide mb-1">2FA / Recovery Code</label>
+                        <input type="text" id="reauth-code-input" autocomplete="one-time-code" placeholder="6-digit or recovery code" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-sm px-3 py-1.5 focus:outline-hidden focus:border-brand-500">
+                    </div>
+                    <p id="reauth-error-msg" role="alert" class="hidden text-[11px] text-red-400"></p>
+                    <div class="flex gap-2">
+                        <button type="submit" id="reauth-submit-btn" class="grow text-xs py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-sm transition-colors font-bold">CONFIRM &amp; CONTINUE</button>
+                        <button type="button" id="reauth-cancel-btn" class="text-xs px-3 py-2 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-sm transition-colors">Cancel</button>
+                    </div>
+                </form>
             </div>
         </div>
 
@@ -954,7 +1067,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=845b5f00dadd" integrity="sha384-rsJsERr2NcP/KLhVCVLx3tKI7teOa7j4ylD6rE29yJEQZ6ugZoGJ+cg4ClS9D2AS"></script>
+    <script src="/app.js?v=467fc4b3692c" integrity="sha384-v+QXBhQZlY0FPzAAgPq3abBYbcPm64x9B4MGVDJcl96RyxV6S7xxSHR6CXkhBNFu"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>
@@ -1185,6 +1298,6 @@
             </div>
         </div>
     </div>
-    <script src="/dark-web.js"></script>
+    <script src="/dark-web.js?v=02a9d90c9a87" integrity="sha384-guhMQ3TK21qyITu5mVjdIen/TBp/Ci6wfW/C5959vDWc+4z5Ds5dX3Mn6CKx6sib" crossorigin="anonymous"></script>
 </body>
 </html>

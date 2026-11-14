@@ -151,8 +151,29 @@ export async function mockAPI(page, options = {}) {
                 isRead: false,
                 createdAt: '2026-08-24T00:00:00Z',
             }];
-        } else if (pathname === '/api/tags' || pathname === '/api/scheduled-scans' || pathname === '/api/auth/api-keys') {
+        } else if (pathname === '/api/tags' || pathname === '/api/scheduled-scans' || pathname === '/api/auth/api-keys' || pathname === '/api/export-jobs') {
             body = [];
+        } else if (pathname === '/api/admin/notification-deliveries') {
+            body = {
+                items: [{
+                    id: '00000000-0000-4000-8000-0000000000d1',
+                    eventID: '00000000-0000-4000-8000-0000000000e1',
+                    userID: '00000000-0000-4000-8000-000000000001',
+                    scanID: '00000000-0000-4000-8000-0000000000bb',
+                    channel: 'webhook',
+                    status: 'dead_letter',
+                    attempts: 3,
+                    maxAttempts: 3,
+                    lastHTTPStatus: 502,
+                    lastError: malicious,
+                    deadLetterReason: malicious,
+                    nextAttemptAt: '2026-08-24T00:05:00Z',
+                    deliveredAt: null,
+                    createdAt: '2026-08-24T00:00:00Z',
+                    updatedAt: '2026-08-24T00:03:00Z',
+                }],
+                metadata: { page: 1, per: 25, total: 1 },
+            };
         } else if (pathname === '/api/targets') {
             body = {
                 accountEmail: 'browser-tester@example.test',
