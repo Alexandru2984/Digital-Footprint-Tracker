@@ -418,3 +418,123 @@ test('verified targets show how to prove each one, and a scan says which checks 
     expect(await page.locator('[data-browser-xss]').count()).toBe(0);
     expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
 });
+
+test('step-up re-authentication modal retries scoped API key creation and reveals key.token', async ({ page }) => {
+    await mockAPI(page, { authenticated: true });
+    let reauthenticated = false;
+    let createPayload = null;
+    await page.route('**/api/auth/reauth', async route => {
+        reauthenticated = true;
+        await route.fulfill({ status: 204, body: '' });
+    });
+    await page.route('**/api/auth/api-keys', async route => {
+        if (route.request().method() === 'GET') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json; charset=utf-8',
+                body: JSON.stringify(reauthenticated ? [{
+                    id: '00000000-0000-4000-8000-0000000000f1',
+                    label: 'CI Key',
+                    keyPreview: 'dft_live_...abcd',
+                    scopes: ['scans:read'],
+                    expiresAt: 1790000000,
+                    lastUsedAt: null,
+                    createdAt: 1787000000,
+                }] : []),
+            });
+            return;
+        }
+        createPayload = JSON.parse(route.request().postData() || '{}');
+        if (!reauthenticated) {
+            await route.fulfill({
+                status: 401,
+                contentType: 'application/json; charset=utf-8',
+                body: JSON.stringify({ error: true, reason: 'Recent authentication is required for this operation.' }),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json; charset=utf-8',
+            body: JSON.stringify({
+                id: '00000000-0000-4000-8000-0000000000f1',
+                label: 'CI Key',
+                token: 'dft_live_secret_token_value_12345',
+                keyPreview: 'dft_live_...abcd',
+                scopes: ['scans:read'],
+                expiresAt: 1790000000,
+                createdAt: 1787000000,
+            }),
+        });
+    });
+
+    await page.goto('/', { waitUntil: 'networkidle' });
+    const menu = page.locator('#hamburger-btn');
+    if (await menu.isVisible()) await menu.click();
+    await page.locator('#settings-toggle-btn').click();
+    await page.locator('#api-key-label').fill('CI Key');
+    await page.locator('#generate-api-key-btn').click();
+
+    await expect(page.locator('#reauth-modal')).toBeVisible();
+    await page.locator('#reauth-password-input').fill('CorrectHorseBatteryStaple1!');
+    await page.locator('#reauth-submit-btn').click();
+
+    await expect(page.locator('#reauth-modal')).toBeHidden();
+    await expect(page.locator('#api-key-created-banner')).toBeVisible();
+    await expect(page.locator('#api-key-created-value')).toHaveText('dft_live_secret_token_value_12345');
+    expect(createPayload.label).toBe('CI Key');
+    expect(createPayload.expiresInDays).toBe(90);
+    await expect(page.locator('#api-keys-list .js-api-key').first()).toContainText('Scopes: scans:read');
+});
+
+test('command palette, quick example chips, and live findings search filter work interactively', async ({ page }) => {
+    await mockAPI(page, { authenticated: true });
+    await page.goto('/?scan=00000000-0000-4000-8000-0000000000bb', { waitUntil: 'networkidle' });
+
+    const allCards = page.locator('#results-grid > div');
+    const initialCount = await allCards.count();
+    expect(initialCount).toBeGreaterThan(2);
+
+    await page.locator('#results-search-input').fill('MicrosoftTenant');
+    await expect(allCards).toHaveCount(1);
+    await expect(page.locator('#results-filter-summary')).toContainText('Showing 1 of');
+    await page.locator('#results-search-input').fill('');
+    await expect(allCards).toHaveCount(initialCount);
+
+    await page.locator('.js-example-target[data-example-target="torvalds"]').click();
+    await expect(page.locator('#target-input')).toHaveValue('torvalds');
+    await expect(page.locator('#input-type-label')).toHaveText('USERNAME');
+
+    await page.locator('#cmd-palette-open-btn').click();
+    await expect(page.locator('#cmd-palette-modal')).toBeVisible();
+    await page.locator('#cmd-palette-input').fill('surface');
+    await expect(page.locator('#cmd-palette-list .js-cmd-option')).toHaveCount(1);
+    await page.locator('#cmd-palette-list .js-cmd-option').first().click();
+    await expect(page.locator('#cmd-palette-modal')).toBeHidden();
+    await expect(page.locator('#surface-tab-content')).toBeVisible();
+});
+
+test('admin dead-letter queue renders untrusted errors as text and replays failed deliveries', async ({ page }) => {
+    const fixture = await mockAPI(page, { authenticated: true, admin: true });
+    let retried = false;
+    await page.route('**/api/admin/notification-deliveries/*/retry', async route => {
+        retried = true;
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json; charset=utf-8',
+            body: JSON.stringify({ id: '00000000-0000-4000-8000-0000000000d1', status: 'pending' }),
+        });
+    });
+
+    await page.goto('/admin.html', { waitUntil: 'networkidle' });
+    const row = page.locator('#dlq-container .js-dlq-row').first();
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('dead_letter');
+    await expect(row).toContainText('HTTP 502');
+    await expect(row).toContainText(fixture.malicious);
+    expect(await page.locator('[data-browser-xss]').count()).toBe(0);
+    expect(await page.evaluate(() => Boolean(window.__browserXSS))).toBe(false);
+
+    await row.locator('.js-dlq-retry').click();
+    await expect.poll(() => retried).toBe(true);
+});

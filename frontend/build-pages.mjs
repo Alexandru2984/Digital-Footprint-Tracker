@@ -13,7 +13,7 @@ const frontendDir = dirname(fileURLToPath(import.meta.url));
 const origin = 'https://swift.micutu.com';
 const siteName = 'Digital Footprint Tracker';
 // Bumped by hand when the guides' content changes; drives <lastmod>.
-const contentDate = '2026-11-02';
+const contentDate = '2026-11-14';
 
 const escapeHTML = text => String(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -475,8 +475,13 @@ for (const page of pages) {
 {
     const l = locales.ro;
     const url = `${origin}/ro/`;
-    const graph = [{ '@type': 'WebPage', '@id': url, url, name: roHome.title, description: roHome.description,
-                     inLanguage: 'ro', isPartOf: { '@type': 'WebSite', name: siteName, url: `${origin}/` } }];
+    const graph = [
+        { '@type': 'WebPage', '@id': url, url, name: roHome.title, description: roHome.description,
+          inLanguage: 'ro', isPartOf: { '@type': 'WebSite', name: siteName, url: `${origin}/` }, dateModified: contentDate },
+        { '@type': 'SoftwareApplication', name: siteName, url: `${origin}/`, applicationCategory: 'SecurityApplication',
+          operatingSystem: 'Any (modern web browser)', isAccessibleForFree: true, inLanguage: 'ro',
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' }, description: roHome.description },
+    ];
     write('ro/index.html', `${head(l, { title: roHome.title, description: roHome.description, url,
                                          alternates: [['en', `${origin}/`], ['ro', url], ['x-default', `${origin}/`]],
                                          type: 'website', robots: 'index, follow, max-image-preview:large',

@@ -4,7 +4,7 @@ info:
   description: |
     OSINT aggregation API for tracking digital footprints across platforms.
     All endpoints are prefixed with `/api` via the nginx reverse proxy.
-  version: "1.8.0"
+  version: "1.9.0"
   contact:
     name: Digital Footprint Tracker
 
@@ -1660,10 +1660,11 @@ paths:
       summary: Permanently delete the caller's account (GDPR)
       description: |
         Two-step confirmation: the request body must echo the caller's own
-        username back, case-insensitive. Admin accounts cannot self-delete.
-        Cascades through scans, results, shared reports, scheduled scans,
-        tags, notifications, and API keys. Audit log entries are kept but
-        anonymized (`user_id` cleared) for compliance.
+        username back (case-insensitive) and supply the current password.
+        Admin accounts cannot self-delete. Cascades through scans, results,
+        shared reports, scheduled scans, tags, notifications, export jobs,
+        investigation boards, dark-web jobs, and API keys. Audit log entries
+        are kept but pseudonymized for compliance.
       tags: [Account]
       requestBody:
         required: true
@@ -1671,22 +1672,228 @@ paths:
           application/json:
             schema:
               type: object
-              required: [confirmUsername]
+              required: [confirmUsername, password]
               properties:
                 confirmUsername:
                   type: string
                   description: Must equal the logged-in username (case-insensitive).
+                password:
+                  type: string
+                  format: password
+                  description: Current account password.
       responses:
         '204':
-          description: Account deleted; session destroyed
+          description: Account deleted; session invalidated
         '400':
           description: confirmUsername does not match
         '401':
-          description: Not authenticated
+          description: Not authenticated or invalid credentials
         '403':
           description: Admin self-deletion is refused
         '429':
-          description: Rate limit (5 attempts per 10 minutes per IP)
+          description: Rate limit or per-account password throttle exceeded
+
+  /auth/reauth:
+    post:
+      summary: Step-up re-authentication for sensitive account and admin actions
+      description: Refreshes the 10-minute recent-authentication window on the active browser session. Accounts with 2FA enabled must supply a valid TOTP or recovery code.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, format: password }
+                code: { type: string, nullable: true }
+      responses:
+        '204': { description: Recent authentication window refreshed }
+        '401': { description: Invalid credentials or missing 2FA code }
+        '429': { description: Per-account or per-IP rate limit exceeded }
+
+  /auth/api-keys:
+    get:
+      summary: List active API keys for the current user
+      tags: [Auth]
+      responses:
+        '200':
+          description: Active API key metadata (never raw tokens)
+    post:
+      summary: Generate a scoped API key (up to 5 per account)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { type: string, example: CI Pipeline }
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: ['scans:read', 'scans:write', 'automation:read', 'automation:write', 'investigations:read', 'investigations:write']
+                expiresInDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+      responses:
+        '200':
+          description: Newly created API key including one-time raw `token`
+        '400': { description: Invalid scope, expiration, or 5-key limit reached }
+        '401': { description: Recent browser authentication required }
+
+  /auth/api-keys/{keyID}:
+    delete:
+      summary: Revoke an API key
+      tags: [Auth]
+      parameters:
+        - { name: keyID, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Revoked }
+        '401': { description: Recent browser authentication required }
+        '404': { description: Key not found }
+
+  /scan/bulk:
+    post:
+      summary: Queue up to 10 unique targets in parallel
+      tags: [Scan]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targets]
+              properties:
+                targets:
+                  type: array
+                  maxItems: 10
+                  items: { type: string }
+                plugins:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200': { description: Per-target status and scan IDs }
+        '400': { description: Empty target list or more than 10 unique targets }
+
+  /plugins:
+    get:
+      summary: List available OSINT scanner plugins
+      tags: [Meta]
+      security: []
+      responses:
+        '200': { description: Registered plugins and target-type capabilities }
+
+  /stats:
+    get:
+      summary: Public aggregate platform statistics
+      tags: [Meta]
+      security: []
+      responses:
+        '200': { description: Scan counts and top finding sources }
+
+  /geolocate:
+    post:
+      summary: Privacy-preserving offline IP geolocation batch lookup
+      tags: [Scan]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items:
+                type: object
+                required: [query]
+                properties:
+                  query: { type: string, example: 1.1.1.1 }
+      responses:
+        '200': { description: Geolocation records from the first-party offline GeoIP database }
+
+  /tags:
+    get:
+      summary: List user-defined scan tags
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Tag list }
+    post:
+      summary: Create a new tag
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Created tag }
+
+  /scheduled-scans:
+    get:
+      summary: List scheduled recurring scans
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Scheduled scans }
+    post:
+      summary: Create a recurring scheduled scan (hourly, daily, or weekly)
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Created schedule }
+
+  /correlations:
+    get:
+      summary: Cross-scan entity correlations for the signed-in user
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Shared entities appearing across multiple owned scans }
+
+  /notifications:
+    get:
+      summary: List in-app scan notifications
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Recent notifications }
+
+  /investigations:
+    get:
+      summary: List saved investigation boards
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Investigation boards }
+    post:
+      summary: Create a new investigation board
+      tags: [User]
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Created investigation board }
+
+  /ready:
+    get:
+      summary: Local-only readiness probe (database + encryption + audit ledger)
+      tags: [Meta]
+      security: []
+      responses:
+        '200': { description: Ready }
+        '403': { description: Restricted to loopback / local probe token }
+        '503': { description: Degraded }
+
+  /metrics:
+    get:
+      summary: Local-only Prometheus metrics endpoint
+      tags: [Meta]
+      security: []
+      responses:
+        '200': { description: Prometheus text exposition format }
+        '403': { description: Restricted to loopback / local metrics token }
 
   /health:
     get:
