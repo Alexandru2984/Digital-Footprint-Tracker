@@ -463,18 +463,37 @@
             return date.toLocaleDateString();
         }
 
-        // Returns results filtered by the current confidence threshold and type filter.
+        // Returns results filtered by confidence threshold, type filter, and live search query.
         function filterResults(results) {
             let out = results;
             if (confidenceFilterActive) out = out.filter(r => r.confidenceScore >= 0.7);
             if (activeTypeFilter) out = out.filter(r => r.type === activeTypeFilter);
+            const q = (document.getElementById('results-search-input')?.value || '').trim().toLowerCase();
+            if (q) {
+                out = out.filter(r => {
+                    const hay = [
+                        r.source,
+                        r.type,
+                        r.rawData,
+                        r.metadata ? JSON.stringify(r.metadata) : ''
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    return hay.includes(q);
+                });
+            }
             return out;
         }
 
         // Re-renders the results grid from lastScanData using the current filter and sort.
         function reRenderGrid() {
             if (!lastScanData) return;
+            const total = (lastScanData.results || []).length;
             const filtered = sortResults(filterResults(lastScanData.results || []));
+            const summary = document.getElementById('results-filter-summary');
+            if (summary) {
+                summary.textContent = filtered.length === total
+                    ? `${total} finding${total === 1 ? '' : 's'}`
+                    : `Showing ${filtered.length} of ${total} findings`;
+            }
             resultsGrid.innerHTML = '';
             if (filtered.length === 0) {
                 emptyState.classList.remove('hidden');
@@ -485,6 +504,16 @@
                 filtered.forEach(r => resultsGrid.appendChild(createResultCard(r)));
             }
         }
+        document.getElementById('results-search-input')?.addEventListener('input', reRenderGrid);
+        document.querySelectorAll('.js-example-target').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const value = btn.getAttribute('data-example-target') || '';
+                if (!value || !input) return;
+                input.value = value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.focus();
+            });
+        });
 
         // Fetches the attack-surface delta vs the previous scan of this target and
         // renders a banner. Owner-only endpoint: 401/404 (anonymous or shared view)
@@ -4261,13 +4290,100 @@
             }
         });
 
+        // ── Command Palette (Ctrl+K / Cmd+K) ────────────────────────────────────
+        const commandItems = [
+            { label: 'Focus Target Scanner', hint: '/', run: () => { input?.focus(); input?.select(); } },
+            { label: 'Open Bulk Scan Dialog (up to 10 targets)', hint: 'Bulk', run: () => document.getElementById('bulk-scan-open-btn')?.click() },
+            { label: 'Open Investigation Boards', hint: 'Boards', run: () => document.getElementById('boards-toggle-btn')?.click() },
+            { label: 'Open Dark-Web Investigations', hint: 'Tor / Onion', run: () => document.getElementById('dark-web-toggle-btn')?.click() },
+            { label: 'Switch to Results Tab', hint: 'Tab 1', run: () => document.getElementById('tab-results')?.click() },
+            { label: 'Switch to Identity & Connections Graph Tab', hint: 'Tab 2', run: () => document.getElementById('tab-graph')?.click() },
+            { label: 'Switch to IP Geolocation Map Tab', hint: 'Tab 3', run: () => document.getElementById('tab-map')?.click() },
+            { label: 'Switch to Attack Surface & Remediation Tab', hint: 'Tab 4', run: () => document.getElementById('tab-surface')?.click() },
+            { label: 'Toggle High-Confidence Filter (≥70%)', hint: 'Filter', run: () => document.getElementById('confidence-filter-btn')?.click() },
+            { label: 'Toggle Dark / Light Theme', hint: 'Theme', run: () => document.getElementById('theme-toggle-btn')?.click() },
+            { label: 'Open My Scans & Cross-Scan Correlations', hint: 'Account', run: () => document.getElementById('my-scans-toggle-btn')?.click() },
+            { label: 'Open Account Settings, API Keys & GDPR Tools', hint: 'Settings', run: () => document.getElementById('settings-toggle-btn')?.click() },
+            { label: 'Export Current Scan as JSON', hint: 'Export', run: () => document.getElementById('export-json-btn')?.click() },
+            { label: 'Export Current Scan as CSV', hint: 'Export', run: () => document.getElementById('export-csv-btn')?.click() },
+            { label: 'Export Relationship Graph as GraphML', hint: 'Export', run: () => document.getElementById('export-graph-btn')?.click() },
+            { label: 'Open Keyboard Shortcuts Reference', hint: '?', run: () => openKeyboardHelp() },
+        ];
+        function closeCommandPalette() {
+            document.getElementById('cmd-palette-modal')?.classList.add('hidden');
+        }
+        function renderCommandPalette(filterText) {
+            const list = document.getElementById('cmd-palette-list');
+            if (!list) return;
+            list.replaceChildren();
+            const q = String(filterText || '').trim().toLowerCase();
+            const matches = commandItems.filter(item => !q || item.label.toLowerCase().includes(q) || item.hint.toLowerCase().includes(q));
+            if (!matches.length) {
+                const empty = document.createElement('p');
+                empty.className = 'text-xs text-slate-500 py-3 text-center';
+                empty.textContent = 'No matching commands.';
+                list.appendChild(empty);
+                return;
+            }
+            matches.forEach((item, index) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.setAttribute('role', 'option');
+                btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+                btn.className = 'w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-lg bg-dark-900 hover:bg-dark-700 border border-dark-700 text-slate-200 transition-colors js-cmd-option';
+                const lbl = document.createElement('span');
+                lbl.textContent = item.label;
+                const hint = document.createElement('span');
+                hint.className = 'text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-dark-800 border border-dark-600 text-slate-400 shrink-0';
+                hint.textContent = item.hint;
+                btn.append(lbl, hint);
+                btn.addEventListener('click', () => {
+                    closeCommandPalette();
+                    item.run();
+                });
+                list.appendChild(btn);
+            });
+        }
+        function openCommandPalette() {
+            const modal = document.getElementById('cmd-palette-modal');
+            const inp = document.getElementById('cmd-palette-input');
+            if (!modal || !inp) return;
+            modal.classList.remove('hidden');
+            inp.value = '';
+            renderCommandPalette('');
+            setTimeout(() => inp.focus(), 10);
+        }
+        document.getElementById('cmd-palette-open-btn')?.addEventListener('click', openCommandPalette);
+        document.getElementById('cmd-palette-close')?.addEventListener('click', closeCommandPalette);
+        document.getElementById('cmd-palette-modal')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('cmd-palette-modal')) closeCommandPalette();
+        });
+        document.getElementById('cmd-palette-input')?.addEventListener('input', (e) => {
+            renderCommandPalette(e.target.value);
+        });
+        document.getElementById('cmd-palette-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const first = document.querySelector('#cmd-palette-list .js-cmd-option');
+                if (first) { e.preventDefault(); first.click(); }
+            }
+        });
+
         document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                const modal = document.getElementById('cmd-palette-modal');
+                if (modal && !modal.classList.contains('hidden')) closeCommandPalette();
+                else openCommandPalette();
+                return;
+            }
             const tag = (e.target && e.target.tagName) || '';
             const inInput = ['INPUT','TEXTAREA','SELECT'].includes(tag) || e.target.isContentEditable;
 
             if (e.key === 'Escape') {
                 // Close any open modal
                 document.getElementById('diff-modal')?.classList.remove('active');
+                closeCommandPalette();
+                closeReauthModal(false);
                 closeKeyboardHelp();
                 return;
             }

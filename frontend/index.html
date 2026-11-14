@@ -66,7 +66,7 @@
       ]
     }
     </script>
-    <link rel="stylesheet" href="/tailwind.css?v=0b65ad8f65e0">
+    <link rel="stylesheet" href="/tailwind.css?v=6a28c54624d6">
     <style>
         /* ── Theme custom properties (dark default) ───────────────────────── */
         :root {
@@ -316,8 +316,8 @@
                     <span id="auth-username-badge" class="text-xs px-2 py-1 bg-dark-800 border border-dark-700 rounded-sm text-brand-400 font-bold flex items-center gap-1">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                         <span id="auth-username-text">—</span>
-                        <span id="auth-admin-badge" class="hidden text-[10px] px-1 bg-yellow-500/20 text-yellow-400 rounded-sm ml-1">ADMIN</span>
                     </span>
+                    <a id="auth-admin-badge" href="/admin.html" title="Open Admin Dashboard" class="hidden min-h-6 inline-flex items-center text-[10px] px-2 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-400 font-bold rounded-sm transition-colors">ADMIN ↗</a>
                     <div class="relative inline-block" id="notif-bell-container">
                       <button id="notif-bell-btn" class="relative text-slate-400 hover:text-white transition-colors text-lg px-1" title="Notifications">
                         🔔
@@ -635,12 +635,25 @@
                     </button>
                 </div>
             </form>
-            <!-- E2: Advanced Plugin Selector -->
+            <!-- E2: Advanced Plugin Selector & Quick Examples -->
             <div id="advanced-section" class="mt-3 relative z-10">
-                <button id="advanced-toggle-btn" type="button" class="text-[10px] text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1">
-                    <svg id="advanced-chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform"><polyline points="6 9 12 15 18 9"/></svg>
-                    ADVANCED
-                </button>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                        <button id="advanced-toggle-btn" type="button" class="min-h-6 px-2 py-1 text-[10px] bg-dark-900 border border-dark-700 rounded-sm text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1">
+                            <svg id="advanced-chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform"><polyline points="6 9 12 15 18 9"/></svg>
+                            ADVANCED
+                        </button>
+                        <span class="text-[10px] text-slate-500 ml-1">Examples:</span>
+                        <button type="button" data-example-target="torvalds" class="js-example-target min-h-6 px-2 py-0.5 text-[10px] bg-dark-900 hover:bg-dark-700 border border-dark-700 rounded-sm text-slate-300 font-mono transition-colors">torvalds</button>
+                        <button type="button" data-example-target="example.com" class="js-example-target min-h-6 px-2 py-0.5 text-[10px] bg-dark-900 hover:bg-dark-700 border border-dark-700 rounded-sm text-slate-300 font-mono transition-colors">example.com</button>
+                        <button type="button" data-example-target="1.1.1.1" class="js-example-target min-h-6 px-2 py-0.5 text-[10px] bg-dark-900 hover:bg-dark-700 border border-dark-700 rounded-sm text-slate-300 font-mono transition-colors">1.1.1.1</button>
+                        <button type="button" data-example-target="security@example.com" class="js-example-target min-h-6 px-2 py-0.5 text-[10px] bg-dark-900 hover:bg-dark-700 border border-dark-700 rounded-sm text-slate-300 font-mono transition-colors">security@example.com</button>
+                    </div>
+                    <button id="cmd-palette-open-btn" type="button" title="Open Command Palette (Ctrl+K)" class="min-h-6 px-2.5 py-1 text-[10px] bg-dark-900 hover:bg-dark-700 border border-dark-700 rounded-sm text-slate-300 font-mono transition-colors flex items-center gap-1.5">
+                        <span>⌘K</span>
+                        <span>Commands</span>
+                    </button>
+                </div>
                 <div id="advanced-panel" class="hidden mt-2 p-3 bg-dark-900 border border-dark-700 rounded-lg">
                     <p class="text-[10px] text-slate-500 mb-2 uppercase tracking-wide">Select plugins (leave all unchecked = run all)</p>
                     <div id="plugin-checkboxes" class="flex flex-wrap gap-2"></div>
@@ -840,6 +853,14 @@
 
             <!-- Results Tab Content -->
             <div id="results-tab-content" class="flex flex-col gap-4 pt-2">
+                <!-- Live text filter for findings -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div class="relative grow max-w-md">
+                        <label for="results-search-input" class="sr-only">Filter scan findings by keyword, source, or identifier</label>
+                        <input type="search" id="results-search-input" placeholder="Filter findings by source, keyword, domain, IP…" autocomplete="off" class="w-full bg-dark-800 border border-dark-700 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-hidden focus:border-brand-500 placeholder-slate-500">
+                    </div>
+                    <span id="results-filter-summary" class="text-[11px] text-slate-400 font-mono"></span>
+                </div>
                 <!-- Exposure delta vs the previous scan (owner-only; /api/scans/:id/exposure-diff) -->
                 <div id="exposure-diff-banner" class="hidden"></div>
                 <!-- Synthesized identity profile (populated from /api/identity/:id) -->
@@ -1006,6 +1027,19 @@
             </div>
         </div>
 
+        <!-- Interactive Command Palette Modal (Ctrl+K / Cmd+K) -->
+        <div id="cmd-palette-modal" role="dialog" aria-modal="true" aria-labelledby="cmd-palette-title" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-xs p-3 sm:pt-20">
+            <div class="bg-dark-800 border border-dark-700 rounded-xl p-3 sm:p-4 w-full max-w-lg shadow-2xl">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 id="cmd-palette-title" class="text-xs font-bold text-slate-400 uppercase tracking-widest">Command Palette</h3>
+                    <button id="cmd-palette-close" type="button" aria-label="Close command palette" class="min-h-6 px-2 text-slate-400 hover:text-red-400 transition-colors text-sm">✕</button>
+                </div>
+                <label for="cmd-palette-input" class="sr-only">Search commands</label>
+                <input type="search" id="cmd-palette-input" placeholder="Type a command or action (e.g. bulk, graph, export, theme)…" autocomplete="off" class="w-full bg-dark-900 border border-dark-700 text-white text-xs rounded-lg px-3 py-2 focus:outline-hidden focus:border-brand-500 placeholder-slate-500 mb-2">
+                <div id="cmd-palette-list" role="listbox" aria-label="Available commands" class="max-h-64 overflow-y-auto space-y-1 text-xs"></div>
+            </div>
+        </div>
+
     </main>
 
     <footer class="mt-auto py-6 border-t border-dark-700 text-center text-xs text-slate-500">
@@ -1067,7 +1101,7 @@
         class="hover:text-brand-500 hover:border-brand-500/50"
         style="position:fixed;bottom:1.25rem;right:1.25rem;z-index:7000;width:36px;height:36px;border-radius:50%;background:#1e293b;border:1px solid #334155;color:#64748b;font-size:1rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:color 0.2s,border-color 0.2s;">?</button>
 
-    <script src="/app.js?v=467fc4b3692c" integrity="sha384-v+QXBhQZlY0FPzAAgPq3abBYbcPm64x9B4MGVDJcl96RyxV6S7xxSHR6CXkhBNFu"></script>
+    <script src="/app.js?v=df2155ccc30a" integrity="sha384-Xig+e6V+61lwS7xzgxtCKT6JhgEKq0EH9XOtE9gSMkNfmZYvoVY8YAazsDcUNwgC"></script>
 
     <!-- ── Bounded dark-web investigations ──────────────────────────────── -->
     <style>

@@ -52,6 +52,7 @@
     // Scans per day bar chart using D3
     function renderScansPerDay(chartData) {
         const container = document.getElementById('scans-per-day-chart');
+        container.replaceChildren();
         const width = container.getBoundingClientRect().width || 700;
         const height = 200;
         const margin = { top: 10, right: 20, bottom: 40, left: 40 };
@@ -126,6 +127,7 @@
     // Top plugins horizontal bar chart
     function renderTopPlugins(plugins) {
         const container = document.getElementById('top-plugins-chart');
+        container.replaceChildren();
         const width = container.getBoundingClientRect().width || 700;
         const barH = 24;
         const gap = 6;
@@ -188,6 +190,15 @@
     } else {
         document.getElementById('top-plugins-chart').textContent = 'No plugin data available.';
     }
+
+    window.addEventListener('resize', () => {
+        if (Array.isArray(data.scansPerDay) && data.scansPerDay.length) {
+            renderScansPerDay(data.scansPerDay);
+        }
+        if (Array.isArray(data.topPlugins) && data.topPlugins.length) {
+            renderTopPlugins(data.topPlugins.map(p => ({ plugin: String(p.source ?? ''), count: Number(p.hitCount) || 0 })));
+        }
+    });
 
     // Scans of targets the account had not proven it controls, last 24h.
     (function renderThirdParty(leaders, total) {
@@ -317,9 +328,108 @@
         }
     }
 
+    // Notification Outbox & Dead-Letter Queue (DLQ)
+    document.getElementById('refresh-dlq-btn')?.addEventListener('click', () => loadNotificationDeliveries());
+    document.getElementById('dlq-status-filter')?.addEventListener('change', () => loadNotificationDeliveries());
+
+    async function loadNotificationDeliveries() {
+        const summary = document.getElementById('dlq-summary');
+        const container = document.getElementById('dlq-container');
+        const statusFilter = document.getElementById('dlq-status-filter')?.value || '';
+        if (!summary || !container) return;
+        summary.textContent = 'Loading notification deliveries…';
+        try {
+            const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}&per=25` : '?per=25';
+            const res = await fetch('/api/admin/notification-deliveries' + query, { credentials: 'include' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const body = await res.json();
+            const items = Array.isArray(body.items) ? body.items : [];
+            const total = Number(body.metadata && body.metadata.total) || items.length;
+            summary.className = 'mb-3 text-[11px] ' + (items.some(i => i.status === 'dead_letter' || i.status === 'failed') ? 'text-amber-400' : 'text-slate-400');
+            summary.textContent = `${total} delivery job${total === 1 ? '' : 's'} matching filter (${statusFilter || 'all'})`;
+            if (!items.length) {
+                container.textContent = 'No notification delivery jobs match this filter.';
+                return;
+            }
+            const table = document.createElement('table');
+            table.className = 'w-full text-[10px] border-collapse';
+            const head = table.createTHead().insertRow();
+            head.className = 'border-b border-dark-700 text-slate-400';
+            for (const label of ['Channel', 'Status', 'Attempts', 'Last Error / Reason', 'Action']) {
+                const th = document.createElement('th');
+                th.className = 'text-left align-bottom py-1 pr-2';
+                th.textContent = label;
+                head.appendChild(th);
+            }
+            const tbody = table.createTBody();
+            for (const job of items) {
+                const row = tbody.insertRow();
+                row.className = 'border-b border-dark-800 js-dlq-row';
+                const status = String(job.status || '');
+                const statusCls = status === 'delivered' ? 'text-green-400'
+                    : (status === 'dead_letter' || status === 'failed' ? 'text-red-400' : 'text-yellow-400');
+                const detail = [
+                    job.lastHTTPStatus ? `HTTP ${Number(job.lastHTTPStatus)}` : '',
+                    job.deadLetterReason || job.lastError || '',
+                ].filter(Boolean).join(' · ') || '—';
+
+                const cells = [
+                    [String(job.channel || ''), 'text-slate-200 font-mono'],
+                    [status, statusCls + ' font-mono'],
+                    [`${Number(job.attempts) || 0} / ${Number(job.maxAttempts) || 0}`, 'text-slate-400 font-mono'],
+                    [detail, 'text-slate-400 wrap-anywhere'],
+                ];
+                for (const [text, cls] of cells) {
+                    const td = row.insertCell();
+                    td.className = 'align-top py-1 pr-2 ' + cls;
+                    td.textContent = text;
+                }
+                const actionTd = row.insertCell();
+                actionTd.className = 'align-top py-1';
+                if (status === 'dead_letter' || status === 'failed') {
+                    const retryBtn = document.createElement('button');
+                    retryBtn.type = 'button';
+                    retryBtn.className = 'min-h-6 text-[10px] px-2 py-0.5 bg-brand-600 hover:bg-brand-500 text-white rounded-sm font-bold js-dlq-retry';
+                    retryBtn.textContent = 'Retry';
+                    retryBtn.addEventListener('click', async () => {
+                        retryBtn.disabled = true;
+                        retryBtn.textContent = 'Retrying…';
+                        try {
+                            const r = await fetch(`/api/admin/notification-deliveries/${encodeURIComponent(String(job.id || ''))}/retry`, {
+                                method: 'POST',
+                                credentials: 'include'
+                            });
+                            if (!r.ok) throw new Error('HTTP ' + r.status);
+                            await loadNotificationDeliveries();
+                        } catch {
+                            retryBtn.disabled = false;
+                            retryBtn.textContent = 'Retry failed';
+                        }
+                    });
+                    actionTd.appendChild(retryBtn);
+                } else {
+                    actionTd.textContent = '—';
+                    actionTd.className += ' text-slate-500';
+                }
+            }
+            container.replaceChildren(table);
+        } catch (error) {
+            summary.className = 'mb-3 text-[11px] text-red-400';
+            summary.textContent = 'Notification deliveries unavailable: ' + String(error && error.message || error);
+        }
+    }
+
     // Audit log
-    document.getElementById('load-audit-btn')?.addEventListener('click', loadAuditLog);
+    let currentAuditPage = 1;
+    let totalAuditPages = 1;
+    document.getElementById('load-audit-btn')?.addEventListener('click', () => loadAuditLog(1));
     document.getElementById('verify-audit-btn')?.addEventListener('click', loadAuditIntegrity);
+    document.getElementById('audit-prev-btn')?.addEventListener('click', () => {
+        if (currentAuditPage > 1) loadAuditLog(currentAuditPage - 1);
+    });
+    document.getElementById('audit-next-btn')?.addEventListener('click', () => {
+        if (currentAuditPage < totalAuditPages) loadAuditLog(currentAuditPage + 1);
+    });
 
     async function loadAuditIntegrity() {
         const button = document.getElementById('verify-audit-btn');
@@ -352,13 +462,22 @@
 
     async function loadAuditLog(page = 1) {
         const container = document.getElementById('audit-log-container');
+        const pager = document.getElementById('audit-pagination');
+        const pageNum = Math.max(1, Number(page) || 1);
         container.innerHTML = '<p class="text-[11px] text-slate-400">Loading…</p>';
         try {
-            const res = await fetch(`/api/admin/audit?page=${page}&per=50`, { credentials: 'include' });
+            const res = await fetch(`/api/admin/audit?page=${pageNum}&per=50`, { credentials: 'include' });
             if (!res.ok) { container.innerHTML = '<p class="text-[11px] text-red-400">Failed to load audit log.</p>'; return; }
             const body = await res.json();
             const items = body.items || [];
-            if (!items.length) { container.innerHTML = '<p class="text-[11px] text-slate-500">No audit entries found.</p>'; return; }
+            if (!items.length) {
+                container.innerHTML = '<p class="text-[11px] text-slate-500">No audit entries found.</p>';
+                pager?.classList.add('hidden');
+                return;
+            }
+            const total = Number(body.metadata && body.metadata.total) || items.length;
+            currentAuditPage = pageNum;
+            totalAuditPages = Math.max(1, Math.ceil(total / 50));
             const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
             container.innerHTML = `
                 <div class="overflow-x-auto"><table class="w-full min-w-[640px] text-[10px] border-collapse">
@@ -378,13 +497,21 @@
                         <td class="py-1 text-slate-500">${esc(e.ip ?? '')}</td>
                     </tr>`).join('')}
                     </tbody>
-                </table></div>
-                ${body.metadata && body.metadata.total > 50 ? `<p class="text-[10px] text-slate-500 mt-2">Showing first 50 of ${body.metadata.total}. Use pagination for more.</p>` : ''}`;
+                </table></div>`;
+            if (pager) {
+                pager.classList.toggle('hidden', totalAuditPages <= 1);
+                const info = document.getElementById('audit-page-info');
+                const prev = document.getElementById('audit-prev-btn');
+                const next = document.getElementById('audit-next-btn');
+                if (info) info.textContent = `Page ${currentAuditPage} of ${totalAuditPages} (${total.toLocaleString()} entries)`;
+                if (prev) prev.disabled = currentAuditPage <= 1;
+                if (next) next.disabled = currentAuditPage >= totalAuditPages;
+            }
         } catch (err) {
             const msg = String(err && err.message || err).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
             container.innerHTML = `<p class="text-[11px] text-red-400">Error: ${msg}</p>`;
         }
     }
 
-    await Promise.all([loadAuditIntegrity(), loadPluginHealth()]);
+    await Promise.all([loadAuditIntegrity(), loadPluginHealth(), loadNotificationDeliveries()]);
 })();
